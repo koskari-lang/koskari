@@ -713,8 +713,8 @@ static void agen_iter_finish(PyObject *self, int exhausted) {
 
 /**
    The wrapper's context, for a drive from Python: created on the first
-   such drive with the domain and parameterize cells in force then, and
-   kept for the generator's life. A generator only ever spliced from
+   such drive with the parameterize cells in force then, and kept for
+   the generator's life. A generator only ever spliced from
    Koskari never has one. NULL on a creation failure, error cleared, so
    the stepper falls back to a context of its own.
 */

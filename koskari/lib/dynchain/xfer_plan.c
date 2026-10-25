@@ -30,7 +30,7 @@
    In-place (Path A) invoke readiness: the capture-time live prompt and
    shift nodes are both still on the current chain (pointer + node_id
    match), the shift node lies above the prompt, no barrier node (foreign
-   DELIM, GEN, NEXT, PROMPT) sits between dyn_top and the shift node,
+   DELIM, GEN, PROMPT) sits between dyn_top and the shift node,
    and no transfer goal is active. Returns 1 when in-place invoke
    applies, 0 otherwise (fall back to the PUSH path).
 
@@ -194,7 +194,7 @@ static int kos_delimited_invoke_inplace(
     KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 
   /* The invocation re-delimits: a shift firing inside the resumed slice
-     must capture up to THIS invocation's iteration node, not the original
+     must capture up to THIS invocation's prompt, not the original
      prompt, or its POP_SHIFT discards the remainder of the suspended
      handler (control semantics where shift was promised). The fresh
      instance sits between the delim and the slice; captures inside the

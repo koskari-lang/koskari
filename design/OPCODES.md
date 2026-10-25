@@ -1163,7 +1163,7 @@ bottom to top matches push order).
 ### KOS_OP_RETURN
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
-- **Stack**: Pops the return value(s) per `arg`. The handler threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction), a **region** over such a parent (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook), and a **resume-carrying parent** (**`kos_return_take_resume`** → **`RESUME_HOP`** into the resume). Only the shapes that need an unwind walk signal **`EVAL_RETURN(val)`**, which **`apply_kos_op_result`** routes to **`eval_event_return`** (**`kos_dyn_unwind_return`**, pop, iterator-boundary or parent delivery, then **`kos_dynnode_on_control_returned`**). **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**.
+- **Stack**: Pops the return value(s) per `arg` and tail-calls **`kos_return_deliver`**, which threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction); a **region** over such a parent (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook); a region with no hook over a **frame waiting on a resume** (**`kos_return_is_region_resume`** → **`eval_region_resume_return`** → **`RESUME_HOP`**); and a **resume-carrying parent** (**`kos_return_is_resume`** → **`kos_return_take_resume`** → **`RESUME_HOP`**). Every other shape goes to **`eval_event_return`**: **`kos_dyn_unwind_return`** over the extents above the frame, a return across a delimiting reset, or the delivery to the parent; a RESUME answer goes through the relay into the live frame's resume. A root frame, or a **GEN** that an adapter runs: **`KOS_RES_RETURN`** from **`koskari_eval`**. A GEN with a parent and no resume waiting is **`EVAL_FATAL`**.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 
@@ -1179,7 +1179,7 @@ bottom to top matches push order).
 ### KOS_OP_YIELD
 
 - **Style**: COUNT. Arg = number of values to yield (typically 1).
-- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. Opcode returns **`EVAL_YIELD(val)`**; **`apply_kos_op_result`** routes to **`eval_event_yield`**, which runs **`eval_yield_handle_walk_and_freeze`** (**`kos_dyn_unwind_yield`**), then either **`eval_event_yield_deliver_to_boundary`** when **`kos_dyn_need_kos_agen_boundary_deliver`** (flattened **NEXT** / **FOREACH** / **YIELD_FROM**, often **`EVAL_REPROLOGUE()`** without stopping **`koskari_eval`**) or **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the outer driver.
+- **Stack**: Pops the yielded value(s) and tail-calls **`kos_yield_deliver`**. Sets **`KOS_CODE_YIELDS`** on the code object. **`eval_event_yield`** freezes the running frame's GEN (**`kos_dyn_gen_freeze`**). When the live frame then has a resume -- a flattened consumer: a for-each step, a next request, a yield-from -- **`iter_deliver_to_resume`** hands it the value and the relay's RESUME arm threads into that resume without stopping **`koskari_eval`**. Otherwise the yield is terminal: **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the adapter that runs the generator.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
 
@@ -1321,7 +1321,7 @@ bottom to top matches push order).
 ### KOS_OP_VAR_NEXT {#kos_op_var_next}
 
 - **Style**: EXTRA (VAR, COUNT). Row = iterator name (pool), n (1 or 2).
-- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
+- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and make the next request (**`KosContext_NextResume`**, the arity picking the resume's kind; the iterator is the resume's owned state, the default stays on the stack under the halted instruction). A Koskari async generator runs flattened; an awaited step suspends the frame and completes the instruction when it resumes. 1-arg raises StopIteration on exhaustion; 2-arg delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_NEXT.c`
@@ -4554,7 +4554,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_LOOP {#kos_op_clear_loop}
 
 - **Style**: NOARG.
-- **Stack**: Clears the loop segment. Disables the top LOOP region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
+- **Stack**: Clears the loop segment. Disables the top LOOP region (clears its **`KOS_DYN_CAP_LOOP_REGION`**): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP. Use CLEAR_FOREACH for FOREACH extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
 
@@ -4563,7 +4563,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_FOREACH {#kos_op_clear_foreach}
 
 - **Style**: NOARG.
-- **Stack**: Clears the loop segment. Disables the top FOREACH region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
+- **Stack**: Clears the loop segment. Disables the top FOREACH region (clears its **`KOS_DYN_CAP_LOOP_REGION`**): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH. Use CLEAR_LOOP for LOOP extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_FOREACH.c`
 

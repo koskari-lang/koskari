@@ -79,11 +79,11 @@ Record the numbers in `tmp/perf-plan.md`.
 
 #### B1. The callee is the root frame
 
-`eval_phase_entry_call` classifies the recorded call the way the
-opcode arm `kos_call_cached_frame_install` does: exact `KosFunction`,
-`nargs + 1 == simple_arity1`, no `kwnames`, `bind_self_state != 0`,
-non-yielding code. That shape takes `KosFunction_Install` directly with
-no frame below it; `call->frame_flags` is OR-ed onto the installed
+`eval_phase_entry_call` takes the B1 arm for an exact `KosFunction`
+whose `bind_self_state` is resolved and whose code does not yield.
+Since f28c5d28 the argument shape does not matter: keywords, defaults
+and the rest bind in `KosFunction_Install`, which the arm calls
+directly with no frame below it; `call->frame_flags` is OR-ed onto the installed
 frame, since `kos_dyn_push_frame_unchecked` inherits the demand bit
 only from a current frame. The trampoline threads into the body; its
 return reaches `eval_event_return_at_frame` case 4 (no parent) and
@@ -92,7 +92,8 @@ terminates the drive; a raise walks to no handler and terminates as
 offers the callee frame to the function's cache, so the cache serves
 boundary calls too.
 
-Every other shape, and the first call of a function whose
+Every other callable (a bound method, an `Expression`, a `partial`), a
+generator function, and the first call of a function whose
 `bind_self_state` is unresolved, keeps `CallInto` with the code-less
 frame and the resume. `Procedure` needs nothing: its vectorcall already
 discards the result, and its resume only mattered on the code-less
@@ -158,16 +159,19 @@ deltas are noise; no kernel makes context-free boundary calls.
 `demand_resume` passes NULL. A `cached_frame` slot on `KosDemandObject`
 beside the cached context, handed through `KosEntryCall` to the
 install, and the resume passes it to `KosNativeFrame_ReturnToCache`.
-Serves the shapes B1 does not take: keywords, defaults, bound methods
-through a `Demand`, `Procedure` over an `__init__` with defaults.
+Serves the calls B1 does not take: a `Demand` over a bound method, an
+`Expression`, a `partial` or a generator function, and every
+function's first call.
 
 Implemented: `KosDemandObject.cached_frame`, handed through
 `KosEntryCall.frame_cache`; the general arm of `eval_phase_entry_call`
-installs the root frame itself (`KosResumeFrame_Install` with the slot
-as state and cache, then `KosContext_Call`) instead of through
-`KosContext_CallInto`, and `demand_resume` returns the frame to the
+is one `KosContext_CallInto` call with the slot as the frame cache and
+as the resume's state, and `demand_resume` returns the frame to the
 slot. A continuation clone shares the slot; a reentrant call finds it
-emptied and allocates. Counter `KOS_TE_ENTRY_ROOT_CACHED`. Measurement
+emptied and allocates. Counter `KOS_TE_ENTRY_ROOT_CACHED`. The
+measurement below was taken before f28c5d28 moved keyword calls to the
+B1 arm: `demand_call_kw` no longer takes this arm, so the figures
+describe the earlier routing. Measurement
 (new kernel `demand_call_kw`, `(partial (demand mixkw) b: 7)` over
 `builtins.map`, 4 batches of 200,000 calls): instructions
 8,656,596,634 -> 8,604,921,989, per call 5,630 -> 5,596; cycles per
@@ -278,6 +282,9 @@ it instead of resolving. `koskari_eval(ctx, s, ...)` takes the record,
 NULL to resolve it at entry; `demand_run_koskari` passes the record it
 resolved for the snapshot, `coroutine_step` passes NULL: a coroutine's
 snapshot is taken at creation, not in the step that evaluates it.
+`KosContext_TakeSnapshot` has since gone with the wrapper's cached
+context: a `Demand` call takes a context from the freelist through
+`KosContext_New`.
 Counter `KOS_TE_TLS_RESOLVE` (`tls_resolve`), one per `tls_state_current`
 call. churn-trace `demand_call` (1,200,000 boundary calls under an
 active context): `tls_resolve` 1,207,813 against `init` 1,207,232, one

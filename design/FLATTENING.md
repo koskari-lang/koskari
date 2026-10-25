@@ -79,7 +79,7 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   is forced today.
 - **Opcodes that materialise a Koskari generator.** The UNPACK family
   (`KosContext_PopUnpackSequence` -> `PySequence_Fast`,
-  `eval/eval_state.c`) and the star-call family (`kos_op_call_star` ->
+  `eval/eval_drive.c`) and the star-call family (`kos_op_call_star` ->
   `PySequence_Tuple`, `eval.c`) go through the generator's `tp_iter`
   into a `KosPyIter`, a nested evaluator per element on the demand
   path, so a generator whose body awaits fails as a sync violation

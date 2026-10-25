@@ -114,6 +114,8 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `field_slots` | same, on a `__slots__` class (SLOT path) | — |
 | `branch` | four-arm if/elif/else density | — |
 | `complex_branch` | `and`/`or`/`not` in loop, if/elif and value positions over compares and bare variables | — |
+| `match_case` | eight-arm structural `match` over a rotating mix of subjects: class, sequence with rest, mapping, guarded and typed captures, strings, else | — |
+| `strcat` | string built by `+` over three pieces and `+=` on one accumulator | — |
 | `nbody` | float arithmetic (benchmarks-game n-body) | energy to 9 places |
 | `fannkuch` | integer array indexing + mutation | `(16, 228)` at n=7 |
 | `pidigits` | arbitrary-precision (bignum) arithmetic | first 50 digits of π |
@@ -132,9 +134,9 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `coroutines` | hosted: await-chain recursion (pyperformance coroutines) | fib(25) = 75025 |
 | `async_generators` | hosted: async generator consumed by `async for` (pyperformance async_generators) | sum of range(20000) |
 
-The first seven are RNG-style churn with no external oracle — correctness rests
-on the Python and Koskari answers agreeing. The four *game* benchmarks and the
-three *hosted* async benchmarks carry a known result, so they stay
+The first ten carry no external oracle — correctness rests
+on the Python and Koskari answers agreeing. The four *game* benchmarks and three
+of the *hosted* async benchmarks carry a known result, so they stay
 correctness-checked even in `--mode koskari` with no Python side present.
 
 The hosted kernels are written as Koskari, not as transliterated Python. Every

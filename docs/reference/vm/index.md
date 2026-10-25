@@ -1134,7 +1134,7 @@ bottom to top matches push order).
 ### KOS_OP_YIELD
 
 - **Style**: COUNT. Arg = number of values to package as the yielded value: `0` yields `None`, `1` yields the single popped value, and `N > 1` pops `N` values and yields them as a tuple.
-- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. The handler finds the running frame's generator node (**`kos_dyn_find_gen`**). A flattened generator (its node has a parent on the chain) is handled in the handler: **`eval_event_yield`** freezes the generator's chain span into the node (**`kos_dyn_gen_freeze`**), delivers the value to the consuming **NEXT** / **FOREACH** / **YIELD_FROM** node, and threads into the consumer without stopping **`koskari_eval`**. A generator driven from outside returns **`EVAL_YIELD(val)`**; the trampoline runs the same freeze and stops with **`KOS_RES_YIELD`** and **`KOS_SUSP_YIELD`** for the outer driver.
+- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. The handler freezes the running generator's span of the dynamic chain into its generator node. A flattened generator, one consumed inside the same evaluator, then hands the value to the consuming frame (a for-each step, a next request, or a yield-from waiting on it) and continues in that frame without stopping the evaluator. A generator run from outside stops the evaluator with the yielded value.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [compile/yield](../specials/compile-yield.md); **`koskari/lib/opcode/YIELD.c`**.
 
@@ -1169,8 +1169,8 @@ bottom to top matches push order).
 - **Stack**: Pops TOS, the value to delegate to. Pushes nothing. Each value the delegate produces is yielded out of the enclosing generator as that generator's own yield. When the delegate is exhausted, execution continues at the next instruction; the delegate's return value is discarded. `compile/yield-from` emits `CONST None` after the opcode so the form has a value.
 - **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. The delegate is held as the frame's resume state for the whole delegation; every suspension of the delegation is a resume on the generator's frame, and what arrives at the generator (a sent value, a thrown exception, a close) arrives at that resume.
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
-- **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
-- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The opcode is re-entered on each loop iteration until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
+- **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are emitted as values only.
+- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one).
 - **Implementation**: Handler, normalization, the per-kind drive resumes and the delegate's close on teardown live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). See `koskari/lib/opcode/README.md` for the opcode-fragment layout.
 - **See also**: [compile/yield-from](../specials/compile-yield-from.md)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
@@ -1267,7 +1267,7 @@ bottom to top matches push order).
 
 ### KOS_OP_VAR_NEXT
 - **Style**: EXTRA (VAR, COUNT). Row = iterator name (pool), n (1 or 2).
-- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
+- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and take the next element as OBJECT_NEXT does. A Koskari async generator runs flattened in the same evaluator; an awaited step suspends the frame and completes the instruction when it resumes. 1-arg raises StopIteration on exhaustion; 2-arg delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_NEXT.c` (cold handler)
@@ -4007,7 +4007,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ### KOS_OP_CLEAR_LOOP
 - **Style**: NOARG.
-- **Stack**: Clears the loop segment. Disables the top LOOP region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
+- **Stack**: Clears the loop segment. Disables the top LOOP region: a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP. Use CLEAR_FOREACH for FOREACH extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
 
@@ -4015,7 +4015,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ### KOS_OP_CLEAR_FOREACH
 - **Style**: NOARG.
-- **Stack**: Clears the loop segment. Disables the top FOREACH region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
+- **Stack**: Clears the loop segment. Disables the top FOREACH region: a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH. Use CLEAR_LOOP for LOOP extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_FOREACH.c`
 

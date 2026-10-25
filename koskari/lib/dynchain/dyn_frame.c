@@ -269,7 +269,7 @@ static int dynnode_to_dict_frame(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Push a new frame with code and ns as DYN_TOP and FRAME_TOP. Callers: eval
+   Push a new frame with code and ns as dyn_top and the live frame. Callers: eval
    when entering a Python function.
 */
 KosDynFrame *kos_dyn_push_frame(
@@ -474,7 +474,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 
 
 /**
-   Pop top if it is a FRAME; refresh frame_top. Does not run full uninstall
+   Pop top if it is a FRAME; refresh the live frame. Does not run full uninstall
    (no extent teardown). Callers: simple frame exit when no extra nodes on top.
 */
 int kos_dyn_pop_frame(KosContext *ctx) {

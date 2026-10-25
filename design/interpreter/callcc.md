@@ -149,7 +149,7 @@ The `kos_invoke_continuation()` function handles resumption:
 
 ```c
 int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
-        PyObject *value, int is_throw, PyObject *continuation_ref);
+        PyObject *value, PyObject *continuation_ref);
 ```
 
 **Algorithm**:
@@ -201,7 +201,7 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
    walk hands the delim back and the value lands at the invoke site.
 
 4. **Push a goal** (`kos_xfer_goal_new` + `kos_xfer_goal_push`) with the clone
-   as target and the value (or exception, `is_throw`) as payload; answer
+   as target and the value as payload; answer
    REPROLOGUE. The evaluator's prologue drives it (§ Transfer goal).
 
 ### Foreign-token unwind
@@ -243,7 +243,9 @@ struct KosXferGoal {
   PyObject *payload;
   PyObject *continuation_ref;
   uint32_t resume_pc;
-  uint8_t phase, is_throw, is_cc_unwind;
+  KosXferRestore *restore;     /* owned array, or NULL */
+  size_t restore_count;
+  uint8_t phase, is_cc_unwind;
 };
 ```
 

@@ -60,7 +60,7 @@
                        is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
    KOS_DYN_SHIFT     - Shift handler bookmark (transparent; no segment,
                        frame, or namespace of its own)
-   KOS_DYN_GEN       - Generator node; intercepts handle(YIELD/RETURN/RAISE),
+   KOS_DYN_GEN       - Generator node; intercepts handle(RETURN/RAISE),
                        denies handle(SHIFT)
 */
 
@@ -113,9 +113,11 @@ typedef enum KosDynFlags {
 
 /**
    KosDynNode capability bits. Generic code checks these for behavior
-   instead of node type. Set at creation and copied on clone; a frame's
-   OWNS_NS follows its code object and moves with it (a placeholder
-   filled with code gains it, a cached function frame keeps it).
+   instead of node type. Set at creation and copied on clone. Two
+   change at run time: CLEAR_LOOP and CLEAR_FOREACH take LOOP_REGION
+   away, and a frame's OWNS_NS follows its code object and moves with
+   it (a placeholder filled with code gains it, a cached function frame
+   keeps it).
 */
 #define KOS_DYN_CAP_CATCH                    (1u << 0)
 /* a LOOP or FOREACH region still running its body: the region a break
@@ -961,7 +963,7 @@ void kos_dyn_resync_chain(KosContext *ctx);
 /**
    Push a new frame onto the context's dynamic chain.
 
-   Creates a new frame and sets it as dyn_top. Updates frame_top cache.
+   Creates a new frame and sets it as dyn_top and the live frame.
 
    :param ctx: execution context
    :param code: bytecode object (borrowed)
@@ -1151,7 +1153,7 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx);
    Pop the top frame from the context's dynamic chain.
 
    Frees the frame and updates dyn_top to the frame's parent.
-   Updates frame_top cache to find the new topmost frame.
+   Updates the live frame to the new topmost frame.
 
    :param ctx: execution context
 
@@ -1327,20 +1329,21 @@ KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t conti
 KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
 
 
-/* Uninstall hook: the store resume goes with the node. Callers:
-   kos_dyn_uninstall_handler. */
+/* Uninstall hook: a step still in flight is finished and the loop
+   frame's resume cleared. Callers: kos_dyn_uninstall_handler. */
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 
 
 
-/* === Generic iteration-node dispatch (dyn_iter_node.c) === */
+/* === The generator lookup (dyn_gen.c) and the FOREACH request (dyn_iter_node.c) === */
 
 
 /**
    The GEN node of the generator the running frame belongs to: the
    nearest GEN walking outward from the frame, or NULL when the frame
-   is not in a generator. Callers: op_YIELD and the trampoline's YIELD
-   arm, which then freeze it through kos_dyn_gen_freeze.
+   is not in a generator. Callers: kos_yield_deliver and the
+   trampoline's YIELD arm, which then freeze it through
+   kos_dyn_gen_freeze.
 */
 KosDynGen *kos_dyn_find_gen(KosContext *ctx);
 

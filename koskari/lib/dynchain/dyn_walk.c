@@ -555,10 +555,9 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
       if (! PyErr_Occurred())
         break;
 
-      /* A code-less step frame's resume has already seen this
-         exception: process_raise answers RESUME, the resume takes it
-         as a NULL against a settled chain, and the walk only runs
-         once that resume declined and cleared itself. */
+      /* The head of the loop offered the failure to this frame's
+         resume when it had one; a decline cleared it, so the frame is
+         crossed like any other. */
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosContext_DYN_TOP(ctx));
@@ -723,10 +722,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
 
     }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
 
-    /* A resume-carrying frame at dyn_top above the live frame: its
-       resume sees the pending exception the same way the
-       frame-crossing branch's does, and a propagated exception goes
-       on to the pop below. */
     /* PASS: unwind and pop */
     {
       /* Everything the code after the pop needs from the node is read

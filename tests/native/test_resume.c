@@ -63,9 +63,9 @@ static KOS_PRESERVE_NONE KosOpResult resume_probe(
 }
 
 
-/* a step kind (state is the probe's own, capture refuses) and a node
-   kind (state travels with the chain, capture copies) over the same
-   probe */
+/* a step kind (state is the probe's own, capture refuses) and a kind
+   whose clone shares the state (kos_resume_clone_shared, as the
+   procedure and demand kinds use) over the same probe */
 KOS_RESUME_KIND(resume_probe_kind, "test-resume", resume_probe, NULL, NULL);
 KOS_RESUME_KIND(resume_probe_node_kind, "test-node-resume", resume_probe,
                 NULL, kos_resume_clone_shared);
@@ -735,8 +735,8 @@ static int test_raise_walk_defers_after_a_pop_reveals_a_resume(void) {
 /* === kos_dynframe_clone and the resume triple === */
 
 
-/* A node resume (NULL state: the node it serves is dyn_top above the
-   frame, cloned with the chain) copies with the frame. */
+/* A resume whose kind shares its state on clone copies with the
+   frame; a NULL state stays NULL. */
 static int test_clone_copies_node_resume(void) {
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -748,7 +748,7 @@ static int test_clone_copies_node_resume(void) {
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
   KosDynFrame *clone = kos_dynframe_clone(frame);
-  TEST_ASSERT_NOT_NULL(clone, "clone copies a node resume frame");
+  TEST_ASSERT_NOT_NULL(clone, "clone copies a shared-state resume frame");
   TEST_ASSERT(! PyErr_Occurred(), "no error raised");
   TEST_ASSERT(KosDynFrame_RESUME_KIND(clone) == &resume_probe_node_kind,
               "the clone carries the resume function");

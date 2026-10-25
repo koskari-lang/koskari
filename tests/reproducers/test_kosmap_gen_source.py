@@ -16,7 +16,7 @@ tests.reproducers.test_kosmap_gen_source
 
 Tests for the flattened KosMap fetch over a koskari generator source:
 the generator installs onto the driving evaluator and its yields,
-suspensions, and completion arrive through the iteration nodes.
+suspensions, and completion arrive at the consumer frame's resume.
 Covers the
 python demand and asyncio drives, a koskari for-each consumer, awaits
 inside the generator, nested map-over-map (including a generator at

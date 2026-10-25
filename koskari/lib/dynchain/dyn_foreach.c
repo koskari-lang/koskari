@@ -25,7 +25,8 @@
 
 
 /**
-   FOREACH region: loop PCs, iterator, exhausted flag, for/else PC.
+   FOREACH region: break and continue PCs, the loop result, and the
+   iteration request (iterator, its slots, its kind).
 */
 KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynForeach *node = kos_dynnode_alloc();

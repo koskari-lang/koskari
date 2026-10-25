@@ -129,7 +129,7 @@ a tuple and dict for `demand_sync_ex`, which nested an eval, or refused
 the callable (D4).
 
 **D3. No call-or-install entry for a non-resume context.** Fixed in the
-working tree. `KosContext_CallResult` sets its resume on the current
+working tree. `KosEvalState_CallResult` (removed since by 678c7f31) sets its resume on the current
 frame (`eval/eval_call.c:290`, `:318-335`); inside an install slot that
 is the calling bytecode frame, and the return fast paths assume only
 code-less frames carry resumes (`eval.c:2539-2548`). Each wrapper
@@ -303,7 +303,7 @@ Committed as WIP (`8d59c673`):
   release.
 - `eval.h`, `eval/eval_call.c`: `KosContext_CallInto`. Pushes a
   code-less frame with no resume set, ORs `frame_flags` into it, calls
-  through `KosContext_CallResult` with the resume, and stages a value
+  through `KosEvalState_CallResult` with the resume, and stages a value
   back in hand for the resume (REPROLOGUE). It never reports RETURN. The
   frame starts with no resume set: a frame with one set makes
   `KosContext_Call` turn NORMAL into REPROLOGUE (`eval/eval_call.c:199-201`,
@@ -341,7 +341,7 @@ Committed as WIP (`511636b3`):
 Committed as WIP (`33226f50`):
 
 - Step 3: `kospartial_kos_vinstall` (`partial.c`) calls every inner
-  through `KosContext_CallResult` / `KosContext_CallArgs`;
+  through `KosEvalState_CallResult` / `KosContext_CallArgs`;
   `kospartial_inner_is_flattenable` removed;
   `tests/reproducers/test_partial_flatten.py`,
   `tests/reproducers/scripts/partial_flatten.ki`.
@@ -568,7 +568,7 @@ tail position.
   `demand_finish_koskari_value`; its AWAIT / YIELD keep the existing
   "missing deny guard" error. `CallInto` never reports RETURN: a value
   in hand is staged, frozen onto the code-less frame's stack, and
-  delivered by the prologue (`eval/eval_state.c:119-131`,
+  delivered by the prologue (`eval/eval_state.c:119-131`, now `eval/eval_drive.c`,
   `eval.c:3446-3450` -> `eval_step_resume_delivery` `:3110-3125`). A
   yielding callable delivers its generator the same way;
   `demand_finish_koskari_value` (`demand.c:181-195`) passes a provider

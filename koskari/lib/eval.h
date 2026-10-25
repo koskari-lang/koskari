@@ -216,23 +216,13 @@ typedef enum KosGetNextResult {
    at all; a consumer that only propagates needs no code beyond that
    one line.
 
-   The delivery reaches a code-less step frame as a RESUME answer from
-   process_raise rather than from inside the walk: a thread caller
-   relays it to the resume by tail call, and the trampoline delivers
-   one a plain caller returned through the prologue. A frame
-   carrying bytecode is never handed a failure that way: its resume is
-   a yield-from phase resume, which reads a NULL delivery as a send of
-   None, and it is reached through its own node instead.
-
-   A resume on a frame the walk reaches ABOVE the live frame (a
-   flattened delegation) does not get that freedom. The prologue's
-   offer tests the live frame and cannot see it, so the walk still
-   calls it as a plain call from inside the unwind, and it may only
-   answer REPROLOGUE or EVAL_RAISE -- never thread on, since a chain
-   run inside the walk would hand it a signal it cannot apply. A
-   resume cannot tell the two paths apart from its own code, so a
-   consumer that could be set on either must keep to the narrower
-   rule. Every KosIter provider sets its resume on the live frame only.
+   The delivery reaches every frame with a resume the same way,
+   bytecode or code-less: the raise walk answers RESUME when the live
+   frame has a resume, at entry and after every pop or generator
+   teardown that reveals one, and never calls a resume itself. A
+   thread caller relays the answer to the resume by tail call, and the
+   trampoline delivers one a plain caller returned through the
+   prologue, so every resume takes its failure on a settled chain.
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
@@ -271,10 +261,11 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
 
 /**
    The raise walk, a KosThreadFn every RESULT_RAISE tails into: the
-   exception set is offered up the chain (try and finally extents,
-   node conversion, a code-less frame's resume) and the answer is
-   REPROLOGUE with the handler pc set, AWAIT for an async unwind, or
-   the terminal RAISE or FATAL. insn and val are unused.
+   exception set is offered up the chain (the live frame's resume at
+   every level, try and finally extents, generator conversion) and the
+   answer is RESUME into a resume, REPROLOGUE with the handler pc set,
+   AWAIT for an async unwind, or the terminal RAISE or FATAL. insn and
+   val are unused.
 */
 KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
     KosContext *ctx,
@@ -683,8 +674,10 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    element that is settled reports RETURN with it, no resume set (the
    resume is tail-called with it); one that needs settling settles one
    step, sets resume, and reports REPROLOGUE or AWAIT; an in-flight
-   CONTINUES sets resume and reports NORMAL when the install left a
-   bytecode frame current (thread into it) or REPROLOGUE otherwise; an
+   CONTINUES sets resume and reports what kos_iter_installed answers:
+   NORMAL when the install left a bytecode frame current that can be
+   threaded into, RESUME when that frame halts on a resume of its own
+   (a yield-from in flight), REPROLOGUE otherwise; an
    awaitable in-flight (EXIT) sets resume and reports EVAL_AWAIT, and
    the AWAITED revive delivers into it. Exhaustion sets resume and
    raises StopIteration, which reaches resume as a RESUME answer, NULL
@@ -908,8 +901,9 @@ extern PyTypeObject KosContextType;
 /**
    True when a just-installed frame can be threaded into at its pc: it
    has code and is not waiting on a resume. A frame suspended inside a
-   yield-from carries the node's phase resume, and its delivery must
-   run first, so the installer bounces through the prologue instead.
+   yield-from carries the delegation's resume, and its delivery must
+   run first, so the installer hands the frame to that resume
+   (kos_iter_installed) or answers REPROLOGUE (a call install) instead.
 */
 static inline int kos_frame_threads(KosDynFrame *nf) {
   return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_KIND(nf);
@@ -1166,8 +1160,8 @@ done:
 
 
 /**
-   Push a prepared frame from the per-function cache as DYN_TOP and
-   FRAME_TOP.  Code, namespace, and cleared stack are already attached
+   Push a prepared frame from the per-function cache as dyn_top and
+   the live frame.  Code, namespace, and cleared stack are already attached
    and the node base was normalized when it was cached
    (KosFunction_CacheFrame); this is the install half of
    kos_dyn_push_frame with the node id reset, and cannot fail.
@@ -1267,13 +1261,13 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 /**
    Make a context reusable after a completion at its root: drop the
    finished frame chain with the frozen block and namespace derived
-   from it, and clear the completion residue -- dead and running
-   flags, suspension tag, in-flight await iterator, resume inject,
-   pending throw injection, and the handler-visible exception state.
-   The token, domain, and parameter cells stay: they are the context's
-   identity. A context holding state this reset cannot account for (an
-   active transfer goal) is left untouched and the caller releases it
-   instead.
+   from it, and clear the completion residue -- the evaluator token
+   (the next capture mints a fresh one), dead and running flags,
+   suspension tag, in-flight await iterator, resume inject, an
+   unconsumed entry call, a staged delivery, and the handler-visible
+   exception state. The parameter cells stay. A context holding state
+   this reset cannot account for (an active transfer goal) is left
+   untouched and the caller releases it instead.
 
    :return: 0 recycled; -1 the context cannot be recycled
 */
@@ -1363,7 +1357,7 @@ extern PyObject *KosIterEnd;
   Execute the VM until a boundary event occurs.
 
   This is the main entry point for driving execution. The function
-  runs opcodes from ctx->frame_top until:
+  runs opcodes from the live frame until:
   - RETURN: normal completion (KOS_RES_RETURN, val is new ref)
   - RAISE: exception propagation (KOS_RES_RAISE, PyErr set)
   - YIELD: generator yield (KOS_RES_YIELD, val is new ref)
@@ -1397,8 +1391,9 @@ KosOpResult koskari_eval(
    exception object is staged as its delivery, so a delegation in
    flight throws it into the delegate and a delegate that catches it
    answers with its next value, as CPython's yield from does.
-   GeneratorExit is not routed; a close closes the delegate through the
-   raise walk instead.
+   GeneratorExit is not routed: it raises at the frame, the raise
+   offers it to the same resume as a NULL with the exception pending,
+   and the yf_drive_* kind closes the delegate.
 
    Callers: revive_yield, the flattened generator throw ingress.
 

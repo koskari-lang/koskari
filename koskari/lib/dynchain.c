@@ -2083,7 +2083,7 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
 
 /**
    Offer a control transit to dyn_top without unlinking: PASS, CONSUMED,
-   DEFERRED, or ERROR. Central dispatch for exception/return/yield/shift
+   or ERROR. Central dispatch for exception/return/yield/shift
    semantics (TRY/FINALLY except/finally PCs, GEN node, PROMPT shift).
    Callers: the kos_dyn_unwind_* walks (raise, return, yield, to_frame),
    shift walk.

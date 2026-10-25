@@ -437,8 +437,8 @@ static KosEvalMode revive_yield(
      took no placeholder at install and takes its delivery through the
      pending slot. A throw goes to the resume the same way, which
      throws it into the delegate; GeneratorExit raises at the frame
-     instead, and the raise walk closes the delegate and clears the
-     resume when it unwinds the delegation's node. */
+     instead, the raise offers it to the same resume as a NULL with
+     the exception pending, and the yf_drive_* kind closes the delegate. */
   if (KosContext_FRAME(ctx)
       && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
     if (throw_exc != NULL) {
@@ -1734,7 +1734,7 @@ static KosOpResult kos_op_call_star(
    resume hands the value to that resume by a tail call; a parent
    waiting on a resume takes the value by a tail call into that
    resume.  Anything else -- an extent above the returning frame, a
-   generator or a receiving iteration-node parent, a missing retarget
+   generator parent, a missing retarget
    cache, an unsettled value -- signals RETURN and the trampoline's
    return machinery walks it.  Reached by tail call from every RETURN
    row and from a resume completing its code-less frame
@@ -1803,7 +1803,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   }
 
   /* The general path: the walk over the extents above the frame, the
-     generator and iteration-node parents, the delimited return, the
+     generator parents, the delimited return, the
      root. Its own plain case is the transition above. The arms above
      are the RETURN row's own work; from here on is the signal's. */
   KOS_TRACE_TRAMPOLINE_STEP();
@@ -2707,8 +2707,7 @@ KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
    NG fast path: plain Koskari frame-to-frame return.
 
    Inline retarget from child (being freed) to parent.  Skips the chain
-   walk, the flush (frame is freed), and the agen iteration-node check (not
-   reachable from a frame whose parent is itself a frame).  val consumed.
+   walk and the flush (frame is freed).  val consumed.
 */
 KOS_OP_INLINE KosOpResult eval_plain_return(
     KosContext *ctx,
