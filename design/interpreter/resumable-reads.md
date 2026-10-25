@@ -214,7 +214,7 @@ materialise it but collects it:
   elements pushed so far.
 - **each step is a next request**: the handler, and then the kind's
   `fn` after every delivery, steps the provider once with the row
-  resume set on the frame, exactly as `kos_next_step` does for
+  resume set on the frame, exactly as `KosContext_NextResume` does for
   `(next it)`. A delivered element lands through the pending slot into
   `fn`, which finishes the provider's step, pushes the element and
   requests the next. A request that continues threads into the

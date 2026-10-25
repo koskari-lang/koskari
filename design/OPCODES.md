@@ -4401,7 +4401,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
-- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal leaves through it and re-enters it when it lands the extent.
+- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. The node's shot is `KOS_DYN_WITH_SHOT_MULTI`: a transfer goal leaves through it and re-enters it when it lands the extent (a landing re-enters a **`KOS_DYN_CAP_CONTROL_HOOK`** node unless it is a single-shot WITH).
 - **Pushes:** KOS_DYN_DYN_WITH.
 
 ### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
@@ -5068,7 +5068,7 @@ the paired DELIM bookmark to the invoke site.
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pop_pc + 1), then pushes the prompt node onto the dynamic chain.
 - **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
-- **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the segment and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
+- **Invariants**: PUSH_SHIFT captures up to this prompt. An exception unwinding past a PROMPT drops the segment and unlinks the node in one step: the raise walk unlinks a **`KOS_DYN_CAP_BARRIER`** node with the barrier allowed (`kos_dyn_unlink_top`), with no kind-specific check in the walk.
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
 
 **Example:** reset (push prompt). Pool: 0 = prompt_id.
@@ -5123,7 +5123,7 @@ the paired DELIM bookmark to the invoke site.
 - **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the walk down from the current node finds a **`KOS_DYN_DELIM`** bookmark (mode **`POP_PROMPT`** for a graft, **`INPLACE`** for an in-place invoke), passing invocation prompts and stopping at a live (non-invocation) PROMPT; it pops TOS as result, unwinds to the delim (freeing the invocation prompt and any remnants), delivers the result at the invoke site per the delim's return metadata (an INPLACE delim restitches the displaced state and re-links the stashed span first), and resumes there.
 - **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's segment and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
-- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the segment and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
+- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the raise walk drops the segment and unlinks the PROMPT in the same unlink that crosses the barrier (`kos_dyn_unlink_top` with the barrier allowed), then continues unwinding. No POP_PROMPT opcode executes in this path.
 
 **Example:** End of reset body.
 

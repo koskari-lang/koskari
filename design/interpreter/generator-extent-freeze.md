@@ -76,8 +76,10 @@ rebuilding them:
   for a multi-shot `with`. Correct for the guard case, and a cost on
   every step of every generator whose span holds such a node.
 - **Opt-in.** A node declares that it wants the walk (a capability,
-  much as `KOS_DYN_CAP_NEEDS_INSTALL_WIND` already marks the nodes a
-  transfer goal re-enters), and only spans holding one pay for it.
+  much as `KOS_DYN_CAP_NEEDS_INSTALL_WIND` once marked the nodes a
+  transfer goal re-enters; a landing now re-enters every
+  `KOS_DYN_CAP_CONTROL_HOOK` node but a single-shot WITH, and PARAM by
+  kind), and only spans holding one pay for it.
   PARAM is then the first such node and the freeze/install hooks
   become the general leave/re-enter.
 

@@ -45,7 +45,8 @@ opcode, `trampoline` the time spent in signal returns and re-entry.
   not body time.
 - `bytes` is the standalone size, a proxy: LTO still inlines callees
   into the handler and specialises away code. Shared static cores
-  (`object_next_step`, the operator cores `op_add` and kin) are
+  (`object_next_step` at the time of measurement, since replaced by
+  `KosContext_NextResume`; the operator cores `op_add` and kin) are
   outside the table.
 - Shares are of the churn workload only. The library-shaped workloads
   (scheduler, mcp, repl, dis) have a different opcode mix; `tox -qe
