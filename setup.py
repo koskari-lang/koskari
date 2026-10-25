@@ -63,10 +63,6 @@ baseline_args = (
     # visibility turns every intra-library call into a direct call and
     # lets LTO inline single-caller helpers.
     "-fvisibility=hidden",
-    # gcc treats every default-visibility function as interposable and
-    # will neither inline nor direct-call it; clang already assumes no
-    # interposition.
-    "-fno-semantic-interposition",
 )
 
 
@@ -115,7 +111,7 @@ def compiler_identity(cc):
     return True, int(match.group(1)) if match else 0
 
 
-def linker_takes_lto(cc, clang):
+def linker_takes_lto(cc, clang, lld):
     """
     Whether the link step can consume LTO objects. gcc links through
     its own plugin; ld64 runs LTO itself; clang on Linux needs lld or
@@ -125,7 +121,7 @@ def linker_takes_lto(cc, clang):
     if not clang or not LINUX:
         return True
 
-    if which("ld.lld"):
+    if lld:
         return True
 
     try:
@@ -165,6 +161,7 @@ class BuildFlags:
     major: int
     debug: bool
     asan: bool
+    lld: bool
     lto_link: bool
     fat_objects: bool
 
@@ -181,7 +178,8 @@ def resolve_build_flags():
     clang, major = compiler_identity(cc)
     debug = environ.get("DEBUG") == "1"
     asan = environ.get("KOS_ASAN") == "1"
-    lto_link = linker_takes_lto(cc, clang)
+    lld = bool(which("ld.lld"))
+    lto_link = linker_takes_lto(cc, clang, lld)
 
     # Fat LTO objects carry native code beside the bitcode, so a linker
     # that cannot run LTO still links the extension, without it. They
@@ -208,7 +206,8 @@ def resolve_build_flags():
             f"koskari: {reason}, and no LTO-aware linker was found;"
             f" {remedy}")
 
-    return BuildFlags(cc, clang, major, debug, asan, lto_link, fat_objects)
+    return BuildFlags(cc, clang, major, debug, asan, lld, lto_link,
+                      fat_objects)
 
 
 def extra_compile_args(flags):
@@ -252,16 +251,17 @@ def extra_link_args(flags):
     if flags.asan:
         args.append("-fsanitize=address")
 
-    if LINUX and flags.clang and which("ld.lld"):
+    if LINUX and flags.clang and flags.lld:
         # clang's LTO objects need an LTO-aware linker; lld is that
         # everywhere the containers and wheel images build, and the gold
         # plugin is not
         args.append("-fuse-ld=lld")
 
     if LINUX:
-        # bind every GOT entry at load: with -fno-plt the calls into
-        # libpython go through the GOT, and binding now spares the
-        # first-call resolver and lets the loader seal the table
+        # full RELRO: every relocation is bound at load, so the loader
+        # seals the GOT read-only along with the rest of the relro
+        # segment. A hardening measure; the -fno-plt calls into
+        # libpython bind at load either way.
         args.append("-Wl,-z,now")
 
     if flags.lto_link:
@@ -269,6 +269,12 @@ def extra_link_args(flags):
         # takes the objects' native code (fat) or refuses them (slim).
         args.append("-flto=auto")
         args.extend(optimisation_args(flags.debug))
+        if flags.asan:
+            # the code generation happens here under LTO, so the frame
+            # pointer the sanitizer's traces need is restored on the
+            # link line as on the compile line, after the optimisation
+            # level
+            args.append("-fno-omit-frame-pointer")
 
     return args
 
