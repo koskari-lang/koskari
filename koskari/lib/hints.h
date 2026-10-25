@@ -78,9 +78,11 @@
 /* KOS_TLS_INITIAL_EXEC, written after a thread-local's declarator,
    gives it the initial-exec TLS model. A -fPIC build otherwise takes
    the dynamic model, which calls __tls_get_addr on each access. Valid
-   here because the interpreter loads the extension once, and a few
-   pointers fit in the C library's static TLS surplus. */
-#if defined(__GNUC__) || defined(__clang__)
+   only under glibc, which reserves a static TLS surplus that a few
+   pointers in a dlopen'd extension fit in. musl reserves none and
+   refuses an initial-exec relocation in a dlopen'd object at load time,
+   so every other C library takes the dynamic model. */
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__GLIBC__)
 # define KOS_TLS_INITIAL_EXEC __attribute__((tls_model("initial-exec")))
 #else
 # define KOS_TLS_INITIAL_EXEC
