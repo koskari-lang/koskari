@@ -1,8 +1,8 @@
 # Documentation tracker
 
 Living status for the user documentation site under `docs/`, correlated with
-[documentation-goals.md](documentation-goals.md) and
-[corpus-schema-philosophy.md](corpus-schema-philosophy.md).
+[documentation-goals.md](../documentation-goals.md) and
+[corpus-schema-philosophy.md](../corpus-schema-philosophy.md).
 
 Build: `make docs` or `tox -e sphinx` (output: `build/docs/`).
 
@@ -13,7 +13,7 @@ reference pages and bootstrap scripts output).
 
 ## Documentation reorganization (2026-07)
 
-The reorg in [docs-reorg.md](docs-reorg.md) has landed (branch `docs-reorg`):
+The reorg in [docs-reorg.md](../docs-reorg.md) has landed (branch `docs-reorg`):
 
 | Change | Status |
 |--------|--------|
@@ -262,5 +262,5 @@ needs matching `docs/reference/vm/opcodes/kos-op-*.md`.
 
 ## See also
 
-- [documentation-goals.md](documentation-goals.md)
-- [corpus-schema-philosophy.md](corpus-schema-philosophy.md)
+- [documentation-goals.md](../documentation-goals.md)
+- [corpus-schema-philosophy.md](../corpus-schema-philosophy.md)

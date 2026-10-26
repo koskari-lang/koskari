@@ -3,7 +3,7 @@
 A findings-and-plan document for restructuring the user-facing `docs/` tree.
 It builds on [documentation-goals.md](documentation-goals.md) (the original
 information-architecture spec) and the live status in
-[docs-tracker.md](docs-tracker.md), and records decisions taken during the
+[archive/docs-tracker.md](archive/docs-tracker.md), and records decisions taken during the
 2026-07 documentation audit.
 
 **Scope:** organization, page roles, reading path, and tone — *not* per-page
@@ -233,6 +233,6 @@ corpus-injection.
 
 - [documentation-goals.md](documentation-goals.md) — original IA spec; update
   §4 to sanction the concepts tier once this is accepted.
-- [docs-tracker.md](docs-tracker.md) — live status; stale, reconcile per C7.
+- [archive/docs-tracker.md](archive/docs-tracker.md) — live status; stale, reconcile per C7.
 - [corpus-schema-philosophy.md](corpus-schema-philosophy.md) — prefer
   corpus-backed examples in any authored page.

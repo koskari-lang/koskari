@@ -2619,23 +2619,30 @@ implemented in `koskari/compile/specials/object.py` and tested in
 Reducible (COUNT) operators apply left-to-right constant folding: consecutive
 leading arguments that compile to a single `CONST` are folded together using
 the corresponding Python operator before any code is emitted. Folding stops at
-the first non-constant argument to preserve dunder dispatch semantics.
+the first non-constant argument to preserve dunder dispatch semantics. A
+result past CPython's AST-optimizer caps (an int over 128 bits, a str over
+4096 characters, a sequence over 256 elements) is left to the runtime
+operator rather than pooled.
 
 ```scheme
-(+ 1 2 a)   ; → CONST 3, VAR a, OBJECT_ADD 2
-(+ 1 2)     ; → CONST 3, OBJECT_ADD 1
-(+ a 1 2)   ; → VAR a, CONST 1, CONST 2, OBJECT_ADD 3  (no fold)
+(+ 1 2 a)   ; → CONST 3, VAR a, OBJECT_OPERAND ADD x2
+(+ 1 2)     ; → CONST 3  (fully folded; no operator)
+(+ a 1 2)   ; → VAR a, CONST 1, CONST 2, OBJECT_OPERAND ADD x3  (no fold)
 ```
 
-`compile/**`, `compile/instance?`, and `compile/subclass?` never fold
-(non-trivial multi-argument semantics).
+Compress then fuses the operand loads into the operator (`OBJECT_OPERAND_FAST`, `CONST2`).
+
+`compile/**` takes a base, an exponent and an optional modulus, as
+Python's three-argument `pow`; any other count raises `TypeError` at run
+time. It never folds, and neither do `compile/instance?` and
+`compile/subclass?`.
 
 ---
 
 ### Comparison interface
 
-All comparison specials require at least 2 arguments and emit a COUNT opcode
-with arg = number of supplied operands.
+All comparison specials require at least 2 arguments and emit
+`OBJECT_COMPARE` carrying the selector and the operand count.
 
 Primary symbols and aliases (see `koskari/compile/specials/object.py`):
 
@@ -2645,14 +2652,14 @@ Primary symbols and aliases (see `koskari/compile/specials/object.py`):
   with aliases **`compile/lt?`**, **`compile/le?`**, **`compile/gt?`**, **`compile/ge?`**
 
 
-| Special                  | Opcode      | Chained Python semantics                 |
-| ------------------------ | ----------- | ---------------------------------------- |
-| `(== A B ...)`   | `OBJECT_EQ` | `A == B == ...`                          |
-| `(!= A B ...)`   | `OBJECT_NE` | `A != B != ...`                          |
-| `(< A B ...)`    | `OBJECT_LT` | `A < B < ...`                            |
-| `(<= A B ...)`   | `OBJECT_LE` | `A <= B <= ...`                          |
-| `(> A B ...)`    | `OBJECT_GT` | `A > B > ...`                            |
-| `(>= A B ...)`   | `OBJECT_GE` | `A >= B >= ...`                          |
+| Special          | Opcode              | Chained Python semantics |
+| ---------------- | ------------------- | ------------------------ |
+| `(== A B ...)`   | `OBJECT_COMPARE EQ` | `A == B == ...`          |
+| `(!= A B ...)`   | `OBJECT_COMPARE NE` | `A != B != ...`          |
+| `(< A B ...)`    | `OBJECT_COMPARE LT` | `A < B < ...`            |
+| `(<= A B ...)`   | `OBJECT_COMPARE LE` | `A <= B <= ...`          |
+| `(> A B ...)`    | `OBJECT_COMPARE GT` | `A > B > ...`            |
+| `(>= A B ...)`   | `OBJECT_COMPARE GE` | `A >= B >= ...`          |
 
 
 Examples:
@@ -2668,15 +2675,15 @@ Examples:
 
 ### Predicate interface
 
-**Binary (NOARG, exactly 2 args):**
+**Binary (exactly 2 args):**
 
 
-| Special                            | Opcode          | Python                   |
-| ---------------------------------- | --------------- | ------------------------ |
-| `(in ITEM COLLECTION)`     | `OBJECT_IN`     | `ITEM in COLLECTION`     |
-| `(not-in ITEM COLLECTION)` | `OBJECT_NOT_IN` | `ITEM not in COLLECTION` |
-| `(is A B)`                 | `OBJECT_IS`     | `A is B`                 |
-| `(is-not A B)`             | `OBJECT_IS_NOT` | `A is not B`             |
+| Special                    | Opcode                  | Python                   |
+| -------------------------- | ----------------------- | ------------------------ |
+| `(in ITEM COLLECTION)`     | `OBJECT_COMPARE IN`     | `ITEM in COLLECTION`     |
+| `(not-in ITEM COLLECTION)` | `OBJECT_COMPARE NOT_IN` | `ITEM not in COLLECTION` |
+| `(is A B)`                 | `OBJECT_COMPARE IS`     | `A is B`                 |
+| `(is-not A B)`             | `OBJECT_COMPARE IS_NOT` | `A is not B`             |
 
 
 **Type checks (a subject and one or more types):**
@@ -2924,7 +2931,7 @@ emits `POP_PROMPT 0`.
 **Use-case:** Capture the current delimited continuation up to the nearest
 `compile/reset` prompt and bind it to `K`, then run `BODY`. `K` is a
 `DelimitedContinuation` that cannot be called from Python (only from within a
-Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
+Koskari eval loop, through CALL).
 
 **Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
 `VAR_STORE K` (binds the captured delimited continuation), compiles body with
