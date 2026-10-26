@@ -103,6 +103,15 @@ define cmd_opsizing [options]:
     run options
 
 
+define cmd_lockup [options]:
+    """
+    Write the Koskari wordmark lockup SVG.
+    """
+
+    import-from tools.lockup run
+    run options
+
+
 define build_parser [name]:
     """
     Construct the dispatcher argument parser.
@@ -137,7 +146,7 @@ define build_parser [name]:
     ; every unrelated invocation for about a quarter second, and it is
     ; the one tool driven interactively in a tight loop. It is run
     ; directly instead; see docs/corpus/CLAUDE.md.
-    import-from tools matchbench opgrams opsizing
+    import-from tools lockup matchbench opgrams opsizing
     import-from tools.corpus export
 
     define po (sub.add_parser "opgrams"
@@ -159,6 +168,11 @@ define build_parser [name]:
         help: "per-handler code size joined with per-opcode timing")
     (opsizing.build_arguments pz)
     (pz.set_defaults func: cmd_opsizing)
+
+    define pl (sub.add_parser "lockup"
+        help: "write the wordmark lockup SVG from the icon SVG")
+    (lockup.build_arguments pl)
+    (pl.set_defaults func: cmd_lockup)
 
     return parser
 

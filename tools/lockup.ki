@@ -1,0 +1,133 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+lockup -- the Koskari wordmark lockup SVG.
+
+Builds the lockup (apple + "Koskari") from the apple-only icon at
+koskari/assets/koskari-icon.svg. The icon SVG stays mark-only; the
+lockup widens its viewBox and appends the Bricolage Grotesque label.
+The docs logo PNG is rendered from this SVG by make icons.
+
+Run from the repository root:
+
+    make icons
+    uv run python -B -m koskari -m tools.tools -- lockup docs/_static/koskari-lockup.svg
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+
+import re
+import sys
+
+import-from argparse ArgumentParser
+import-from os.path abspath basename dirname join
+
+
+;; Keep the label placement here in sync with the viewBox.
+define WORDMARK_VIEWBOX "-7 -10 500 114"
+define WORDMARK_MARKUP """
+  <text x="110" y="92"
+        font-family="Bricolage Grotesque, sans-serif"
+        font-size="116" font-weight="700" fill="#211C16"
+        letter-spacing="-0.02em">Koskari</text>
+"""
+
+
+define icon_path []:
+    """
+    Path to the apple-only icon SVG in the repository
+
+    :return: path string
+    """
+
+    define root (dirname (dirname (abspath __file__)))
+    join root "koskari" "assets" "koskari-icon.svg"
+
+
+define lockup_svg [icon]:
+    """
+    Build the lockup SVG text from the icon SVG at the given path
+
+    :param icon: path to the apple-only icon SVG
+    :return: lockup SVG text
+    :raises ValueError: when the icon SVG has no closing tag
+    """
+
+    define svg:
+        with [fh (open icon encoding: "utf-8")]:
+            (fh.read)
+
+    set! svg (re.sub "\\bviewBox=\"[^\"]*\""
+        (+ "viewBox=\"" WORDMARK_VIEWBOX "\"")
+        svg count: 1)
+    set! svg (re.sub "\\s*\\bwidth=\"[^\"]*\"" "" svg count: 1)
+    set! svg (re.sub "\\s*\\bheight=\"[^\"]*\"" "" svg count: 1)
+
+    unless (has? svg "</svg>"):
+        raise (ValueError f"icon SVG missing closing tag: {icon}")
+
+    svg.replace "</svg>" (+ (WORDMARK_MARKUP.rstrip) "\n</svg>") 1
+
+
+define build_arguments [parser]:
+    """
+    Register the lockup options on a parser or subparser
+    """
+
+    (parser.add_argument "output"
+        help: "path to write the lockup SVG")
+    (parser.add_argument "--icon"
+        default: (icon_path)
+        help: "apple-only icon SVG (default: koskari/assets/koskari-icon.svg)")
+
+
+define run [options]:
+    """
+    Write the lockup SVG described by parsed options
+
+    :param options: parsed argument namespace
+    :return: integer exit code
+    """
+
+    define svg (lockup_svg options.icon)
+    with [fh (open options.output "w" encoding: "utf-8")]:
+        (fh.write svg)
+    return 0
+
+
+@entry-point
+define main [argv: None]:
+    """
+    Parse arguments and write the lockup SVG
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (ArgumentParser
+        prog: (basename name)
+        description: "Build the Koskari wordmark lockup SVG")
+
+    build_arguments parser
+    run (parser.parse_args args)
+
+
+; The end.

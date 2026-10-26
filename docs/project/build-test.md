@@ -63,5 +63,4 @@ make test-valgrind
 make docs
 ```
 
-Output: `build/site/docs/` (dirhtml). `make site` also renders the
-koskari.org landing page into `build/site/`.
+Output: `build/docs/` (dirhtml).

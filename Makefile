@@ -438,26 +438,16 @@ docs:  ## Build user documentation via tox
 	@echo "Building documentation..."
 	@tox -qe sphinx
 
-docs-preview: docs  ## Build docs and serve build/site/docs for local preview
+docs-preview: docs  ## Build docs and serve build/docs for local preview
 	@$(call checkfor,$(PYTHON))
 	@echo "Serving documentation at http://127.0.0.1:8000/ (Ctrl+C to stop)"
-	@cd $(BUILD_DIR)/site/docs && $(PYTHON) -m http.server 8000
-
-site:  ## Build the full published site (landing page + docs) via tox
-	@$(call checkfor,tox)
-	@echo "Building full site..."
-	@tox -qe site
-
-site-preview: site  ## Build the full site and serve build/site for local preview
-	@$(call checkfor,$(PYTHON))
-	@echo "Serving site at http://127.0.0.1:8000/ (Ctrl+C to stop)"
-	@cd $(BUILD_DIR)/site && $(PYTHON) -m http.server 8000
+	@cd $(BUILD_DIR)/docs && $(PYTHON) -m http.server 8000
 
 # Raster favicons / social assets regenerated from the canonical SVG.
 # koskari/assets/koskari-icon.svg is the source of truth -- it is also
 # the packaged runtime asset, so all three PNGs render straight into
 # that package. docs/_static carries only the generated wordmark
-# lockup SVG, used by the landing-page build. All outputs are
+# lockup SVG, the source of the docs logo PNG. All outputs are
 # committed; re-run when the icon artwork changes.
 ICON_SVG := koskari/assets/koskari-icon.svg
 ICON_PNG_DIR := koskari/assets
@@ -490,10 +480,10 @@ $(ICON_FONTCONFIG): $(ICON_FONT_DIR)/BricolageGrotesque[opsz,wdth,wght].ttf
 		'</fontconfig>' > $@
 	@FONTCONFIG_FILE=$(abspath $@) fc-cache -f "$(abspath $(ICON_FONT_DIR))" >/dev/null 2>&1 || true
 
-$(ICON_LOCKUP_SVG): $(ICON_SVG) tools/build_site.py
+$(ICON_LOCKUP_SVG): $(ICON_SVG) tools/lockup.ki
 	@$(call checkfor,uv)
 	@echo "Writing $@..."
-	@uv run python3 -c 'from tools.build_site import write_lockup_svg; write_lockup_svg("$(ICON_LOCKUP_SVG)")'
+	@uv run python -B -m koskari -m tools.tools -- lockup $@
 
 $(ICON_LOCKUP_PNG): $(ICON_LOCKUP_SVG) $(ICON_FONTCONFIG)
 	@$(call checkfor,rsvg-convert)
@@ -580,8 +570,6 @@ python:  ## Show Python executable
 	python \
 	regen-editors \
 	report-python \
-	site \
-	site-preview \
 	test \
 	test-asan \
 	test-asan-suite \

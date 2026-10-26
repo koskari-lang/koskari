@@ -23,13 +23,13 @@ jobs:
       - name: Install Dependencies
         run: python -m pip install --disable-pip-version-check tox tox-uv
 
-      - name: Generate Site
-        run: tox -qe site
+      - name: Generate Documentation
+        run: tox -qe sphinx
 
-      - name: Store Site
+      - name: Store Documentation
         uses: actions/upload-pages-artifact@v5
         with:
-          path: build/site
+          path: build/docs
 
   deploy-documentation:
     runs-on: self-hosted

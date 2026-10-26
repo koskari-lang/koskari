@@ -73,7 +73,7 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = [
-    'agents', 'build', 'site', 'Thumbs.db', '.DS_Store',
+    'agents', 'build', 'Thumbs.db', '.DS_Store',
     # agent instruction files are not pages
     '**/CLAUDE.md',
 ]
@@ -93,9 +93,9 @@ html_css_files = ['docs.css']
 html_favicon = '../koskari/assets/koskari-icon.svg'
 html_logo = '../koskari/assets/koskari-lockup-64.png'
 
-# The docs are published under the /docs/ subpath of koskari.org; the
-# landing page occupies the site root. This drives canonical URLs.
-html_baseurl = 'https://koskari.org/docs/'
+# The docs are published at the root of docs.koskari.org. This drives
+# canonical URLs.
+html_baseurl = 'https://docs.koskari.org/'
 
 source_suffix = {
     '.rst': 'restructuredtext',
