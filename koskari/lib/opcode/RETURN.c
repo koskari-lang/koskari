@@ -30,7 +30,7 @@ KOS_OP_HANDLER(RETURN) {
        opa, (void *) KosContext_FRAME(ctx),
        (void *) KosContext_StackHead(ctx),
        KosContext_StackLen(ctx),
-       (unsigned) KosContext_PC(ctx));
+       (unsigned) kos_insn_pc(KosContext_PC(ctx)));
 
   if (opa == 0) {
     val = Py_None;

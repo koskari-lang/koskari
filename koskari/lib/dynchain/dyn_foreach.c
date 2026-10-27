@@ -28,7 +28,11 @@
    FOREACH region: break and continue PCs, the loop result, and the
    iteration request (iterator, its slots, its kind).
 */
-KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
+KosDynForeach *kos_dynforeach_new(
+    KosDynNode *parent,
+    KosOp *break_pc,
+    KosOp *continue_pc) {
+
   KosDynForeach *node = kos_dynnode_alloc();
 
   if (! node)
@@ -76,10 +80,12 @@ void kos_dynforeach_free(KosDynForeach *node) {
 static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "break_pc",
-                        KosDynForeach_BREAK_PC((KosDynForeach *) node)) < 0)
+                        kos_insn_pc(KosDynForeach_BREAK_PC(
+                            (KosDynForeach *) node))) < 0)
     return -1;
   if (snapshot_set_uint(data, "continue_pc",
-                        KosDynForeach_CONTINUE_PC((KosDynForeach *) node)) < 0)
+                        kos_insn_pc(KosDynForeach_CONTINUE_PC(
+                            (KosDynForeach *) node))) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynForeach_ENABLED((KosDynForeach *) node)) < 0)
@@ -97,8 +103,13 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
 /**
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */
-KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
-  KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
+KosDynForeach *kos_dyn_push_foreach(
+    KosContext *ctx,
+    KosOp *break_pc,
+    KosOp *continue_pc) {
+
+  KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc,
+                                           continue_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {

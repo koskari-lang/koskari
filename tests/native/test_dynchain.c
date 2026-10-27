@@ -28,6 +28,12 @@
 #include "../../koskari/lib/lib.h"
 
 
+/* Records for the jump targets a node stores: a node holds the
+   pointer and never reads through it, so any addresses serve. */
+static KosOp fake_ops[4];
+#define FAKE_INSN(i) (&fake_ops[(i)])
+
+
 /* === DynFrame tests === */
 
 
@@ -41,7 +47,7 @@ static int test_dynframe_new_free(void) {
 
     TEST_ASSERT_EQ(KosDynNode_KIND(frame), KOS_DYN_FRAME, "frame kind is FRAME");
     TEST_ASSERT_NULL(KosDynNode_PARENT(frame), "frame parent is NULL");
-    TEST_ASSERT_EQ(KosDynFrame_PC(frame), 0, "frame pc is 0");
+    TEST_ASSERT_NULL(KosDynFrame_PC(frame), "code-less frame pc is NULL");
     TEST_ASSERT_SAME(KosDynFrame_NS(frame), ns, "frame ns is set");
 
     kos_dynframe_free(frame);
@@ -58,13 +64,14 @@ static int test_dynframe_clone(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosDynFrame_PC(frame) = 42;
+    KosDynFrame_PC(frame) = FAKE_INSN(2);
 
     KosDynFrame *clone = kos_dynframe_clone(frame);
     TEST_ASSERT_NOT_NULL(clone, "clone frame");
 
     TEST_ASSERT_NOT_SAME(frame, clone, "clone is different object");
-    TEST_ASSERT_EQ(KosDynFrame_PC(clone), 42, "clone has same pc");
+    TEST_ASSERT_SAME(KosDynFrame_PC(clone), FAKE_INSN(2),
+                     "clone has same pc");
     TEST_ASSERT(KosDynNode_FLAGS(clone) & KOS_DYNF_CLONED, "clone has CLONED flag");
 
     kos_dynframe_free(clone);
@@ -136,11 +143,12 @@ static int test_dynwind_clone(void) {
 
 static int test_dyntry_new_free(void) {
     /* Test TRY node allocation and freeing */
-    KosDynTry *node = kos_dyntry_new(NULL, 100);
+    KosDynTry *node = kos_dyntry_new(NULL, FAKE_INSN(1));
     TEST_ASSERT_NOT_NULL(node, "create TRY node");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_TRY, "node kind is TRY");
-    TEST_ASSERT_EQ(KosDynTry_HANDLER_PC(node), 100, "handler_pc is set");
+    TEST_ASSERT_SAME(KosDynTry_HANDLER_PC(node), FAKE_INSN(1),
+                     "handler_pc is set");
     TEST_ASSERT_EQ(KosDynTry_ENABLED(node), 1, "enabled by default");
 
     kos_dyntry_free(node);
@@ -151,7 +159,7 @@ static int test_dyntry_new_free(void) {
 
 static int test_dyntry_clone(void) {
     /* Test TRY node cloning */
-    KosDynTry *node = kos_dyntry_new(NULL, 50);
+    KosDynTry *node = kos_dyntry_new(NULL, FAKE_INSN(3));
     TEST_ASSERT_NOT_NULL(node, "create TRY node");
 
     KosDynTry_ENABLED(node) = 0;
@@ -160,7 +168,8 @@ static int test_dyntry_clone(void) {
     TEST_ASSERT_NOT_NULL(clone, "clone TRY");
 
     TEST_ASSERT_NOT_SAME(node, clone, "clone is different object");
-    TEST_ASSERT_EQ(KosDynTry_HANDLER_PC(clone), 50, "clone has same handler_pc");
+    TEST_ASSERT_SAME(KosDynTry_HANDLER_PC(clone), FAKE_INSN(3),
+                     "clone has same handler_pc");
     TEST_ASSERT_EQ(KosDynTry_ENABLED(clone), 0, "clone has same enabled state");
     TEST_ASSERT(KosDynNode_FLAGS(clone) & KOS_DYNF_CLONED, "clone has CLONED flag");
 
@@ -173,11 +182,12 @@ static int test_dyntry_clone(void) {
 
 static int test_dynfinally_new_free(void) {
     /* Test FINALLY node allocation and freeing */
-    KosDynFinally *node = kos_dynfinally_new(NULL, 100);
+    KosDynFinally *node = kos_dynfinally_new(NULL, FAKE_INSN(1));
     TEST_ASSERT_NOT_NULL(node, "create FINALLY node");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_FINALLY, "node kind is FINALLY");
-    TEST_ASSERT_EQ(KosDynFinally_HANDLER_PC(node), 100, "handler_pc is set");
+    TEST_ASSERT_SAME(KosDynFinally_HANDLER_PC(node), FAKE_INSN(1),
+                     "handler_pc is set");
     TEST_ASSERT_EQ(KosDynFinally_ENABLED(node), 1, "enabled by default");
     TEST_ASSERT_EQ(KosDynFinally_HANDLING_RAISE(node), 0, "handling_raise is 0");
     TEST_ASSERT_EQ(KosDynFinally_HANDLING_CONTROL(node), 0, "handling_control is 0");
@@ -190,12 +200,14 @@ static int test_dynfinally_new_free(void) {
 
 static int test_dynloop_new_free(void) {
     /* Test LOOP node allocation and freeing */
-    KosDynLoop *node = kos_dynloop_new(NULL, 100, 200);
+    KosDynLoop *node = kos_dynloop_new(NULL, FAKE_INSN(1), FAKE_INSN(2));
     TEST_ASSERT_NOT_NULL(node, "create LOOP node");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_LOOP, "node kind is LOOP");
-    TEST_ASSERT_EQ(KosDynLoop_BREAK_PC(node), 100, "break_pc is set");
-    TEST_ASSERT_EQ(KosDynLoop_CONTINUE_PC(node), 200, "continue_pc is set");
+    TEST_ASSERT_SAME(KosDynLoop_BREAK_PC(node), FAKE_INSN(1),
+                     "break_pc is set");
+    TEST_ASSERT_SAME(KosDynLoop_CONTINUE_PC(node), FAKE_INSN(2),
+                     "continue_pc is set");
     TEST_ASSERT_EQ(KosDynLoop_ENABLED(node), 1, "enabled by default");
     TEST_ASSERT_NULL(KosDynLoop_RESULT(node), "result is NULL");
 
@@ -207,12 +219,15 @@ static int test_dynloop_new_free(void) {
 
 static int test_dynforeach_new_free(void) {
     /* Test FOREACH node allocation and freeing */
-    KosDynForeach *node = kos_dynforeach_new(NULL, 100, 200);
+    KosDynForeach *node = kos_dynforeach_new(NULL, FAKE_INSN(1),
+                                             FAKE_INSN(2));
     TEST_ASSERT_NOT_NULL(node, "create FOREACH node");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_FOREACH, "node kind is FOREACH");
-    TEST_ASSERT_EQ(KosDynForeach_BREAK_PC(node), 100, "break_pc is set");
-    TEST_ASSERT_EQ(KosDynForeach_CONTINUE_PC(node), 200, "continue_pc is set");
+    TEST_ASSERT_SAME(KosDynForeach_BREAK_PC(node), FAKE_INSN(1),
+                     "break_pc is set");
+    TEST_ASSERT_SAME(KosDynForeach_CONTINUE_PC(node), FAKE_INSN(2),
+                     "continue_pc is set");
     TEST_ASSERT_EQ(KosDynForeach_ENABLED(node), 1, "enabled by default");
     TEST_ASSERT_NULL(KosDynForeach_RESULT(node), "result is NULL");
     TEST_ASSERT_NULL(KosDynForeach_ITER(node), "iter is NULL");
@@ -413,7 +428,8 @@ static int test_dyndelim_clone_owns_chain_copy(void) {
     TEST_ASSERT_NOT_NULL(inner, "create inner frame chain");
 
     delim = kos_dyndelim_new(
-        NULL, KOS_DYN_DELIM_MODE_INPLACE, (KosDynNode *) inner, 7, NULL, NULL);
+        NULL, KOS_DYN_DELIM_MODE_INPLACE, (KosDynNode *) inner, FAKE_INSN(3),
+        NULL, NULL);
     TEST_ASSERT_NOT_NULL(delim, "create DELIM with owned chain");
 
     clone = kos_dyn_clone((KosDynNode *) delim);
@@ -438,7 +454,7 @@ static int test_dynforeach_free_with_iter(void) {
     PyObject *result;
     PyObject *iter;
 
-    node = kos_dynforeach_new(NULL, 10, 20);
+    node = kos_dynforeach_new(NULL, FAKE_INSN(1), FAKE_INSN(2));
     TEST_ASSERT_NOT_NULL(node, "create FOREACH");
 
     result = PyLong_FromLong(300001);

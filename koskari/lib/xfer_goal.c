@@ -36,7 +36,7 @@ KosXferGoal *kos_xfer_goal_new(
     KosDynNode *target,
     KosDynNode *seam,
     PyObject *payload,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     PyObject *continuation_ref,
     int is_cc_unwind) {
 
@@ -427,7 +427,7 @@ static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
     if (! had_target)
       kos_dyn_resync_chain(ctx);
   }
-  if (goal->resume_pc != (uint32_t) -1 && KosContext_FRAME(ctx))
+  if (goal->resume_pc && KosContext_FRAME(ctx))
     KosContext_SET_PC(ctx, goal->resume_pc);
 
   /* Retire every waiting outer whose frontier LEAVING unlinked. An

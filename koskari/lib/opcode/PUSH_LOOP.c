@@ -14,23 +14,22 @@
 */
 
 /**
-   PUSH_LOOP: no arg. Break target is the pc after the POP_LOOP closing
-   the LOOP extent, resolved once per site into the cache slot. Push
-   LOOP region (with its own segment); continue target = next
-   instruction. Initializes region result to None.
+   PUSH_LOOP: no arg. Break target is the instruction after the
+   POP_LOOP closing the LOOP extent, resolved once per site into the
+   cache slot. Push LOOP region (with its own segment); continue target
+   = next instruction. Initializes region result to None.
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
   KOS_SYNC_PC(ctx, insn);
-  uint32_t continue_pc = KosContext_PC(ctx);  /* next insn; fetch advanced */
-  uint32_t pop_pc;
+  KosOp *pop;
 
   /* break lands after the POP_LOOP that closes the extent */
-  if (kos_site_extent_close(ctx, insn, KOS_EXT_LOOP, "PUSH_LOOP", &pop_pc) < 0)
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_LOOP, "PUSH_LOOP", &pop) < 0)
     RESULT_RAISE();
 
   KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(
-      ctx, pop_pc + 1u, continue_pc);
+      ctx, pop + 1, ((KosOp *) insn) + 1);
   if (! region) {
     PyErr_NoMemory();
     RESULT_RAISE();

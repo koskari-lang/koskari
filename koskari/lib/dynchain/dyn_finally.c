@@ -27,7 +27,7 @@
 /**
    Allocate FINALLY with handler_pc; handles RAISE and RETURN when enabled.
 */
-KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
+KosDynFinally *kos_dynfinally_new(KosDynNode *parent, KosOp *handler_pc) {
   KosDynFinally *node = kos_dynnode_alloc();
 
   if (! node)
@@ -82,7 +82,8 @@ void kos_dynfinally_free(KosDynFinally *node) {
 static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "handler_pc",
-                        KosDynFinally_HANDLER_PC((KosDynFinally *) node)) < 0)
+                        kos_insn_pc(KosDynFinally_HANDLER_PC(
+                            (KosDynFinally *) node))) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynFinally_ENABLED((KosDynFinally *) node)) < 0)
@@ -100,7 +101,7 @@ static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
 /**
    Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
 */
-KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
+KosDynFinally *kos_dyn_push_finally(KosContext *ctx, KosOp *handler_pc) {
   KosDynFinally *node = kos_dynfinally_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node)
     return NULL;

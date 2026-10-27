@@ -80,8 +80,8 @@ KosDynFrame *kos_dynframe_new(
     Py_INCREF(code);
   }
   KosDynFrame_CODE(frame) = code;  /* owned */
-  KosDynFrame_PC(frame) = 0;
-  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_PC(frame) = kos_code_entry(code);
+  KosDynFrame_ACTING_PC(frame) = KosDynFrame_PC(frame);
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
@@ -243,10 +243,12 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
 static int dynnode_to_dict_frame(KosDynNode *node, PyObject *data) {
 
-  if (snapshot_set_uint(data, "pc", KosDynFrame_PC((KosDynFrame *) node)) < 0)
+  if (snapshot_set_uint(data, "pc",
+                        kos_insn_pc(KosDynFrame_PC((KosDynFrame *) node))) < 0)
     return -1;
   if (snapshot_set_uint(data, "acting_pc",
-                        KosDynFrame_ACTING_PC((KosDynFrame *) node)) < 0)
+                        kos_insn_pc(KosDynFrame_ACTING_PC(
+                            (KosDynFrame *) node))) < 0)
     return -1;
   if (snapshot_set_uint(data, "frame_flags",
                         KosDynFrame_FLAGS((KosDynFrame *) node)) < 0)
@@ -392,8 +394,8 @@ int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
      (none: the fill it will carry is not an introduced scope), so the
      reinstall is indistinguishable from a new allocation. */
   KosDynNode_CAPS(frame) = 0;
-  KosDynFrame_PC(frame) = 0;
-  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_PC(frame) = NULL;
+  KosDynFrame_ACTING_PC(frame) = NULL;
   KosDynFrame_FLAGS(frame) = 0;
 
   *cache = frame;
@@ -463,8 +465,8 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = NULL;
-  KosDynFrame_PC(frame) = 0;
-  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_PC(frame) = NULL;
+  KosDynFrame_ACTING_PC(frame) = NULL;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_CACHE_SLOT(frame) = NULL;
   kos_dynframe_clear_resume(frame);

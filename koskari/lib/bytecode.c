@@ -3221,7 +3221,7 @@ static void cache_slot_release(KosCacheSlot *slot) {
     /* ref-free: a static function and two counters. */
     break;
   case KOS_CACHE_TARGET:
-    /* ref-free: one pc. */
+    /* ref-free: one record pointer. */
     break;
   case KOS_CACHE_MATCH_ARGS:
     /* ref-free: a borrowed class and tuple under a version guard. */
@@ -3717,19 +3717,19 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
 }
 
 
-uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc) {
+KosOp *kos_shift_ic_for(PyObject *code, uint32_t pc) {
 
   uint32_t eid = kos_extent_find(code, pc, KOS_EXT_SHIFT);
   if (eid == KOS_EXTENT_NONE) {
-    return KOS_EXTENT_NONE;
+    return NULL;
   }
 
   const KosExtentDesc *const e = kos_extent_desc(code, eid);
   if (! e) {
-    return KOS_EXTENT_NONE;
+    return NULL;
   }
 
-  return e->pop_pc + 1;
+  return &KosCode_CODE(code)[e->pop_pc + 1];
 }
 
 

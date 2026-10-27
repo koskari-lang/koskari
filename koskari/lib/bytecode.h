@@ -212,7 +212,6 @@ typedef struct KosExtraSchema {
 
 /* Forward names: a row field may point at an instruction, an
    instruction at a cache slot. Both structs are defined below. */
-typedef struct KosOp KosOp;
 typedef struct KosCacheSlot KosCacheSlot;
 
 
@@ -386,6 +385,12 @@ static inline int kos_op_yields(unsigned op) {
 #define KosOp_ROW(insn)    (((KosOp *) (insn))->u.row)
 #define KosOp_SLOT(insn)   (((KosOp *) (insn))->slot)
 
+/* The pc of a record for a report or a table lookup; 0 for the NULL a
+   code-less frame carries in place of a record. */
+static inline uint32_t kos_insn_pc(const KosOp *insn) {
+  return insn ? insn->pc : 0;
+}
+
 #if SIZEOF_VOID_P == 8
 _Static_assert(sizeof(KosOp) == 32, "KosOp is two to a cache line");
 _Static_assert(sizeof(KosExtra) == 32, "KosExtra is two to a cache line");
@@ -469,7 +474,7 @@ typedef enum KosCacheKind {
   KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
   KOS_CACHE_ELECTOR,     /* handler elected for the site */
   KOS_CACHE_ITEM,        /* item body elected for the site */
-  KOS_CACHE_TARGET,      /* the pc closing a region push's extent */
+  KOS_CACHE_TARGET,      /* the record closing a region push's extent */
   KOS_CACHE_MATCH_ARGS,  /* a class pattern's __match_args__ */
 } KosCacheKind;
 
@@ -630,11 +635,11 @@ struct KosCacheSlot {
       KosElection election;    /* the ticks count protocol runs */
     } item;
 
-    /* KOS_CACHE_TARGET: the pop pc of the extent a region push opens,
-       resolved once through the extent table. A pc, never a record
-       pointer. Owns nothing. */
+    /* KOS_CACHE_TARGET: the POP_* record closing the extent a region
+       push opens, resolved once through the extent table. Owns
+       nothing. */
     struct {
-      uint32_t pop_pc;
+      KosOp *pop;
     } target;
 
     /* KOS_CACHE_MATCH_ARGS: the __match_args__ tuple of a class
@@ -815,10 +820,10 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
 
 
 /**
-   The resume pc for the innermost SHIFT extent at pc: the instruction after
-   its POP_SHIFT. Returns KOS_EXTENT_NONE if none.
+   The resume record for the innermost SHIFT extent at pc: the
+   instruction after its POP_SHIFT. NULL when none encloses pc.
 */
-uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
+KosOp *kos_shift_ic_for(PyObject *code, uint32_t pc);
 
 
 /**
@@ -914,6 +919,11 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_CODE(c)                         \
   (((KosCode *) c)->code)
+
+/* The first instruction of code; NULL for a code-less frame. */
+static inline KosOp *kos_code_entry(KosCode *code) {
+  return code ? KosCode_CODE(code) : NULL;
+}
 
 #define KosCode_GET_OP(c, i)                    \
   (KosCode_CODE(c)[i].op)

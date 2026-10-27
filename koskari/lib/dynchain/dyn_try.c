@@ -27,7 +27,7 @@
 /**
    Allocate TRY with handler_pc; INTERCEPTS_RAISE cap for kos_dyn_handle.
 */
-KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
+KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_pc) {
   KosDynTry *node = kos_dynnode_alloc();
 
   if (! node)
@@ -74,7 +74,8 @@ void kos_dyntry_free(KosDynTry *node) {
 static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "handler_pc",
-                        KosDynTry_HANDLER_PC((KosDynTry *) node)) < 0)
+                        kos_insn_pc(KosDynTry_HANDLER_PC(
+                            (KosDynTry *) node))) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynTry_ENABLED((KosDynTry *) node)) < 0)
@@ -86,7 +87,7 @@ static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
 /**
    Push TRY as DYN_TOP. Callers: opcode PUSH_TRY.
 */
-KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
+KosDynTry *kos_dyn_push_try(KosContext *ctx, KosOp *handler_pc) {
   KosDynTry *node = kos_dyntry_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node)
     return NULL;

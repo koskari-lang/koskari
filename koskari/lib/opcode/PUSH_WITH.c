@@ -35,8 +35,8 @@ KOS_OP_HANDLER(PUSH_WITH) {
   }
 
   /* the body resumes after the POP_WITH closing the extent */
-  uint32_t pop_pc;
-  if (kos_site_extent_close(ctx, insn, KOS_EXT_WITH, "PUSH_WITH", &pop_pc) < 0) {
+  KosOp *pop;
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_WITH, "PUSH_WITH", &pop) < 0) {
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
@@ -47,7 +47,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
-      ctx, mgr, enter, exit, self_bind, name_obj, pop_pc + 1u,
+      ctx, mgr, enter, exit, self_bind, name_obj, pop + 1,
       KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
   if (! with_node) {
     Py_DECREF(name_obj);

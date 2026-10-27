@@ -14,9 +14,9 @@
 */
 
 /**
-   PUSH_FOREACH: no arg. Break target is the pc after the POP_FOREACH
-   closing the FOREACH extent, resolved once per site into the cache
-   slot. Stack: [iterable].
+   PUSH_FOREACH: no arg. Break target is the instruction after the
+   POP_FOREACH closing the FOREACH extent, resolved once per site into
+   the cache slot. Stack: [iterable].
    Pops iterable, creates iterator, stores it in region (result defaults
    to NULL), pushes FOREACH region (with its own segment). Continue target =
    next insn.
@@ -24,8 +24,7 @@
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
   KOS_SYNC_PC(ctx, insn);
-  uint32_t continue_pc = KosContext_PC(ctx);  /* next insn; fetch advanced */
-  uint32_t pop_pc;
+  KosOp *pop;
 
   PyObject *iterable = KosContext_StackPopRef(ctx);
   if (! iterable) {
@@ -35,7 +34,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   /* break lands after the POP_FOREACH that closes the extent */
   if (kos_site_extent_close(ctx, insn, KOS_EXT_FOREACH, "PUSH_FOREACH",
-                            &pop_pc) < 0) {
+                            &pop) < 0) {
     Py_DECREF(iterable);
     RESULT_RAISE();
   }
@@ -48,7 +47,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   /* Push region */
   KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(
-    ctx, pop_pc + 1u, continue_pc);
+    ctx, pop + 1, ((KosOp *) insn) + 1);
   if (! region) {
     Py_DECREF(iter);
     PyErr_NoMemory();

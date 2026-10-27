@@ -868,7 +868,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   PyObject *exc = PyObject_CallNoArgs(PyExc_ValueError);
   TEST_ASSERT_NOT_NULL(exc, "create payload");
   KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, exc,
-                                        (uint32_t) -1, NULL, 0);
+                                        NULL, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
   TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
                      goal, (KosDynNode *) live, (KosDynNode *) tmpl),

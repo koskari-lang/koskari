@@ -153,12 +153,11 @@ static int kos_isfuture(PyObject *val) {
    must not fuse.
 */
 static inline int push_fuse_pop1(KosContext *ctx, PyObject *val) {
-  uint32_t pc = KosContext_PC(ctx);
-  KosOp *next = &KosContext_OPS(ctx)[pc];
+  KosOp *next = KosContext_PC(ctx);
 
   if (next->op == KOS_OP_POP && next->arg == 1) {
     Py_DECREF(val);
-    KosContext_SET_PC(ctx, pc + 1u);
+    KosContext_SET_PC(ctx, next + 1);
     return 1;
   }
   return 0;

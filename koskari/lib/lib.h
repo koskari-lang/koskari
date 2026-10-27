@@ -57,6 +57,7 @@
 
 struct KosPyAsyncGen;       typedef struct KosPyAsyncGen       KosPyAsyncGen;
 struct KosCode;             typedef struct KosCode             KosCode;
+struct KosOp;               typedef struct KosOp               KosOp;
 struct KosSegment;          typedef struct KosSegment          KosSegment;
 struct KosContext;          typedef struct KosContext          KosContext;
 struct KosDynNode;          typedef struct KosDynNode          KosDynNode;

@@ -76,8 +76,8 @@ typedef struct KosXferRestore {
   uint32_t node_id;
   KosSegment *stack;           /* owned copy of the captured segment (NULL:
                                   none) */
-  uint32_t pc;                 /* frame only */
-  uint32_t acting_pc;
+  KosOp *pc;                   /* frame only */
+  KosOp *acting_pc;
   const KosResumeKind *resume_kind;
   void *resume_state;          /* the kind's clone of the template's
                                   state, owned until applied */
@@ -98,7 +98,7 @@ struct KosXferGoal {
 
   PyObject *payload;           /* owned: the value, or the exception */
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
-  uint32_t resume_pc;          /* UINT32_MAX when unset */
+  KosOp *resume_pc;            /* NULL when unset */
   KosXferRestore *restore;     /* owned array, or NULL */
   size_t restore_count;
 
@@ -122,7 +122,7 @@ KosXferGoal *kos_xfer_goal_new(
     KosDynNode *target,
     KosDynNode *seam,
     PyObject *payload,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     PyObject *continuation_ref,
     int is_cc_unwind);
 

@@ -487,7 +487,7 @@ static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
 
   KosCode *code = KosDynFrame_CODE(frame);
   uint16_t line = 0, col = 0;
-  uint32_t pc = KosDynFrame_ACTING_PC(frame);
+  uint32_t pc = kos_insn_pc(KosDynFrame_ACTING_PC(frame));
   if (code)
     kos_loc_lookup((PyObject *) code, pc, &line, &col);
 
@@ -937,7 +937,7 @@ own_fail:
     if (seam && ! KosDynNode_IS_GEN(seam))
       seam = NULL;
 
-    goal = kos_xfer_goal_new(NULL, seam, val, (uint32_t) -1, NULL, 1);
+    goal = kos_xfer_goal_new(NULL, seam, val, NULL, NULL, 1);
     Py_DECREF(typ);
     Py_DECREF(val);
     if (! goal)
@@ -3423,16 +3423,20 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx) {
   KosCode *rep_code = KosContext_CODE(ctx);
   if (! rep_code)
     rep_code = KosDynFrame_CODE(rep_pf);
-  uint32_t rep_pc = KosContext_PC(ctx);
 
   if (! rep_code) {
-    PyErr_Format(PyExc_SystemError,
-                 "koskari eval: frame has no bytecode (pc=%u)",
-                 (unsigned) rep_pc);
+    PyErr_SetString(PyExc_SystemError,
+                    "koskari eval: frame has no bytecode");
+    return;
+  }
+  if (! KosContext_PC(ctx)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "koskari eval: frame has no next instruction");
     return;
   }
 
   uint32_t rep_len = KosCode_CODE_LEN(rep_code);
+  uint32_t rep_pc = (uint32_t) (KosContext_PC(ctx) - KosCode_CODE(rep_code));
 
   if (rep_pc >= rep_len) {
     PyErr_Format(PyExc_SystemError,
@@ -3452,11 +3456,11 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx) {
    Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
    internal misfire into a clean diagnostic while tracking down the cause. */
 #if KOS_EVAL_SAFETYNET
-/* ctx->code can be transiently NULL only through an internal bug (e.g. a
+/* ctx->pc can be transiently NULL only through an internal bug (e.g. a
    tail reset that failed to retarget it); guard the fetch against
    dereferencing it. */
-# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
-    do { if (unlikely(! (code))) goto on_bad; } while (0)
+# define KOS_EVAL_SAFETYNET_NULLCODE(insn, on_bad)                         \
+    do { if (unlikely(! (insn))) goto on_bad; } while (0)
 #else
 # define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)  ((void) 0)
 #endif
@@ -3464,21 +3468,19 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx) {
 /* No per-opcode PC bounds check: every code object ends in a THEEND barrier
    (appended in KosCode_New), and jump targets are validated in-bounds, so
    straight-line dispatch always hits a terminal RETURN or THEEND before pc
-   could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
-   an off-the-end fetch would. The ctx->code null check is an
-   internal-invariant guard, gated behind KOS_EVAL_SAFETYNET (off by
-   default). */
+   could step off the end -- the record at ctx->pc is provably valid.
+   THEEND faults exactly as an off-the-end fetch would. The ctx->pc null
+   check is an internal-invariant guard, gated behind KOS_EVAL_SAFETYNET
+   (off by default). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(ctx, insn_lvalue, on_bad)               \
   do {                                                                     \
-    KosCode *_kos_code = KosContext_CODE(ctx);                             \
-    uint32_t _kos_pc = KosContext_PC(ctx);                                 \
-    KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
-    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                  \
+    KosOp *_kos_insn = KosContext_PC(ctx);                                 \
+    KOS_EVAL_SAFETYNET_NULLCODE(_kos_insn, on_bad);                        \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
-         (unsigned) _kos_pc, kos_opcode_name(_kos_insn->op),               \
+         (unsigned) _kos_insn->pc, kos_opcode_name(_kos_insn->op),         \
          (unsigned) _kos_insn->arg);                                       \
-    (ctx)->acting_pc = _kos_pc;                                            \
-    (ctx)->pc = _kos_pc + 1u;                                              \
+    (ctx)->acting_pc = _kos_insn;                                          \
+    (ctx)->pc = _kos_insn + 1;                                             \
     (insn_lvalue) = _kos_insn;                                             \
   } while (0)
 

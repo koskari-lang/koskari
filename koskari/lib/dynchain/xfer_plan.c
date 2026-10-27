@@ -124,7 +124,7 @@ static int kos_delimited_invoke_inplace(
   KosDynFrame *resume_frame;
   KosDynDelim *delim;
   KosDynFrame *return_frame;
-  uint32_t return_pc;
+  KosOp *return_pc;
   int handler_nested = (nested_frame != NULL);
 
   /* Resume frame: the FRAME owning the SHIFT, which is what capture
@@ -153,7 +153,7 @@ static int kos_delimited_invoke_inplace(
 
   KosContext_FlushLiveRegsToFrame(ctx);
   return_frame = KosContext_FRAME(ctx);
-  return_pc = return_frame ? KosContext_PC(ctx) : (uint32_t) -1;
+  return_pc = return_frame ? KosContext_PC(ctx) : NULL;
 
   /* Nested handler: the slice returns out of the handler's own frame and
      frees it, so restitch has nothing live to resume into and its final
@@ -228,7 +228,7 @@ static int kos_delimited_invoke_inplace(
     SAYF("[xfer] invoke inplace: span_top=%p shift=%p prompt=%p "
          "resume_frame=%p return_pc=%u",
          (void *) span_top, (void *) shift, (void *) prompt,
-         (void *) resume_frame, (unsigned) return_pc);
+         (void *) resume_frame, (unsigned) kos_insn_pc(return_pc));
   #endif
 
   /* Detach the invoke span and stash it on the delim. Its segments'
@@ -401,8 +401,7 @@ int kos_invoke_continuation(
         ctx,
         KOS_DYN_DELIM_MODE_POP_PROMPT,
         NULL,
-        KosContext_FRAME(ctx)
-            ? KosContext_PC(ctx) : (uint32_t) -1,
+        KosContext_FRAME(ctx) ? KosContext_PC(ctx) : NULL,
         KosContext_FRAME(ctx),
         NULL);
     if (! ret_delim) {

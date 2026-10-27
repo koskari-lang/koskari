@@ -27,20 +27,19 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   KOS_SYNC_PC(ctx, insn);
   uint32_t prompt_id;
   KosContinuation *k = NULL;
-  uint32_t resume_pc;
-  uint32_t shift_body_pc;
+  KosOp *resume;
 
   if (get_prompt_id_from_insn(ctx, insn, &prompt_id) < 0)
     RESULT_RAISE();
 
-  resume_pc = kos_shift_ic_for((PyObject *) KosContext_CurrentCode(ctx),
-                               KosContext_ACTING_PC(ctx));
-  if (resume_pc == KOS_EXTENT_NONE) {
+  resume = kos_shift_ic_for((PyObject *) KosContext_CurrentCode(ctx),
+                            KosOp_PC(insn));
+  if (! resume) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
     RESULT_RAISE();
   }
 
-  if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0)
+  if (kos_shift_capture(ctx, prompt_id, resume, &k) < 0)
     RESULT_RAISE();
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);
@@ -49,7 +48,6 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     RESULT_RAISE();
   }
 
-  shift_body_pc = KosContext_ACTING_PC(ctx) + 1;
   if (kos_dyn_push_shift(ctx, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
     Py_DECREF(wrapper);
     RESULT_RAISE();
@@ -65,7 +63,8 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
 
   if (unlikely(KosContext_StackPUSH(ctx, wrapper) < 0))
     RESULT_RAISE();
-  KosContext_SET_PC(ctx, shift_body_pc);
+  /* the shift body starts at the next instruction */
+  KosContext_SET_PC(ctx, ((KosOp *) insn) + 1);
   RESULT_CONTINUE(ctx);
 }
 

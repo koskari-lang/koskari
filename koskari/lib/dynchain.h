@@ -401,11 +401,14 @@ void *kos_resume_clone_shared(void *state);
 void *kos_resume_clone_object(void *state);
 
 
-/* The record a LOOP and a FOREACH region share: where break and
-   continue land, and the body's last continue value. */
+/* The record a LOOP and a FOREACH region share: the instructions
+   break and continue land on, and the body's last continue value. Jump
+   targets held by a node are records of the frame's code, which the
+   frame keeps alive; code never relocates, so they stay valid for the
+   life of the node and of any clone. */
 typedef struct KosDynRegionFields {
-  uint32_t break_pc;
-  uint32_t continue_pc;
+  KosOp *break_pc;
+  KosOp *continue_pc;
   PyObject *result;
 } KosDynRegionFields;
 
@@ -430,8 +433,8 @@ struct KosDynNode {
   union {
     struct {
       KosCode *code;      /* strong reference; NULL only for placeholder frames */
-      uint32_t pc;        /* next instruction */
-      uint32_t acting_pc; /* instruction currently being executed */
+      KosOp *pc;          /* next instruction; NULL with no code */
+      KosOp *acting_pc;   /* instruction currently being executed */
       uint32_t frame_flags;
       /* Frame nesting depth on this context's chain: the enclosing
          frame's depth + 1, the root frame at 1. Set at install and
@@ -471,17 +474,20 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      /* pc of the POP_PROMPT closing this prompt's region, resolved from
-         the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
+      /* the POP_PROMPT closing this prompt's region, resolved from the
+         PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
          pop_pc + 1; stored resolved because by the time a shift body
-         runs, no live acting pc still points into the extent. A pc, not
-         a record pointer. */
-      uint32_t pop_pc;
+         runs, no live acting pc still points into the extent. NULL on
+         an invocation prompt, which has no region of its own. */
+      KosOp *pop_pc;
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
       KosDynNode *chain;  /* owned when mode == INPLACE */
-      uint32_t pc;
+      KosOp *pc;          /* where the return lands in frame; NULL with no
+                             frame, and for a code-less frame, whose
+                             resume takes the delivery. frame alone says
+                             whether there is a return site */
       /* The yoyo return address: the frame control lands in when the
          invoke yoyos back from the slice. For an INPLACE invoke of a
          nested handler this is a parentless CLONED snapshot (the slice
@@ -491,8 +497,8 @@ struct KosDynNode {
       KosDynNode *node;
       /* INPLACE only: the invoke-site pc and acting pc, restored at
          restitch (slice execution overwrites both) */
-      uint32_t saved_pc;
-      uint32_t saved_acting_pc;
+      KosOp *saved_pc;
+      KosOp *saved_acting_pc;
       /* the borrowed resume frame's own resume, displaced with its pcs
          while the slice runs in that frame and restored at the
          restitch; NULL kind when the frame carried none */
@@ -500,7 +506,7 @@ struct KosDynNode {
       void *saved_resume_state;
     } delim;
     struct {
-      uint32_t resume_pc;  /* pc after POP_CC */
+      KosOp *resume_pc;  /* the instruction after POP_CC */
     } cc;
     struct {
       PyObject *before_thunk;  /* callable (owned) or NULL */
@@ -511,7 +517,7 @@ struct KosDynNode {
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
     struct {
-      uint32_t handler_pc;
+      KosOp *handler_pc;
       uint8_t enabled;
       uint8_t exc_saved;      /* consumed a raise: saved is what it displaced */
       uint8_t exc_frozen;     /* in a frozen span: saved is the region's own
@@ -519,7 +525,7 @@ struct KosDynNode {
       KosExcState saved;      /* handler-visible state before this region */
     } try_;
     struct {
-      uint32_t handler_pc;
+      KosOp *handler_pc;
       uint8_t enabled;
       uint8_t handling_raise;
       uint8_t handling_control;  /* KosPendingReturnKind stored here */
@@ -553,7 +559,7 @@ struct KosDynNode {
                               once the single-shot __exit__ has run. NULL for
                               multi-shot */
       PyObject *name;      /* binding name or NULL (owned) */
-      uint32_t resume_pc;  /* pc after the with body (pop_pc + 1) */
+      KosOp *resume_pc;    /* the instruction after the with body (pop + 1) */
       KosObligation ob;    /* the exception __exit__ is handling, or what
                               a walk stored while __exit__ runs */
     } with;
@@ -665,7 +671,7 @@ typedef struct KosDynNode KosDynGen;
    capture point down through the prompt and its owning FRAME node
    (delimited), or from above the CC block down to root (undelimited).
 
-   The resume_pc is the program counter to resume at; the frame it
+   The resume_pc is the instruction to resume at; the frame it
    resumes in is resolved from the chain at invoke time (the landed
    segment's innermost FRAME), never stored. The resume_stack points at
    the innermost node-owned operand stack on captured_chain; it is an
@@ -677,7 +683,7 @@ typedef struct KosDynNode KosDynGen;
 
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
-  uint32_t resume_pc;           /* pc to resume at */
+  KosOp *resume_pc;             /* the instruction to resume at */
   KosSegment *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -781,7 +787,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
    :param parent: parent node in dynamic chain
    :param mode: KOS_DYN_DELIM_MODE_*
    :param chain: optional owned chain payload for INPLACE mode
-   :param pc: resume program counter
+   :param pc: the instruction the return lands on, or NULL
    :param frame: resume frame payload
    :param node: resume node payload
 
@@ -791,7 +797,7 @@ KosDynDelim *kos_dyndelim_new(
    KosDynNode *parent,
    uint8_t mode,
    KosDynNode *chain,
-   uint32_t pc,
+   KosOp *pc,
    KosDynFrame *frame,
    KosDynNode *node);
 
@@ -838,20 +844,26 @@ void kos_dynwind_free(KosDynWind *wind);
 
 
 /**
-   Allocate a new region node. TRY and FINALLY take the handler pc;
-   LOOP and FOREACH take the break and continue targets.
+   Allocate a new region node. TRY and FINALLY take the handler
+   instruction; LOOP and FOREACH take the break and continue targets.
 
    :param parent: parent node in dynamic chain
    :param handler_pc: handler jump target (TRY, FINALLY)
    :param break_pc: break/exit jump target (LOOP, FOREACH)
-   :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
+   :param continue_pc: continue jump target (LOOP, FOREACH)
 
    :return: new region node, or NULL on error
 */
-KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc);
-KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc);
-KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc);
-KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc);
+KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_pc);
+KosDynFinally *kos_dynfinally_new(KosDynNode *parent, KosOp *handler_pc);
+KosDynLoop *kos_dynloop_new(
+    KosDynNode *parent,
+    KosOp *break_pc,
+    KosOp *continue_pc);
+KosDynForeach *kos_dynforeach_new(
+    KosDynNode *parent,
+    KosOp *break_pc,
+    KosOp *continue_pc);
 
 
 /**
@@ -1167,15 +1179,15 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
    :param ctx: execution context
    :param prompt_id: tag for matching (0 = default)
-   :param pop_pc: pc of the POP_PROMPT closing the region (from the
-      PROMPT extent at the push site); POP_SHIFT resumes at pop_pc + 1
+   :param pop: the POP_PROMPT closing the region (from the PROMPT
+      extent at the push site); POP_SHIFT resumes at pop + 1
 
    :return: new prompt, or NULL on error
 */
 KosDynPrompt *kos_dyn_push_prompt(
     KosContext *ctx,
     uint32_t prompt_id,
-    uint32_t pop_pc);
+    KosOp *pop);
 
 
 /**
@@ -1200,7 +1212,7 @@ KosDynDelim *kos_dyn_push_delim(
    KosContext *ctx,
    uint8_t mode,
    KosDynNode *chain,
-   uint32_t pc,
+   KosOp *pc,
    KosDynFrame *frame,
    KosDynNode *node);
 
@@ -1222,8 +1234,8 @@ int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
    :param ctx: execution context
    :param value: return value (consumes a reference on success or failure)
 
-   :return: 0 on success, -1 if ctx, value, delimited_return_frame, or
-      delimited_return_pc is invalid (sets PyExc_RuntimeError)
+   :return: 0 on success, -1 if ctx, value or delimited_return_frame is
+      invalid (sets PyExc_RuntimeError)
 */
 int kos_dyn_finish_delimited_pop_return(
    KosContext *ctx,
@@ -1267,11 +1279,12 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim);
    Push a CC (call/cc) block onto the dynamic chain.
 
    :param ctx: execution context
-   :param resume_pc: instruction index to resume at when continuation is invoked
+   :param resume_pc: the instruction to resume at when the continuation
+      is invoked
 
    :return: the new CC node, or NULL on error
 */
-KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc);
+KosDynCC *kos_dyn_push_cc(KosContext *ctx, KosOp *resume_pc);
 
 
 /**
@@ -1314,19 +1327,26 @@ KosDynWind *kos_dyn_push_wind(
 
 /**
    Push a region onto the dynamic chain. TRY and FINALLY take the
-   handler pc; LOOP and FOREACH take the break and continue targets.
+   handler instruction; LOOP and FOREACH take the break and continue
+   targets.
 
    :param ctx: context
    :param handler_pc: handler jump target (TRY, FINALLY)
    :param break_pc: break/exit jump target (LOOP, FOREACH)
-   :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
+   :param continue_pc: continue jump target (LOOP, FOREACH)
 
    :return: new region, or NULL on error
 */
-KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
-KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
-KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
-KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+KosDynTry *kos_dyn_push_try(KosContext *ctx, KosOp *handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosContext *ctx, KosOp *handler_pc);
+KosDynLoop *kos_dyn_push_loop(
+    KosContext *ctx,
+    KosOp *break_pc,
+    KosOp *continue_pc);
+KosDynForeach *kos_dyn_push_foreach(
+    KosContext *ctx,
+    KosOp *break_pc,
+    KosOp *continue_pc);
 
 
 /* Uninstall hook: a step still in flight is finished and the loop
@@ -1460,7 +1480,7 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *exit,
     uint8_t self_bind,
     PyObject *name,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     uint8_t shot);
 
 
@@ -1741,24 +1761,24 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 
 
 /**
-   Resolve bytecode PC after TRY or FINALLY consumed RAISE via
-   kos_dyn_handle.  Merges node handler_pc with kos_try_handler_for
-   extent entries.
+   The handler instruction to branch to after a TRY or FINALLY
+   consumed a RAISE via kos_dyn_handle: the node's handler_pc, fixed
+   from the extent table at push time.
 
    :param region: TRY or FINALLY node (caller must not pass GEN)
 
-   :return: handler PC to branch to
+   :return: the handler instruction
 */
-uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
+KosOp *kos_dynnode_raise_handler_pc_for_try_finally(
     KosContext *ctx,
     KosDynNode *region);
 
 
 /**
-   Resume PC when a CATCH-capable node swallows an exception during pop,
-   or (uint32_t)-1 when not applicable
+   The instruction to resume at when a CATCH-capable node swallows an
+   exception during pop, or NULL when not applicable
 */
-uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
+KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 
 /**
@@ -1830,7 +1850,7 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx);
 int kos_shift_capture(
    KosContext *ctx,
    uint32_t prompt_id,
-   uint32_t resume_pc,
+   KosOp *resume_pc,
    KosContinuation **out_k);
 
 

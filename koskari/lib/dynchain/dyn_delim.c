@@ -32,7 +32,7 @@ KosDynDelim *kos_dyndelim_new(
     KosDynNode *parent,
     uint8_t mode,
     KosDynNode *chain,
-    uint32_t pc,
+    KosOp *pc,
     KosDynFrame *frame,
     KosDynNode *node) {
 
@@ -48,8 +48,8 @@ KosDynDelim *kos_dyndelim_new(
   KosDynDelim_RETURN_PC(delim) = pc;
   KosDynDelim_RETURN_FRAME_NODE(delim) = (KosDynNode *) frame;
   KosDynDelim_RETURN_NODE(delim) = node;
-  KosDynDelim_SAVED_PC(delim) = 0;
-  KosDynDelim_SAVED_ACTING_PC(delim) = 0;
+  KosDynDelim_SAVED_PC(delim) = NULL;
+  KosDynDelim_SAVED_ACTING_PC(delim) = NULL;
   KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
   KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
   return delim;
@@ -178,7 +178,8 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
   KosDynDelim *delim = (KosDynDelim *) node;
   if (snapshot_set_int(data, "mode", (int) KosDynDelim_MODE(delim)) < 0)
     return -1;
-  if (snapshot_set_uint(data, "pc", KosDynDelim_RETURN_PC(delim)) < 0)
+  if (snapshot_set_uint(data, "pc",
+                        kos_insn_pc(KosDynDelim_RETURN_PC(delim))) < 0)
     return -1;
   if (snapshot_set_uint(data, "frame_node_id",
       KosDynDelim_RETURN_FRAME_NODE(delim)
@@ -190,7 +191,8 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
           ? kos_dynnode_id(KosDynDelim_RETURN_NODE(delim))
           : 0) < 0)
     return -1;
-  if (snapshot_set_uint(data, "saved_pc", KosDynDelim_SAVED_PC(delim)) < 0)
+  if (snapshot_set_uint(data, "saved_pc",
+                        kos_insn_pc(KosDynDelim_SAVED_PC(delim))) < 0)
     return -1;
   return 0;
 }
@@ -203,7 +205,7 @@ KosDynDelim *kos_dyn_push_delim(
     KosContext *ctx,
     uint8_t mode,
     KosDynNode *chain,
-    uint32_t pc,
+    KosOp *pc,
     KosDynFrame *frame,
     KosDynNode *node) {
 

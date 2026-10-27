@@ -142,8 +142,8 @@ typedef enum KosContextFlags {
   See dynchain.h for the actual structure definition.
 
   The frame represents a function activation in the dynamic chain.
-  It holds the bytecode, program counter (pc = next instruction,
-  acting_pc = instruction currently being executed), operand stack,
+  It holds the bytecode, the instruction records (pc = the next
+  instruction, acting_pc = the instruction executing), operand stack,
   and namespace.
 */
 
@@ -401,9 +401,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
    RESULT_RAISE_AT, which syncs first. */
 #define KOS_SYNC_PC(ctx, insn)                                          \
   do {                                                                  \
-    uint32_t kos_sp_ = KosOp_PC(insn);                                  \
+    KosOp *kos_sp_ = (KosOp *) (insn);                                  \
     (ctx)->acting_pc = kos_sp_;                                         \
-    (ctx)->pc = kos_sp_ + 1u;                                           \
+    (ctx)->pc = kos_sp_ + 1;                                            \
   } while (0)
 
 /* Thread into next, a record of the live frame's code: a bare tail
@@ -419,13 +419,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
 /* Thread into the handler at ctx->pc: the fetch the trampoline does.
    The form for a tail after a frame change or a stored pc. */
-#define KOS_THREAD_NEXT(ctx)                                            \
-  do {                                                                  \
-    KosContext *kos_thn_ctx_ = (ctx);                                   \
-    KOS_THREAD_AT(                                                      \
-        kos_thn_ctx_,                                                   \
-        &KosContext_OPS(kos_thn_ctx_)[KosContext_PC(kos_thn_ctx_)]);    \
-  } while (0)
+#define KOS_THREAD_NEXT(ctx)  KOS_THREAD_AT((ctx), KosContext_PC(ctx))
 
 #define RESULT_NEXT(ctx)      KOS_THREAD_AT((ctx), ((KosOp *) insn) + 1)
 #define RESULT_CONTINUE(ctx)  KOS_THREAD_NEXT(ctx)
@@ -708,7 +702,10 @@ KosOpResult KosContext_NextResume(
   chain. kos_dyn_* chain edits retarget them, during a drive and
   outside one alike, so they are current whether the context is
   running or suspended. pc and acting_pc are flushed into the frame at
-  frame boundaries (KosContext_FlushLiveRegsToFrame).
+  frame boundaries (KosContext_FlushLiveRegsToFrame). Both are
+  records of the frame's code, which the frame keeps alive, and NULL
+  for a code-less frame; code never relocates, so a record pointer
+  stays valid for the life of its code.
 
   The goal field is the active transfer goal, or NULL; waiting outer
   goals hang off it.
@@ -771,8 +768,8 @@ struct KosContext {
   KosCode *code;             /* frame's code */
   KosSegment **block;        /* innermost operand stack slot; non-owning */
   PyObject *namespace;       /* active namespace; borrowed */
-  uint32_t pc;               /* next-instruction PC */
-  uint32_t acting_pc;        /* PC of the instruction executing */
+  KosOp *pc;                 /* the next instruction */
+  KosOp *acting_pc;          /* the instruction executing */
 
   /* The active transfer goal, or NULL; waiting outer goals hang off it */
   KosXferGoal *goal;
@@ -953,11 +950,22 @@ static inline int kos_eval_check_frame_room(
 /** The live code's instruction array, read through the code object. */
 #define KosContext_OPS(ctx) KosCode_CODE(KosContext_CODE(ctx))
 
-/** Live next-instruction PC; use KosContext_SET_PC to assign. */
+/** The live next instruction; use KosContext_SET_PC to assign. */
 #define KosContext_PC(ctx) ((ctx)->pc)
 /** Instruction currently executing (last fetch). */
 #define KosContext_ACTING_PC(ctx) ((ctx)->acting_pc)
-#define KosContext_SET_PC(ctx, v) ((void)((ctx)->pc = (uint32_t)(v)))
+#define KosContext_SET_PC(ctx, v) ((void)((ctx)->pc = (v)))
+
+
+/** Aim the live registers at the first instruction of code, where a
+    frame entered or re-entered by a tail call starts; both NULL for a
+    code-less frame. */
+static inline void KosContext_SetEntryPC(KosContext *ctx, KosCode *code) {
+  KosOp *entry = kos_code_entry(code);
+
+  ctx->pc = entry;
+  ctx->acting_pc = entry;
+}
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
 #define KosContext_PENDING_VALUE(ctx) ((ctx)->pending_value)
 
@@ -978,8 +986,8 @@ static inline void KosContext_ClearLiveRegs(KosContext *ctx) {
   KosContext_CODE(ctx) = NULL;
   KosContext_BLOCK(ctx) = NULL;
   KosContext_NAMESPACE(ctx) = NULL;
-  ctx->pc = 0;
-  ctx->acting_pc = 0;
+  ctx->pc = NULL;
+  ctx->acting_pc = NULL;
 }
 
 
@@ -1197,8 +1205,7 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
   KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) frame);
   KosContext_NAMESPACE(ctx) = KosDynNode_NS((KosDynNode *) frame);
   KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
-  ctx->pc = 0;
-  ctx->acting_pc = 0;
+  KosContext_SetEntryPC(ctx, KosDynFrame_CODE(frame));
 }
 
 
@@ -1711,19 +1718,19 @@ void kos_eval_inject_recorded_frames(
 
 
 /**
-   The pc that closes a region push's extent (the POP_* row), for the
-   pushes whose target is not an instruction argument. Read from the
-   site's cache slot once it is filled; the first execution resolves it
-   through the extent table and fills the slot, and a site with no slot
-   resolves every time. A pc and not a record pointer. Returns -1 with
-   an error set when no extent of the kind encloses the site.
+   The record that closes a region push's extent (the POP_* row), for
+   the pushes whose target is not an instruction argument. Read from
+   the site's cache slot once it is filled; the first execution
+   resolves it through the extent table and fills the slot, and a site
+   with no slot resolves every time. Returns -1 with an error set when
+   no extent of the kind encloses the site.
 */
 static inline int kos_site_extent_close(
     KosContext *ctx,
     KosOp *insn,
     KosExtentKind kind,
     const char *who,
-    uint32_t *pop_pc) {
+    KosOp **pop) {
 
   KosCacheSlot *slot = KosOp_SLOT(insn);
   PyObject *code;
@@ -1731,7 +1738,7 @@ static inline int kos_site_extent_close(
   const KosExtentDesc *ext;
 
   if (slot && likely(slot->kind == KOS_CACHE_TARGET)) {
-    *pop_pc = slot->u.target.pop_pc;
+    *pop = slot->u.target.pop;
     return 0;
   }
 
@@ -1746,10 +1753,10 @@ static inline int kos_site_extent_close(
     PyErr_Format(PyExc_RuntimeError, "%s: invalid extent", who);
     return -1;
   }
-  *pop_pc = ext->pop_pc;
+  *pop = &KosContext_OPS(ctx)[ext->pop_pc];
   if (slot && slot->kind == KOS_CACHE_EMPTY) {
     slot->kind = KOS_CACHE_TARGET;
-    slot->u.target.pop_pc = ext->pop_pc;
+    slot->u.target.pop = *pop;
   }
   return 0;
 }

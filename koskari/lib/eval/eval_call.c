@@ -52,8 +52,7 @@ KosOpResult KosContext_InstallCallFrame(
     }
     kos_dynframe_reset_for_tail(frame);
     (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, code, ns);
-    ctx->pc = 0;
-    ctx->acting_pc = 0;
+    KosContext_SetEntryPC(ctx, code);
     return kos_call_installed(ctx);
   }
 
@@ -424,8 +423,7 @@ KosDynFrame *KosContext_InstallNativeFrame(
     kos_dynframe_reset_for_tail(frame);
     Py_INCREF(empty);
     (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, NULL, empty);
-    ctx->pc = 0;
-    ctx->acting_pc = 0;
+    KosContext_SetEntryPC(ctx, NULL);
   } else {
     frame = KosResumeFrame_Install(ctx, NULL, NULL, frame_cache);
     if (! frame)
@@ -756,8 +754,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           KosFunction_StoreSelf(callable, ns);
           kos_stack_clear_fast(&KosDynFrame_STACK(frame));
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_TAIL_INPLACE);
-          ctx->pc = 0;
-          ctx->acting_pc = 0;
+          KosContext_SetEntryPC(ctx, code);
           /* the frame's FN reference keeps callable alive */
           if (flags & KOS_CALL_CALLABLE_OWNED)
             Py_DECREF(callable);
@@ -791,8 +788,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, code,
                                                      frame_ns);
         KosDynFrame_FN(frame) = callable;
-        ctx->pc = 0;
-        ctx->acting_pc = 0;
+        KosContext_SetEntryPC(ctx, code);
         return kos_call_installed(ctx);
       }
     }

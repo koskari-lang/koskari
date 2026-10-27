@@ -25,7 +25,7 @@
 KOS_OP_HANDLER(POP_SHIFT) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *result;
-  uint32_t prompt_pop_pc;
+  KosOp *prompt_pop;
   KosDynPrompt *prompt = NULL;
   KosXferGoal *goal;
 
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
        (void *) KosContext_FRAME(ctx),
        (void *) KosContext_StackHead(ctx),
        KosContext_StackLen(ctx),
-       (unsigned) KosContext_PC(ctx));
+       (unsigned) kos_insn_pc(KosContext_PC(ctx)));
   result = KosContext_StackPopRef(ctx);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
@@ -107,8 +107,8 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   /* Live reset: the prompt recorded its region's closing pc when
      PUSH_PROMPT resolved the PROMPT extent; resume past POP_PROMPT. */
-  prompt_pop_pc = KosDynPrompt_POP_PC(prompt);
-  if (prompt_pop_pc == (uint32_t) -1) {
+  prompt_pop = KosDynPrompt_POP_PC(prompt);
+  if (! prompt_pop) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_SHIFT: prompt has no recorded pop pc");
@@ -119,12 +119,12 @@ KOS_OP_HANDLER(POP_SHIFT) {
      region remnants, the prompt itself -- and deliver the handler's
      value there, at the first instruction after POP_PROMPT. */
   goal = kos_xfer_goal_new(NULL, KosDynNode_PARENT((KosDynNode *) prompt),
-                           result, prompt_pop_pc + 1, NULL, 0);
+                           result, prompt_pop + 1, NULL, 0);
   Py_DECREF(result);
   if (! goal)
     RESULT_RAISE();
   SAYF("[POP_SHIFT] goal active: resume_pc=%u (first instr after POP_PROMPT)",
-       (unsigned) (prompt_pop_pc + 1));
+       (unsigned) kos_insn_pc(prompt_pop + 1));
   kos_xfer_goal_push(ctx, goal);
 
   RESULT_REPROLOGUE(ctx);

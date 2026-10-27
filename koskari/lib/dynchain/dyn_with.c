@@ -39,7 +39,7 @@ static KosDynWith *kos_dyn_with_allocate(
     PyObject *exit,
     uint8_t self_bind,
     PyObject *name,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     uint8_t shot) {
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
@@ -199,7 +199,8 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
   if (snapshot_set_int(data, "exit_done",
       kos_dyn_with_single_exit_done(with_node)) < 0)
     return -1;
-  if (snapshot_set_uint(data, "resume_pc", KosDynWith_RESUME_PC(with_node)) < 0)
+  if (snapshot_set_uint(data, "resume_pc",
+                        kos_insn_pc(KosDynWith_RESUME_PC(with_node))) < 0)
     return -1;
   if (snapshot_set_int(data, "swallowed",
       KosDynWith_OB(with_node)->kind == KOS_OB_SWALLOWED) < 0)
@@ -221,7 +222,7 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *exit,
     uint8_t self_bind,
     PyObject *name,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     uint8_t shot) {
 
   KosDynWith *node = kos_dyn_with_allocate(

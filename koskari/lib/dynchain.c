@@ -1332,8 +1332,8 @@ static void kos_dyn_resync_apply(
       ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
     } else {
       KosContext_CODE(ctx) = NULL;
-      ctx->pc = 0;
-      ctx->acting_pc = 0;
+      ctx->pc = NULL;
+      ctx->acting_pc = NULL;
     }
     return;
   }
@@ -2150,7 +2150,7 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
    the current frame. Callers: kos_dyn_unwind_raise when routing RAISE
    into except/finally.
 */
-uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
+KosOp *kos_dynnode_raise_handler_pc_for_try_finally(
     KosContext *ctx,
     KosDynNode *region) {
 
@@ -2164,16 +2164,17 @@ uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
 
 
 /**
-   Resume PC for nodes that may swallow exceptions (WITH). Used when a pop
-   cleared PyErr and execution should continue at a catch label.
+   The resume instruction for nodes that may swallow exceptions (WITH).
+   Used when a pop cleared PyErr and execution should continue at a
+   catch label.
 */
-uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
+KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node) {
 
   if (! node || ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CATCH))
-    return (uint32_t) -1;
+    return NULL;
   if (KosDynNode_IS_WITH(node))
     return KosDynWith_RESUME_PC((KosDynWith *) node);
-  return (uint32_t) -1;
+  return NULL;
 }
 
 
@@ -2328,7 +2329,7 @@ static KosContinuation *cont_freelist = NULL;
 */
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     KosSegment *resume_stack,
     uint32_t prompt_id,
     int one_shot,
@@ -2448,7 +2449,7 @@ static KosContinuation *kos_continuation_capture_segment(
     KosContext *ctx,
     KosDynNode *segment_top,
     KosDynNode *stop,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     uint32_t prompt_id,
     int one_shot,
     KosDynFrame *baseline_src,
@@ -2531,7 +2532,7 @@ static KosContinuation *kos_continuation_capture_segment(
 int kos_shift_capture(
     KosContext *ctx,
     uint32_t prompt_id,
-    uint32_t resume_pc,
+    KosOp *resume_pc,
     KosContinuation **out_k) {
 
   /* One walk from dyn_top locates the nearest matching prompt while
@@ -3099,14 +3100,6 @@ int kos_dyn_finish_delimited_pop_return(
     Py_DECREF(value);
     return -1;
   }
-  if (KosDynDelim_RETURN_PC(delim) == (uint32_t) -1) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_delimited_pop_return: "
-                    "delimited_return_pc is unset");
-    Py_DECREF(value);
-    return -1;
-  }
-
   /* Operand stack for the handler lives below the DELIM marker; do not use
    * ctx->block (walk parent chain). */
   {
@@ -3157,7 +3150,7 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
   KosDynNode *span;
   KosDynFrame *ret_frame;
   KosDynFrame *resume_frame;
-  uint32_t ret_pc;
+  KosOp *ret_pc;
 
   if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)
       || KosDynDelim_MODE(delim) != KOS_DYN_DELIM_MODE_INPLACE) {
@@ -3175,8 +3168,7 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
   span = KosDynDelim_RETURN_CHAIN(delim);
   ret_frame = KosDynDelim_RETURN_FRAME(delim);
   ret_pc = KosDynDelim_RETURN_PC(delim);
-  if (! prompt || ! KosDynNode_IS_PROMPT(prompt) || ! span || ! ret_frame
-      || ret_pc == (uint32_t) -1) {
+  if (! prompt || ! KosDynNode_IS_PROMPT(prompt) || ! span || ! ret_frame) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_inplace_restitch: "
                     "inconsistent INPLACE delim state");

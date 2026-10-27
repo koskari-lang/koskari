@@ -228,7 +228,7 @@ static KosOpResult finally_take_control(
   KosDynFinally_HANDLING_CONTROL(fin) = kind;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] %s: delivered to FINALLY, pc=%u", walk,
-         (unsigned) KosDynFinally_HANDLER_PC(fin));
+         (unsigned) kos_insn_pc(KosDynFinally_HANDLER_PC(fin)));
   return EVAL_REPROLOGUE();
 }
 
@@ -267,8 +267,7 @@ KosOpResult kos_dyn_unwind_return(
        reached the delimiting reset; leave the DELIM at dyn_top and let the
        caller route val to the k-invocation site.  val is NOT consumed. */
     if (KosDynNode_IS_DELIM(top)
-        && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL
-        && KosDynDelim_RETURN_PC((KosDynDelim *) top) != (uint32_t) -1) {
+        && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL) {
       if (KOS_XFER_TRACE)
         SAYF("[xfer] unwind_return: stopped at DELIM bookmark node=%p",
              (void *) top);
@@ -340,8 +339,7 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
     if (KosDynNode_IS_DELIM(node)
-        && KosDynDelim_RETURN_FRAME((KosDynDelim *) node) != NULL
-        && KosDynDelim_RETURN_PC((KosDynDelim *) node) != (uint32_t) -1)
+        && KosDynDelim_RETURN_FRAME((KosDynDelim *) node) != NULL)
       return NULL;
     node = KosDynNode_PARENT(node);
   }
@@ -455,7 +453,7 @@ KosOpResult kos_dyn_unwind_to_loop(
 
   /* KOS_XFER_EVENT_BREAK: read break_pc before popping, then pop, drop block,
      push result */
-  uint32_t break_pc = KosDynRegion_BREAK_PC(region);
+  KosOp *break_pc = KosDynRegion_BREAK_PC(region);
 
   if (KosDynNode_IS_LOOP(region)) {
     if (kos_dyn_pop_loop(ctx, (KosDynLoop *) region) < 0) {
@@ -519,7 +517,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
     SAYF("[try_local] enter dyn_top=%p frame_top=%p acting_pc=%u stack_len=%zu\n",
          (void *) KosContext_DYN_TOP(ctx),
          (void *) KosContext_FRAME(ctx),
-         (unsigned) KosContext_ACTING_PC(ctx),
+         (unsigned) kos_insn_pc(KosContext_ACTING_PC(ctx)),
          (size_t) _try_local_stack_len);
   }
   else {
@@ -662,7 +660,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
         }
 
         KosDynNode *region = top;
-        uint32_t handler_pc =
+        KosOp *handler_pc =
             kos_dynnode_raise_handler_pc_for_try_finally(ctx, region);
 
         if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
@@ -673,7 +671,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
 
         SAYF("[try_local] CONSUMED region=%s handler_pc=%u\n",
              KosDynNode_IS_TRY(region) ? "TRY" : "FINALLY",
-             (unsigned) handler_pc);
+             (unsigned) kos_insn_pc(handler_pc));
         KosContext_SET_PC(ctx, handler_pc);
 
         if (KosDynNode_IS_TRY(region))
@@ -727,7 +725,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
       /* Everything the code after the pop needs from the node is read
          here: a pop that completes unlinks and frees it. */
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
-      uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
+      KosOp *catch_resume_pc = kos_dynnode_catch_resume_pc(top);
       int top_is_wind = (top && KosDynNode_IS_WIND(top));
       int top_is_barrier =
           (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
@@ -805,7 +803,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
         continue;
       }
       if (top_may_swallow && ! PyErr_Occurred()) {
-        if (catch_resume_pc != (uint32_t) -1 && KosContext_FRAME(ctx)) {
+        if (catch_resume_pc && KosContext_FRAME(ctx)) {
           KosContext_SET_PC(ctx, catch_resume_pc);
         }
         return EVAL_REPROLOGUE();

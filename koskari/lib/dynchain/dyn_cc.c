@@ -29,7 +29,7 @@
    Allocate call/cc marker with resume PC after CAPTURE_CC. Callers:
    opcode PUSH_CC.
 */
-static KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
+static KosDynCC *kos_dyncc_new(KosDynNode *parent, KosOp *resume_pc) {
 
   KosDynCC *cc = kos_dynnode_alloc();
   if (! cc)
@@ -71,7 +71,7 @@ static void kos_dyncc_free(KosDynCC *cc) {
 /**
    Link CC as DYN_TOP (minimal push). Callers: PUSH_CC.
 */
-KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
+KosDynCC *kos_dyn_push_cc(KosContext *ctx, KosOp *resume_pc) {
 
   // CONTEXT: dirty, touches context directly
   KosDynCC *cc = kos_dyncc_new(KosContext_DYN_TOP(ctx), resume_pc);
@@ -112,7 +112,7 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
 static int dynnode_to_dict_cc(KosDynNode *node, PyObject *data) {
 
   return snapshot_set_uint(data, "resume_pc",
-                           KosDynCC_RESUME_PC((KosDynCC *) node));
+                           kos_insn_pc(KosDynCC_RESUME_PC((KosDynCC *) node)));
 }
 
 

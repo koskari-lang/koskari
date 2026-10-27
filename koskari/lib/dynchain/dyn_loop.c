@@ -27,7 +27,11 @@
 /**
    LOOP region: break/continue PCs and optional continue result.
 */
-KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
+KosDynLoop *kos_dynloop_new(
+    KosDynNode *parent,
+    KosOp *break_pc,
+    KosOp *continue_pc) {
+
   KosDynLoop *node = kos_dynnode_alloc();
 
   if (! node)
@@ -70,10 +74,12 @@ void kos_dynloop_free(KosDynLoop *node) {
 static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "break_pc",
-                        KosDynLoop_BREAK_PC((KosDynLoop *) node)) < 0)
+                        kos_insn_pc(KosDynLoop_BREAK_PC(
+                            (KosDynLoop *) node))) < 0)
     return -1;
   if (snapshot_set_uint(data, "continue_pc",
-                        KosDynLoop_CONTINUE_PC((KosDynLoop *) node)) < 0)
+                        kos_insn_pc(KosDynLoop_CONTINUE_PC(
+                            (KosDynLoop *) node))) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynLoop_ENABLED((KosDynLoop *) node)) < 0)
@@ -88,8 +94,13 @@ static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
 /**
    Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
 */
-KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
-  KosDynLoop *node = kos_dynloop_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
+KosDynLoop *kos_dyn_push_loop(
+    KosContext *ctx,
+    KosOp *break_pc,
+    KosOp *continue_pc) {
+
+  KosDynLoop *node = kos_dynloop_new(KosContext_DYN_TOP(ctx), break_pc,
+                                     continue_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {

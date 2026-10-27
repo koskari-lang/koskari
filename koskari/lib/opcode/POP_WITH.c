@@ -22,7 +22,6 @@
 
 KOS_OP_HANDLER(POP_WITH) {
   KOS_SYNC_PC(ctx, insn);
-  (void) insn;
 
   KosDynNode *top = KosContext_CurrentNode(ctx);
   if (unlikely(! top)) {
@@ -61,8 +60,7 @@ KOS_OP_HANDLER(POP_WITH) {
   /* __exit__ suspended on an awaitable; the revive settles and unlinks
      the node and continues past this opcode. */
   if (kr.kind == KOS_RES_AWAIT) {
-    uint32_t same_pc = KosContext_ACTING_PC(ctx);
-    KosContext_SET_PC(ctx, same_pc);
+    KosContext_SET_PC(ctx, insn);
     return kr;
   }
 

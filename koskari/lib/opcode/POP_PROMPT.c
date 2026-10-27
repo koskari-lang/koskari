@@ -65,8 +65,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
       SAYF("[eval] POP_PROMPT return to invoker value=%ld\n",
            PyLong_AsLong(val));
 
-    if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL
-        && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1) {
+    if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL) {
       KosOpResult routed = kos_eval_route_delim_return(ctx, ret_delim, val);
 #if KOS_EVAL_SAFETYNET
       /* NORMAL threads the next instruction of the landed frame; a
