@@ -66,3 +66,5 @@ var compile/pair-up:
 (pair-up 3 4)
 ;; prints: 4 3
 ```
+
+**Also:** special form [`macro-match`](../specials/compile-macro-match.md).

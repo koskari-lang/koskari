@@ -45,3 +45,5 @@ else:
 ;; prints: item 2
 ;; prints: for-each done
 ```
+
+**Also:** special form [`for-each`](../specials/compile-for-each.md).

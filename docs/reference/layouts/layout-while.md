@@ -47,3 +47,5 @@ else:
   (print "while done" total)
 ;; prints: while done 3
 ```
+
+**Also:** special form [`while`](../specials/compile-while.md).

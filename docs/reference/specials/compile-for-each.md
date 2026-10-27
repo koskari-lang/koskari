@@ -51,3 +51,5 @@ body jumps to after_pop with its value already on the parent stack.
     [(== i target) (break "found")]
     [else: None]))
 ```
+
+**Also:** layout handler [`for-each`](../layouts/layout-for-each.md).

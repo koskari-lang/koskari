@@ -13,6 +13,10 @@ from Python or Scheme priors.
 
 ## Which page answers what
 
+- Every name bound by default -- layout handlers, special forms, macros,
+  fences, runtime types, operators, functions, exceptions -- each linked
+  to its reference page:
+  [Builtin names for agents](builtins.md)
 - Formal grammar -- the normative catalogue of reader syntax; there is
   no separate BNF document, this page is its equivalent:
   [Grammar](../reference/grammar.md)

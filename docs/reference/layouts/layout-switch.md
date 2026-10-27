@@ -50,3 +50,5 @@ switch x:
     "one"
 ;; -> (switch x ([1] "one"))
 ```
+
+**Also:** special form [`switch`](../specials/compile-switch.md).

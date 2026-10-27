@@ -25,3 +25,5 @@ rules.
 
 An f-string reads to this form, so `f"a{x}b"` compiles as a `#str` over its
 parts.
+
+**Also:** function [`#str`](../runtime/functions.md#collection-builders).

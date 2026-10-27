@@ -35,3 +35,5 @@
   (body: 42)
   (after: (cleanup)))
 ```
+
+**Also:** layout handler [`dyn-wind`](../layouts/layout-dyn-wind.md).

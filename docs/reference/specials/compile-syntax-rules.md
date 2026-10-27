@@ -37,3 +37,5 @@ what lets macros like [`flet`](../macros/compile-flet.md) and
 
 **See also:** [Macros and hygiene](../../guide/macros-and-hygiene.md),
 [Hygiene](../../guide/hygiene.md).
+
+**Also:** layout handler [`syntax-rules`](../layouts/layout-syntax-rules.md).

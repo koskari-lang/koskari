@@ -32,3 +32,5 @@ as one element.
 
 **See also:** [Macros and hygiene](../../guide/macros-and-hygiene.md),
 [`koskari.hygiene`](../api/koskari-hygiene.md).
+
+**Also:** type [`datum`](../runtime/types-and-predicates.md#pairs-and-symbols).

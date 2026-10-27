@@ -1,0 +1,4613 @@
+id: builtin-bool-predicate-true-001
+feature: builtin/bool?
+source: (bool? True)
+verify:
+  read: (bool? True)
+  expand: (bool? True)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bool?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-bool-predicate-false-001
+feature: builtin/bool?
+source: (bool? 1)
+verify:
+  read: (bool? 1)
+  expand: (bool? 1)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bool?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-int-predicate-true-001
+feature: builtin/int?
+source: (int? 7)
+verify:
+  read: (int? 7)
+  expand: (int? 7)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - int?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-int-predicate-subclass-001
+feature: builtin/int?
+source: (int? True)
+verify:
+  read: (int? True)
+  expand: (int? True)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - int?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: bool is a subclass of int, and a type predicate accepts subclass instances
+---
+id: builtin-int-predicate-false-001
+feature: builtin/int?
+source: (int? 7.0)
+verify:
+  read: (int? 7.0)
+  expand: (int? 7.0)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - int?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-float-predicate-true-001
+feature: builtin/float?
+source: (float? 7.0)
+verify:
+  read: (float? 7.0)
+  expand: (float? 7.0)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - float?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-float-predicate-false-001
+feature: builtin/float?
+source: (float? 7)
+verify:
+  read: (float? 7)
+  expand: (float? 7)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - float?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-complex-predicate-true-001
+feature: builtin/complex?
+source: (complex? (complex 1 2))
+verify:
+  read: (complex? (complex 1 2))
+  expand: (complex? (complex 1 2))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - complex?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-decimal-predicate-true-001
+feature: builtin/decimal?
+source: (decimal? (decimal "1.5"))
+verify:
+  read: (decimal? (decimal "1.5"))
+  expand: (decimal? (decimal "1.5"))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - decimal?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-decimal-predicate-false-001
+feature: builtin/decimal?
+source: (decimal? 1.5)
+verify:
+  read: (decimal? 1.5)
+  expand: (decimal? 1.5)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - decimal?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-fraction-predicate-true-001
+feature: builtin/fraction?
+source: (fraction? (fraction 1 3))
+verify:
+  read: (fraction? (fraction 1 3))
+  expand: (fraction? (fraction 1 3))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - fraction?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-fraction-predicate-false-001
+feature: builtin/fraction?
+source: (fraction? 0.5)
+verify:
+  read: (fraction? 0.5)
+  expand: (fraction? 0.5)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - fraction?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-str-predicate-true-001
+feature: builtin/str?
+source: (str? "abc")
+verify:
+  read: (str? "abc")
+  expand: (str? "abc")
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - str?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-str-predicate-false-001
+feature: builtin/str?
+source: (str? 'abc)
+verify:
+  read: (str? (quote abc))
+  expand: (str? (quote abc))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - str?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-bytes-predicate-true-001
+feature: builtin/bytes?
+source: (bytes? (bytes 3))
+verify:
+  read: (bytes? (bytes 3))
+  expand: (bytes? (bytes 3))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bytes?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-bytes-predicate-false-001
+feature: builtin/bytes?
+source: (bytes? (bytearray 3))
+verify:
+  read: (bytes? (bytearray 3))
+  expand: (bytes? (bytearray 3))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bytes?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-bytearray-predicate-true-001
+feature: builtin/bytearray?
+source: (bytearray? (bytearray 3))
+verify:
+  read: (bytearray? (bytearray 3))
+  expand: (bytearray? (bytearray 3))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bytearray?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-memoryview-predicate-true-001
+feature: builtin/memoryview?
+source: (memoryview? (memoryview (bytes 3)))
+verify:
+  read: (memoryview? (memoryview (bytes 3)))
+  expand: (memoryview? (memoryview (bytes 3)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - memoryview?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-list-predicate-true-001
+feature: builtin/list?
+source: "(list? #[1 2])"
+verify:
+  read: (list? (#list 1 2))
+  expand: (list? (#list 1 2))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - list?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-list-predicate-pair-chain-001
+feature: builtin/list?
+source: (list? '(1 2))
+verify:
+  read: (list? (quote (1 2)))
+  expand: (list? (quote (1 2)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - list?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: a quoted list is a pair chain, not a Python list; test it with pair? or proper?
+---
+id: builtin-list-predicate-tuple-001
+feature: builtin/list?
+source: "(list? #(1 2))"
+verify:
+  read: (list? (#tuple 1 2))
+  expand: (list? (#tuple 1 2))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - list?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-tuple-predicate-true-001
+feature: builtin/tuple?
+source: "(tuple? #(1 2))"
+verify:
+  read: (tuple? (#tuple 1 2))
+  expand: (tuple? (#tuple 1 2))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - tuple?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-tuple-predicate-false-001
+feature: builtin/tuple?
+source: "(tuple? #[1 2])"
+verify:
+  read: (tuple? (#list 1 2))
+  expand: (tuple? (#list 1 2))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - tuple?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-dict-predicate-true-001
+feature: builtin/dict?
+source: "(dict? #{\"a\": 1})"
+verify:
+  read: (dict? (#dict (#tuple "a" 1)))
+  expand: (dict? (#dict (#tuple "a" 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - dict?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-dict-predicate-false-001
+feature: builtin/dict?
+source: "(dict? #[#(\"a\" 1)])"
+verify:
+  read: (dict? (#list (#tuple "a" 1)))
+  expand: (dict? (#list (#tuple "a" 1)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - dict?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-set-predicate-true-001
+feature: builtin/set?
+source: "(set? (set #[1 2]))"
+verify:
+  read: (set? (set (#list 1 2)))
+  expand: (set? (set (#list 1 2)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - set?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-set-predicate-frozenset-001
+feature: builtin/set?
+source: "(set? (frozenset #[1]))"
+verify:
+  read: (set? (frozenset (#list 1)))
+  expand: (set? (frozenset (#list 1)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - set?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: frozenset is not a subclass of set
+---
+id: builtin-frozenset-predicate-true-001
+feature: builtin/frozenset?
+source: "(frozenset? (frozenset #[1]))"
+verify:
+  read: (frozenset? (frozenset (#list 1)))
+  expand: (frozenset? (frozenset (#list 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - frozenset?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-object-predicate-true-001
+feature: builtin/object?
+source: (object? None)
+verify:
+  read: (object? None)
+  expand: (object? None)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - object?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-type-predicate-true-001
+feature: builtin/type?
+source: (type? int)
+verify:
+  read: (type? int)
+  expand: (type? int)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - type?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-type-predicate-false-001
+feature: builtin/type?
+source: (type? 5)
+verify:
+  read: (type? 5)
+  expand: (type? 5)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - type?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-classmethod-predicate-true-001
+feature: builtin/classmethod?
+source: (classmethod? (classmethod +))
+verify:
+  read: (classmethod? (classmethod +))
+  expand: (classmethod? (classmethod +))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - classmethod?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-staticmethod-predicate-true-001
+feature: builtin/staticmethod?
+source: (staticmethod? (staticmethod +))
+verify:
+  read: (staticmethod? (staticmethod +))
+  expand: (staticmethod? (staticmethod +))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - staticmethod?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-property-predicate-true-001
+feature: builtin/property?
+source: (property? (property (lambda [self] 1)))
+verify:
+  read: (property? (property (lambda [self] 1)))
+  expand: (property? (property (lambda [self] 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - property?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-pair-predicate-true-001
+feature: builtin/pair?
+source: (pair? '(1 2))
+verify:
+  read: (pair? (quote (1 2)))
+  expand: (pair? (quote (1 2)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - pair?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-pair-predicate-nil-001
+feature: builtin/pair?
+source: (pair? nil)
+verify:
+  read: (pair? nil)
+  expand: (pair? nil)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - pair?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: nil is the empty pair; test nil? first when the empty list is a separate case
+---
+id: builtin-pair-predicate-false-001
+feature: builtin/pair?
+source: "(pair? #[1 2])"
+verify:
+  read: (pair? (#list 1 2))
+  expand: (pair? (#list 1 2))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - pair?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-symbol-predicate-true-001
+feature: builtin/symbol?
+source: (symbol? 'abc)
+verify:
+  read: (symbol? (quote abc))
+  expand: (symbol? (quote abc))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - symbol?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-symbol-predicate-false-001
+feature: builtin/symbol?
+source: (symbol? "abc")
+verify:
+  read: (symbol? "abc")
+  expand: (symbol? "abc")
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - symbol?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-keyword-predicate-true-001
+feature: builtin/keyword?
+source: (keyword? 'abc:)
+verify:
+  read: (keyword? (quote abc:))
+  expand: (keyword? (quote abc:))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - keyword?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-keyword-predicate-false-001
+feature: builtin/keyword?
+source: (keyword? 'abc)
+verify:
+  read: (keyword? (quote abc))
+  expand: (keyword? (quote abc))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - keyword?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-datum-predicate-true-001
+feature: builtin/datum?
+source: (datum? (datum 'abc))
+verify:
+  read: (datum? (datum (quote abc)))
+  expand: (datum? (datum (quote abc)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - datum?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-datum-predicate-false-001
+feature: builtin/datum?
+source: (datum? 'abc)
+verify:
+  read: (datum? (quote abc))
+  expand: (datum? (quote abc))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - datum?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-values-predicate-true-001
+feature: builtin/values?
+source: (values? (values 1 2))
+verify:
+  read: (values? (values 1 2))
+  expand: (values? (values 1 2))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - values?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-partial-predicate-true-001
+feature: builtin/partial?
+source: (partial? (partial + 1))
+verify:
+  read: (partial? (partial + 1))
+  expand: (partial? (partial + 1))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - partial?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-partial-predicate-false-001
+feature: builtin/partial?
+source: (partial? +)
+verify:
+  read: (partial? +)
+  expand: (partial? +)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - partial?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-demand-predicate-true-001
+feature: builtin/demand?
+source: (demand? (demand +))
+verify:
+  read: (demand? (demand +))
+  expand: (demand? (demand +))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - demand?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-defer-predicate-true-001
+feature: builtin/defer?
+source: (defer? (defer (lambda [] 1)))
+verify:
+  read: (defer? (defer (lambda [] 1)))
+  expand: (defer? (defer (lambda [] 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - defer?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-constantly-predicate-true-001
+feature: builtin/constantly?
+source: (constantly? (constantly 5))
+verify:
+  read: (constantly? (constantly 5))
+  expand: (constantly? (constantly 5))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - constantly?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-map-predicate-true-001
+feature: builtin/map?
+source: "(map? (map str #[1]))"
+verify:
+  read: (map? (map str (#list 1)))
+  expand: (map? (map str (#list 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - map?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-map-predicate-py-map-001
+feature: builtin/map?
+source: "(map? (py-map str #[1]))"
+verify:
+  read: (map? (py-map str (#list 1)))
+  expand: (map? (py-map str (#list 1)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - map?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: map? tests the native map; py-map produces Python's map type
+---
+id: builtin-filter-predicate-true-001
+feature: builtin/filter?
+source: "(filter? (filter None #[1]))"
+verify:
+  read: (filter? (filter None (#list 1)))
+  expand: (filter? (filter None (#list 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - filter?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-filter-predicate-py-filter-001
+feature: builtin/filter?
+source: "(filter? (py-filter None #[1]))"
+verify:
+  read: (filter? (py-filter None (#list 1)))
+  expand: (filter? (py-filter None (#list 1)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - filter?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: filter? tests the native filter; py-filter produces Python's filter type
+---
+id: builtin-zip-predicate-true-001
+feature: builtin/zip?
+source: "(zip? (zip #[1] #[2]))"
+verify:
+  read: (zip? (zip (#list 1) (#list 2)))
+  expand: (zip? (zip (#list 1) (#list 2)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - zip?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-py-map-predicate-true-001
+feature: builtin/py-map?
+source: "(py-map? (py-map str #[1]))"
+verify:
+  read: (py-map? (py-map str (#list 1)))
+  expand: (py-map? (py-map str (#list 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - py-map?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-py-filter-predicate-true-001
+feature: builtin/py-filter?
+source: "(py-filter? (py-filter None #[1]))"
+verify:
+  read: (py-filter? (py-filter None (#list 1)))
+  expand: (py-filter? (py-filter None (#list 1)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - py-filter?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-py-zip-predicate-true-001
+feature: builtin/py-zip?
+source: "(py-zip? (py-zip #[1] #[2]))"
+verify:
+  read: (py-zip? (py-zip (#list 1) (#list 2)))
+  expand: (py-zip? (py-zip (#list 1) (#list 2)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - py-zip?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-py-zip-predicate-native-001
+feature: builtin/py-zip?
+source: "(py-zip? (zip #[1] #[2]))"
+verify:
+  read: (py-zip? (zip (#list 1) (#list 2)))
+  expand: (py-zip? (zip (#list 1) (#list 2)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - py-zip?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: zip is the native zip; py-zip? accepts only Python's zip
+---
+id: builtin-ref-predicate-true-001
+feature: builtin/Ref?
+source: (Ref? (ref (constant 5)))
+verify:
+  read: (Ref? (ref (constant 5)))
+  expand: (Ref? (ref (constant 5)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - Ref?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-ref-predicate-false-001
+feature: builtin/Ref?
+source: (Ref? 5)
+verify:
+  read: (Ref? 5)
+  expand: (Ref? 5)
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - Ref?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-itemref-predicate-true-001
+feature: builtin/ItemRef?
+source: (ItemRef? (ref (item seq 0)))
+verify:
+  read: (ItemRef? (ref (item seq 0)))
+  expand: (ItemRef? (ref (item seq 0)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - ItemRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-attributeref-predicate-true-001
+feature: builtin/AttributeRef?
+source: (AttributeRef? (ref (attr obj count)))
+verify:
+  read: (AttributeRef? (ref (attr obj count)))
+  expand: (AttributeRef? (ref (attr obj count)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - AttributeRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-dynamicref-predicate-true-001
+feature: builtin/DynamicRef?
+source: (DynamicRef? (ref (dynamic (lambda [] 1))))
+verify:
+  read: (DynamicRef? (ref (dynamic (lambda [] 1))))
+  expand: (DynamicRef? (ref (dynamic (lambda [] 1))))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - DynamicRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-constantref-predicate-true-001
+feature: builtin/ConstantRef?
+source: (ConstantRef? (ref (constant 5)))
+verify:
+  read: (ConstantRef? (ref (constant 5)))
+  expand: (ConstantRef? (ref (constant 5)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - ConstantRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-memoizedref-predicate-true-001
+feature: builtin/MemoizedRef?
+source: (MemoizedRef? (ref (memoized (lambda [] 1))))
+verify:
+  read: (MemoizedRef? (ref (memoized (lambda [] 1))))
+  expand: (MemoizedRef? (ref (memoized (lambda [] 1))))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - MemoizedRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-paramref-predicate-true-001
+feature: builtin/ParamRef?
+source: (ParamRef? (ParamRef 'p))
+verify:
+  read: (ParamRef? (ParamRef (quote p)))
+  expand: (ParamRef? (ParamRef (quote p)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - ParamRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-constantref-predicate-false-001
+feature: builtin/ConstantRef?
+source: (ConstantRef? (ref (item seq 0)))
+verify:
+  read: (ConstantRef? (ref (item seq 0)))
+  expand: (ConstantRef? (ref (item seq 0)))
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - ConstantRef?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-str-predicate-filter-001
+feature: builtin/str?
+source: "(list (filter str? #[1 \"a\" 2 \"b\"]))"
+verify:
+  read: (list (filter str? (#list 1 "a" 2 "b")))
+  expand: (list (filter str? (#list 1 "a" 2 "b")))
+  eval: list:["a","b"]
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - str?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-int-predicate-map-001
+feature: builtin/int?
+source: "(list (map int? #[1 \"a\" True]))"
+verify:
+  read: (list (map int? (#list 1 "a" True)))
+  expand: (list (map int? (#list 1 "a" True)))
+  eval: list:[true,false,true]
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - int?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-instance-predicate-true-001
+feature: builtin/instance?
+source: (instance? 5 int)
+verify:
+  read: (instance? 5 int)
+  expand: (instance? 5 int)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - instance?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-instance-predicate-tuple-of-types-001
+feature: builtin/instance?
+source: "(instance? 5 #(str int))"
+verify:
+  read: (instance? 5 (#tuple str int))
+  expand: (instance? 5 (#tuple str int))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - instance?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-instance-predicate-false-001
+feature: builtin/instance?
+source: (instance? '(1 2) list)
+verify:
+  read: (instance? (quote (1 2)) list)
+  expand: (instance? (quote (1 2)) list)
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - instance?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-subclass-predicate-true-001
+feature: builtin/subclass?
+source: (subclass? bool int)
+verify:
+  read: (subclass? bool int)
+  expand: (subclass? bool int)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - subclass?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-subclass-predicate-false-001
+feature: builtin/subclass?
+source: (subclass? int bool)
+verify:
+  read: (subclass? int bool)
+  expand: (subclass? int bool)
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - subclass?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-callable-predicate-true-001
+feature: builtin/callable?
+source: (callable? +)
+verify:
+  read: (callable? +)
+  expand: (callable? +)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - callable?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-callable-predicate-false-001
+feature: builtin/callable?
+source: (callable? 5)
+verify:
+  read: (callable? 5)
+  expand: (callable? 5)
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - callable?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-none-predicate-true-001
+feature: builtin/None?
+source: (None? None)
+verify:
+  read: (None? None)
+  expand: (is None None)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - None?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-none-predicate-nil-001
+feature: builtin/None?
+source: (None? nil)
+verify:
+  read: (None? nil)
+  expand: (is nil None)
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - None?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: nil is not None
+---
+id: builtin-decimal-construct-001
+feature: builtin/decimal
+source: (str (+ (decimal "1.25") (decimal "0.10")))
+verify:
+  read: (str (+ (decimal "1.25") (decimal "0.10")))
+  expand: (#str (+ (decimal "1.25") (decimal "0.10")))
+  eval: '"1.35"'
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - decimal
+  - construct
+  - surface:sexpr
+---
+id: builtin-fraction-construct-001
+feature: builtin/fraction
+source: (str (+ (fraction 1 3) (fraction 1 6)))
+verify:
+  read: (str (+ (fraction 1 3) (fraction 1 6)))
+  expand: (#str (+ (fraction 1 3) (fraction 1 6)))
+  eval: '"1/2"'
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - fraction
+  - construct
+  - surface:sexpr
+---
+id: builtin-frozenset-construct-001
+feature: builtin/frozenset
+source: "(sorted (frozenset #[3 1 3]))"
+verify:
+  read: (sorted (frozenset (#list 3 1 3)))
+  expand: (sorted (frozenset (#list 3 1 3)))
+  eval: list:[1,3]
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - frozenset
+  - construct
+  - surface:sexpr
+---
+id: builtin-set-construct-001
+feature: builtin/set
+source: "(len (set #[1 2 2]))"
+verify:
+  read: (len (set (#list 1 2 2)))
+  expand: (len (set (#list 1 2 2)))
+  eval: "2"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - set
+  - construct
+  - surface:sexpr
+---
+id: builtin-complex-construct-001
+feature: builtin/complex
+source: (getattr (complex 1 2) "imag")
+verify:
+  read: (getattr (complex 1 2) "imag")
+  expand: (getattr (complex 1 2) "imag")
+  eval: "2.0"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - complex
+  - construct
+  - surface:sexpr
+---
+id: builtin-bytes-construct-001
+feature: builtin/bytes
+source: "((bytes #[104 105]).decode)"
+verify:
+  read: ((attr (bytes (#list 104 105)) decode))
+  expand: ((attr (bytes (#list 104 105)) decode))
+  eval: '"hi"'
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bytes
+  - construct
+  - surface:sexpr
+---
+id: builtin-bytearray-construct-001
+feature: builtin/bytearray
+source: (len (bytearray 2))
+verify:
+  read: (len (bytearray 2))
+  expand: (len (bytearray 2))
+  eval: "2"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bytearray
+  - construct
+  - surface:sexpr
+---
+id: builtin-float-construct-001
+feature: builtin/float
+source: (float "2.5")
+verify:
+  read: (float "2.5")
+  expand: (float "2.5")
+  eval: "2.5"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - float
+  - construct
+  - surface:sexpr
+---
+id: builtin-int-construct-001
+feature: builtin/int
+source: (int "12")
+verify:
+  read: (int "12")
+  expand: (int "12")
+  eval: "12"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - int
+  - construct
+  - surface:sexpr
+---
+id: builtin-str-construct-001
+feature: builtin/str
+source: (str 12)
+verify:
+  read: (str 12)
+  expand: (#str 12)
+  eval: '"12"'
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - str
+  - construct
+  - surface:sexpr
+---
+id: builtin-bool-construct-001
+feature: builtin/bool
+source: (bool "")
+verify:
+  read: (bool "")
+  expand: (truth "")
+  eval: "false"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - bool
+  - construct
+  - surface:sexpr
+---
+id: builtin-type-construct-001
+feature: builtin/type
+source: (is? (type 5) int)
+verify:
+  read: (is? (type 5) int)
+  expand: (is? (type 5) int)
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - type
+  - construct
+  - surface:sexpr
+---
+id: builtin-ref-predicate-alias-001
+feature: builtin/ref?
+source: (ref? (ref (item seq 0)))
+verify:
+  read: (ref? (ref (item seq 0)))
+  expand: (ref? (ref (item seq 0)))
+  eval: "true"
+references:
+  - reference/runtime/types-and-predicates.md
+stability: evolving
+tags:
+  - builtin
+  - ref?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-car-first-class-001
+feature: builtin/car
+source: "(list (map car #['(1 2) '(3 4)]))"
+verify:
+  read: (list (map car (#list (quote (1 2)) (quote (3 4)))))
+  expand: (list (map car (#list (quote (1 2)) (quote (3 4)))))
+  eval: list:[1,3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - car
+  - index
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-cdr-first-class-001
+feature: builtin/cdr
+source: "(list (map cdr #[(cons 1 2) (cons 3 4)]))"
+verify:
+  read: (list (map cdr (#list (cons 1 2) (cons 3 4))))
+  expand: (list (map cdr (#list (cons 1 2) (cons 3 4))))
+  eval: list:[2,4]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cdr
+  - index
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-cons-first-class-001
+feature: builtin/cons
+source: "(apply cons #[1 2 nil])"
+verify:
+  read: (apply cons (#list 1 2 nil))
+  expand: (apply cons (#list 1 2 nil))
+  eval: proper-list:[1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cons
+  - construct
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-cons-improper-001
+feature: builtin/cons
+source: (cons 1 2)
+verify:
+  read: (cons 1 2)
+  expand: (cons 1 2)
+  eval: improper-list:(1 . 2)
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cons
+  - construct
+  - surface:sexpr
+---
+id: builtin-cadr-first-class-001
+feature: builtin/cadr
+source: "(list (map cadr #['(1 2) '(3 4)]))"
+verify:
+  read: (list (map cadr (#list (quote (1 2)) (quote (3 4)))))
+  expand: (list (map cadr (#list (quote (1 2)) (quote (3 4)))))
+  eval: list:[2,4]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cadr
+  - index
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-caddr-basic-001
+feature: builtin/caddr
+source: (caddr '(1 2 3))
+verify:
+  read: (caddr (quote (1 2 3)))
+  expand: (car (cddr (quote (1 2 3))))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - caddr
+  - index
+  - surface:sexpr
+---
+id: builtin-cadddr-basic-001
+feature: builtin/cadddr
+source: (cadddr '(1 2 3 4))
+verify:
+  read: (cadddr (quote (1 2 3 4)))
+  expand: (car (cdddr (quote (1 2 3 4))))
+  eval: "4"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cadddr
+  - index
+  - surface:sexpr
+---
+id: builtin-caddddr-basic-001
+feature: builtin/caddddr
+source: (caddddr '(1 2 3 4 5))
+verify:
+  read: (caddddr (quote (1 2 3 4 5)))
+  expand: (car (cddddr (quote (1 2 3 4 5))))
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - caddddr
+  - index
+  - surface:sexpr
+---
+id: builtin-cddr-basic-001
+feature: builtin/cddr
+source: (cddr '(1 2 3))
+verify:
+  read: (cddr (quote (1 2 3)))
+  expand: (cdr (cdr (quote (1 2 3))))
+  eval: proper-list:[3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cddr
+  - index
+  - surface:sexpr
+---
+id: builtin-cdddr-basic-001
+feature: builtin/cdddr
+source: (cdddr '(1 2 3 4))
+verify:
+  read: (cdddr (quote (1 2 3 4)))
+  expand: (cdr (cddr (quote (1 2 3 4))))
+  eval: proper-list:[4]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cdddr
+  - index
+  - surface:sexpr
+---
+id: builtin-cddddr-basic-001
+feature: builtin/cddddr
+source: (cddddr '(1 2 3 4 5))
+verify:
+  read: (cddddr (quote (1 2 3 4 5)))
+  expand: (cdr (cdddr (quote (1 2 3 4 5))))
+  eval: proper-list:[5]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - cddddr
+  - index
+  - surface:sexpr
+---
+id: builtin-first-basic-001
+feature: builtin/first
+source: (first '(1 2 3))
+verify:
+  read: (first (quote (1 2 3)))
+  expand: (first (quote (1 2 3)))
+  eval: "1"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - first
+  - index
+  - surface:sexpr
+---
+id: builtin-second-basic-001
+feature: builtin/second
+source: (second '(1 2 3))
+verify:
+  read: (second (quote (1 2 3)))
+  expand: (second (quote (1 2 3)))
+  eval: "2"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - second
+  - index
+  - surface:sexpr
+---
+id: builtin-third-basic-001
+feature: builtin/third
+source: (third '(1 2 3))
+verify:
+  read: (third (quote (1 2 3)))
+  expand: (third (quote (1 2 3)))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - third
+  - index
+  - surface:sexpr
+---
+id: builtin-fourth-basic-001
+feature: builtin/fourth
+source: (fourth '(1 2 3 4))
+verify:
+  read: (fourth (quote (1 2 3 4)))
+  expand: (fourth (quote (1 2 3 4)))
+  eval: "4"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - fourth
+  - index
+  - surface:sexpr
+---
+id: builtin-fifth-basic-001
+feature: builtin/fifth
+source: (fifth '(1 2 3 4 5))
+verify:
+  read: (fifth (quote (1 2 3 4 5)))
+  expand: (fifth (quote (1 2 3 4 5)))
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - fifth
+  - index
+  - surface:sexpr
+---
+id: builtin-second-first-class-001
+feature: builtin/second
+source: "(list (map second #['(a 1) '(b 2)]))"
+verify:
+  read: (list (map second (#list (quote (a 1)) (quote (b 2)))))
+  expand: (list (map second (#list (quote (a 1)) (quote (b 2)))))
+  eval: list:[1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - second
+  - index
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-set-car-basic-001
+feature: builtin/set-car
+source: (begin (var p (cons 1 2 nil)) (set-car p 9) p)
+verify:
+  read: (begin (var p (cons 1 2 nil)) (set-car p 9) p)
+  expand: (begin (var p (cons 1 2 nil)) (set-car p 9) p)
+  eval: proper-list:[9,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - set-car
+  - mutate
+  - surface:sexpr
+---
+id: builtin-set-cdr-basic-001
+feature: builtin/set-cdr
+source: (begin (var p (cons 1 2 3 nil)) (set-cdr p nil) p)
+verify:
+  read: (begin (var p (cons 1 2 3 nil)) (set-cdr p nil) p)
+  expand: (begin (var p (cons 1 2 3 nil)) (set-cdr p nil) p)
+  eval: proper-list:[1]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - set-cdr
+  - mutate
+  - surface:sexpr
+---
+id: builtin-set-car-place-001
+feature: builtin/set-car
+source: (begin (var p (cons 1 2 3 nil)) (set! (cadr p) 9) p)
+verify:
+  read: (begin (var p (cons 1 2 3 nil)) (set! (cadr p) 9) p)
+  expand: (begin (var p (cons 1 2 3 nil)) (set! (cadr p) 9) p)
+  eval: proper-list:[1,9,3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - set-car
+  - mutate
+  - surface:sexpr
+---
+id: builtin-nil-predicate-true-001
+feature: builtin/nil?
+source: (nil? '())
+verify:
+  read: (nil? (quote ()))
+  expand: (nil? (quote ()))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - nil?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-nil-predicate-false-001
+feature: builtin/nil?
+source: (nil? '(1))
+verify:
+  read: (nil? (quote (1)))
+  expand: (nil? (quote (1)))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - nil?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-nil-predicate-empty-list-001
+feature: builtin/nil?
+source: "(nil? #[])"
+verify:
+  read: (nil? (#list))
+  expand: (nil? (#list))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - nil?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: an empty Python list is not nil
+---
+id: builtin-nil-predicate-bracket-nil-001
+feature: builtin/nil?
+source: (nil? bracket-nil)
+verify:
+  read: (nil? bracket-nil)
+  expand: (nil? bracket-nil)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - nil?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-proper-predicate-true-001
+feature: builtin/proper?
+source: (proper? '(1 2))
+verify:
+  read: (proper? (quote (1 2)))
+  expand: (proper? (quote (1 2)))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - proper?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-proper-predicate-improper-001
+feature: builtin/proper?
+source: (proper? (cons 1 2))
+verify:
+  read: (proper? (cons 1 2))
+  expand: (proper? (cons 1 2))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - proper?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-proper-predicate-nil-001
+feature: builtin/proper?
+source: (proper? nil)
+verify:
+  read: (proper? nil)
+  expand: (proper? nil)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - proper?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-proper-predicate-python-list-001
+feature: builtin/proper?
+source: "(proper? #[1 2])"
+verify:
+  read: (proper? (#list 1 2))
+  expand: (proper? (#list 1 2))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - proper?
+  - predicate
+  - pitfall
+  - surface:sexpr
+notes: proper? tests pair chains; a Python list is not one
+---
+id: builtin-recursive-predicate-true-001
+feature: builtin/recursive?
+source: (begin (var p (cons 1 nil)) (set-cdr p p) (recursive? p))
+verify:
+  read: (begin (var p (cons 1 nil)) (set-cdr p p) (recursive? p))
+  expand: (begin (var p (cons 1 nil)) (set-cdr p p) (recursive? p))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - recursive?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-recursive-predicate-false-001
+feature: builtin/recursive?
+source: (recursive? '(1 2))
+verify:
+  read: (recursive? (quote (1 2)))
+  expand: (recursive? (quote (1 2)))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - recursive?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-build-proper-basic-001
+feature: builtin/build-proper
+source: (build-proper 1 2 3)
+verify:
+  read: (build-proper 1 2 3)
+  expand: (cons 1 2 3 nil)
+  eval: proper-list:[1,2,3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - build-proper
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-proper-empty-001
+feature: builtin/build-proper
+source: (is? (build-proper) nil)
+verify:
+  read: (is? (build-proper) nil)
+  expand: (is? (build-proper) nil)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - build-proper
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-proper-apply-001
+feature: builtin/build-proper
+source: "(apply build-proper #[1 2])"
+verify:
+  read: (apply build-proper (#list 1 2))
+  expand: (apply build-proper (#list 1 2))
+  eval: proper-list:[1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - build-proper
+  - construct
+  - surface:sexpr
+---
+id: builtin-unpack-pair-chain-001
+feature: builtin/unpack
+source: (list (unpack '(1 2 3)))
+verify:
+  read: (list (unpack (quote (1 2 3))))
+  expand: (list (unpack (quote (1 2 3))))
+  eval: list:[1,2,3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - unpack
+  - iterate
+  - surface:sexpr
+---
+id: builtin-unpack-iterable-001
+feature: builtin/unpack
+source: "(list (unpack #(1 2)))"
+verify:
+  read: (list (unpack (#tuple 1 2)))
+  expand: (list (unpack (#tuple 1 2)))
+  eval: list:[1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - unpack
+  - iterate
+  - surface:sexpr
+---
+id: builtin-unpack-nil-001
+feature: builtin/unpack
+source: (list (unpack nil))
+verify:
+  read: (list (unpack nil))
+  expand: (list (unpack nil))
+  eval: list:[]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - unpack
+  - iterate
+  - surface:sexpr
+---
+id: builtin-unpack-sorted-001
+feature: builtin/unpack
+source: (sorted (unpack '(3 1 2)))
+verify:
+  read: (sorted (unpack (quote (3 1 2))))
+  expand: (sorted (unpack (quote (3 1 2))))
+  eval: list:[1,2,3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - unpack
+  - iterate
+  - surface:sexpr
+---
+id: builtin-len-pair-chain-001
+feature: builtin/len
+source: (len '(1 2 3))
+verify:
+  read: (len (quote (1 2 3)))
+  expand: (len (quote (1 2 3)))
+  eval: "2"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - len
+  - iterate
+  - pitfall
+  - surface:sexpr
+notes: a pair iterates as its car and cdr; use unpack to iterate the elements of a chain
+---
+id: builtin-bracket-cons-basic-001
+feature: builtin/bracket-cons
+source: (py-repr (bracket-cons 1 2 bracket-nil))
+verify:
+  read: (py-repr (bracket-cons 1 2 bracket-nil))
+  expand: (py-repr (bracket-cons 1 2 bracket-nil))
+  eval: '"bracket-cons(1, 2, bracket-nil)"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - bracket-cons
+  - construct
+  - surface:sexpr
+---
+id: builtin-bracket-cons-equal-001
+feature: builtin/bracket-cons
+source: (== (bracket-cons 1 2 bracket-nil) '(1 2))
+verify:
+  read: (== (bracket-cons 1 2 bracket-nil) (quote (1 2)))
+  expand: (== (bracket-cons 1 2 bracket-nil) (quote (1 2)))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - bracket-cons
+  - construct
+  - surface:sexpr
+---
+id: builtin-bracket-nil-nil-test-001
+feature: builtin/bracket-nil
+source: (nil? bracket-nil)
+verify:
+  read: (nil? bracket-nil)
+  expand: (nil? bracket-nil)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - bracket-nil
+  - predicate
+  - surface:sexpr
+---
+id: builtin-bracket-splice-basic-001
+feature: builtin/bracket-splice
+source: "(py-repr (bracket-splice '(1 2) #(3 4) nil))"
+verify:
+  read: (py-repr (bracket-splice (quote (1 2)) (#tuple 3 4) nil))
+  expand: (py-repr (bracket-splice (quote (1 2)) (#tuple 3 4) nil))
+  eval: '"bracket-cons(1, 2, 3, 4, nil)"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - bracket-splice
+  - construct
+  - surface:sexpr
+---
+id: builtin-bracket-splice-empty-001
+feature: builtin/bracket-splice
+source: (is? (bracket-splice) bracket-nil)
+verify:
+  read: (is? (bracket-splice) bracket-nil)
+  expand: (is? (bracket-splice) bracket-nil)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - bracket-splice
+  - construct
+  - surface:sexpr
+---
+id: builtin-plus-apply-001
+feature: builtin/+
+source: "(apply + #[1 2 3])"
+verify:
+  read: (apply + (#list 1 2 3))
+  expand: (apply + (#list 1 2 3))
+  eval: "6"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - +
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-plus-strings-001
+feature: builtin/+
+source: (+ "a" "b" "c")
+verify:
+  read: (+ "a" "b" "c")
+  expand: (+ "a" "b" "c")
+  eval: '"abc"'
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - +
+  - construct
+  - surface:sexpr
+---
+id: builtin-minus-apply-001
+feature: builtin/-
+source: "(apply - #[10 3 2])"
+verify:
+  read: (apply - (#list 10 3 2))
+  expand: (apply - (#list 10 3 2))
+  eval: "5"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "-"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-minus-negate-001
+feature: builtin/-
+source: "(apply - #[5])"
+verify:
+  read: (apply - (#list 5))
+  expand: (apply - (#list 5))
+  eval: "-5"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "-"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-times-apply-001
+feature: builtin/*
+source: "(apply * #[2 3 4])"
+verify:
+  read: (apply * (#list 2 3 4))
+  expand: (apply * (#list 2 3 4))
+  eval: "24"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "*"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-divide-apply-001
+feature: builtin//
+source: "(apply / #[12 2 3])"
+verify:
+  read: (apply / (#list 12 2 3))
+  expand: (apply / (#list 12 2 3))
+  eval: "2.0"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - /
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-floordiv-apply-001
+feature: builtin///
+source: "(apply // #[7 2])"
+verify:
+  read: (apply // (#list 7 2))
+  expand: (apply // (#list 7 2))
+  eval: "3"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - //
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-power-modulus-001
+feature: builtin/**
+source: "(apply ** #[2 10 1000])"
+verify:
+  read: (apply ** (#list 2 10 1000))
+  expand: (apply ** (#list 2 10 1000))
+  eval: "24"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "**"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-power-apply-001
+feature: builtin/**
+source: "(apply ** #[2 10])"
+verify:
+  read: (apply ** (#list 2 10))
+  expand: (apply ** (#list 2 10))
+  eval: "1024"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "**"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-bitand-apply-001
+feature: builtin/&
+source: "(apply & #[6 3])"
+verify:
+  read: (apply & (#list 6 3))
+  expand: (apply & (#list 6 3))
+  eval: "2"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "&"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-bitor-apply-001
+feature: builtin/|
+source: "(apply | #[6 3 8])"
+verify:
+  read: (apply | (#list 6 3 8))
+  expand: (apply | (#list 6 3 8))
+  eval: "15"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "|"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-bitxor-apply-001
+feature: builtin/^
+source: "(apply ^ #[6 3])"
+verify:
+  read: (apply ^ (#list 6 3))
+  expand: (apply ^ (#list 6 3))
+  eval: "5"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - ^
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-lshift-apply-001
+feature: builtin/<<
+source: "(apply << #[1 4])"
+verify:
+  read: (apply << (#list 1 4))
+  expand: (apply << (#list 1 4))
+  eval: "16"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "<<"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-rshift-apply-001
+feature: builtin/>>
+source: "(apply >> #[16 2])"
+verify:
+  read: (apply >> (#list 16 2))
+  expand: (apply >> (#list 16 2))
+  eval: "4"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - ">>"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-eq-chained-001
+feature: builtin/==
+source: "(apply == #[1 1 1])"
+verify:
+  read: (apply == (#list 1 1 1))
+  expand: (apply == (#list 1 1 1))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - ==
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-ne-apply-001
+feature: builtin/!=
+source: "(apply != #[1 2])"
+verify:
+  read: (apply != (#list 1 2))
+  expand: (apply != (#list 1 2))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - "!="
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-lt-chained-001
+feature: builtin/<
+source: "(apply < #[0 1 2 3])"
+verify:
+  read: (apply < (#list 0 1 2 3))
+  expand: (apply < (#list 0 1 2 3))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - <
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-le-chained-001
+feature: builtin/<=
+source: "(apply <= #[1 2 2 4])"
+verify:
+  read: (apply <= (#list 1 2 2 4))
+  expand: (apply <= (#list 1 2 2 4))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - <=
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-gt-apply-001
+feature: builtin/>
+source: "(apply > #[3 2 1])"
+verify:
+  read: (apply > (#list 3 2 1))
+  expand: (apply > (#list 3 2 1))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - ">"
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-ge-apply-001
+feature: builtin/>=
+source: "(apply >= #[2 2])"
+verify:
+  read: (apply >= (#list 2 2))
+  expand: (apply >= (#list 2 2))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - ">="
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-equal-apply-001
+feature: builtin/equal?
+source: "(apply equal? #[1 1])"
+verify:
+  read: (apply equal? (#list 1 1))
+  expand: (apply equal? (#list 1 1))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - equal?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-not-equal-apply-001
+feature: builtin/not-equal?
+source: "(apply not-equal? #[1 2])"
+verify:
+  read: (apply not-equal? (#list 1 2))
+  expand: (apply not-equal? (#list 1 2))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - not-equal?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-lt-alias-apply-001
+feature: builtin/lt?
+source: "(apply lt? #[3 2])"
+verify:
+  read: (apply lt? (#list 3 2))
+  expand: (apply lt? (#list 3 2))
+  eval: "false"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - lt?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-le-alias-apply-001
+feature: builtin/le?
+source: "(apply le? #[1 1])"
+verify:
+  read: (apply le? (#list 1 1))
+  expand: (apply le? (#list 1 1))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - le?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-gt-alias-apply-001
+feature: builtin/gt?
+source: "(apply gt? #[3 2])"
+verify:
+  read: (apply gt? (#list 3 2))
+  expand: (apply gt? (#list 3 2))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - gt?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-ge-alias-apply-001
+feature: builtin/ge?
+source: "(apply ge? #[1 2])"
+verify:
+  read: (apply ge? (#list 1 2))
+  expand: (apply ge? (#list 1 2))
+  eval: "false"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - ge?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-in-apply-001
+feature: builtin/in
+source: "(apply in #[2 #[1 2]])"
+verify:
+  read: (apply in (#list 2 (#list 1 2)))
+  expand: (apply in (#list 2 (#list 1 2)))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - in
+  - higher-order
+  - membership
+  - surface:sexpr
+---
+id: builtin-in-alias-apply-001
+feature: builtin/in?
+source: "(apply in? #[2 #[1 2]])"
+verify:
+  read: (apply in? (#list 2 (#list 1 2)))
+  expand: (apply in? (#list 2 (#list 1 2)))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - in?
+  - higher-order
+  - membership
+  - surface:sexpr
+---
+id: builtin-not-in-apply-001
+feature: builtin/not-in
+source: "(apply not-in #[5 #[1 2]])"
+verify:
+  read: (apply not-in (#list 5 (#list 1 2)))
+  expand: (apply not-in (#list 5 (#list 1 2)))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - not-in
+  - higher-order
+  - membership
+  - surface:sexpr
+---
+id: builtin-not-in-alias-apply-001
+feature: builtin/not-in?
+source: "(apply not-in? #[2 #[1 2]])"
+verify:
+  read: (apply not-in? (#list 2 (#list 1 2)))
+  expand: (apply not-in? (#list 2 (#list 1 2)))
+  eval: "false"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - not-in?
+  - higher-order
+  - membership
+  - surface:sexpr
+---
+id: builtin-is-apply-001
+feature: builtin/is?
+source: "(apply is? #[None None])"
+verify:
+  read: (apply is? (#list None None))
+  expand: (apply is? (#list None None))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - is?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-is-not-apply-001
+feature: builtin/is-not?
+source: "(apply is-not? #[1 None])"
+verify:
+  read: (apply is-not? (#list 1 None))
+  expand: (apply is-not? (#list 1 None))
+  eval: "true"
+references:
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - is-not?
+  - higher-order
+  - predicate
+  - surface:sexpr
+---
+id: builtin-itemgetter-sorted-key-001
+feature: builtin/itemgetter
+source: "(list (map (itemgetter 1) (sorted #[#(2 \"b\") #(1 \"a\")] key: (itemgetter 0))))"
+verify:
+  read: "(list (map (itemgetter 1) (sorted (#list (#tuple 2 \"b\") (#tuple 1 \"a\")) key: (itemgetter 0))))"
+  expand: "(list (map (itemgetter 1) (sorted (#list (#tuple 2 \"b\") (#tuple 1 \"a\")) key: (itemgetter 0))))"
+  eval: list:["a","b"]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - itemgetter
+  - index
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-itemgetter-multi-001
+feature: builtin/itemgetter
+source: "((itemgetter 1 0) #[10 20])"
+verify:
+  read: ((itemgetter 1 0) (#list 10 20))
+  expand: ((itemgetter 1 0) (#list 10 20))
+  eval: tuple:(20,10)
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - itemgetter
+  - index
+  - surface:sexpr
+---
+id: builtin-attrgetter-basic-001
+feature: builtin/attrgetter
+source: ((attrgetter "real") 5)
+verify:
+  read: ((attrgetter "real") 5)
+  expand: ((attrgetter "real") 5)
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - attrgetter
+  - index
+  - surface:sexpr
+---
+id: builtin-percent-lambda-wrap-001
+feature: special/compile/%
+source: "(list (map (lambda [x] (% x 3)) #[4 5 6]))"
+verify:
+  read: (list (map (lambda [x] (% x 3)) (#list 4 5 6)))
+  expand: (list (map (lambda [x] (% x 3)) (#list 4 5 6)))
+  eval: list:[1,2,0]
+references:
+  - reference/runtime/operators.md
+  - reference/specials/object-operators/index.md
+stability: evolving
+tags:
+  - operator
+  - "%"
+  - higher-order
+  - pitfall
+  - surface:sexpr
+notes: "% has no runtime binding; wrap it in a lambda to pass it as a value"
+---
+id: builtin-build-list-basic-001
+feature: builtin/#list
+source: (#list 1 2 3)
+verify:
+  read: (#list 1 2 3)
+  expand: (#list 1 2 3)
+  eval: list:[1,2,3]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#list"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-list-apply-001
+feature: builtin/#list
+source: "(apply #list (range 3))"
+verify:
+  read: "(apply #list (range 3))"
+  expand: "(apply #list (range 3))"
+  eval: list:[0,1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#list"
+  - construct
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-build-list-splice-001
+feature: builtin/#list
+source: "(#list 0 *: (range 1 3))"
+verify:
+  read: "(#list 0 *: (range 1 3))"
+  expand: "(#list 0 *: (range 1 3))"
+  eval: list:[0,1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#list"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-tuple-basic-001
+feature: builtin/#tuple
+source: (#tuple 1 2)
+verify:
+  read: (#tuple 1 2)
+  expand: (#tuple 1 2)
+  eval: tuple:(1,2)
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#tuple"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-tuple-empty-001
+feature: builtin/#tuple
+source: (#tuple)
+verify:
+  read: (#tuple)
+  expand: (#tuple)
+  eval: tuple:()
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#tuple"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-set-basic-001
+feature: builtin/#set
+source: (sorted (#set 1 2 2))
+verify:
+  read: (sorted (#set 1 2 2))
+  expand: (sorted (#set 1 2 2))
+  eval: list:[1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#set"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-set-empty-001
+feature: builtin/#set
+source: (len (#set))
+verify:
+  read: (len (#set))
+  expand: (len (#set))
+  eval: "0"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#set"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-dict-items-001
+feature: builtin/#dict
+source: "(== (#dict #(\"a\" 1) #(\"b\" 2)) #{\"a\": 1 \"b\": 2})"
+verify:
+  read: (== (#dict (#tuple "a" 1) (#tuple "b" 2)) (#dict (#tuple "a" 1) (#tuple "b" 2)))
+  expand: (== (#dict (#tuple "a" 1) (#tuple "b" 2)) (#dict (#tuple "a" 1) (#tuple "b" 2)))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#dict"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-dict-keywords-001
+feature: builtin/#dict
+source: "(== (#dict a: 1 b: 2) #{\"a\": 1 \"b\": 2})"
+verify:
+  read: "(== (#dict a: 1 b: 2) (#dict (#tuple \"a\" 1) (#tuple \"b\" 2)))"
+  expand: "(== (#dict a: 1 b: 2) (#dict (#tuple \"a\" 1) (#tuple \"b\" 2)))"
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#dict"
+  - construct
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-build-dict-duplicate-key-001
+feature: builtin/#dict
+source: "(item (#dict #(\"a\" 1) #(\"a\" 2)) \"a\")"
+verify:
+  read: (item (#dict (#tuple "a" 1) (#tuple "a" 2)) "a")
+  expand: (item (#dict (#tuple "a" 1) (#tuple "a" 2)) "a")
+  eval: "2"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#dict"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-dict-apply-001
+feature: builtin/#dict
+source: "(== (apply #dict #[#(\"k\" 1)]) #{\"k\": 1})"
+verify:
+  read: "(== (apply #dict (#list (#tuple \"k\" 1))) (#dict (#tuple \"k\" 1)))"
+  expand: "(== (apply #dict (#list (#tuple \"k\" 1))) (#dict (#tuple \"k\" 1)))"
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#dict"
+  - construct
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-build-str-basic-001
+feature: builtin/#str
+source: (#str 1 "a" 2)
+verify:
+  read: (#str 1 "a" 2)
+  expand: (#str 1 "a" 2)
+  eval: '"1a2"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#str"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-str-empty-001
+feature: builtin/#str
+source: (#str)
+verify:
+  read: (#str)
+  expand: (#str)
+  eval: '""'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#str"
+  - construct
+  - surface:sexpr
+---
+id: builtin-build-str-apply-001
+feature: builtin/#str
+source: "(apply #str (range 4))"
+verify:
+  read: "(apply #str (range 4))"
+  expand: "(apply #str (range 4))"
+  eval: '"0123"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#str"
+  - construct
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-build-list-append-basic-001
+feature: builtin/#list-append
+source: "(begin (var xs #[1]) (#list-append xs 2) xs)"
+verify:
+  read: (begin (var xs (#list 1)) (#list-append xs 2) xs)
+  expand: (begin (var xs (#list 1)) (#list-append xs 2) xs)
+  eval: list:[1,2]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#list-append"
+  - mutate
+  - accumulate
+  - surface:sexpr
+---
+id: builtin-build-list-append-first-class-001
+feature: builtin/#list-append
+source: "(begin (var xs #[1]) (var r (apply #list-append #[xs 2])) #(r xs))"
+verify:
+  read: "(begin (var xs (#list 1)) (var r (apply #list-append (#list xs 2))) (#tuple r xs))"
+  expand: "(begin (var xs (#list 1)) (var r (apply #list-append (#list xs 2))) (#tuple r xs))"
+  eval: tuple:(null,[1,2])
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - "#list-append"
+  - mutate
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-apply-positional-001
+feature: builtin/apply
+source: "(apply + #[1 2])"
+verify:
+  read: (apply + (#list 1 2))
+  expand: (apply + (#list 1 2))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - apply
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-apply-keywords-001
+feature: builtin/apply
+source: "(apply (lambda [a b: 0] (+ a b)) #[1] #{\"b\": 5})"
+verify:
+  read: "(apply (lambda [a b: 0] (+ a b)) (#list 1) (#dict (#tuple \"b\" 5)))"
+  expand: "(apply (lambda [a b: 0] (+ a b)) (#list 1) (#dict (#tuple \"b\" 5)))"
+  eval: "6"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - apply
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-apply-no-args-001
+feature: builtin/apply
+source: (apply (lambda [] 7))
+verify:
+  read: (apply (lambda [] 7))
+  expand: (apply (lambda [] 7))
+  eval: "7"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - apply
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-identity-filter-001
+feature: builtin/identity
+source: "(list (filter identity #[0 1 \"\" \"x\"]))"
+verify:
+  read: (list (filter identity (#list 0 1 "" "x")))
+  expand: (list (filter identity (#list 0 1 "" "x")))
+  eval: list:[1,"x"]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - identity
+  - higher-order
+  - filter
+  - surface:sexpr
+---
+id: builtin-identity-basic-001
+feature: builtin/identity
+source: (identity 5)
+verify:
+  read: (identity 5)
+  expand: (identity 5)
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - identity
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-constantly-basic-001
+feature: builtin/constantly
+source: "((constantly 5) 1 2 x: 3)"
+verify:
+  read: "((constantly 5) 1 2 x: 3)"
+  expand: "((constantly 5) 1 2 x: 3)"
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - constantly
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-constantly-map-001
+feature: builtin/constantly
+source: "(list (map (constantly 0) #[1 2]))"
+verify:
+  read: (list (map (constantly 0) (#list 1 2)))
+  expand: (list (map (constantly 0) (#list 1 2)))
+  eval: list:[0,0]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - constantly
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-partial-positional-001
+feature: builtin/partial
+source: ((partial + 10) 5)
+verify:
+  read: ((partial + 10) 5)
+  expand: ((partial + 10) 5)
+  eval: "15"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - partial
+  - higher-order
+  - compose
+  - surface:sexpr
+---
+id: builtin-partial-keyword-001
+feature: builtin/partial
+source: "((partial (lambda [a b: 0] (+ a b)) b: 2) 1)"
+verify:
+  read: "((partial (lambda [a b: 0] (+ a b)) b: 2) 1)"
+  expand: "((partial (lambda [a b: 0] (+ a b)) b: 2) 1)"
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - partial
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-demand-basic-001
+feature: builtin/demand
+source: ((demand (lambda [x] (* x 3))) 2)
+verify:
+  read: ((demand (lambda [x] (* x 3))) 2)
+  expand: ((demand (lambda [x] (* x 3))) 2)
+  eval: "6"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - demand
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-demand-call-basic-001
+feature: builtin/demand-call
+source: (demand-call (lambda [a] (* a 2)) 4)
+verify:
+  read: (demand-call (lambda [a] (* a 2)) 4)
+  expand: (demand-call (lambda [a] (* a 2)) 4)
+  eval: "8"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - demand-call
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-demand-apply-basic-001
+feature: builtin/demand-apply
+source: "(demand-apply (lambda [a b] (- a b)) #(5 2))"
+verify:
+  read: (demand-apply (lambda [a b] (- a b)) (#tuple 5 2))
+  expand: (demand-apply (lambda [a b] (- a b)) (#tuple 5 2))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - demand-apply
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-demand-apply-keywords-001
+feature: builtin/demand-apply
+source: "(demand-apply (lambda [a b: 0] (- a b)) #(5) #{\"b\": 1})"
+verify:
+  read: "(demand-apply (lambda [a b: 0] (- a b)) (#tuple 5) (#dict (#tuple \"b\" 1)))"
+  expand: "(demand-apply (lambda [a b: 0] (- a b)) (#tuple 5) (#dict (#tuple \"b\" 1)))"
+  eval: "4"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - demand-apply
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-defer-await-001
+feature: builtin/defer
+source: (await (defer (lambda [] 4)))
+verify:
+  read: (await (defer (lambda [] 4)))
+  expand: (await (defer (lambda [] 4)))
+  eval: "4"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - defer
+  - await
+  - surface:sexpr
+---
+id: builtin-coroutine-fn-basic-001
+feature: builtin/coroutine-fn
+source: (begin (import asyncio) (asyncio.iscoroutinefunction (coroutine-fn (lambda [] 1))))
+verify:
+  read: (begin (import asyncio) ((attr asyncio iscoroutinefunction) (coroutine-fn (lambda [] 1))))
+  expand: (begin (import asyncio) ((attr asyncio iscoroutinefunction) (coroutine-fn (lambda [] 1))))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - coroutine-fn
+  - await
+  - surface:sexpr
+---
+id: builtin-create-task-task-001
+feature: builtin/create-task
+source: (begin (import asyncio) (instance? (create-task (defer (lambda [] 4))) asyncio.Task))
+verify:
+  read: (begin (import asyncio) (instance? (create-task (defer (lambda [] 4))) (attr asyncio Task)))
+  expand: (begin (import asyncio) (instance? (create-task (defer (lambda [] 4))) (attr asyncio Task)))
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - create-task
+  - concurrency
+  - surface:sexpr
+notes: "create-task needs a running event loop, so eval is not verified here"
+---
+id: builtin-values-unpack-001
+feature: builtin/values
+source: (begin (var [a b] (values 1 2)) (+ a b))
+verify:
+  read: (begin (var [a b] (values 1 2)) (+ a b))
+  expand: (begin (var [a b] (values 1 2)) (+ a b))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - values
+  - destructure
+  - surface:sexpr
+---
+id: builtin-deref-variable-001
+feature: builtin/deref
+source: (begin (var v 5) (deref &v))
+verify:
+  read: (begin (var v 5) (deref (ref v)))
+  expand: (begin (var v 5) (deref (ref v)))
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - deref
+  - index
+  - surface:sexpr
+---
+id: builtin-deref-constant-001
+feature: builtin/deref
+source: (deref (ref (constant 9)))
+verify:
+  read: (deref (ref (constant 9)))
+  expand: (deref (ref (constant 9)))
+  eval: "9"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - deref
+  - index
+  - surface:sexpr
+---
+id: builtin-parameter-default-001
+feature: builtin/parameter
+source: "(apply parameter #['nope 3])"
+verify:
+  read: (apply parameter (#list (quote nope) 3))
+  expand: (apply parameter (#list (quote nope) 3))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - parameter
+  - default-value
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-gensym-fresh-001
+feature: builtin/gensym
+source: (== (gensym "x") (gensym "x"))
+verify:
+  read: (== (gensym "x") (gensym "x"))
+  expand: (== (gensym "x") (gensym "x"))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - gensym
+  - metaprogramming
+  - hygiene
+  - surface:sexpr
+---
+id: builtin-gensym-symbol-001
+feature: builtin/gensym
+source: (symbol? (gensym))
+verify:
+  read: (symbol? (gensym))
+  expand: (symbol? (gensym))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - gensym
+  - metaprogramming
+  - surface:sexpr
+---
+id: builtin-decorate-wraps-basic-001
+feature: builtin/decorate-wraps
+source: "(begin (define [f x] x) (var w (decorate-wraps f (lambda [*: a] (f *: a)))) #(w.__name__ (w 3)))"
+verify:
+  read: "(begin (define [f x] x) (var w (decorate-wraps f (lambda [*: a] (f *: a)))) (#tuple (attr w __name__) (w 3)))"
+  expand: "(begin (define [f x] x) (var w (decorate-wraps f (lambda [*: a] (f *: a)))) (#tuple (attr w __name__) (w 3)))"
+  eval: tuple:("f",3)
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - decorate-wraps
+  - decorate
+  - surface:sexpr
+---
+id: builtin-abs-basic-001
+feature: builtin/abs
+source: (abs -3)
+verify:
+  read: (abs -3)
+  expand: (abs -3)
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - abs
+  - surface:sexpr
+---
+id: builtin-abs-map-001
+feature: builtin/abs
+source: "(sum (map abs #[-1 -2]))"
+verify:
+  read: (sum (map abs (#list -1 -2)))
+  expand: (sum (map abs (#list -1 -2)))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - abs
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-all-basic-001
+feature: builtin/all?
+source: "(all? #[1 True])"
+verify:
+  read: (all? (#list 1 True))
+  expand: (all? (#list 1 True))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - all?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-any-basic-001
+feature: builtin/any?
+source: "(any? #[0 None])"
+verify:
+  read: (any? (#list 0 None))
+  expand: (any? (#list 0 None))
+  eval: "false"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - any?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-any-map-001
+feature: builtin/any?
+source: "(any? (map (lambda [x] (> x 2)) #[1 3]))"
+verify:
+  read: (any? (map (lambda [x] (> x 2)) (#list 1 3)))
+  expand: (any? (map (lambda [x] (> x 2)) (#list 1 3)))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - any?
+  - predicate
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-ascii-basic-001
+feature: builtin/ascii
+source: (ascii "é")
+verify:
+  read: (ascii "é")
+  expand: (ascii "é")
+  eval: '"''\\xe9''"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - ascii
+  - surface:sexpr
+---
+id: builtin-bin-basic-001
+feature: builtin/bin
+source: (bin 5)
+verify:
+  read: (bin 5)
+  expand: (bin 5)
+  eval: '"0b101"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - bin
+  - surface:sexpr
+---
+id: builtin-hex-basic-001
+feature: builtin/hex
+source: (hex 255)
+verify:
+  read: (hex 255)
+  expand: (hex 255)
+  eval: '"0xff"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - hex
+  - surface:sexpr
+---
+id: builtin-hex-map-001
+feature: builtin/hex
+source: "(list (map hex #[1 255]))"
+verify:
+  read: (list (map hex (#list 1 255)))
+  expand: (list (map hex (#list 1 255)))
+  eval: list:["0x1","0xff"]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - hex
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-oct-basic-001
+feature: builtin/oct
+source: (oct 8)
+verify:
+  read: (oct 8)
+  expand: (oct 8)
+  eval: '"0o10"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - oct
+  - surface:sexpr
+---
+id: builtin-chr-basic-001
+feature: builtin/chr
+source: (chr 65)
+verify:
+  read: (chr 65)
+  expand: (chr 65)
+  eval: '"A"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - chr
+  - surface:sexpr
+---
+id: builtin-ord-basic-001
+feature: builtin/ord
+source: (ord "A")
+verify:
+  read: (ord "A")
+  expand: (ord "A")
+  eval: "65"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - ord
+  - surface:sexpr
+---
+id: builtin-dir-membership-001
+feature: builtin/dir
+source: (in? "upper" (dir ""))
+verify:
+  read: (in? "upper" (dir ""))
+  expand: (in? "upper" (dir ""))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - dir
+  - membership
+  - surface:sexpr
+---
+id: builtin-enumerate-start-001
+feature: builtin/enumerate
+source: (list (map list (enumerate "ab" 1)))
+verify:
+  read: (list (map list (enumerate "ab" 1)))
+  expand: (list (map list (enumerate "ab" 1)))
+  eval: list:[[1,"a"],[2,"b"]]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - enumerate
+  - iterate
+  - surface:sexpr
+---
+id: builtin-format-spec-001
+feature: builtin/format
+source: (format 3.14159 ".2f")
+verify:
+  read: (format 3.14159 ".2f")
+  expand: (format 3.14159 ".2f")
+  eval: '"3.14"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - format
+  - surface:sexpr
+---
+id: builtin-getattr-default-001
+feature: builtin/getattr
+source: (getattr 5 "nope" 0)
+verify:
+  read: (getattr 5 "nope" 0)
+  expand: (getattr 5 "nope" 0)
+  eval: "0"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - getattr
+  - default-value
+  - surface:sexpr
+---
+id: builtin-getattr-apply-001
+feature: builtin/getattr
+source: "(apply getattr #[5 \"real\"])"
+verify:
+  read: (apply getattr (#list 5 "real"))
+  expand: (apply getattr (#list 5 "real"))
+  eval: "5"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - getattr
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-setattr-basic-001
+feature: builtin/setattr
+source: (begin (import types) (var o (types.SimpleNamespace)) (setattr o "x" 1) o.x)
+verify:
+  read: (begin (import types) (var o ((attr types SimpleNamespace))) (setattr o "x" 1) (attr o x))
+  expand: (begin (import types) (var o ((attr types SimpleNamespace))) (setattr o "x" 1) (attr o x))
+  eval: "1"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - setattr
+  - mutate
+  - surface:sexpr
+---
+id: builtin-hasattr-basic-001
+feature: builtin/hasattr?
+source: (hasattr? 5 "real")
+verify:
+  read: (hasattr? 5 "real")
+  expand: (hasattr? 5 "real")
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - hasattr?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-callable-builtin-builtin-001
+feature: builtin/callable?
+source: (callable? len)
+verify:
+  read: (callable? len)
+  expand: (callable? len)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - callable?
+  - predicate
+  - surface:sexpr
+---
+id: builtin-hash-basic-001
+feature: builtin/hash
+source: (== (hash "a") (hash "a"))
+verify:
+  read: (== (hash "a") (hash "a"))
+  expand: (== (hash "a") (hash "a"))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - hash
+  - surface:sexpr
+---
+id: builtin-id-basic-001
+feature: builtin/id
+source: (instance? (id None) int)
+verify:
+  read: (instance? (id None) int)
+  expand: (instance? (id None) int)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - id
+  - surface:sexpr
+---
+id: builtin-len-basic-basic-001
+feature: builtin/len
+source: (len "abc")
+verify:
+  read: (len "abc")
+  expand: (len "abc")
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - len
+  - surface:sexpr
+---
+id: builtin-len-basic-apply-001
+feature: builtin/len
+source: "(apply len #[\"abc\"])"
+verify:
+  read: (apply len (#list "abc"))
+  expand: (apply len (#list "abc"))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - len
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-max-args-001
+feature: builtin/max
+source: (max 3 7 5)
+verify:
+  read: (max 3 7 5)
+  expand: (max 3 7 5)
+  eval: "7"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - max
+  - surface:sexpr
+---
+id: builtin-max-key-001
+feature: builtin/max
+source: "(max #[\"aa\" \"b\"] key: len)"
+verify:
+  read: "(max (#list \"aa\" \"b\") key: len)"
+  expand: "(max (#list \"aa\" \"b\") key: len)"
+  eval: '"aa"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - max
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-max-koskari-key-001
+feature: builtin/max
+source: "(max #[\"aa\" \"b\"] key: (demand (lambda [s] (len s))))"
+verify:
+  read: "(max (#list \"aa\" \"b\") key: (demand (lambda [s] (len s))))"
+  expand: "(max (#list \"aa\" \"b\") key: (demand (lambda [s] (len s))))"
+  eval: '"aa"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - max
+  - higher-order
+  - keyword-argument
+  - pitfall
+  - surface:sexpr
+notes: "a Koskari function as key: of Python's max or min returns unawaited coroutines; wrap it in demand"
+---
+id: builtin-min-iterable-001
+feature: builtin/min
+source: "(min #[3 7 5])"
+verify:
+  read: (min (#list 3 7 5))
+  expand: (min (#list 3 7 5))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - min
+  - surface:sexpr
+---
+id: builtin-min-koskari-key-001
+feature: builtin/min
+source: "(min #[\"aa\" \"b\"] key: (demand (lambda [s] (len s))))"
+verify:
+  read: "(min (#list \"aa\" \"b\") key: (demand (lambda [s] (len s))))"
+  expand: "(min (#list \"aa\" \"b\") key: (demand (lambda [s] (len s))))"
+  eval: '"b"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - min
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-reversed-basic-001
+feature: builtin/reversed
+source: (list (reversed (range 3)))
+verify:
+  read: (list (reversed (range 3)))
+  expand: (list (reversed (range 3)))
+  eval: list:[2,1,0]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - reversed
+  - iterate
+  - surface:sexpr
+---
+id: builtin-round-digits-001
+feature: builtin/round
+source: (round 2.567 2)
+verify:
+  read: (round 2.567 2)
+  expand: (round 2.567 2)
+  eval: "2.57"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - round
+  - surface:sexpr
+---
+id: builtin-round-half-even-001
+feature: builtin/round
+source: (round 2.5)
+verify:
+  read: (round 2.5)
+  expand: (round 2.5)
+  eval: "2"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - round
+  - pitfall
+  - surface:sexpr
+notes: round rounds half to even, as Python does
+---
+id: builtin-sum-start-001
+feature: builtin/sum
+source: "(sum #[1 2] 10)"
+verify:
+  read: (sum (#list 1 2) 10)
+  expand: (sum (#list 1 2) 10)
+  eval: "13"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - sum
+  - accumulate
+  - surface:sexpr
+---
+id: builtin-vars-basic-001
+feature: builtin/vars
+source: "(begin (import types) (== (vars (types.SimpleNamespace x: 1)) #{\"x\": 1}))"
+verify:
+  read: "(begin (import types) (== (vars ((attr types SimpleNamespace) x: 1)) (#dict (#tuple \"x\" 1))))"
+  expand: "(begin (import types) (== (vars ((attr types SimpleNamespace) x: 1)) (#dict (#tuple \"x\" 1))))"
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - vars
+  - surface:sexpr
+---
+id: builtin-sorted-koskari-key-001
+feature: builtin/sorted
+source: "(sorted #[\"aa\" \"b\"] key: (lambda [s] (len s)))"
+verify:
+  read: "(sorted (#list \"aa\" \"b\") key: (lambda [s] (len s)))"
+  expand: "(sorted (#list \"aa\" \"b\") key: (lambda [s] (len s)))"
+  eval: list:["b","aa"]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - sorted
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-sorted-reverse-001
+feature: builtin/sorted
+source: "(sorted #[3 1 2] reverse: True)"
+verify:
+  read: "(sorted (#list 3 1 2) reverse: True)"
+  expand: "(sorted (#list 3 1 2) reverse: True)"
+  eval: list:[3,2,1]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - sorted
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-sorted-method-key-001
+feature: builtin/sorted
+source: "(sorted #[\"b\" \"A\"] key: str.lower)"
+verify:
+  read: "(sorted (#list \"b\" \"A\") key: (attr str lower))"
+  expand: "(sorted (#list \"b\" \"A\") key: (attr str lower))"
+  eval: list:["A","b"]
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - sorted
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-iter-next-001
+feature: builtin/iter
+source: "(begin (var it (iter \"ab\")) #((next it) (next it)))"
+verify:
+  read: (begin (var it (iter "ab")) (#tuple (next it) (next it)))
+  expand: (begin (var it (iter "ab")) (#tuple (next it) (next it)))
+  eval: tuple:("a","b")
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - iter
+  - iterate
+  - surface:sexpr
+---
+id: builtin-next-default-001
+feature: builtin/next
+source: "(begin (var it (iter #[1])) (next it) (next it 9))"
+verify:
+  read: (begin (var it (iter (#list 1))) (next it) (next it 9))
+  expand: (begin (var it (iter (#list 1))) (next it) (next it 9))
+  eval: "9"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - next
+  - iterate
+  - default-value
+  - surface:sexpr
+---
+id: builtin-next-apply-default-001
+feature: builtin/next
+source: "(apply next #[(iter #[]) 0])"
+verify:
+  read: (apply next (#list (iter (#list)) 0))
+  expand: (apply next (#list (iter (#list)) 0))
+  eval: "0"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - next
+  - iterate
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-repr-pair-001
+feature: builtin/repr
+source: (repr '(1 2))
+verify:
+  read: (repr (quote (1 2)))
+  expand: (repr (quote (1 2)))
+  eval: '"(1 2)"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - repr
+  - surface:sexpr
+---
+id: builtin-repr-symbol-001
+feature: builtin/repr
+source: (repr 'a)
+verify:
+  read: (repr (quote a))
+  expand: (repr (quote a))
+  eval: '"a"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - repr
+  - surface:sexpr
+---
+id: builtin-py-repr-pair-001
+feature: builtin/py-repr
+source: (py-repr '(1 2))
+verify:
+  read: (py-repr (quote (1 2)))
+  expand: (py-repr (quote (1 2)))
+  eval: '"cons(1, 2, nil)"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - py-repr
+  - surface:sexpr
+---
+id: builtin-py-repr-symbol-001
+feature: builtin/py-repr
+source: (py-repr 'a)
+verify:
+  read: (py-repr (quote a))
+  expand: (py-repr (quote a))
+  eval: '"<symbol ''a''>"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - py-repr
+  - surface:sexpr
+---
+id: builtin-repr-apply-001
+feature: builtin/repr
+source: "(apply repr #['(1 2)])"
+verify:
+  read: (apply repr (#list (quote (1 2))))
+  expand: (apply repr (#list (quote (1 2))))
+  eval: '"(1 2)"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - repr
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-notimplemented-repr-001
+feature: builtin/NotImplemented
+source: (py-repr NotImplemented)
+verify:
+  read: (py-repr NotImplemented)
+  expand: (py-repr NotImplemented)
+  eval: '"NotImplemented"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - NotImplemented
+  - surface:sexpr
+---
+id: builtin-ellipsis-identity-001
+feature: builtin/Ellipsis
+source: (is? Ellipsis ...)
+verify:
+  read: (is? Ellipsis ...)
+  expand: (is? Ellipsis ...)
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - Ellipsis
+  - surface:sexpr
+---
+id: builtin-koskariexception-catch-subclass-001
+feature: builtin/KoskariException
+source: (try (raise (NotYetImplemented "later")) [[KoskariException] "caught"])
+verify:
+  read: (try (raise (NotYetImplemented "later")) [[KoskariException] "caught"])
+  expand: (try (raise (NotYetImplemented "later")) [[KoskariException] "caught"])
+  eval: '"caught"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariException
+  - catch
+  - surface:sexpr
+---
+id: builtin-notyetimplemented-subclass-001
+feature: builtin/NotYetImplemented
+source: (subclass? NotYetImplemented KoskariException)
+verify:
+  read: (subclass? NotYetImplemented KoskariException)
+  expand: (subclass? NotYetImplemented KoskariException)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - NotYetImplemented
+  - catch
+  - surface:sexpr
+---
+id: builtin-koskarisyntaxerror-python-base-001
+feature: builtin/KoskariSyntaxError
+source: (subclass? KoskariSyntaxError SyntaxError)
+verify:
+  read: (subclass? KoskariSyntaxError SyntaxError)
+  expand: (subclass? KoskariSyntaxError SyntaxError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariSyntaxError
+  - catch
+  - surface:sexpr
+---
+id: builtin-readererror-subclass-001
+feature: builtin/ReaderError
+source: (subclass? ReaderError KoskariSyntaxError)
+verify:
+  read: (subclass? ReaderError KoskariSyntaxError)
+  expand: (subclass? ReaderError KoskariSyntaxError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - ReaderError
+  - catch
+  - surface:sexpr
+---
+id: builtin-readersyntaxerror-subclass-001
+feature: builtin/ReaderSyntaxError
+source: (subclass? ReaderSyntaxError ReaderError)
+verify:
+  read: (subclass? ReaderSyntaxError ReaderError)
+  expand: (subclass? ReaderSyntaxError ReaderError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - ReaderSyntaxError
+  - catch
+  - surface:sexpr
+---
+id: builtin-readereof-subclass-001
+feature: builtin/ReaderEOF
+source: (subclass? ReaderEOF ReaderError)
+verify:
+  read: (subclass? ReaderEOF ReaderError)
+  expand: (subclass? ReaderEOF ReaderError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - ReaderEOF
+  - catch
+  - surface:sexpr
+---
+id: builtin-formatstringsyntaxerror-subclass-001
+feature: builtin/FormatStringSyntaxError
+source: (subclass? FormatStringSyntaxError ReaderSyntaxError)
+verify:
+  read: (subclass? FormatStringSyntaxError ReaderSyntaxError)
+  expand: (subclass? FormatStringSyntaxError ReaderSyntaxError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - FormatStringSyntaxError
+  - catch
+  - surface:sexpr
+---
+id: builtin-layouterror-syntax-error-001
+feature: builtin/LayoutError
+source: (subclass? LayoutError SyntaxError)
+verify:
+  read: (subclass? LayoutError SyntaxError)
+  expand: (subclass? LayoutError SyntaxError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - LayoutError
+  - catch
+  - surface:sexpr
+---
+id: builtin-compilererror-catch-001
+feature: builtin/CompilerError
+source: (try (evaluate '(var) (koskari-vars)) [[e CompilerError] (type e).__name__])
+verify:
+  read: (try (evaluate (quote (var)) (koskari-vars)) [[e CompilerError] (attr (type e) __name__)])
+  expand: (try (evaluate (quote (var)) (koskari-vars)) [[e CompilerError] (attr (type e) __name__)])
+  eval: '"SyntaxMatchError"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - CompilerError
+  - catch
+  - surface:sexpr
+---
+id: builtin-compilererror-not-syntax-error-001
+feature: builtin/CompilerError
+source: (try (evaluate '(var) (koskari-vars)) [[SyntaxError] "syntax"] [[CompilerError] "compiler"])
+verify:
+  read: (try (evaluate (quote (var)) (koskari-vars)) [[SyntaxError] "syntax"] [[CompilerError] "compiler"])
+  expand: (try (evaluate (quote (var)) (koskari-vars)) [[SyntaxError] "syntax"] [[CompilerError] "compiler"])
+  eval: '"compiler"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - CompilerError
+  - catch
+  - pitfall
+  - surface:sexpr
+notes: a SyntaxMatchError is a CompilerError, not a SyntaxError
+---
+id: builtin-specialerror-subclass-001
+feature: builtin/SpecialError
+source: (subclass? SpecialError CompilerError)
+verify:
+  read: (subclass? SpecialError CompilerError)
+  expand: (subclass? SpecialError CompilerError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - SpecialError
+  - catch
+  - surface:sexpr
+---
+id: builtin-syntaxmatcherror-subclass-001
+feature: builtin/SyntaxMatchError
+source: (subclass? SyntaxMatchError SpecialError)
+verify:
+  read: (subclass? SyntaxMatchError SpecialError)
+  expand: (subclass? SyntaxMatchError SpecialError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - SyntaxMatchError
+  - catch
+  - surface:sexpr
+---
+id: builtin-fenceerror-subclass-001
+feature: builtin/FenceError
+source: (subclass? FenceError CompilerError)
+verify:
+  read: (subclass? FenceError CompilerError)
+  expand: (subclass? FenceError CompilerError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - FenceError
+  - catch
+  - surface:sexpr
+---
+id: builtin-parameterserror-subclass-001
+feature: builtin/ParametersError
+source: (subclass? ParametersError CompilerError)
+verify:
+  read: (subclass? ParametersError CompilerError)
+  expand: (subclass? ParametersError CompilerError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - ParametersError
+  - catch
+  - surface:sexpr
+---
+id: builtin-uncaughtcompilererror-subclass-001
+feature: builtin/UncaughtCompilerError
+source: (subclass? UncaughtCompilerError CompilerError)
+verify:
+  read: (subclass? UncaughtCompilerError CompilerError)
+  expand: (subclass? UncaughtCompilerError CompilerError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - UncaughtCompilerError
+  - catch
+  - surface:sexpr
+---
+id: builtin-koskaricontinuationerror-catch-001
+feature: builtin/KoskariContinuationError
+source: (try (shift k 1) [[e KoskariContinuationError] (type e).__name__])
+verify:
+  read: (try (shift k 1) [[e KoskariContinuationError] (attr (type e) __name__)])
+  expand: (try (shift k 1) [[e KoskariContinuationError] (attr (type e) __name__)])
+  eval: '"KoskariPromptNotFound"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariContinuationError
+  - catch
+  - surface:sexpr
+---
+id: builtin-koskaricontinuationerror-not-runtime-error-001
+feature: builtin/KoskariContinuationError
+source: (subclass? KoskariContinuationError RuntimeError)
+verify:
+  read: (subclass? KoskariContinuationError RuntimeError)
+  expand: (subclass? KoskariContinuationError RuntimeError)
+  eval: "false"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariContinuationError
+  - catch
+  - pitfall
+  - surface:sexpr
+notes: continuation errors are not RuntimeError subclasses
+---
+id: builtin-koskaripromptnotfound-shift-without-reset-001
+feature: builtin/KoskariPromptNotFound
+source: (try (shift k 1) [[KoskariPromptNotFound] "no reset"])
+verify:
+  read: (try (shift k 1) [[KoskariPromptNotFound] "no reset"])
+  expand: (try (shift k 1) [[KoskariPromptNotFound] "no reset"])
+  eval: '"no reset"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariPromptNotFound
+  - catch
+  - surface:sexpr
+---
+id: builtin-koskaripromptunreachable-subclass-001
+feature: builtin/KoskariPromptUnreachable
+source: (subclass? KoskariPromptUnreachable KoskariContinuationError)
+verify:
+  read: (subclass? KoskariPromptUnreachable KoskariContinuationError)
+  expand: (subclass? KoskariPromptUnreachable KoskariContinuationError)
+  eval: "true"
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariPromptUnreachable
+  - catch
+  - surface:sexpr
+---
+id: builtin-koskarisyncviolation-catch-type-error-001
+feature: builtin/KoskariSyncViolation
+source: (try (demand-call (lambda [] (await))) [[KoskariException] "koskari"] [[TypeError] "type"])
+verify:
+  read: (try (demand-call (lambda [] (await))) [[KoskariException] "koskari"] [[TypeError] "type"])
+  expand: (try (demand-call (lambda [] (await))) [[KoskariException] "koskari"] [[TypeError] "type"])
+  eval: '"type"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - KoskariSyncViolation
+  - catch
+  - pitfall
+  - surface:sexpr
+notes: KoskariSyncViolation subclasses TypeError, not KoskariException
+---
+id: builtin-valueerror-python-exception-001
+feature: builtin/ValueError
+source: (try (int "x") [[ValueError] "bad"])
+verify:
+  read: (try (int "x") [[ValueError] "bad"])
+  expand: (try (int "x") [[ValueError] "bad"])
+  eval: '"bad"'
+references:
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - builtin
+  - ValueError
+  - catch
+  - surface:sexpr
+---
+id: builtin-environ-ref-default-001
+feature: builtin/environ-ref
+source: (begin (var r (environ-ref 'KOSKARI_CORPUS_UNSET "dev")) (deref r))
+verify:
+  read: (begin (var r (environ-ref (quote KOSKARI_CORPUS_UNSET) "dev")) (deref r))
+  expand: (begin (var r (environ-ref (quote KOSKARI_CORPUS_UNSET) "dev")) (deref r))
+  eval: '"dev"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - environ-ref
+  - default-value
+  - surface:sexpr
+---
+id: builtin-environ-ref-store-001
+feature: builtin/environ-ref
+source: (begin (import os) (var r (environ-ref 'KOSKARI_CORPUS_PROBE "dev")) (set! (deref r) "prod") (os.environ.pop "KOSKARI_CORPUS_PROBE"))
+verify:
+  read: (begin (import os) (var r (environ-ref (quote KOSKARI_CORPUS_PROBE) "dev")) (set! (deref r) "prod") ((attr (attr os environ) pop) "KOSKARI_CORPUS_PROBE"))
+  expand: (begin (import os) (var r (environ-ref (quote KOSKARI_CORPUS_PROBE) "dev")) (set! (deref r) "prod") ((attr (attr os environ) pop) "KOSKARI_CORPUS_PROBE"))
+  eval: '"prod"'
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - environ-ref
+  - mutate
+  - surface:sexpr
+---
+id: builtin-environ-ref-item-ref-001
+feature: builtin/environ-ref
+source: (ItemRef? (environ-ref 'PATH))
+verify:
+  read: (ItemRef? (environ-ref (quote PATH)))
+  expand: (ItemRef? (environ-ref (quote PATH)))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - environ-ref
+  - predicate
+  - surface:sexpr
+---
+id: builtin-environ-ref-dynamic-ref-001
+feature: builtin/environ-ref
+source: (DynamicRef? (environ-ref 'PATH "x"))
+verify:
+  read: (DynamicRef? (environ-ref (quote PATH) "x"))
+  expand: (DynamicRef? (environ-ref (quote PATH) "x"))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - environ-ref
+  - predicate
+  - surface:sexpr
+---
+id: builtin-environ-ref-clear-001
+feature: builtin/environ-ref
+source: "(begin (import os) (define-environ KOSKARI_CORPUS_CLEAR \"dev\") (set! KOSKARI_CORPUS_CLEAR \"x\") (var v (take! KOSKARI_CORPUS_CLEAR)) #(v (in? \"KOSKARI_CORPUS_CLEAR\" os.environ) KOSKARI_CORPUS_CLEAR))"
+verify:
+  read: (begin (import os) (define-environ KOSKARI_CORPUS_CLEAR "dev") (set! KOSKARI_CORPUS_CLEAR "x") (var v (take! KOSKARI_CORPUS_CLEAR)) (#tuple v (in? "KOSKARI_CORPUS_CLEAR" (attr os environ)) KOSKARI_CORPUS_CLEAR))
+  expand: (begin (import os) (define-environ KOSKARI_CORPUS_CLEAR "dev") (set! KOSKARI_CORPUS_CLEAR "x") (var v (take! KOSKARI_CORPUS_CLEAR)) (#tuple v (in? "KOSKARI_CORPUS_CLEAR" (attr os environ)) KOSKARI_CORPUS_CLEAR))
+  eval: tuple:("x",false,"dev")
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - environ-ref
+  - mutate
+  - default-value
+  - surface:sexpr
+---
+id: builtin-active-pragma-key-001
+feature: builtin/active-pragma
+source: (active-pragma compiler/enable-asserts)
+verify:
+  read: (active-pragma compiler/enable-asserts)
+  expand: (call active-pragma (quote compiler/enable-asserts))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - active-pragma
+  - surface:sexpr
+---
+id: builtin-active-pragma-keyword-call-001
+feature: builtin/active-pragma
+source: "(apply active-pragma #[] #{\"key\": \"compiler/enable-asserts\"})"
+verify:
+  read: (apply active-pragma (#list) (#dict (#tuple "key" "compiler/enable-asserts")))
+  expand: (apply active-pragma (#list) (#dict (#tuple "key" "compiler/enable-asserts")))
+  eval: "true"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - active-pragma
+  - higher-order
+  - keyword-argument
+  - surface:sexpr
+---
+id: builtin-next-default-keyword-001
+feature: builtin/next
+source: "(next (iter #[]) default: 9)"
+verify:
+  read: "(next (iter (#list)) default: 9)"
+  expand: "(next (iter (#list)) default: 9)"
+  eval: "9"
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - next
+  - iterate
+  - default-value
+  - keyword-argument
+  - surface:sexpr

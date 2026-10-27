@@ -57,3 +57,5 @@ The slot carries the name as written:
 **See also:** [`compile/syntax-rules`](compile-syntax-rules.md),
 [`extend-syntax`](../macros/compile-extend-syntax.md),
 [Macros and hygiene](../../guide/macros-and-hygiene.md).
+
+**Also:** layout handler [`bare-syntax`](../layouts/layout-bare-syntax.md).

@@ -59,3 +59,5 @@ var compile/twice:
 ;; prints: hello
 ;; prints: hello
 ```
+
+**Also:** special form [`macro-rules`](../specials/compile-macro-rules.md).

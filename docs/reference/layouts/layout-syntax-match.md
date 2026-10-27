@@ -54,3 +54,5 @@ var compile/first-of:
 (first-of 5 6)
 ;; prints: 5
 ```
+
+**Also:** special form [`syntax-match`](../specials/compile-syntax-match.md).

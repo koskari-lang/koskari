@@ -17,3 +17,5 @@ specification (string or quoted symbol constant).
 ```
 
 See [Object operator overview](object-operators/index.md).
+
+**Also:** function [`format`](../runtime/functions.md#conversion-and-display).

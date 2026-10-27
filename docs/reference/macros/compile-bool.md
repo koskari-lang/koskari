@@ -17,3 +17,5 @@ False
 ```
 
 **See also:** [`?`](compile-q.md), which tests and branches in one form.
+
+**Also:** type [`bool`](../runtime/types-and-predicates.md#numbers).

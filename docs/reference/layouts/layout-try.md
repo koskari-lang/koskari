@@ -96,3 +96,5 @@ finally:
   z
 ;; -> (try (begin x) ([Exception] y) (else: a) (finally: z))
 ```
+
+**Also:** special form [`try`](../specials/compile-try.md).

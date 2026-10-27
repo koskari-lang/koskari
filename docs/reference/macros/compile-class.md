@@ -84,3 +84,5 @@ Options pass through as a call, as in Python:
 [layout/class](../layouts/layout-class.md),
 [`super`](compile-super.md),
 [Classes and objects](../../tutorials/from-python/classes-and-objects.md).
+
+**Also:** layout handler [`class`](../layouts/layout-class.md).

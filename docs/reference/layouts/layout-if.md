@@ -39,3 +39,5 @@ else:
   c
 ;; -> (cond (x a) (y b) (else: c))
 ```
+
+**Also:** macro [`if`](../macros/compile-if.md).

@@ -13,3 +13,5 @@ matcher declarations such as **`(VALUE x)`** or
 slots. See
 [Macros and hygiene](../../guide/macros-and-hygiene.md) and
 [`koskari.matcher`](../api/koskari-matcher.md) (surface heads).
+
+**Also:** layout handler [`syntax-match`](../layouts/layout-syntax-match.md).

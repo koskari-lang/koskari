@@ -32,3 +32,5 @@ class C (B):
 
 (vars (C))   ; {'a': 1, 'b': 2, 'c': 3}
 ```
+
+**Also:** function [`super`](../runtime/functions.md#attributes-and-items).

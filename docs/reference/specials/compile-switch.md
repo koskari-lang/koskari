@@ -64,3 +64,5 @@ the sequencing.
   [[2] "two"])
 ;; -> None
 ```
+
+**Also:** layout handler [`switch`](../layouts/layout-switch.md).

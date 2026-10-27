@@ -76,3 +76,5 @@ var compile/swap:
 (swap 1 2)
 ;; prints: 2 1
 ```
+
+**Also:** special form [`syntax-rules`](../specials/compile-syntax-rules.md).

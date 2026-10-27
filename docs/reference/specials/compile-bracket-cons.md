@@ -24,3 +24,5 @@ builtin instead.
 
 **See also:** [`bracket-proper`](compile-bracket-proper.md) for a proper
 bracket list with the tail implied.
+
+**Also:** function [`bracket-cons`](../runtime/functions.md#pairs).

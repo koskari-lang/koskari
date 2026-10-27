@@ -60,3 +60,5 @@ var compile/marker:
 ;; prints: the marker
 ;; -> (var compile/marker (bare-syntax marker slot "the marker"))
 ```
+
+**Also:** special form [`bare-syntax`](../specials/compile-bare-syntax.md).

@@ -59,3 +59,5 @@ var compile/say-hi:
 ;; -> (var compile/say-hi
 ;;      (special-rules say-hi [] ((c (say-hi thing)) (begin ...))))
 ```
+
+**Also:** special form [`special-rules`](../specials/compile-special-rules.md).

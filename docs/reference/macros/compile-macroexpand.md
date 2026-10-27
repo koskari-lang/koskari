@@ -17,3 +17,5 @@ evaluated, so quote it.
 
 **See also:** [`macroexpand-1`](compile-macroexpand-1.md) for one step,
 [`macroexpandq`](compile-macroexpandq.md) to skip the quote.
+
+**Also:** function [`macroexpand-1`, `macroexpand`](../runtime/functions.md#compilation-and-expansion).

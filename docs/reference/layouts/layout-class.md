@@ -59,3 +59,5 @@ def setup []:
     var size 0
 ;; Registry is bound at the module once setup runs
 ```
+
+**Also:** macro [`class`](../macros/compile-class.md).

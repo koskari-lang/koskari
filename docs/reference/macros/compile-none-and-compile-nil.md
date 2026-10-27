@@ -33,3 +33,5 @@ True
 >>> (nil? None)
 False
 ```
+
+**Also:** function [`None?`](../runtime/functions.md#predicates).

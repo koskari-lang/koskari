@@ -23,3 +23,5 @@ never passes through this macro.
 
 **See also:** [`cond`](../specials/compile-cond.md),
 [`when`](compile-when.md), [`?`](compile-q.md).
+
+**Also:** layout handler [`if`](../layouts/layout-if.md).

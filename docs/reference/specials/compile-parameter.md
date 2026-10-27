@@ -29,3 +29,5 @@ read sees.
 ;; computed default is evaluated and left on the stack
 (parameterq verbose (default-for 'verbose))
 ```
+
+**Also:** function [`parameter`](../runtime/functions.md#refs-parameters-and-the-environment).

@@ -4,6 +4,12 @@ Catalogue pages. Each entry states a form's syntax, its behaviour, and an
 example. The prose that explains why a mechanism works the way it does is
 in the [Guide](../guide/index.md).
 
+## Builtins
+
+- [Builtin names](builtins.md): every name bound by default, by section --
+  layout handlers, special forms, macros, fences, and the runtime types,
+  operators, functions, and exceptions -- each linked to its page.
+
 ## Syntax
 
 - [Grammar](grammar.md): every atom, literal, prefix, and suffix the reader
@@ -25,9 +31,9 @@ in the [Guide](../guide/index.md).
 
 ## Runtime
 
-- [Runtime library](runtime/index.md): builtins written in Koskari or
-  native to it. `help`, `macroexpand`, `map` and `filter`,
-  `koskari.itertools`, `koskari.solve`.
+- [Runtime library](runtime/index.md): the runtime builtins -- types and
+  type predicates, operators, functions -- and the library modules
+  `koskari.itertools`, `koskari.solve`, `koskari.asyncio`, `koskari.assets`.
 - [Bytecode and VM](vm/index.md): the instruction set, the opcode
   families, and a page per opcode.
 
@@ -48,6 +54,7 @@ in the [Guide](../guide/index.md).
 :maxdepth: 1
 :caption: Syntax
 
+builtins
 grammar
 reader-layout
 glossary

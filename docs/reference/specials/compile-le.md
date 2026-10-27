@@ -18,3 +18,5 @@ opcode with operand count.
 ```
 
 See [Object operator overview](object-operators/index.md) for the full comparison table.
+
+**Also:** operator function [`le?`](../runtime/operators.md#comparison).

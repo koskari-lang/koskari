@@ -21,3 +21,5 @@ time. The runtime `instance?` has the same signature.
 In the last form `Number` may name a single type or a tuple of types.
 
 See [Object operator overview](object-operators/index.md).
+
+**Also:** function [`instance?`](../runtime/functions.md#predicates).

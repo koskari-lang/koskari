@@ -1,0 +1,53 @@
+id: builtin-apply-leading-args-001
+feature: builtin/apply
+source: "(apply cons 1 2 #[nil])"
+verify:
+  read: (apply cons 1 2 (#list nil))
+  invalid: apply takes FUNC, one iterable of positional arguments, and an optional kwargs dict; leading positional arguments raise TypeError
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - apply
+  - invalid
+  - higher-order
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (apply cons #[1 2 nil])"
+---
+id: builtin-defer-await-twice-001
+feature: builtin/defer
+source: (begin (var d (defer (lambda [] 4))) (await d) (await d))
+verify:
+  read: (begin (var d (defer (lambda [] 4))) (await d) (await d))
+  invalid: a defer is single-shot; the second await raises RuntimeError
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - defer
+  - invalid
+  - await
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (begin (var t (create-task (defer (lambda [] 4)))) ...) for a handle awaited more than once"
+---
+id: builtin-max-koskari-key-unwrapped-001
+feature: builtin/max
+source: "(max #[\"aa\" \"b\"] key: (lambda [s] (len s)))"
+verify:
+  read: "(max (#list \"aa\" \"b\") key: (lambda [s] (len s)))"
+  invalid: max is Python's own; a Koskari function as its key returns unawaited coroutines, and comparing them raises TypeError
+references:
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - max
+  - invalid
+  - higher-order
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (max #[\"aa\" \"b\"] key: (demand (lambda [s] (len s))))"

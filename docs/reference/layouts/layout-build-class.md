@@ -46,3 +46,5 @@ var Point:
     var y 0
 ;; -> (var Point (build-class Point () (begin (var x 0) (var y 0))))
 ```
+
+**Also:** special form [`build-class`](../specials/compile-build-class.md).

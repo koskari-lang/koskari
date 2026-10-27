@@ -11,3 +11,5 @@ that there is no `LITERALS` list, the inner pattern is in the explicit
 matcher dialect, and the body takes one parameter per pattern slot after
 the compiler, bound to `None` when unbound. A bare symbol as the inner
 pattern matches any form and binds its elements under that name.
+
+**Also:** layout handler [`special-match`](../layouts/layout-special-match.md).

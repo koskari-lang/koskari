@@ -38,3 +38,5 @@ position.
 **See also:** [`car`](../specials/compile-car.md),
 [`cdr`](../specials/compile-cdr.md),
 [Data structures](../../guide/data-structures.md).
+
+**Also:** function [`caddddr`, `cadr`, `fifth`, `first`](../runtime/functions.md#pairs).

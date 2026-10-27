@@ -72,3 +72,5 @@ B.__name__      ;; "Box"
 **See also:** [`class`](../macros/compile-class.md),
 [layout/class](../layouts/layout-class.md),
 [`decorate`](../macros/compile-decorate.md).
+
+**Also:** layout handler [`build-class`](../layouts/layout-build-class.md).

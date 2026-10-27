@@ -18,3 +18,5 @@ the same signature.
 ```
 
 See [Object operator overview](object-operators/index.md).
+
+**Also:** function [`subclass?`](../runtime/functions.md#predicates).

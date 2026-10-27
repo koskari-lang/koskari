@@ -16,3 +16,5 @@ modulus passed to three-argument `pow`.
 ```
 
 See [Object operator overview](object-operators/index.md).
+
+**Also:** operator function [`**`](../runtime/operators.md#arithmetic-and-bitwise).

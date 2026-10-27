@@ -19,3 +19,5 @@ marks (see [Hygiene](../../guide/hygiene.md)).
 **See also:** [Macros and hygiene](../../guide/macros-and-hygiene.md),
 [Hygiene](../../guide/hygiene.md),
 [`quasiquote-syntax`](compile-quasiquote-syntax.md).
+
+**Also:** layout handler [`macro-rules`](../layouts/layout-macro-rules.md).

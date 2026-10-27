@@ -52,3 +52,5 @@ paths).
   [else: (on-success)]
   [finally: (cleanup)])
 ```
+
+**Also:** layout handler [`try`](../layouts/layout-try.md).

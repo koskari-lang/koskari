@@ -47,3 +47,5 @@ def start []:
 ```
 
 **See also:** [`class`](layout-class.md), [compile/global](../macros/compile-global.md).
+
+**Also:** macro [`global`](../macros/compile-global.md).

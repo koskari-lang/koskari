@@ -24,3 +24,5 @@ is equivalent to:
 ```koskari
 (item sequence (slice start ...))
 ```
+
+**Also:** type [`slice`](../runtime/types-and-predicates.md#collections).

@@ -4,6 +4,43 @@ Koskari errors currently use exception classes rather than a stable numeric erro
 code catalog. This page gives the public names you are most likely to see and
 how to respond to them.
 
+Every class on this page is bound in every module, as is every Python
+exception type, so each can be raised, caught, and tested by name with
+no import:
+
+```koskari
+(try (shift k 1)
+  [[e KoskariContinuationError] (type e).__name__])   ; "KoskariPromptNotFound"
+```
+
+## Hierarchy
+
+```text
+Exception
+  KoskariException
+    NotYetImplemented
+    KoskariSyntaxError      (also SyntaxError)
+      ReaderError
+        ReaderSyntaxError
+          FormatStringSyntaxError
+        ReaderEOF
+        LayoutError
+    CompilerError
+      SpecialError
+        SyntaxMatchError
+      FenceError
+      ParametersError
+      UncaughtCompilerError
+    KoskariContinuationError
+      KoskariPromptNotFound
+      KoskariPromptUnreachable
+  TypeError
+    KoskariSyncViolation
+```
+
+Compile errors are not `SyntaxError`s: `[[SyntaxError] ...]` catches a
+reader error but not a `SyntaxMatchError`; catch `CompilerError`.
+
 ---
 
 ## Reader errors: Koskari could not read the text

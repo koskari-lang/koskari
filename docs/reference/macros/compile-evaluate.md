@@ -21,3 +21,5 @@ rather than a plain dict. `FORM` is evaluated, so quote a literal form.
 
 **See also:** [`compileq`](compile-compileq.md) to compile without
 running, [`get-compiler`](compile-get-compiler.md).
+
+**Also:** function [`evaluate`](../runtime/functions.md#compilation-and-expansion).

@@ -17,3 +17,5 @@ further forms into it.
 
 **See also:** [`compileq`](compile-compileq.md),
 [`evaluate`](compile-evaluate.md).
+
+**Also:** function [`get-compiler`](../runtime/functions.md#compilation-and-expansion).

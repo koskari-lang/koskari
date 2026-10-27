@@ -41,3 +41,5 @@ the break target with its value and does not run the else clause.
   (setq x (- x 1))
   [else: "done"])
 ```
+
+**Also:** layout handler [`while`](../layouts/layout-while.md).

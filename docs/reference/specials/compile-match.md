@@ -83,3 +83,5 @@ layout and s-expression forms produce identical clauses.
   [[(app splitext #[base "." "ki"])] base]
   [else: path])
 ```
+
+**Also:** layout handler [`match`](../layouts/layout-match.md).

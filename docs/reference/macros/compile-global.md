@@ -109,3 +109,5 @@ square 4  ;; 16
 [syntax](compile-syntax.md),
 [Bindings and refs](../../guide/bindings-and-refs.md), the
 `compiler/resolution` setting in [Pragmas](../../guide/pragma.md).
+
+**Also:** layout handler [`global`](../layouts/layout-global.md).

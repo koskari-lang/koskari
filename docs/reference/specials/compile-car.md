@@ -17,3 +17,5 @@ with the sum of their counts (same for **CDR**).
 ```koskari
 (car (cons 1 nil))   ; -> 1
 ```
+
+**Also:** function [`car`](../runtime/functions.md#pairs).

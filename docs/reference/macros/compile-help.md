@@ -21,3 +21,5 @@ through the pager.
 ```
 
 **See also:** [`help`](../runtime/help.md).
+
+**Also:** function [`help`](../runtime/functions.md#compilation-and-expansion).

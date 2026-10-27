@@ -43,6 +43,8 @@ True
 False
 ```
 
+**Also:** operator functions [`==`, `!=`, `<`, `<=`, `>`, `>=`, `equal?`, `not-equal?`, `lt?`, `le?`, `gt?`, `ge?`](../../runtime/operators.md#comparison).
+
 ## Membership and identity
 
 These take exactly two operands and also emit `OBJECT_COMPARE`. Each has a
@@ -54,6 +56,8 @@ These take exactly two operands and also emit `OBJECT_COMPARE`. Each has a
 | `not-in` | `not-in?` | Negated membership | `(not-in 5 #[1 2 3])` -> `True` |
 | `is` | `is?` | Identity | `(is None None)` -> `True` |
 | `is-not` | `is-not?` | Negated identity | `(is-not 1 2)` -> `True` |
+
+**Also:** operator functions [`in`, `not-in`, `in?`, `not-in?`, `is?`, `is-not?`](../../runtime/operators.md#membership-and-identity).
 
 ## Type predicates
 
@@ -69,6 +73,8 @@ True
 >>> (subclass? list object)
 True
 ```
+
+**Also:** functions [`instance?`, `subclass?`](../../runtime/functions.md#predicates).
 
 ## Arithmetic and bitwise operators
 
@@ -102,6 +108,8 @@ operator's runtime binding, which folds the same way.
 2
 ```
 
+**Also:** operator functions [`+`, `-`, `*`, `/`, `//`, `**`, `@`, `&`, `|`, `^`, `<<`, `>>`](../../runtime/operators.md#arithmetic-and-bitwise).
+
 ## Unary and inspection operators
 
 | Form | Opcode | Does | Example |
@@ -119,6 +127,8 @@ operator's runtime binding, which folds the same way.
 
 `nil?` is a special, unlike `None?`, which is a
 [macro](../../macros/compile-none-and-compile-nil.md).
+
+**Also:** functions [`nil?`](../../runtime/functions.md#predicates), [`repr`](../../runtime/functions.md#conversion-and-display), [`len`, `iter`, `next`](../../runtime/functions.md#iteration), [`dir`, `vars`](../../runtime/functions.md#attributes-and-items); type [`type`](../../runtime/types-and-predicates.md#objects-and-classes).
 
 ## String conversion and formatting
 
@@ -140,6 +150,8 @@ follow the colon in a Python format string, not a `{...}` template:
 See [`compile/#str`](../compile-str.md) and
 [`compile/format`](../compile-format.md).
 
+**Also:** functions [`#str`](../../runtime/functions.md#collection-builders), [`format`](../../runtime/functions.md#conversion-and-display).
+
 ## Collection builders
 
 These emit the `BUILD_*` opcodes rather than an `OBJECT_*` one. A literal whose
@@ -157,6 +169,8 @@ elements are all constants reduces to a single instruction.
 >>> lst
 #[1 2 3]
 ```
+
+**Also:** functions [`#list`, `#tuple`, `#list-append`](../../runtime/functions.md#collection-builders).
 
 ## In-place update
 

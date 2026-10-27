@@ -61,3 +61,5 @@ no parent; Koskari's `repr` prints a module namespace as a dict literal.
 
 **See also:** [`globals`](compile-globals.md) for the module namespace
 from any scope, [`koskari-vars`](../runtime/koskari-vars.md).
+
+**Also:** function [`vars`](../runtime/functions.md#attributes-and-items).

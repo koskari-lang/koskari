@@ -11,3 +11,5 @@ that there is no `LITERALS` list, each pattern is in the explicit matcher
 dialect (see [`koskari.matcher`](../api/koskari-matcher.md)), and the body
 takes one parameter per pattern slot, in pattern order, bound to `None`
 when the match left the slot unbound.
+
+**Also:** layout handler [`macro-match`](../layouts/layout-macro-match.md).

@@ -13,3 +13,5 @@ the first subform names the compiler parameter, the second is a nested
 first rule whose pattern matches runs with the compiler bound to
 **`compiler-formal`** and each pattern variable bound to what it matched, and
 its result is the compile result.
+
+**Also:** layout handler [`special-rules`](../layouts/layout-special-rules.md).
