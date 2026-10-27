@@ -282,8 +282,7 @@ class LITERAL(Pattern):
         if is_symbol(self._value):
             return str(self._value)
         if is_keyword(self._value):
-            name = str(self._value).rstrip(':')
-            return f'(LITERAL_KW "{name}")'
+            return f"{self._value}:"
         return f"(LITERAL {kos_repr(self._value)})"
 
 

@@ -32,7 +32,7 @@ import operator as _op
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import Compare, OpCode, Operand, cons, symbol
-from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
+from ...matcher import BODY, CALLEDBY, LITERAL_KW, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import (
     is_keyword, is_nil, is_pair, is_symbol, unpack)
@@ -903,6 +903,7 @@ def special_iter(compiler, called_by, obj):
 _NEXT_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("it")),
     MATCH(CALLEDBY("called_by"), VALUE("it"), VALUE("default")),
+    MATCH(CALLEDBY("called_by"), VALUE("it"), LITERAL_KW("default"), VALUE("default")),
 ]
 
 
