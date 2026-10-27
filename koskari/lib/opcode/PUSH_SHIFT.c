@@ -32,7 +32,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   if (get_prompt_id_from_insn(ctx, insn, &prompt_id) < 0)
     RESULT_RAISE();
 
-  resume = kos_shift_ic_for((PyObject *) KosContext_CurrentCode(ctx),
+  resume = kos_shift_ic_for((PyObject *) KosContext_FrameCode(ctx),
                             KosOp_PC(insn));
   if (! resume) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");

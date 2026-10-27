@@ -1323,15 +1323,12 @@ static void kos_dyn_resync_apply(
   if (ef != ft) {
     if (ef && flush)
       KosContext_FlushLiveRegsToFrame(ctx);
-    KosContext_FRAME(ctx) = ft;
-    KosContext_BLOCK(ctx) = bl;
-    KosContext_NAMESPACE(ctx) = ns;
     if (ft) {
-      KosContext_CODE(ctx) = KosDynFrame_CODE(ft);
-      ctx->pc = KosDynFrame_PC(ft);
-      ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
+      KosContext_LoadFrame(ctx, ft, bl, ns);
     } else {
-      KosContext_CODE(ctx) = NULL;
+      KosContext_FRAME(ctx) = NULL;
+      KosContext_BLOCK(ctx) = bl;
+      KosContext_NAMESPACE(ctx) = ns;
       ctx->pc = NULL;
       ctx->acting_pc = NULL;
     }
@@ -1344,18 +1341,14 @@ static void kos_dyn_resync_apply(
 
 
 /**
-   Load live frame, code, and PCs from a heap frame without flushing or
-   changing block/namespace. Call when block/ns were already retargeted.
+   Reload the live pc fields from ft, the frame that is already the live
+   one, after a site wrote them on the frame directly. Block and
+   namespace are untouched.
 */
 static void kos_dyn_resync_load_regs(
     KosContext *ctx,
     KosDynFrame *ft) {
 
-  if (! ctx || ! ft)
-    return;
-
-  KosContext_FRAME(ctx) = ft;
-  KosContext_CODE(ctx) = KosDynFrame_CODE(ft);
   ctx->pc = KosDynFrame_PC(ft);
   ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
 }

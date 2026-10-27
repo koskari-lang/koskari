@@ -2597,8 +2597,6 @@ static int test_agen_flatten_from_wrapper_chain_clears_registers(void) {
                    "flatten cleared the wrapper's dyn top");
   TEST_ASSERT_NULL(KosContext_FRAME(agen->ctx),
                    "flatten cleared the wrapper's frame register");
-  TEST_ASSERT_NULL(KosContext_CODE(agen->ctx),
-                   "flatten cleared the wrapper's code register");
   TEST_ASSERT_NULL(KosContext_BLOCK(agen->ctx),
                    "flatten cleared the wrapper's block register");
   TEST_ASSERT_NULL(KosContext_NAMESPACE(agen->ctx),

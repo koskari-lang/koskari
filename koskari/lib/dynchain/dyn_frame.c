@@ -315,21 +315,17 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
   /* Inline retarget, specialized from kos_dyn_resync_after_push for a
      fresh FRAME node: flush the outgoing frame's live PCs, then load
-     every live register directly from the new frame (PC/ACTING are 0
-     from kos_dynframe_new).  Mirror of the return-side inline retarget
-     in eval_plain_return. */
+     every live register directly from the new frame (its pc is the
+     entry from kos_dynframe_new). Mirror of the return-side inline
+     retarget in eval_plain_return. */
   if (cur)
     KosContext_FlushLiveRegsToFrame(ctx);
   kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
                                   KosContext_BLOCK(ctx));
   KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) cur;
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
-  KosContext_FRAME(ctx) = frame;
-  KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) frame);
-  KosContext_NAMESPACE(ctx) = KosDynNode_NS((KosDynNode *) frame);
-  KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
-  ctx->pc = KosDynFrame_PC(frame);
-  ctx->acting_pc = KosDynFrame_ACTING_PC(frame);
+  KosContext_LoadFrame(ctx, frame, &KosDynNode_STACK((KosDynNode *) frame),
+                       KosDynNode_NS((KosDynNode *) frame));
 
   return frame;
 }

@@ -72,7 +72,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
          code-less invoke site must be delivered through the prologue
          (REPROLOGUE) instead. */
       if (unlikely(routed.kind == KOS_RES_NORMAL
-                   && ! KosContext_CODE(ctx))) {
+                   && ! KosContext_FrameCode(ctx))) {
         PyErr_SetString(PyExc_RuntimeError,
                         "POP_PROMPT: delimited return resumed dispatch "
                         "in a code-less frame");

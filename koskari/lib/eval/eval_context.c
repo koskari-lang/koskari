@@ -125,13 +125,10 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
   if (top) {
     KosDynNode *node = (KosDynNode *) top;
 
-    KosContext_FRAME(ctx) = top;
-    KosContext_BLOCK(ctx) = KosDynNode_STACK(node)
-        ? &KosDynNode_STACK(node) : NULL;
-    KosContext_NAMESPACE(ctx) = KosDynNode_NS(node);
-    KosContext_CODE(ctx) = KosDynFrame_CODE(top);
-    ctx->pc = KosDynFrame_PC(top);
-    ctx->acting_pc = KosDynFrame_ACTING_PC(top);
+    KosContext_LoadFrame(
+        ctx, top,
+        KosDynNode_STACK(node) ? &KosDynNode_STACK(node) : NULL,
+        KosDynNode_NS(node));
   }
 
   PyObject_GC_Track((PyObject *) ctx);

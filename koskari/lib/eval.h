@@ -370,7 +370,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
    - RESULT_NEXT(ctx): continue at the next instruction, insn + 1.
    - RESULT_JUMP_AT(ctx, target): continue at the target record.
-   - RESULT_CONTINUE(ctx): continue at ctx->pc through ctx->code.
+   - RESULT_CONTINUE(ctx): continue at the record ctx->pc holds.
    - RESULT_PUSH(ctx, val): push a borrowed val, then continue. A
      failed push leaves val with its caller.
    - RESULT_STEAL(ctx, val): push an owned val (consumed, on failure
@@ -380,7 +380,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
    The straight-line forms (NEXT, PUSH, STEAL) step from the handler's
    own record: the next instruction is insn + 1, and its pc comes off
-   that record, so no walk through ctx->code is needed. They are for a
+   that record, so no fetch through ctx->pc is needed. They are for a
    handler that leaves the frame and the pc alone. A handler whose
    helper installed a callee, returned to a parent, or stored a pc
    ends in RESULT_CONTINUE, which fetches from ctx->pc the way the
@@ -697,9 +697,9 @@ KosOpResult KosContext_NextResume(
   The dyn_top field points to the top of the dynamic chain, which may
   be any node kind (FRAME, GEN, PROMPT, WIND, TRY, and the rest).
 
-  The frame field is the topmost FRAME node; code, block, namespace,
-  pc and acting_pc are the live registers derived from it and from the
-  chain. kos_dyn_* chain edits retarget them, during a drive and
+  The frame field is the topmost FRAME node; block, namespace, pc and
+  acting_pc are the live registers derived from it and from the
+  chain; the frame's code is read from the frame. kos_dyn_* chain edits retarget them, during a drive and
   outside one alike, so they are current whether the context is
   running or suspended. pc and acting_pc are flushed into the frame at
   frame boundaries (KosContext_FlushLiveRegsToFrame). Both are
@@ -765,7 +765,6 @@ struct KosContext {
      flushed into frame at frame boundaries. --- */
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame;        /* topmost frame on the chain */
-  KosCode *code;             /* frame's code */
   KosSegment **block;        /* innermost operand stack slot; non-owning */
   PyObject *namespace;       /* active namespace; borrowed */
   KosOp *pc;                 /* the next instruction */
@@ -946,9 +945,12 @@ static inline int kos_eval_check_frame_room(
     return 0;
   return kos_eval_recursion_error();
 }
-#define KosContext_CODE(ctx) ((ctx)->code)
-/** The live code's instruction array, read through the code object. */
-#define KosContext_OPS(ctx) KosCode_CODE(KosContext_CODE(ctx))
+/** The live frame's code: NULL with no frame or a code-less one. */
+static inline KosCode *KosContext_FrameCode(KosContext *ctx) {
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  return frame ? KosDynFrame_CODE(frame) : NULL;
+}
 
 /** The live next instruction; use KosContext_SET_PC to assign. */
 #define KosContext_PC(ctx) ((ctx)->pc)
@@ -983,11 +985,28 @@ static inline void KosContext_StageDelivery(KosContext *ctx, PyObject *val) {
 static inline void KosContext_ClearLiveRegs(KosContext *ctx) {
   KosContext_DYN_TOP(ctx) = NULL;
   KosContext_FRAME(ctx) = NULL;
-  KosContext_CODE(ctx) = NULL;
   KosContext_BLOCK(ctx) = NULL;
   KosContext_NAMESPACE(ctx) = NULL;
   ctx->pc = NULL;
   ctx->acting_pc = NULL;
+}
+
+
+/** Make frame the live frame: block and ns are the chain-derived
+    registers the caller resolved (the frame's own segment and
+    namespace, or a region's above it); the pc fields come from the
+    frame. dyn_top is the caller's to set. */
+static inline void KosContext_LoadFrame(
+    KosContext *ctx,
+    KosDynFrame *frame,
+    KosSegment **block,
+    PyObject *ns) {
+
+  KosContext_FRAME(ctx) = frame;
+  KosContext_BLOCK(ctx) = block;
+  KosContext_NAMESPACE(ctx) = ns;
+  ctx->pc = KosDynFrame_PC(frame);
+  ctx->acting_pc = KosDynFrame_ACTING_PC(frame);
 }
 
 
@@ -1021,8 +1040,6 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 
 #define KosContext_CurrentNode(ctx) \
   KosContext_DYN_TOP(ctx)
-
-#define KosContext_CurrentCode(ctx) KosContext_CODE(ctx)
 
 #define KosContext_CurrentNamespace(ctx) KosContext_NAMESPACE(ctx)
 
@@ -1201,11 +1218,9 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
   KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosContext_FRAME(ctx);
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
-  KosContext_FRAME(ctx) = frame;
-  KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) frame);
-  KosContext_NAMESPACE(ctx) = KosDynNode_NS((KosDynNode *) frame);
-  KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
-  KosContext_SetEntryPC(ctx, KosDynFrame_CODE(frame));
+  /* a cached frame holds its entry (or NULL, code-less) as its pc */
+  KosContext_LoadFrame(ctx, frame, &KosDynNode_STACK((KosDynNode *) frame),
+                       KosDynNode_NS((KosDynNode *) frame));
 }
 
 
@@ -1742,7 +1757,7 @@ static inline int kos_site_extent_close(
     return 0;
   }
 
-  code = (PyObject *) KosContext_CODE(ctx);
+  code = (PyObject *) KosContext_FrameCode(ctx);
   eid = kos_extent_find(code, KosOp_PC(insn), kind);
   if (eid == KOS_EXTENT_NONE) {
     PyErr_Format(PyExc_RuntimeError, "%s: no extent at this PC", who);
@@ -1753,7 +1768,7 @@ static inline int kos_site_extent_close(
     PyErr_Format(PyExc_RuntimeError, "%s: invalid extent", who);
     return -1;
   }
-  *pop = &KosContext_OPS(ctx)[ext->pop_pc];
+  *pop = &KosCode_CODE(code)[ext->pop_pc];
   if (slot && slot->kind == KOS_CACHE_EMPTY) {
     slot->kind = KOS_CACHE_TARGET;
     slot->u.target.pop = *pop;

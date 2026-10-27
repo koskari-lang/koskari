@@ -1479,7 +1479,7 @@ static KosOpResult kos_eval_route_delim_return(
      invoker (a resume frame that called the continuation) has no pc to
      continue at: the prologue delivers the value on its stack to the
      resume set on it, the way a callee's return reaches it. */
-  if (! KosContext_CODE(ctx))
+  if (! KosContext_FrameCode(ctx))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }
@@ -2624,8 +2624,8 @@ static inline KosOpResult eval_event_return_unwind(
    DYN_TOP == FRAME is already established.  The single definition, shared
    by eval_event_return_at_frame and kos_return_is_plain.
 
-   eval_plain_return sets ctx->code from the parent, pushes the value
-   and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
+   eval_plain_return loads the live registers from the parent, pushes
+   the value and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
    conjuncts below guard that, for separate reasons: without code there
    is nothing to dispatch, and with a resume pending the prologue is
    what would have delivered the value to it. A bytecode frame can
@@ -2719,12 +2719,8 @@ KOS_OP_INLINE KosOpResult eval_plain_return(
      but with no chain walk — parent is a known FRAME node, so every live
      register is read directly from it. */
   KosContext_DYN_TOP(ctx) = parent;
-  KosContext_FRAME(ctx) = (KosDynFrame *) parent;
-  KosContext_BLOCK(ctx) = &KosDynNode_STACK(parent);
-  KosContext_NAMESPACE(ctx) = KosDynNode_NS(parent);
-  KosContext_CODE(ctx) = KosDynFrame_CODE((KosDynFrame *) parent);
-  ctx->pc = KosDynFrame_PC((KosDynFrame *) parent);
-  ctx->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
+  KosContext_LoadFrame(ctx, (KosDynFrame *) parent, &KosDynNode_STACK(parent),
+                       KosDynNode_NS(parent));
   kos_dynframe_free_fast((KosDynFrame *) child);
 
   if (KosContext_StackPUSH(ctx, val) < 0)
@@ -2806,15 +2802,9 @@ KOS_OP_INLINE KosOpResult eval_region_return(
     KosDynFrame *ft,
     PyObject *val) {
 
-  KosSegment **bl = KosSegment_BACK(KosDynNode_STACK(child));
-
   KosContext_DYN_TOP(ctx) = parent;
-  KosContext_FRAME(ctx) = ft;
-  KosContext_BLOCK(ctx) = bl;
-  KosContext_NAMESPACE(ctx) = KosDynNode_NS(parent);
-  KosContext_CODE(ctx) = KosDynFrame_CODE(ft);
-  ctx->pc = KosDynFrame_PC(ft);
-  ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
+  KosContext_LoadFrame(ctx, ft, KosSegment_BACK(KosDynNode_STACK(child)),
+                       KosDynNode_NS(parent));
   kos_dynframe_free((KosDynFrame *) child);
 
   if (KosContext_StackPUSH(ctx, val) < 0)
@@ -2897,8 +2887,6 @@ KOS_OP_INLINE int eval_region_resume_return(
     const KosResumeKind **out_resume,
     void **out_state) {
 
-  KosSegment **bl;
-
   switch (KosEval_ResultIsValue(val)) {
     case 1:
       break;
@@ -2909,14 +2897,9 @@ KOS_OP_INLINE int eval_region_resume_return(
       return -1;
   }
 
-  bl = KosSegment_BACK(KosDynNode_STACK(child));
   KosContext_DYN_TOP(ctx) = parent;
-  KosContext_FRAME(ctx) = ft;
-  KosContext_BLOCK(ctx) = bl;
-  KosContext_NAMESPACE(ctx) = KosDynNode_NS(parent);
-  KosContext_CODE(ctx) = KosDynFrame_CODE(ft);
-  ctx->pc = KosDynFrame_PC(ft);
-  ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
+  KosContext_LoadFrame(ctx, ft, KosSegment_BACK(KosDynNode_STACK(child)),
+                       KosDynNode_NS(parent));
   kos_dynframe_free((KosDynFrame *) child);
 
   *out_resume = KosDynFrame_RESUME_KIND(ft);
@@ -3420,9 +3403,7 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx) {
     return;
   }
 
-  KosCode *rep_code = KosContext_CODE(ctx);
-  if (! rep_code)
-    rep_code = KosDynFrame_CODE(rep_pf);
+  KosCode *rep_code = KosDynFrame_CODE(rep_pf);
 
   if (! rep_code) {
     PyErr_SetString(PyExc_SystemError,

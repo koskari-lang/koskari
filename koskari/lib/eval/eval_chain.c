@@ -63,7 +63,6 @@ int KosContext_SetFrameCodeAndNamespace(
     KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
   if (KosContext_FRAME(ctx) == frame) {
     KosContext_NAMESPACE(ctx) = ns;
-    KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
     KosContext_BLOCK(ctx) = &KosDynFrame_STACK(frame);
   }
   return 0;
