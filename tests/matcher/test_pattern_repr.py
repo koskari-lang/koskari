@@ -88,7 +88,7 @@ class TestPatternKosReprRoundTrip(unittest.TestCase):
 
 
     def test_not_literal_kw(self):
-        self.assert_kos_roundtrip('(NOT (LITERAL_KW "*"))')
+        self.assert_kos_roundtrip('(NOT *:)')
 
 
     def test_explicit_spine(self):
