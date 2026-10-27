@@ -37,8 +37,8 @@ import-from os.path abspath basename dirname join
 
 
 ;; Keep the label placement here in sync with the viewBox.
-define WORDMARK_VIEWBOX "-7 -10 500 114"
-define WORDMARK_MARKUP """
+var WORDMARK_VIEWBOX "-7 -10 500 114"
+var WORDMARK_MARKUP """
   <text x="110" y="92"
         font-family="Bricolage Grotesque, sans-serif"
         font-size="116" font-weight="700" fill="#211C16"
@@ -46,18 +46,18 @@ define WORDMARK_MARKUP """
 """
 
 
-define icon_path []:
+def icon_path []:
     """
     Path to the apple-only icon SVG in the repository
 
     :return: path string
     """
 
-    define root (dirname (dirname (abspath __file__)))
+    var root (dirname (dirname (abspath __file__)))
     join root "koskari" "assets" "koskari-icon.svg"
 
 
-define lockup_svg [icon]:
+def lockup_svg [icon]:
     """
     Build the lockup SVG text from the icon SVG at the given path
 
@@ -66,7 +66,7 @@ define lockup_svg [icon]:
     :raises ValueError: when the icon SVG has no closing tag
     """
 
-    define svg:
+    var svg:
         with [fh (open icon encoding: "utf-8")]:
             (fh.read)
 
@@ -82,7 +82,7 @@ define lockup_svg [icon]:
     svg.replace "</svg>" (+ (WORDMARK_MARKUP.rstrip) "\n</svg>") 1
 
 
-define build_arguments [parser]:
+def build_arguments [parser]:
     """
     Register the lockup options on a parser or subparser
     """
@@ -94,7 +94,7 @@ define build_arguments [parser]:
         help: "apple-only icon SVG (default: koskari/assets/koskari-icon.svg)")
 
 
-define run [options]:
+def run [options]:
     """
     Write the lockup SVG described by parsed options
 
@@ -102,14 +102,14 @@ define run [options]:
     :return: integer exit code
     """
 
-    define svg (lockup_svg options.icon)
+    var svg (lockup_svg options.icon)
     with [fh (open options.output "w" encoding: "utf-8")]:
         (fh.write svg)
     return 0
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Parse arguments and write the lockup SVG
 
@@ -120,9 +120,9 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [name *: args] argv
+    var [name *: args] argv
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: (basename name)
         description: "Build the Koskari wordmark lockup SVG")
 

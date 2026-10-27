@@ -109,6 +109,7 @@ var MODULE_GROUPS #{
         "tools.corpus.views.full"
         "tools.corpus.views.programs"
         "tools.editor_tokens.regen"
+        "tools.lockup"
         "tools.matchbench"
         "tools.opgrams"
         "tools.opsizing"
