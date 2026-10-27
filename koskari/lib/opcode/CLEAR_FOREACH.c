@@ -20,7 +20,7 @@
 
 KOS_OP_HANDLER(CLEAR_FOREACH) {
   KOS_SYNC_PC(ctx, insn);
-  KosDynNode *region = KosContext_CurrentNode(ctx);
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_FOREACH: top is not a FOREACH region");

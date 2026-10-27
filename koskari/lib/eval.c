@@ -1203,7 +1203,7 @@ PyObject *KoskariContinuationError = NULL;
    Deref name in the current frame namespace. New reference or NULL.
 */
 static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
-  PyObject *ns = KosContext_CurrentNamespace(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
 
   if (KosNamespace_Check(ns))
     return KosNamespace_Resolve(ns, name);
@@ -1219,7 +1219,7 @@ static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
    ownership of val.
 */
 static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
-  PyObject *ns = KosContext_CurrentNamespace(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
 
   if (KosNamespace_Check(ns))
     return KosNamespace_Store(ns, name, val);
@@ -1234,7 +1234,7 @@ static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
    Bind name to reference in the current frame namespace.
 */
 static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *ref) {
-  PyObject *ns = KosContext_CurrentNamespace(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
 
   if (KosNamespace_Check(ns))
     return KosNamespace_Bind(ns, name, ref);
@@ -1249,7 +1249,7 @@ static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *ref) {
    Clear name from the current frame namespace.
 */
 static int frame_ns_clear(KosContext *ctx, PyObject *name) {
-  PyObject *ns = KosContext_CurrentNamespace(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   if (KosNamespace_Check(ns))
     return KosNamespace_Clear(ns, name);
   PyErr_Format(PyExc_TypeError,
@@ -1263,7 +1263,7 @@ static int frame_ns_clear(KosContext *ctx, PyObject *name) {
    return the value. New reference or NULL.
 */
 static PyObject *frame_ns_take(KosContext *ctx, PyObject *name) {
-  PyObject *ns = KosContext_CurrentNamespace(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   if (! KosNamespace_Check(ns)) {
     PyErr_Format(PyExc_TypeError,
                 "frame namespace must be Namespace, got %R", ns);
@@ -1287,7 +1287,7 @@ static PyObject *frame_ns_take(KosContext *ctx, PyObject *name) {
    Borrowed reference; caller must INCREF if keeping.
 */
 static PyObject *frame_ns_ref(KosContext *ctx, PyObject *name) {
-  PyObject *ns = KosContext_CurrentNamespace(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
 
   if (! KosNamespace_Check(ns)) {
     PyErr_Format(PyExc_TypeError,
@@ -1462,10 +1462,10 @@ static KosOpResult kos_eval_route_delim_return(
   }
 
   SAYF("[eval] route_delim_return after unwind: dyn_top=%p kind=%s",
-       (void *) KosContext_CurrentNode(ctx),
-       KosContext_CurrentNode(ctx)
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
            ? kos_dynnode_kind_name(
-                 KosDynNode_KIND(KosContext_CurrentNode(ctx)))
+                 KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL");
 
   if (KosDynDelim_MODE(ret_delim) == KOS_DYN_DELIM_MODE_INPLACE) {
@@ -2533,7 +2533,7 @@ static KosOpResult eval_event_yield(
   /* No flush here: the freeze's retarget flushes the outgoing frame's
      pcs when it switches to the consumer's. */
   SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
-       (void *) gen, (void *) KosContext_CurrentNode(ctx));
+       (void *) gen, (void *) KosContext_DYN_TOP(ctx));
   if (kos_dyn_gen_freeze(ctx, gen) < 0) {
     Py_DECREF(val);
     return EVAL_FATAL();
@@ -3139,7 +3139,7 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob) {
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KosContext *ctx) {
 
-  KosDynNode *node = KosContext_CurrentNode(ctx);
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
   if (likely(! node || KosDynNode_IS_FRAME(node)))
     return kos_eval_delivery_done(ctx);
 

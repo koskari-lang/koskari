@@ -22,7 +22,7 @@
 KOS_OP_HANDLER(POP_FINALLY) {
   KOS_SYNC_PC(ctx, insn);
 
-  KosDynNode *region = KosContext_CurrentNode(ctx);
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FINALLY: top is not a FINALLY region");

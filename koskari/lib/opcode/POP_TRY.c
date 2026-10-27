@@ -23,7 +23,7 @@
 KOS_OP_HANDLER(POP_TRY) {
   KOS_SYNC_PC(ctx, insn);
 
-  KosDynNode *top = KosContext_CurrentNode(ctx);
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
 
   PyErr_Clear();
 

@@ -33,7 +33,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
   KosDynDelim *ret_delim = NULL;
   {
     KosDynNode *node;
-    for (node = KosContext_CurrentNode(ctx); node;
+    for (node = KosContext_DYN_TOP(ctx); node;
          node = KosDynNode_PARENT(node)) {
       if (KosDynNode_IS_PROMPT(node)
           && ! (KosDynNode_FLAGS(node) & KOS_DYNF_INVOCATION))
@@ -50,8 +50,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
   }
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
-       (void *) ret_delim, (void *) KosContext_CurrentNode(ctx),
-       (KosContext_CurrentNode(ctx) && KosDynNode_IS_PROMPT(KosContext_CurrentNode(ctx))) ? 1 : 0,
+       (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
+       (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
        (void *) KosContext_FRAME(ctx),
        KosContext_StackLen(ctx));
 
@@ -82,7 +82,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
       RESULT_RELAY(ctx, routed);
     }
 
-    if (KosContext_CurrentNode(ctx) == (KosDynNode *) ret_delim) {
+    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) ret_delim) {
       if (unlikely(kos_dyn_pop_delim(ctx, ret_delim) < 0)) {
         Py_DECREF(val);
         RESULT_RAISE();
@@ -92,7 +92,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
     RESULT_RETURN(ctx, val);
   }
 
-  KosDynNode *top = KosContext_CurrentNode(ctx);
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top || ! KosDynNode_IS_PROMPT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
     RESULT_RAISE();

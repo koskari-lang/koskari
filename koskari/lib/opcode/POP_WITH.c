@@ -23,7 +23,7 @@
 KOS_OP_HANDLER(POP_WITH) {
   KOS_SYNC_PC(ctx, insn);
 
-  KosDynNode *top = KosContext_CurrentNode(ctx);
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (unlikely(! top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WITH: dyn_top is NULL");
     RESULT_RAISE();

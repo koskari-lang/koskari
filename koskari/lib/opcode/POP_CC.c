@@ -22,7 +22,7 @@ KOS_OP_HANDLER(POP_CC) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  KosDynNode *top = KosContext_CurrentNode(ctx);
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
 
   if (unlikely(kos_dyn_pop_cc(ctx, (KosDynCC *) top) < 0))
     RESULT_RAISE();

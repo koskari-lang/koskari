@@ -1038,11 +1038,6 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
    : (KosSegment *) NULL)
 
 
-#define KosContext_CurrentNode(ctx) \
-  KosContext_DYN_TOP(ctx)
-
-#define KosContext_CurrentNamespace(ctx) KosContext_NAMESPACE(ctx)
-
 /* The current namespace, GC-revealed (tracked along its parent chain)
    and INCREF'd, ready for storage. See KosNamespace_Reveal. */
 #define KosContext_RevealNamespace(ctx) \
