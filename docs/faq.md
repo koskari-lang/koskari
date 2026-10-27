@@ -9,11 +9,14 @@ project: a `.ki` module imports from Python and imports Python back.
 
 ## What is it not?
 
-A replacement for Python, or a faster Python. Koskari runs its own
-bytecode on its own evaluator inside CPython, and every value is a
-Python object. Programs that are all library calls run at the speed of
-those libraries; programs that are all Koskari run slower than the same
-Python.
+A replacement for Python. Koskari runs its own bytecode on its own
+evaluator inside CPython, and every value is a Python object. Programs
+that spend their time in library calls run at the speed of those
+libraries. On compute-bound kernels Koskari is often faster than the
+same Python: arithmetic loops, branching, attribute updates, structural
+match, and recursion. It runs slower where a kernel allocates heavily,
+does arbitrary-precision arithmetic, or crosses a coroutine boundary
+one call at a time.
 
 ## Is it stable?
 

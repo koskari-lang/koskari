@@ -8,8 +8,9 @@ carry a known result (an *oracle*), so they double as correctness proofs.
 
 It is built for two jobs:
 
-- **Comparison** — how much slower is Koskari than Python on a given path, and
-  does that ratio move across a change.
+- **Comparison** -- the `ki/py` ratio on a given path, and whether that
+  ratio moves across a change. Below 1.0 Koskari is faster; above 1.0
+  it is slower.
 - **Tracing** — run Koskari alone (no Python cost) under a trace-instrumented
   build to see opcode-cache, timing, and eval-sync counters.
 
@@ -82,20 +83,55 @@ compute-bound loop) and **median** batch time.
 
 ## Output
 
-A headed table, one row per benchmark:
+A headed table, one row per benchmark. The block below is a full
+`tox -qe churn` from 2026-10-27 (`samples=5`, `warmup=1`). Each row is a
+batch of many kernel calls, not a single iteration:
 
 ```
-benchmark     py-best     py-med    ki-best     ki-med   ki/py
---------------------------------------------------------------
-loop         11.1919s   11.1919s   17.3352s   17.3352s   1.57x
-method        3.5169s    3.5169s   10.7684s   10.7684s   3.06x
+mode=compare  samples=5  warmup=1
+benchmarks: async_generators, async_tree, binary_trees, branch, call_kw, complex_branch, coro_await, coro_call, coro_send, coroutines, demand_call, demand_call_kw, demand_call_method, demand_call_param, fannkuch, field, field_slots, list_each, loop, match_case, method, nbody, pidigits, starmap, strcat, tree, yieldfrom
+benchmark             py-best     py-med    ki-best     ki-med   ki/py
+----------------------------------------------------------------------
+async_generators      0.0796s    0.0801s    0.0378s    0.0381s   0.47x
+async_tree            0.1733s    0.1756s    0.2071s    0.2127s   1.19x
+binary_trees          0.0513s    0.0515s    0.0737s    0.0743s   1.44x
+branch                5.5097s    5.6028s    4.4946s    4.5103s   0.82x
+call_kw               0.0259s    0.0260s    0.0218s    0.0219s   0.84x
+complex_branch        8.6746s    8.6892s    5.5607s    5.7070s   0.64x
+coro_await            0.0030s    0.0030s    0.0058s    0.0058s   1.91x
+coro_call             0.0449s    0.0451s    0.0466s    0.0490s   1.04x
+coro_send             0.0047s    0.0048s    0.0070s    0.0071s   1.49x
+coroutines            0.1188s    0.1192s    0.0576s    0.0577s   0.48x
+demand_call           0.0239s    0.0242s    0.0231s    0.0231s   0.96x
+demand_call_kw        0.0335s    0.0338s    0.0397s    0.0400s   1.19x
+demand_call_method    0.0249s    0.0252s    0.0249s    0.0251s   1.00x
+demand_call_param     0.0254s    0.0255s    0.0266s    0.0269s   1.05x
+fannkuch              0.1270s    0.1277s    0.1573s    0.1573s   1.24x
+field                 4.2573s    4.2753s    2.3418s    2.3478s   0.55x
+field_slots           4.2751s    4.2838s    2.1867s    2.1929s   0.51x
+list_each            11.5489s   11.5887s    7.7081s    7.7156s   0.67x
+loop                 10.9879s   11.0237s    6.2596s    6.2768s   0.57x
+match_case            0.3718s    0.3731s    0.1730s    0.1735s   0.47x
+method                3.4788s    3.4939s    3.0461s    3.0523s   0.88x
+nbody                 1.3306s    1.3347s    1.2723s    1.2738s   0.96x
+pidigits              0.0044s    0.0044s    0.0061s    0.0062s   1.41x
+starmap               0.0048s    0.0048s    0.0085s    0.0085s   1.78x
+strcat                5.0929s    5.1012s    4.8615s    4.8653s   0.95x
+tree                  5.7583s    5.7742s    3.7183s    3.7344s   0.65x
+yieldfrom             0.0069s    0.0070s    0.0109s    0.0109s   1.56x
 ```
 
 The name column is as wide as the longest selected name. `ki/py` is
-Koskari-best over Python-best (above 1.0 means Koskari is that many times
-slower). Blank cells mean that variant did not run (a koskari-only benchmark,
-or a `--mode` that runs one side). A `!! MISMATCH` suffix marks a failed
-correctness check, and the run exits non-zero listing the offenders.
+Koskari-best over Python-best: below 1.0 Koskari is faster by that
+factor, above 1.0 slower. On this run Koskari was faster on 15 kernels,
+at 1.00x on `demand_call_method`, and slower on 11. Every kernel whose
+Python side took more than a second was faster in Koskari. The low
+ratios are `async_generators`, `coroutines`, and `match_case`
+(0.47–0.48x); the high ones are `coro_await` (1.91x), `starmap`
+(1.78x), and `yieldfrom` (1.56x). Blank cells mean that variant did not
+run (a koskari-only benchmark, or a `--mode` that runs one side). A
+`!! MISMATCH` suffix marks a failed correctness check, and the run
+exits non-zero listing the offenders.
 
 `--json` writes the same data machine-readably: `mode`, `samples`, `warmup`,
 and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
