@@ -69,6 +69,7 @@ def _build-env []:
     var env (jinja2.Environment
         loader: (jinja2.FileSystemLoader tdir)
         autoescape: True)
+
     ;; demand: jinja calls a filter synchronously, so a bare koskari
     ;; function would hand it back an un-awaited coroutine
     set! env.filters["stamp"] (demand stamp)

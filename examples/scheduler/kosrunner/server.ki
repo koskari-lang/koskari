@@ -61,6 +61,7 @@ class RequestContext []:
         set! self.headers request.headers
         set! self.query request.query_params
 
+
     def header [self name default: None]:
         """
         Look up a request header (case-insensitive, via FastAPI's Headers),
@@ -68,6 +69,7 @@ class RequestContext []:
         """
 
         (self.headers.get name default)
+
 
     def param [self name default: None]:
         """
@@ -105,9 +107,11 @@ class HttpServer []:
         """
 
         import-from fastapi HTTPException Request
+
         var path f"{prefix}/{name}"
-        (logger.info "route POST %s" path)
         var app self.app
+
+        (logger.info "route POST %s" path)
 
         @(app.post path)
         @coroutine-fn
@@ -129,9 +133,11 @@ class HttpServer []:
         """
 
         import-from fastapi Request
+
         var path f"{prefix}/{name}"
-        (logger.info "route GET %s" path)
         var app self.app
+
+        (logger.info "route GET %s" path)
 
         @(app.get path)
         @coroutine-fn
@@ -146,9 +152,11 @@ class HttpServer []:
         """
 
         import-from fastapi Request
+
         var path f"{prefix}/{name}/{{item}}"
-        (logger.info "route POST %s" path)
         var app self.app
+
+        (logger.info "route POST %s" path)
 
         @(app.post path)
         @coroutine-fn
@@ -164,9 +172,11 @@ class HttpServer []:
         """
 
         import-from fastapi Request
+
         var path f"{prefix}/{name}/{{item}}"
-        (logger.info "route GET %s" path)
         var app self.app
+
+        (logger.info "route GET %s" path)
 
         @(app.get path)
         @coroutine-fn
@@ -181,8 +191,10 @@ class HttpServer []:
         """
 
         import-from fastapi Request
-        (logger.info "route GET %s (html)" path)
+
         var app self.app
+
+        (logger.info "route GET %s (html)" path)
 
         @(app.get path)
         @coroutine-fn
@@ -197,9 +209,11 @@ class HttpServer []:
         """
 
         import-from fastapi Request
+
         var full f"{path}/{{item}}"
-        (logger.info "route GET %s (html)" full)
         var app self.app
+
+        (logger.info "route GET %s (html)" full)
 
         @(app.get full)
         @coroutine-fn
@@ -215,9 +229,11 @@ class HttpServer []:
         """
 
         import-from fastapi Request
+
         var full f"{path}/{{item}}"
-        (logger.info "route POST %s (form)" full)
         var app self.app
+
+        (logger.info "route POST %s (form)" full)
 
         @(app.post full)
         @coroutine-fn

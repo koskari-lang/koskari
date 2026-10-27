@@ -37,11 +37,9 @@ def require-extra [module extra]:
     try:
         (return (import_module module))
     except [ImportError]:
-        ;; adjacent literals are separate ARGS in koskari; #str is the
-        ;; variadic join that spreads one message over several lines
-        raise (ImportError (#str
-            f"the {extra} job variety needs the '{module}' package:"
-            f" pip install koskari-kosrunner[{extra}]"))
+        raise (ImportError
+            f"the {extra} job variety needs the '{module}' package:"-
+            f" pip install koskari-kosrunner[{extra}]")
 
 
 def watch-task [task what job: None]:
@@ -194,9 +192,8 @@ class Job []:
 
 
     def _invoke [self args kwargs]:
-        (if (None? self.callback)
-            None
-            (self.callback *: args **: kwargs))
+        unless (None? self.callback):
+            (self.callback *: args **: kwargs)
 
 
     def _tracked-invoke [self store runid args kwargs]:
@@ -519,10 +516,12 @@ class JobSet []:
     def _teardown [self]:
         (self._remove-signals)
         (self.stop)
+
         ;; let in-flight background runs finish writing before the store
         ;; closes under them (a snapshot: the done-callback mutates the set)
         when self._inflight:
             (await (asyncio.gather *: (list self._inflight) return_exceptions: True))
+
         ;; local import dodges the job<->server load-time cycle
         import-from .server stop-all-servers
         (stop-all-servers)

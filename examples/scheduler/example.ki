@@ -6,9 +6,9 @@
 ;; config) or CODE (a job handler). See README.md for the surface, how
 ;; it lowers to a live JobSet, and how to add a job variety.
 
-import-from datetime datetime
 
-import-all-from kosrunner
+import-from datetime datetime
+use kosrunner
 
 
 jobset workload:

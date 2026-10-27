@@ -48,7 +48,7 @@ class LifeBoard []:
 
     def tracked [self cleanup: True]:
         """
-        Yield (coord, value) for live and recently dead cells
+        Yield #(coord value) for live and recently dead cells
         """
 
         var data self.data

@@ -242,7 +242,7 @@ class UmbJob [Job]:
         unless dest:
             (logger.warning "no reply-to for message on %s; reply dropped"
                 self.destination)
-            (return)
+            return
 
         var [body ctype] (encode-body value)
 
@@ -276,7 +276,7 @@ class UmbJob [Job]:
 
     def start [self]:
         when self._client:
-            (return)
+            return
         when (None? self.config.servers):
             raise (ValueError
                 f"umb job {self.name} has no servers configured")

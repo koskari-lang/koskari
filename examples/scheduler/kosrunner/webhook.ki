@@ -59,12 +59,13 @@ def derive-input-spec [fn]:
 
     var spec #{}
     var sig (inspect.signature fn)
+
     for-each [[name param] (sig.parameters.items)]:
         unless (== param.annotation inspect.Parameter.empty):
             if (== param.default inspect.Parameter.empty):
-                (set! (item spec name) param.annotation)
+                set! spec[name] param.annotation
             else:
-                (set! (item spec name) #(param.annotation param.default))
+                set! spec[name] #(param.annotation param.default)
 
     (or spec None)
 
@@ -78,33 +79,42 @@ def coerce-input [spec payload]:
     """
 
     def bad [msg]:
-        (raise (HTTPException status_code: 400 detail: msg))
+        raise (HTTPException status_code: 400 detail: msg)
 
     unless (instance? payload dict):
-        (bad "payload must be a JSON object")
+        bad "payload must be a JSON object"
 
     for-each [key (payload.keys)]:
         unless (in? key spec):
-            (bad f"unknown input: {key}")
+            bad f"unknown input: {key}"
 
     var kwargs #{}
+
     for-each [[name typ] (spec.items)]:
-        var [t default required] (if (instance? typ tuple)
-            (values (item typ 0) (item typ 1) False)
-            (values typ None True))
+        if (tuple? typ):
+            var [t default] typ
+            var required False
+        else:
+            var t typ
+            var default None
+            var required True
+
         if (in? name payload):
-            var val (item payload name)
+            var val payload[name]
+
             if (instance? val t):
-                (set! (item kwargs name) val)
+                set! kwargs[name] val
             else:
                 try:
-                    (set! (item kwargs name) (t val))
+                    set! kwargs[name] (t val)
                 except [Exception]:
-                    (bad f"bad value for {name}: expected {t.__name__}")
+                    bad f"bad value for {name}: expected {t.__name__}"
+
         elif required:
-            (bad f"missing required input: {name}")
+            bad f"missing required input: {name}"
         else:
-            (set! (item kwargs name) default)
+            set! kwargs[name] default
+
     kwargs
 
 
@@ -201,10 +211,12 @@ class WebhookJob [Job]:
         set! self.running True
         var server (get-server self.config)
         var prefix (normalize-prefix self.config.prefix)
+
         ;; dispatch guards the token at the boundary, then routes through
         ;; Job.run so each accepted request is a tracked run whose return
         ;; value flows back as the HTTP response
         (server.add-route prefix self.route self.dispatch)
+
         ;; the read-back sits one segment deeper on the same door, so POST
         ;; {prefix}/{route} fires and GET {prefix}/{route}/{runid} follows
         (server.add-detail prefix self.route self.read-run)

@@ -34,7 +34,9 @@ class FakeConfig [Config]:
 
 
 class FakeJob [Job]:
-    """A trivial job variety: start/stop just flip `running` and log."""
+    """
+    A trivial job variety: start/stop just flip `running` and log
+    """
 
     var config-class FakeConfig
 
