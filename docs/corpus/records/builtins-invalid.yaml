@@ -5,6 +5,7 @@ verify:
   read: (apply cons 1 2 (#list nil))
   invalid: apply takes FUNC, one iterable of positional arguments, and an optional kwargs dict; leading positional arguments raise TypeError
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -23,6 +24,7 @@ verify:
   read: (begin (var d (defer (lambda [] 4))) (await d) (await d))
   invalid: a defer is single-shot; the second await raises RuntimeError
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -41,6 +43,7 @@ verify:
   read: "(max (#list \"aa\" \"b\") key: (lambda [s] (len s)))"
   invalid: max is Python's own; a Koskari function as its key returns unawaited coroutines, and comparing them raises TypeError
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -51,3 +54,148 @@ tags:
   - pitfall
   - surface:sexpr
 notes: "corrective: (max #[\"aa\" \"b\"] key: (demand (lambda [s] (len s))))"
+---
+id: builtin-build-dict-bare-key-001
+feature: builtin/#dict
+source: (#dict "a" 1)
+verify:
+  read: (#dict "a" 1)
+  invalid: "#dict takes key-value items or keyword arguments; a bare key and value raise ValueError"
+references:
+  - agents/native-builtins.md
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - construct
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (#dict #(\"a\" 1)) or (#dict a: 1)"
+---
+id: builtin-cons-splice-pair-chain-001
+feature: builtin/cons
+source: "(cons 0 *: '(1 2) nil)"
+verify:
+  read: "(cons 0 *: (quote (1 2)) nil)"
+  invalid: "*: over a pair chain splices its car and cdr, not its elements; a pair iterates as two fields"
+references:
+  - agents/native-builtins.md
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - surprising
+  - construct
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (cons 0 (quote (1 2))); the last argument of cons is the tail"
+---
+id: builtin-create-task-demand-await-001
+feature: builtin/create-task
+source: (await (create-task (defer (lambda [] 4))))
+verify:
+  read: (await (create-task (defer (lambda [] 4))))
+  invalid: on the demand path an await that must suspend raises KoskariSyncViolation
+references:
+  - agents/native-builtins.md
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - await
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: await the task from async-hosted code"
+---
+id: builtin-map-two-iterables-001
+feature: builtin/map
+source: "(map + #[1 2] #[10 20])"
+verify:
+  read: (map + (#list 1 2) (#list 10 20))
+  invalid: map takes one iterable; a second raises TypeError
+references:
+  - agents/native-builtins.md
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - builtin
+  - iterate
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (map (lambda [p] (+ *: p)) (zip #[1 2] #[10 20]))"
+---
+id: builtin-not-as-value-001
+feature: special/compile/not
+source: "(map not #[True])"
+verify:
+  read: (map not (#list True))
+  invalid: not is a special form with no runtime binding; as a value it raises NameError
+references:
+  - agents/native-builtins.md
+  - reference/runtime/operators.md
+stability: evolving
+tags:
+  - builtin
+  - higher-order
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (map (lambda [x] (not x)) #[True])"
+---
+id: builtin-parameter-quoted-head-001
+feature: special/compile/parameter
+source: (parameter 'p 3)
+verify:
+  error: SyntaxMatchError
+references:
+  - agents/native-builtins.md
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - default-value
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (parameter p 3) in head position; (apply parameter #['p 3]) as a value"
+---
+id: builtin-py-filter-koskari-predicate-001
+feature: builtin/py-filter
+source: "(list (py-filter (lambda [x] False) #[1 2 3]))"
+verify:
+  read: (list (py-filter (lambda [x] False) (#list 1 2 3)))
+  invalid: py-filter is Python filter; a Koskari predicate returns a truthy unawaited coroutine per element, so every element passes
+references:
+  - agents/native-builtins.md
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - builtin
+  - surprising
+  - filter
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (list (filter (lambda [x] False) #[1 2 3]))"
+---
+id: builtin-set-literal-is-dict-001
+feature: builtin/set
+source: "#{1 2}"
+verify:
+  read: (#dict 1 2)
+  invalid: "#{...} is the dict literal, not a set; bare elements raise ValueError"
+references:
+  - agents/native-builtins.md
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - construct
+  - invalid
+  - pitfall
+  - surface:sexpr
+notes: "corrective: (set #[1 2]) or (#set 1 2)"

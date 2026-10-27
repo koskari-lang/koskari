@@ -1,4 +1,11 @@
-# Native builtins versus their python namesakes
+# Python reflexes versus Koskari behaviour
+
+Python and Scheme habits that compile and then misbehave in Koskari.
+Each table row: the reflex, what it does, what to write. The sections
+on [silent errors](#silently-wrong) and [raising errors](#raises) come
+after the native builtins below.
+
+## Native builtins versus their python namesakes
 
 Several bootstrap names that look like python builtins are koskari
 NATIVE types. They accept koskari functions directly -- no `demand`
@@ -116,3 +123,61 @@ view, so a group stays valid after the parent advances; and
 `filter?` answers true for it.
 
 Reference: [koskari.itertools](../reference/runtime/koskari-itertools.md).
+
+## Silently wrong
+
+These run without error and return a wrong answer.
+
+A pair is one link: it unpacks to its head and tail, `car` and `cdr`,
+and `len` of any pair but `nil` is 2. `(.length x)` follows a proper
+chain and counts its elements.
+
+| Reflex | Result | Write |
+|---|---|---|
+| `(list? '(1 2))` to test for a list | `False`: `list?` is the Python `list` type test | `(proper? x)` or `(pair? x)` |
+| `(len '(1 2 3))` | `2`: a pair is one link of two fields | `(.length x)` |
+| `(list '(1 2 3))`, `for-each` over a pair chain | `#[1 (2 3)]` | `(list (unpack x))`, `for-each` over `(unpack x)` |
+| `(cons 0 *: chain nil)` to prepend | splices the head and the tail of the first link | `(cons 0 chain)`: the last argument of `cons` is the tail |
+| `(pair? x)` to mean non-empty | `nil` passes `pair?` | test `(nil? x)` first |
+| `(list (py-filter pred xs))` with a Koskari `pred` | every element passes | `(filter pred xs)`, or `(py-filter (demand pred) xs)` |
+
+## Raises
+
+| Reflex | Error | Write |
+|---|---|---|
+| `#{1 2}` as a set literal | `ValueError`: `#{...}` is a dict | `(set #[1 2])` or `(#set 1 2)` |
+| `(map f xs ys)` | `TypeError`: `map` takes one iterable | `(map (lambda [p] (f *: p)) (zip xs ys))` |
+| `(apply f a b args)`, Scheme style | `TypeError`: `apply` is `(apply FUNC [ARGS [KWARGS]])` | `(apply f #[a b *: args])` |
+| `(map not xs)`, `(apply % ...)` | `NameError`: `%`, `~`, `not`, `truth`, `divmod`, `is`, and `is-not` are special forms with no runtime binding | a lambda, such as `(lambda [x] (not x))`; `is?` and `is-not?` for identity |
+| `(max xs key: (lambda ...))`, and `min` | `TypeError` comparing coroutines: `max` and `min` do not wrap the key | `key: (demand f)`; `sorted` wraps its key itself |
+| `(#dict "a" 1)` | `ValueError`: items are pairs | `(#dict #("a" 1))` or `(#dict a: 1)` |
+
+## Head position versus value
+
+A name that heads a form compiles as its special form, whose syntax can
+differ from calling the same name as a value.
+
+| Head form | As a value |
+|---|---|
+| `(parameter NAME [DEFAULT])` with **NAME** unquoted; `(parameter 'p 3)` raises `SyntaxMatchError` | `(apply parameter #['p 3])`, the name quoted |
+| `(next IT DEFAULT)` or `(next IT default: DEFAULT)` | `(apply next #[it 0])` |
+
+## Catching
+
+| Reflex | Fact | Write |
+|---|---|---|
+| `[[KoskariException] ...]` around a demand call | `KoskariSyncViolation` subclasses `TypeError` only | `[[KoskariSyncViolation] ...]` or `[[TypeError] ...]` |
+| `[[SyntaxError] ...]` around `evaluate` or `compile` | compile errors such as `SyntaxMatchError` are `CompilerError`, not `SyntaxError` | `[[CompilerError] ...]` |
+| `[[RuntimeError] ...]` around `shift` | continuation errors are not `RuntimeError` | `[[KoskariContinuationError] ...]` |
+
+## Async handles
+
+| Reflex | Fact | Write |
+|---|---|---|
+| awaiting one `defer` twice | the second await raises `RuntimeError`: a defer is single-shot | `(create-task (defer ...))` for a handle awaited more than once |
+| `(await (create-task ...))` on the demand path | `KoskariSyncViolation`: the demand path cannot suspend | await it from async-hosted code |
+
+Reference: [Functions](../reference/runtime/functions.md),
+[Types and type predicates](../reference/runtime/types-and-predicates.md),
+[Operators](../reference/runtime/operators.md),
+[Error guide](../reference/error-codes.md).

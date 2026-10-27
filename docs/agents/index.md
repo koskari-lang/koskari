@@ -30,10 +30,12 @@ from Python or Scheme priors.
   [Idiomatic Koskari](../guide/idiomatic-koskari.md)
 - Gentler on-ramp for Python-shaped expectations:
   [Layout and calls](../tutorials/from-python/layout-and-calls.md)
-- `map`, `filter`, and `partial` are koskari-native, not the python
-  builtins -- what that changes, when `demand` wrapping applies, and
-  why `koskari.itertools` rather than `itertools`:
-  [Native builtins](native-builtins.md)
+- Python and Scheme reflexes that misbehave in Koskari, as reflex /
+  result / fix tables: the native `map`, `filter`, and `partial`, when
+  `demand` wrapping applies, `koskari.itertools` rather than
+  `itertools`, pair chains, special forms in head position, and which
+  exception class to catch:
+  [Python reflexes versus Koskari behaviour](native-builtins.md)
 - Exception names at the read, compile, and run phases:
   [Error guide](../reference/error-codes.md)
 

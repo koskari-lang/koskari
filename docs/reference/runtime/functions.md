@@ -135,13 +135,17 @@ set! (cadr p) 8                ; p is (9 8 3)
 (set-cdr p nil)                ; p is (9)
 ```
 
-A pair iterates as its two fields, the car and the cdr. `len`, `list`,
-`for-each`, `map`, and `*:` all see those two items, not the elements
-of the chain:
+A pair is one link: it unpacks to its two fields, the car and the cdr,
+and `len` of any pair but `nil` is 2. `len`, `list`, `for-each`, `map`,
+and `*:` see those two fields, not the elements of the chain.
+`(.length x)` follows a proper chain and counts its elements. To
+prepend, pass the chain as the tail of `cons`.
 
 ```koskari
 (len '(1 2 3))                 ; 2
+(.length '(1 2 3))             ; 3
 (list '(1 2 3))                ; #[1 (2 3)]
+(cons 0 '(1 2))                ; (0 1 2)
 ```
 
 **Syntax:** `(unpack VALUE)`
@@ -381,7 +385,8 @@ returns an unawaited coroutine, which does not compare; wrap it in
 
 **Syntax:** `(len COLLECTION)`
 
-The number of elements. A pair chain counts as two.
+The number of elements. A pair is one link and counts as two;
+`(.length x)` counts the elements of a proper chain.
 
 **Also:** special form
 [`len`](../specials/object-operators/index.md#unary-and-inspection-operators).

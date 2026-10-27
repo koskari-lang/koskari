@@ -312,6 +312,7 @@ verify:
   expand: (list? (quote (1 2)))
   eval: "false"
 references:
+  - agents/native-builtins.md
   - reference/runtime/types-and-predicates.md
 stability: evolving
 tags:
@@ -572,6 +573,7 @@ verify:
   expand: (pair? nil)
   eval: "true"
 references:
+  - agents/native-builtins.md
   - reference/runtime/types-and-predicates.md
 stability: evolving
 tags:
@@ -2015,6 +2017,7 @@ verify:
   expand: (list (unpack (quote (1 2 3))))
   eval: list:[1,2,3]
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -2079,6 +2082,7 @@ verify:
   expand: (len (quote (1 2 3)))
   eval: "2"
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -2087,7 +2091,7 @@ tags:
   - iterate
   - pitfall
   - surface:sexpr
-notes: a pair iterates as its car and cdr; use unpack to iterate the elements of a chain
+notes: "a pair is one link of two fields; (.length x) counts the elements of a proper chain"
 ---
 id: builtin-bracket-cons-basic-001
 feature: builtin/bracket-cons
@@ -2750,6 +2754,7 @@ verify:
   expand: (list (map (lambda [x] (% x 3)) (#list 4 5 6)))
   eval: list:[1,2,0]
 references:
+  - agents/native-builtins.md
   - reference/runtime/operators.md
   - reference/specials/object-operators/index.md
 stability: evolving
@@ -2850,6 +2855,7 @@ verify:
   expand: (sorted (#set 1 2 2))
   eval: list:[1,2]
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -2882,6 +2888,7 @@ verify:
   expand: (== (#dict (#tuple "a" 1) (#tuple "b" 2)) (#dict (#tuple "a" 1) (#tuple "b" 2)))
   eval: "true"
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -3340,6 +3347,7 @@ verify:
   expand: (apply parameter (#list (quote nope) 3))
   eval: "3"
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -3812,6 +3820,7 @@ verify:
   expand: "(max (#list \"aa\" \"b\") key: (demand (lambda [s] (len s))))"
   eval: '"aa"'
 references:
+  - agents/native-builtins.md
   - reference/runtime/functions.md
 stability: evolving
 tags:
@@ -4291,6 +4300,7 @@ verify:
   expand: (try (evaluate (quote (var)) (koskari-vars)) [[SyntaxError] "syntax"] [[CompilerError] "compiler"])
   eval: '"compiler"'
 references:
+  - agents/native-builtins.md
   - reference/error-codes.md
 stability: evolving
 tags:
@@ -4405,6 +4415,7 @@ verify:
   expand: (subclass? KoskariContinuationError RuntimeError)
   eval: "false"
 references:
+  - agents/native-builtins.md
   - reference/error-codes.md
 stability: evolving
 tags:
@@ -4455,6 +4466,7 @@ verify:
   expand: (try (demand-call (lambda [] (await))) [[KoskariException] "koskari"] [[TypeError] "type"])
   eval: '"type"'
 references:
+  - agents/native-builtins.md
   - reference/error-codes.md
 stability: evolving
 tags:
@@ -4610,4 +4622,92 @@ tags:
   - iterate
   - default-value
   - keyword-argument
+  - surface:sexpr
+---
+id: builtin-py-filter-demand-predicate-001
+feature: builtin/py-filter
+source: "(list (py-filter (demand (lambda [x] False)) #[1 2 3]))"
+verify:
+  read: (list (py-filter (demand (lambda [x] False)) (#list 1 2 3)))
+  expand: (list (py-filter (demand (lambda [x] False)) (#list 1 2 3)))
+  eval: list:[]
+references:
+  - agents/native-builtins.md
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - builtin
+  - py-filter
+  - filter
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-map-zip-two-iterables-001
+feature: builtin/map
+source: "(list (map (lambda [p] (+ *: p)) (zip #[1 2] #[10 20])))"
+verify:
+  read: "(list (map (lambda [p] (+ *: p)) (zip (#list 1 2) (#list 10 20))))"
+  expand: "(list (map (lambda [p] (+ *: p)) (zip (#list 1 2) (#list 10 20))))"
+  eval: list:[11,22]
+references:
+  - agents/native-builtins.md
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - builtin
+  - map
+  - iterate
+  - higher-order
+  - surface:sexpr
+---
+id: builtin-apply-spliced-arguments-001
+feature: builtin/apply
+source: "(begin (var args #[3]) (apply + #[1 2 *: args]))"
+verify:
+  read: "(begin (var args (#list 3)) (apply + (#list 1 2 *: args)))"
+  expand: "(begin (var args (#list 3)) (apply + (#list 1 2 *: args)))"
+  eval: "6"
+references:
+  - agents/native-builtins.md
+  - reference/runtime/functions.md
+stability: evolving
+tags:
+  - builtin
+  - apply
+  - higher-order
+  - variadic
+  - surface:sexpr
+---
+id: builtin-cons-prepend-chain-001
+feature: builtin/cons
+source: (cons 0 '(1 2))
+verify:
+  read: (cons 0 (quote (1 2)))
+  expand: (cons 0 (quote (1 2)))
+  eval: proper-list:[0,1,2]
+references:
+  - reference/runtime/functions.md
+  - agents/native-builtins.md
+stability: evolving
+tags:
+  - builtin
+  - cons
+  - construct
+  - surface:sexpr
+---
+id: builtin-pair-length-001
+feature: builtin/pair
+source: (.length '(1 2 3))
+verify:
+  read: (.length (quote (1 2 3)))
+  expand: (.length (quote (1 2 3)))
+  eval: "3"
+references:
+  - reference/runtime/functions.md
+  - agents/native-builtins.md
+stability: evolving
+tags:
+  - builtin
+  - pair
+  - iterate
   - surface:sexpr
