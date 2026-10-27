@@ -2,7 +2,7 @@
 **Symbol:** `layout/special-match`
 
 **Use-case:** Block syntax for the `special-match` transformer, normally
-the inner block of a `define-syntax` or `extend-syntax` block. No
+the inner block of a `syntax` or `extend-syntax` block. No
 literals list; each rule carries an explicit match-style pattern.
 Converts indented rule blocks into the
 `(special-match [NAME] (PATTERN BODY) ...)` form that
@@ -23,9 +23,9 @@ header that is a lone parenthesized form is rejected with
 
 **Named header:** `special-match NAME:` puts NAME in the emitted form,
 which is where the transformer takes its identity for help text and
-match errors. `define-syntax` and `extend-syntax` supply that name
+match errors. `syntax` and `extend-syntax` supply that name
 themselves, so the named header belongs to a transformer bound directly,
-as `define compile/NAME:`.
+as `var compile/NAME:`.
 
 **Syntax:**
 
@@ -42,10 +42,10 @@ special-match NAME:
 **Examples:**
 
 ```koskari
-define-syntax say-bye:
+syntax say-bye:
   special-match:
     case [c (say-bye (BIND thing))]:
-      define t thing.datum
+      var t thing.datum
       `(print "bye" ,t)
 
 (say-bye "now")
@@ -53,10 +53,10 @@ define-syntax say-bye:
 ```
 
 ```koskari
-define compile/say-bye:
+var compile/say-bye:
   special-match say-bye:
     case [c (say-bye (BIND thing))]:
-      define t thing.datum
+      var t thing.datum
       `(print "bye" ,t)
 
 (say-bye "now")

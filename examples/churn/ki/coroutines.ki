@@ -4,14 +4,14 @@
 ;; async-native evaluator, so the kernel is the plain recursion and the
 ;; harness hosts it on an event loop for the comparison.
 
-define fib [n]:
+def fib [n]:
     if (<= n 1):
         n
     else:
         (+ (fib (- n 1)) (fib (- n 2)))
 
 
-define coroutines [n]:
+def coroutines [n]:
     (fib n)
 
 

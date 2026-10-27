@@ -42,48 +42,48 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define-syntax mk-cond:
+syntax mk-cond:
   syntax-rules []:
     mk-cond name:
       cond:
         [False None]
-        [else: (define name [argv: None] argv)]
+        [else: (def name [argv: None] argv)]
 
-define-syntax mk-match:
+syntax mk-match:
   syntax-rules []:
     mk-match name:
       match 1:
         case 1:
-          define name [argv: None]:
+          def name [argv: None]:
             argv
 
-define-syntax mk-try:
+syntax mk-try:
   syntax-rules []:
     mk-try name:
       try:
         (raise (ValueError "x"))
       except [e ValueError]:
-        define name [argv: None]:
+        def name [argv: None]:
           argv
 
-define-syntax mk-when:
+syntax mk-when:
   syntax-rules []:
     mk-when name:
       when True:
-        define name [argv: None]:
+        def name [argv: None]:
           argv
 
-define-syntax mk-pos:
+syntax mk-pos:
   syntax-rules []:
     mk-pos name:
       cond:
-        [else: (define name [argv] argv)]
+        [else: (def name [argv] argv)]
 
-define cond-expansion (macroexpand-1 '(mk-cond fa))
-define match-expansion (macroexpand-1 '(mk-match fb))
-define try-expansion (macroexpand-1 '(mk-try fc))
-define when-expansion (macroexpand-1 '(mk-when fe))
-define pos-expansion (macroexpand-1 '(mk-pos fd))
+var cond-expansion (macroexpand-1 '(mk-cond fa))
+var match-expansion (macroexpand-1 '(mk-match fb))
+var try-expansion (macroexpand-1 '(mk-try fc))
+var when-expansion (macroexpand-1 '(mk-when fe))
+var pos-expansion (macroexpand-1 '(mk-pos fd))
 
 (mk-cond fa)
 (mk-match fb)
@@ -93,22 +93,22 @@ define pos-expansion (macroexpand-1 '(mk-pos fd))
 """
 
 
-_define = symbol("define")
+_def = symbol("def")
 
 
-def find_define(form):
+def find_def(form):
     """
-    The first (define NAME FORMALS BODY) form in a pair tree, as its
+    The first (def NAME FORMALS BODY) form in a pair tree, as its
     (formals list, body form) parts
     """
 
     if not is_pair(form):
         return None
     items = list(unpack(form))
-    if items and strip_mark(items[0]) is _define:
+    if items and strip_mark(items[0]) is _def:
         return list(unpack(items[2])), items[3]
     for item in items:
-        found = find_define(item)
+        found = find_def(item)
         if found is not None:
             return found
     return None
@@ -124,7 +124,7 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
 
 
     def assert_keyword_formal_scoped(self, expansion):
-        formals, body = find_define(expansion)
+        formals, body = find_def(expansion)
         self.assertIs(formals[0], keyword("argv"))
         self.assertIsInstance(body, gensym)
         self.assertIs(strip_mark(body), symbol("argv"))
@@ -162,7 +162,7 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
 
     async def test_cond_clause_renames_positional_formal(self):
         mod = await self.load("cbh_pos")
-        formals, body = find_define(vars(mod)["pos-expansion"])
+        formals, body = find_def(vars(mod)["pos-expansion"])
         self.assertIsInstance(formals[0], gensym)
         self.assertTrue(is_symbol(strip_mark(formals[0])))
         self.assertEqual(formals[0], body)

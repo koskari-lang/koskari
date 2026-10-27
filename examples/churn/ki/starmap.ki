@@ -6,18 +6,18 @@
 (import-from itertools product)
 (import-from koskari.itertools starmap)
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define-class ChurnGrid []:
+class ChurnGrid []:
 
-    define __init__ [self w h]:
+    def __init__ [self w h]:
         set! self.width w
         set! self.height h
         set! self.wrap False
         set! self.data #{}
 
-        define tmp 175
+        var tmp 175
 
         ;; seed live cells so dict.get hits both present and absent keys
         for-each [[x y] (product (range 0 w) (range 0 h))]:
@@ -26,36 +26,36 @@ define-class ChurnGrid []:
                 set! tmp (^ tmp (& (<< tmp 5) MASK32))
 
 
-    define coord-key [self x y]:
-        define w self.width
-        define h self.height
+    def coord-key [self x y]:
+        var w self.width
+        var h self.height
         unless self.wrap:
             unless (and (< -1 x w) (< -1 y h)):
                 return None
         #((% x w) (% y h))
 
 
-    define get-cell [self x y]:
-        define key (self.coord-key x y)
+    def get-cell [self x y]:
+        var key (self.coord-key x y)
         if (None? key) 0 (self.data.get key 0)
 
 
-    define group-coord [self x y]:
+    def group-coord [self x y]:
         (product #((- x 1) x (+ x 1)) #((- y 1) y (+ y 1)))
 
 
-    define get-group [self x y]:
+    def get-group [self x y]:
         (starmap self.get-cell (self.group-coord x y))
 
 
-    define get-all-groups [self]:
+    def get-all-groups [self]:
         (starmap self.get-group
           (product (range 0 self.width) (range 0 self.height)))
 
 
-define churn_starmap [w: 8 h: 8]:
-    define grid (ChurnGrid w h)
-    define acc 0
+def churn_starmap [w: 8 h: 8]:
+    var grid (ChurnGrid w h)
+    var acc 0
     for-each [grp (grid.get-all-groups)]:
         for-each [v grp]:
             when v:

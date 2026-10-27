@@ -45,11 +45,11 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import-from asyncio sleep
 
-define g-await-first []:
+def g-await-first []:
     (await (sleep 0.001))
     (yield "one")
 
-define g-yield-then-await []:
+def g-yield-then-await []:
     (yield "one")
     (await (sleep 0.001))
     (yield "two")

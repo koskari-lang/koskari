@@ -35,11 +35,11 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define body (lambda [box]
+(define [body box]
   (define d (item box 0))
   (try
     (d.close)
-    ([e RuntimeError] "refused"))))
+    ([e RuntimeError] "refused")))
 """
 
 

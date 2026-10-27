@@ -44,7 +44,7 @@ to lower it; see "Expansion in operator position" below.
 
 ```koskari
 (+ 1 2)          ; step 1 finds compile/+, which emits opcodes
-(define p +)     ; + as a value: the runtime function
+(var p +)     ; + as a value: the runtime function
 (p 3 4)          ; 7
 ```
 
@@ -66,7 +66,7 @@ slot, so using it as a value is an error:
 
 ```koskari
 (if True 1 2)    ; compile/if is a syntax
-(define x if)    ; NameError: No such reference: if
+(var x if)    ; NameError: No such reference: if
 ```
 
 A syntax with a bare form never reaches value resolution: the lone
@@ -77,7 +77,7 @@ Python-style spelling works, and none of the six can name a variable.
 The [`compiler/bare-control-words`](pragma.md#compiler) pragma selects
 whether that conversion is silent, warned, or refused. Any syntax can
 declare a bare form with the `bare-syntax` transformer kind; see
-[`define-syntax`](../reference/macros/compile-define-syntax.md).
+[`bare-syntax`](../reference/specials/compile-bare-syntax.md).
 
 ## Forcing a runtime call
 
@@ -117,10 +117,10 @@ resolves through the compile-time and runtime rules like any other.
 | Definition | Result | Example |
 |------------|--------|---------|
 | a runtime value and a syntax | `(foo ...)` uses the syntax; `foo` as a value, or `(call foo ...)`, uses the function | `+` |
-| a syntax only | `(foo ...)` expands, and `foo` has no runtime value | `if`, `while`, `begin`, most `define-syntax` macros |
-| either, plus `layout/foo` | the block header `foo ...:` is handled as well | `while`, `try`, `define-class` |
+| a syntax only | `(foo ...)` expands, and `foo` has no runtime value | `if`, `while`, `begin`, most `syntax` macros |
+| either, plus `layout/foo` | the block header `foo ...:` is handled as well | `while`, `try`, `class` |
 
-`define-syntax foo:` and `define-syntax compile/foo:` are the same
+`syntax foo:` and `syntax compile/foo:` are the same
 definition: the transformer is bound under `compile/foo` whichever is
 written. The short spelling is the one to use; the written name is the
 transformer's identity in help text and match errors, and the short
@@ -134,7 +134,7 @@ whose expansion yields source, the head is replaced by its expansion and
 the whole form is resolved again from the top.
 
 ```koskari
-(define-syntax sel (syntax-rules [] [(sel x) +]))
+(syntax sel (syntax-rules [] [(sel x) +]))
 
 ((sel 1) 2 3)      ; the head (sel 1) expands to the symbol +
                    ; (+ 2 3) is 5, compiled as the arithmetic special
@@ -154,8 +154,8 @@ with a plain function means what it always did, and why a method call's
 failed attempt is kept.
 
 ```koskari
-(define-syntax foo2 (syntax-rules [] [(foo2 x) bar2]))
-(define-syntax bar2 (syntax-rules [] [(bar2 x) +]))
+(syntax foo2 (syntax-rules [] [(foo2 x) bar2]))
+(syntax bar2 (syntax-rules [] [(bar2 x) +]))
 
 (((foo2 1) 2) 3)   ; ((bar2 2) 3), then (+ 3), then 3
 ```
@@ -166,8 +166,8 @@ Because the prefixed spelling never resolves as a use, in value position
 it is an ordinary read of the transformer itself:
 
 ```koskari
-(define x if)              ; NameError: there is no runtime if
-(define x compile/if)      ; the compile/if Syntax object
+(var x if)              ; NameError: there is no runtime if
+(var x compile/if)      ; the compile/if Syntax object
 (help compile/if)          ; describe the transformer
 ```
 

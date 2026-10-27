@@ -15,10 +15,10 @@ in the [Guide](../guide/index.md).
 ## Compile-time forms
 
 - [Special forms](specials/index.md): the forms the compiler handles
-  directly. `define`, `lambda`, `cond`, `try`, `match`, the operators, the
+  directly. `var`, `lambda`, `cond`, `try`, `match`, the operators, the
   imports, continuations.
 - [Macros](macros/index.md): bootstrap macros that expand to special forms.
-  `if`, `when`, `set!`, `define-class`, `let*`, the `-each` family.
+  `if`, `when`, `set!`, `class`, `let*`, the `-each` family.
 - [Layout handlers](layouts/index.md): the block heads that read an
   indented block into a form, and their peers.
 - [Fence handlers](fences/index.md): triple-backtick foreign literals.

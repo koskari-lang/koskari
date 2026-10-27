@@ -84,11 +84,11 @@ a b c
 :::{dialogue}
 Can we keep a value under a name?
 +++
-Yes, with `define`:
+Yes, with `var`:
 
 ```koskari
->>> (define x 6)
->>> (define y 7)
+>>> (var x 6)
+>>> (var y 7)
 ```
 
 From then on `x` means `6` and `y` means `7`.

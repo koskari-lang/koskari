@@ -22,6 +22,7 @@ import logging
 
 import aiosqlite
 
+import-from dataclasses dataclass
 import-from contextvars ContextVar
 import-from datetime datetime timezone
 import-from pathlib Path
@@ -29,10 +30,11 @@ import-from pathlib Path
 (use .job Config)
 
 
-define logger (logging.getLogger "kosrunner.store")
+var logger (logging.getLogger "kosrunner.store")
 
 
-define-dataclass StorageConfig [Config]:
+@dataclass
+class StorageConfig [Config]:
     """
     Where run history lives. `root` is the store directory; when it is
     None the root is resolved from the KOSRUNNER_STORAGE_ROOT env var,
@@ -40,26 +42,26 @@ define-dataclass StorageConfig [Config]:
     retention caps (0 = unlimited); pruning is not wired yet.
     """
 
-    define [root :: str] None
-    define [keep_runs :: int] 0
-    define [keep_days :: int] 0
+    var root :: str None
+    var keep_runs :: int 0
+    var keep_days :: int 0
 
 
 ;; --- root + name resolution ----------------------------------------
 
-define STORAGE-ENV "KOSRUNNER_STORAGE_ROOT"
-define _SAFE-RE (re.compile "[^A-Za-z0-9._-]")
+var STORAGE-ENV "KOSRUNNER_STORAGE_ROOT"
+var _SAFE-RE (re.compile "[^A-Za-z0-9._-]")
 
 
-define resolve-storage-root [config]:
+def resolve-storage-root [config]:
     """
     config.root (verbatim) -> $KOSRUNNER_STORAGE_ROOT (verbatim) ->
     <cwd>/.kosrunner. The `.kosrunner` holder is applied ONLY in the
     cwd-default case; an explicit config or env root is never suffixed.
     """
 
-    define explicit (when config config.root)
-    define fromenv (os.getenv STORAGE-ENV)
+    var explicit (when config config.root)
+    var fromenv (os.getenv STORAGE-ENV)
     if explicit:
         (Path explicit)
     elif fromenv:
@@ -68,7 +70,7 @@ define resolve-storage-root [config]:
         (.joinpath (Path (os.getcwd)) ".kosrunner")
 
 
-define safe-segment [name]:
+def safe-segment [name]:
     """
     Turn a job name into a safe single-directory segment: allowlist
     [A-Za-z0-9._-], everything else to `_`, `.`/`..`/empty neutralized,
@@ -77,36 +79,36 @@ define safe-segment [name]:
     distinct names never share a directory.
     """
 
-    define raw (str name)
-    define cleaned (_SAFE-RE.sub "_" raw)
+    var raw (str name)
+    var cleaned (_SAFE-RE.sub "_" raw)
 
-    define guarded (if (in? cleaned #("" "." "..")) "_" cleaned)
+    var guarded (if (in? cleaned #("" "." "..")) "_" cleaned)
 
-    define capped (item-slice guarded stop: 100)
+    var capped (item-slice guarded stop: 100)
     if (== capped raw):
         capped
     else:
-        define digest (hashlib.sha256 (raw.encode "utf-8"))
+        var digest (hashlib.sha256 (raw.encode "utf-8"))
         f"{capped}-{(item-slice (digest.hexdigest) stop: 8)}"
 
 
-define _utcnow []:
+def _utcnow []:
     (datetime.now timezone.utc)
 
 
-define _utcnow-iso []:
+def _utcnow-iso []:
     ((_utcnow).isoformat)
 
 
-define _make-runid []:
-    define stamp (.strftime (_utcnow) "%Y%m%dT%H%M%SZ")
-    define token (uuid.uuid4)
+def _make-runid []:
+    var stamp (.strftime (_utcnow) "%Y%m%dT%H%M%SZ")
+    var token (uuid.uuid4)
     f"{stamp}-{(item-slice token.hex stop: 6)}"
 
 
 ;; --- schema --------------------------------------------------------
 
-define _SCHEMA #[
+var _SCHEMA #[
     "CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, job TEXT NOT NULL, job_dir TEXT NOT NULL, type TEXT NOT NULL, cause TEXT NOT NULL, parent TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT, mnemonic TEXT)"
     "CREATE INDEX IF NOT EXISTS runs_job_started ON runs (job, started_at)"
     "CREATE INDEX IF NOT EXISTS runs_status ON runs (status)"
@@ -117,7 +119,7 @@ define _SCHEMA #[
 ;; an older version needs the column added explicitly; the check is by
 ;; name, and adding a nullable column is instant however many rows the
 ;; table holds.
-define _ADDED-COLUMNS #{"mnemonic": "TEXT"}
+var _ADDED-COLUMNS #{"mnemonic": "TEXT"}
 
 
 ;; --- run mnemonics -------------------------------------------------
@@ -127,10 +129,10 @@ define _ADDED-COLUMNS #{"mnemonic": "TEXT"}
 ;; can be read at a glance instead of by run id. Optional, non-unique,
 ;; and a property of the RUN rather than its trigger, which is why a
 ;; retrigger computes its own instead of inheriting one.
-define MNEMONIC-MAX 200
+var MNEMONIC-MAX 200
 
 
-define clean-mnemonic [value]:
+def clean-mnemonic [value]:
     """
     Fit whatever a handler passed into one table cell: stringified,
     all whitespace collapsed to single spaces, capped. None -- or
@@ -140,7 +142,7 @@ define clean-mnemonic [value]:
     when (None? value):
         (return None)
 
-    define text (" ".join ((str value).split))
+    var text (" ".join ((str value).split))
     unless text:
         (return None)
 
@@ -155,10 +157,10 @@ define clean-mnemonic [value]:
 ;; the caller's context, so `mnemonic` mutates the cell that Job.run put
 ;; here and still holds, exactly as log capture appends to a buffer
 ;; rather than re-setting one.
-define _current-mnemonic (ContextVar "kosrunner_mnemonic" default: None)
+var _current-mnemonic (ContextVar "kosrunner_mnemonic" default: None)
 
 
-define mnemonic [value]:
+def mnemonic [value]:
     """
     Label the run in progress. Call this from anywhere inside a handler
     (or an on-error hook, which still runs inside the run); the last call
@@ -168,8 +170,8 @@ define mnemonic [value]:
     text.
     """
 
-    define text (clean-mnemonic value)
-    define cell (_current-mnemonic.get)
+    var text (clean-mnemonic value)
+    var cell (_current-mnemonic.get)
     unless (None? cell):
         set! cell[0] text
     text
@@ -180,11 +182,11 @@ define mnemonic [value]:
 ;; A run's log output is routed to a per-run buffer selected by this
 ;; contextvar, so concurrent runs (overlapping webhook/kafka handlers)
 ;; each capture only their own lines.
-define _current-run (ContextVar "kosrunner_run" default: None)
-define _log-installed #[False]
+var _current-run (ContextVar "kosrunner_run" default: None)
+var _log-installed #[False]
 
 
-define-class _RunLogHandler [logging.Handler]:
+class _RunLogHandler [logging.Handler]:
     """
     Appends each `kosrunner.*` log record to the active run's buffer. The
     `emit` override is @demand-decorated because Python's logging calls it
@@ -193,21 +195,21 @@ define-class _RunLogHandler [logging.Handler]:
     """
 
     @demand
-    define emit [self record]:
-        define buf (_current-run.get)
+    def emit [self record]:
+        var buf (_current-run.get)
         unless (None? buf):
             (buf.append (self.format record))
 
 
-define install-run-logging []:
+def install-run-logging []:
     """
     Attach the capture handler to the `kosrunner` logger once, so every
     variety's log output during a run lands in that run's output.log.
     """
 
     unless _log-installed[0]:
-        define lg (logging.getLogger "kosrunner")
-        define handler (_RunLogHandler)
+        var lg (logging.getLogger "kosrunner")
+        var handler (_RunLogHandler)
 
         (handler.setFormatter
             (logging.Formatter "%(asctime)s %(levelname)s %(name)s %(message)s"))
@@ -215,7 +217,7 @@ define install-run-logging []:
         set! _log-installed[0] True
 
 
-define-class RunStore []:
+class RunStore []:
     """
     Run history over a single aiosqlite connection, with per-run
     artifacts (trigger/result/log) on disk beneath <root>/runs/<job>/
@@ -223,7 +225,7 @@ define-class RunStore []:
     call on its own thread, so there is no lock to hand-roll.
     """
 
-    define __init__ [self root config: None]:
+    def __init__ [self root config: None]:
         set! self.root (Path root)
         set! self.config config
         set! self.runs-dir (self.root.joinpath "runs")
@@ -233,7 +235,7 @@ define-class RunStore []:
 
     ; --- lifecycle ---
 
-    define open [self]:
+    def open [self]:
         """
         Create the store dirs, connect (WAL), install the schema, and
         reconcile orphaned runs. Idempotent; must run inside a live loop.
@@ -246,7 +248,7 @@ define-class RunStore []:
         (self.root.mkdir parents: True exist_ok: True)
         (self.runs-dir.mkdir parents: True exist_ok: True)
 
-        define db (aiosqlite.connect self.dbpath)
+        var db (aiosqlite.connect self.dbpath)
         set! db.row_factory aiosqlite.Row
         set! self.db db
 
@@ -261,13 +263,13 @@ define-class RunStore []:
         self
 
 
-    define close [self]:
+    def close [self]:
         when self.db:
             (self.db.close)
             set! self.db None
 
 
-    define migrate [self]:
+    def migrate [self]:
         """
         Add any column the running code expects that this store predates.
         Runs on every open and does nothing once the table is current, so
@@ -275,7 +277,7 @@ define-class RunStore []:
         needing to be thrown away.
         """
 
-        define have:
+        var have:
             list-each [col (self._rows "PRAGMA table_info(runs)")]:
                 col["name"]
 
@@ -286,7 +288,7 @@ define-class RunStore []:
                 (logger.info "store migrated: runs.%s added" name)
 
 
-    define reconcile [self]:
+    def reconcile [self]:
         """
         A pod that died mid-run leaves a `running` row forever; on open,
         flip any such orphan to `interrupted`.
@@ -301,40 +303,40 @@ define-class RunStore []:
 
     ; --- sqlite helpers (cursor discipline: drain + close every one) ---
 
-    define _exec [self sql params: None]:
-        define cur (self.db.execute sql (or params #[]))
+    def _exec [self sql params: None]:
+        var cur (self.db.execute sql (or params #[]))
         (cur.fetchall)
         (cur.close)
 
 
-    define _rows [self sql params: None]:
-        define cur (self.db.execute sql (or params #[]))
-        define rows (cur.fetchall)
+    def _rows [self sql params: None]:
+        var cur (self.db.execute sql (or params #[]))
+        var rows (cur.fetchall)
         (cur.close)
         (list (map dict rows))
 
 
-    define _write-json [self path obj]:
-        define data (json.dumps obj indent: 2 default: str)
+    def _write-json [self path obj]:
+        var data (json.dumps obj indent: 2 default: str)
         (asyncio.to_thread path.write_text data)
 
 
-    define _write-text [self path text]:
+    def _write-text [self path text]:
         (asyncio.to_thread path.write_text text)
 
 
     ; --- recording ---
 
-    define record-start [self job type cause args: None kwargs: None parent: None]:
+    def record-start [self job type cause args: None kwargs: None parent: None]:
         """
         Open a run: mint a sortable id, create its artifact dir, persist
         the trigger args and kwargs (so re-trigger can replay), and insert
         a `running` row. Returns the run id.
         """
 
-        define runid (_make-runid)
-        define seg (safe-segment job)
-        define rundir (self.runs-dir.joinpath seg runid)
+        var runid (_make-runid)
+        var seg (safe-segment job)
+        var rundir (self.runs-dir.joinpath seg runid)
         (rundir.mkdir parents: True exist_ok: True)
 
         (self._write-json (rundir.joinpath "trigger.json")
@@ -357,7 +359,7 @@ define-class RunStore []:
         runid
 
 
-    define record-finish [
+    def record-finish [
             self runid status
             result: None error: None log: None mnemonic: None]:
         """
@@ -368,12 +370,12 @@ define-class RunStore []:
         costs no extra query.
         """
 
-        define row (self.get-run runid)
+        var row (self.get-run runid)
         when (None? row):
             (logger.warning "record-finish: unknown run %s" runid)
             (return)
 
-        define rundir (self.runs-dir.joinpath (item row "job_dir") runid)
+        var rundir (self.runs-dir.joinpath (item row "job_dir") runid)
 
         unless (None? log):
             (self._write-text (rundir.joinpath "output.log") log)
@@ -393,23 +395,23 @@ define-class RunStore []:
 
     ; --- queries ---
 
-    define get-run [self runid]:
-        define rows (self._rows
+    def get-run [self runid]:
+        var rows (self._rows
             "SELECT * FROM runs WHERE run_id = ?" #[runid])
         when rows rows[0]
 
 
-    define list-runs [self job: None status: None limit: 50 offset: 0]:
-        define clauses #[]
-        define params #[]
+    def list-runs [self job: None status: None limit: 50 offset: 0]:
+        var clauses #[]
+        var params #[]
         when job:
             (clauses.append "job = ?")
             (params.append job)
         when status:
             (clauses.append "status = ?")
             (params.append status)
-        define joiner " AND "
-        define where (if clauses f"WHERE {(joiner.join clauses)}" "")
+        var joiner " AND "
+        var where (if clauses f"WHERE {(joiner.join clauses)}" "")
         (params.append limit)
         (params.append offset)
         (self._rows
@@ -417,7 +419,7 @@ define-class RunStore []:
             params)
 
 
-    define run-neighbors [self runid]:
+    def run-neighbors [self runid]:
         """
         The run ids adjacent to `runid` in its own job's history, as
         (values older newer), None on the ends. Ordered the way the
@@ -426,90 +428,90 @@ define-class RunStore []:
         order.
         """
 
-        define row (self.get-run runid)
+        var row (self.get-run runid)
         when (None? row):
             return (values None None)
 
-        define params #[row["job"] row["started_at"] runid]
-        define older (self._rows
+        var params #[row["job"] row["started_at"] runid]
+        var older (self._rows
             "SELECT run_id FROM runs WHERE job = ? AND (started_at, run_id) < (?, ?) ORDER BY started_at DESC, run_id DESC LIMIT 1"
             params)
-        define newer (self._rows
+        var newer (self._rows
             "SELECT run_id FROM runs WHERE job = ? AND (started_at, run_id) > (?, ?) ORDER BY started_at ASC, run_id ASC LIMIT 1"
             params)
         (values (when older older[0]["run_id"])
                 (when newer newer[0]["run_id"]))
 
 
-    define last-runs [self]:
+    def last-runs [self]:
         """
         The most recent run row per job, as a job-name -> row dict. One
         grouped query, so a dashboard listing every job costs one round
         trip, not one per job.
         """
 
-        define rows (self._rows
+        var rows (self._rows
             "SELECT r.* FROM runs r JOIN"-
             " (SELECT job, MAX(started_at) AS latest"-
             " FROM runs GROUP BY job)"-
             " m ON r.job = m.job AND r.started_at = m.latest")
 
-        define out #{}
+        var out #{}
         for-each [row rows]:
             set! out[row["job"]] row
 
         out
 
 
-    define run-log-path [self runid]:
-        define row (self.get-run runid)
+    def run-log-path [self runid]:
+        var row (self.get-run runid)
 
         unless (None? row):
             (self.runs-dir.joinpath row["job_dir"] runid "output.log")
 
 
-    define _read-text-at [self base name]:
-        define path (base.joinpath name)
+    def _read-text-at [self base name]:
+        var path (base.joinpath name)
         when (path.exists):
             (asyncio.to_thread path.read_text)
 
 
-    define _read-json-at [self base name]:
-        define text (self._read-text-at base name)
+    def _read-json-at [self base name]:
+        var text (self._read-text-at base name)
         unless (None? text):
             (json.loads text)
 
 
-    define get-trigger [self runid]:
+    def get-trigger [self runid]:
         """
         The persisted trigger record (job/type/cause/parent/args) for a
         run, read from its trigger.json. Re-trigger replays `args`.
         """
 
-        define row (self.get-run runid)
+        var row (self.get-run runid)
         unless (None? row):
-            define base (self.runs-dir.joinpath (item row "job_dir") runid)
+            var base (self.runs-dir.joinpath (item row "job_dir") runid)
             (self._read-json-at base "trigger.json")
 
 
-    define run-detail [self runid]:
+    def run-detail [self runid]:
         """
         A run's row enriched with its on-disk artifacts: the captured
         `output` log, the `result`, and the `trigger`. None if unknown.
         """
 
-        define row (self.get-run runid)
+        var row (self.get-run runid)
         when (None? row):
             (return None)
 
-        define base (self.runs-dir.joinpath row["job_dir"] runid)
+        var base (self.runs-dir.joinpath row["job_dir"] runid)
         set! row["output"]  (self._read-text-at base "output.log")
         set! row["result"]  (self._read-json-at base "result.json")
         set! row["trigger"] (self._read-json-at base "trigger.json")
         row
 
 
-    define prune [self]:
+    def prune [self]:
         ;; retention (keep_runs / keep_days) is not wired yet; the method
         ;; exists so callers can start invoking it once the policy lands.
         None
@@ -521,11 +523,11 @@ define-class RunStore []:
 ;; supported: `config storage:` -> `(config/storage () ...)`. It binds
 ;; the first-wins `default/storage` slot the jobset macro reads when it
 ;; wires the store onto the JobSet.
-define-syntax config/storage:
+syntax config/storage:
     syntax-rules []:
         case (config/storage () setting ...):
             (begin
-                (define -'default/storage)
+                (var -'default/storage)
                 (unless &-'default/storage
                     (set! -'default/storage (StorageConfig setting ...))))
 

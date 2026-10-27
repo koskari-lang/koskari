@@ -34,8 +34,8 @@ How do we put a name's value into a message?
 With an `f` before the opening quote, and the name in braces:
 
 ```koskari
-define name "Ada"
-define age 36
+var name "Ada"
+var age 36
 
 print f"{name} is {age}"
 ```
@@ -111,7 +111,7 @@ turns text into a number and `str` turns a number into text:
 What does this print?
 +++
 ```koskari
-define words #["koskari" "is" "small"]
+var words #["koskari" "is" "small"]
 
 for-each [word words]:
   print f"{(word.upper)} has {(len word)} letters"

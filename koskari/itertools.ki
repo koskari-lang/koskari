@@ -40,7 +40,7 @@ provider model.
   starmap takewhile zip-longest)
 
 
-define groupby [src key: None]:
+def groupby [src key: None]:
   """
   Yield ``#(key group)`` for each run of consecutive elements sharing a
   key, where key defaults to the element itself
@@ -54,12 +54,12 @@ define groupby [src key: None]:
   ; run keeps every group valid for as long as its holder wants it, at
   ; the cost of holding one run in memory.
 
-  define started False
-  define groupkey None
-  define group #[]
+  var started False
+  var groupkey None
+  var group #[]
 
   for-each [x src]:
-    define k (if (None? key) x (key x))
+    var k (if (None? key) x (key x))
 
     if started:
       unless (== k groupkey):

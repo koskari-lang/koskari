@@ -55,15 +55,15 @@ class TestBuiltinNotExported(unittest.IsolatedAsyncioTestCase):
         with open(os.path.join(pkg, '__init__.py'), 'w', encoding='utf-8'):
             pass
         self.write(os.path.join(pkg, 'helpers.ki'),
-                   "define biggest [xs]:\n"
+                   "def biggest [xs]:\n"
                    "    (max xs)\n")
         self.write(os.path.join(pkg, 'user.ki'),
-                   "define max [a b]:\n"
+                   "def max [a b]:\n"
                    "    \"mine\"\n"
                    "\n"
                    "import-all-from pkg2.helpers\n"
                    "\n"
-                   "define answer []:\n"
+                   "def answer []:\n"
                    "    (max 1 2)\n")
 
 

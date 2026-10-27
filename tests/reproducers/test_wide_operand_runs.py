@@ -43,20 +43,20 @@ def source():
     computed = " ".join(f"(+ {i} 0)" for i in range(WIDTH))
     entries = " ".join(f'"k{i}": (+ {i} 0)' for i in range(WIDTH))
     return f"""
-define wide-call []:
+def wide-call []:
     (max {args})
 
-define wide-list []:
+def wide-list []:
     #[{computed}]
 
-define wide-tuple []:
+def wide-tuple []:
     #({computed})
 
-define wide-quoted []:
-    define p '({args})
+def wide-quoted []:
+    var p '({args})
     (p.length)
 
-define wide-dict []:
+def wide-dict []:
     (len #{{{entries}}})
 """
 

@@ -3,8 +3,8 @@
 ;; one arm reaches with a call keeps its POP.
 
 
-define branchy [n]:
-    define acc 0
+def branchy [n]:
+    var acc 0
     for-each [i (range n)]:
         if (== 0 (% i 3)):
             set! acc (+ acc 1)
@@ -15,7 +15,7 @@ define branchy [n]:
     acc
 
 
-define discarded [x]:
+def discarded [x]:
     if x:
         set! x 1
     else:
@@ -23,7 +23,7 @@ define discarded [x]:
     7
 
 
-define kept [f x]:
+def kept [f x]:
     if x:
         (f)
     else:

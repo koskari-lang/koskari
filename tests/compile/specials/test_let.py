@@ -115,7 +115,7 @@ class TestLetInitScope(SpecialsTestCase):
     async def test_init_reads_the_enclosing_binding(self):
         src_str = """
         (begin
-          (define x 1)
+          (var x 1)
           ((lambda []
              (let [[x 2] [y x]]
                y))))
@@ -173,7 +173,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
     async def test_lambda_in_let_reads_the_function_local(self):
         src_str = """
         (begin
-          (define a "module")
+          (var a "module")
           ((lambda [a]
              (let [[b 1]]
                ((lambda [] a))))
@@ -186,12 +186,11 @@ class TestInlineScopeClosures(SpecialsTestCase):
     async def test_lambda_in_let_writes_the_function_local(self):
         src_str = """
         (begin
-          (define a "module")
-          (define f
-            (lambda [a]
+          (var a "module")
+          (define [f a]
               (let [[b 1]]
                 ((lambda [] (setq a "written")))
-                a)))
+                a))
           #[(f "argument") a])
         """
         expr, mod = self.compile_expr(src_str)
@@ -201,7 +200,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
     async def test_lambda_in_nested_lets_reads_the_function_local(self):
         src_str = """
         (begin
-          (define a "module")
+          (var a "module")
           ((lambda [a]
              (let [[b 1]]
                (let [[c 2]]
@@ -215,7 +214,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
     async def test_lambda_in_letrec_reads_the_function_local(self):
         src_str = """
         (begin
-          (define a "module")
+          (var a "module")
           ((lambda [a]
              (letrec [[get (lambda [] a)]]
                (get)))
@@ -228,11 +227,11 @@ class TestInlineScopeClosures(SpecialsTestCase):
     async def test_method_in_class_body_reads_the_function_local(self):
         src_str = """
         (begin
-          (define a "module")
+          (var a "module")
           ((lambda [a]
-             (define K
-               (class K ()
-                 (define get (lambda [self] a))))
+             (var K
+               (build-class K ()
+                 (define [get self] a)))
              ((attr (K) get)))
            "argument"))
         """
@@ -244,9 +243,9 @@ class TestInlineScopeClosures(SpecialsTestCase):
         src_str = """
         (begin
           ((lambda []
-             (define K
-               (class K ()
-                 (define make (lambda [self] (K)))))
+             (var K
+               (build-class K ()
+                 (define [make self] (K))))
              (type ((attr (K) make))))))
         """
         expr, mod = self.compile_expr(src_str, type=type)

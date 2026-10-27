@@ -63,7 +63,7 @@ class Reenter:
 
 
 SRC = """
-(define waiter (lambda [aw] (await aw)))
+(define [waiter aw] (await aw))
 """
 
 

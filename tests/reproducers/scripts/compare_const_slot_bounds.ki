@@ -13,15 +13,15 @@
 ;; elision from defanging the reproducer.
 
 
-define classify [x]:
-    define pre (cons "a" "b" "c" "d" "e" "f" nil)
+def classify [x]:
+    var pre (cons "a" "b" "c" "d" "e" "f" nil)
     if (None? x):
         pre
     else:
         "value"
 
 
-define verify []:
+def verify []:
     and:
         equal? (classify None) (cons "a" "b" "c" "d" "e" "f" nil)
         equal? (classify 5) "value"

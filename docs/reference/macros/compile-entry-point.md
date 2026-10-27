@@ -1,6 +1,6 @@
 # compile/entry-point
 
-**Syntax:** `@entry-point` over a `define`, or `(decorate [entry-point] (define NAME FORMALS BODY ...))`
+**Syntax:** `@entry-point` over a `def`, or `(decorate [entry-point] (def NAME FORMALS BODY ...))`
 
 **Behaviour:** An arm of [`decorate-subject`](compile-decorate-subject.md).
 It binds the decorated function as the module's `__entry__` and delivers
@@ -24,7 +24,7 @@ no entry exits `0` once it has loaded.
 program may define the function under that name directly.
 
 ```koskari
-define __entry__ []:
+def __entry__ []:
   print "the same program"
 ```
 
@@ -43,7 +43,7 @@ return value does not end the session.
 import sys
 
 @entry-point
-define main [args: (item-slice sys.argv 1)]:
+def main [args: (item-slice sys.argv 1)]:
   if args:
     print "hello," args[0]
   else:

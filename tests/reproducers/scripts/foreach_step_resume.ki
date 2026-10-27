@@ -7,44 +7,44 @@
 (import-from asyncio sleep)
 
 
-define gen [n]:
+def gen [n]:
     for-each [i (range n)]:
         yield i
 
 
-define delegating [n]:
+def delegating [n]:
     yield-from (gen n)
 
 
-define twice [n]:
+def twice [n]:
     yield-from (delegating n)
     yield-from (delegating n)
 
 
-define collect_plain [n]:
-    define out #[]
+def collect_plain [n]:
+    var out #[]
     for-each [v (range n)]:
         out.append v
     out
 
 
-define collect_gen [n]:
-    define out #[]
+def collect_gen [n]:
+    var out #[]
     for-each [v (gen n)]:
         out.append v
     out
 
 
-define collect_delegated [n]:
-    define out #[]
+def collect_delegated [n]:
+    var out #[]
     for-each [v (twice n)]:
         out.append v
     out
 
 
-define collect_break [n]:
+def collect_break [n]:
     ;; abandon each delegation after one value; the outer loop goes on
-    define out #[]
+    var out #[]
     for-each [k (range 3)]:
         for-each [v (twice n)]:
             out.append #(k v)
@@ -52,58 +52,58 @@ define collect_break [n]:
     out
 
 
-define nested_gen [n]:
+def nested_gen [n]:
     for-each [v (gen n)]:
         yield (* v 10)
 
 
-define collect_nested [n]:
-    define out #[]
+def collect_nested [n]:
+    var out #[]
     for-each [v (nested_gen n)]:
         out.append v
     out
 
 
-define awaiting_gen [n]:
+def awaiting_gen [n]:
     for-each [i (range n)]:
         (sleep 0)
         yield i
 
 
-define collect_awaiting [n]:
-    define out #[]
+def collect_awaiting [n]:
+    var out #[]
     for-each [v (awaiting_gen n)]:
         out.append v
     out
 
 
-define collect_source [src]:
-    define out #[]
+def collect_source [src]:
+    var out #[]
     for-each [v src]:
         out.append v
     out
 
 
-define collect_else [n]:
+def collect_else [n]:
     ;; the end of the iteration lands on the else clause
-    define out #[]
+    var out #[]
     (for-each [v (gen n)]
       (out.append v)
       [else: (out.append "end")])
     out
 
 
-define sum_then_yield [n]:
-    define t 0
+def sum_then_yield [n]:
+    var t 0
     for-each [v (gen n)]:
         (set! t (+ t v))
     yield t
 
 
-define continue_under_finally [n log]:
+def continue_under_finally [n log]:
     ;; continue unwinds through the finally into the generator's next
     ;; step
-    define out #[]
+    var out #[]
     for-each [v (gen n)]:
         try:
             when (< v 2):
@@ -114,10 +114,10 @@ define continue_under_finally [n log]:
     out
 
 
-define continue_nested [n]:
+def continue_nested [n]:
     ;; continue in an inner loop over a generator, then in the outer
     ;; loop over another
-    define out #[]
+    var out #[]
     for-each [a (gen n)]:
         for-each [b (gen n)]:
             when (== a b):
@@ -129,7 +129,7 @@ define continue_nested [n]:
     out
 
 
-define module_out #[]
+var module_out #[]
 
 for-each [mv (gen 3)]:
     module_out.append mv

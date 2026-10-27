@@ -29,7 +29,7 @@ transparently when the map is consumed in an asynchronous context:
 ```koskari
 import-from asyncio sleep
 
-define slow-double [x]:
+def slow-double [x]:
     (sleep 0)
     (* x 2)
 

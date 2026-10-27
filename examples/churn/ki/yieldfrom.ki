@@ -3,16 +3,16 @@
 ;; teardown path.  No Python counterpart: the point is koskari's generator
 ;; delegation machinery.
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define yield-from-items [items]:
+def yield-from-items [items]:
     yield-from items
 
 
-define churn_yieldfrom [n: 64]:
-    define data (list (range n))
-    define acc 0
+def churn_yieldfrom [n: 64]:
+    var data (list (range n))
+    var acc 0
 
     ;; full consumption
     for-each [_ (range n)]:
@@ -21,7 +21,7 @@ define churn_yieldfrom [n: 64]:
 
     ;; partial consumption: abandon each generator after one value
     for-each [_ (range n)]:
-        define g (yield-from-items data)
+        var g (yield-from-items data)
         for-each [v g]:
             set! acc (& (^ acc v) MASK32)
             (break)

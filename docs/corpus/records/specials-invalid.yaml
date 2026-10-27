@@ -53,9 +53,9 @@ notes: "corrective: obj.count (bare, no parens) -- or (attr obj count), which it
 ---
 id: special-use-nested-scope-invalid-001
 feature: special/compile/use
-source: (define f (lambda f [] (begin (use os.path join) 1)))
+source: (def f [] (begin (use os.path join) 1))
 verify:
-  read: (define f (lambda f [] (begin (use (attr os path) join) 1)))
+  read: (def f [] (begin (use (attr os path) join) 1))
   error: use is only allowed at module level
 references:
   - reference/specials/use.md
@@ -127,3 +127,17 @@ tags:
   - catch
   - error-handling
 notes: "a clause head is a bracketed using cell, never a bare type symbol: (ZeroDivisionError 0) has the shape of a call, which is why the special refuses it rather than guess. corrective: (try (/ 1 0) [[ZeroDivisionError] 0])"
+---
+id: special-vars-two-operands-invalid-001
+feature: special/compile/vars
+source: (vars a b)
+verify:
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - namespace
+  - invalid
+notes: "vars takes zero operands (the current namespace) or one (an object's __dict__); two is a compile error. corrective: (vars a)"

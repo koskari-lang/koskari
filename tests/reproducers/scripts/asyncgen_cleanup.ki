@@ -1,7 +1,7 @@
 ;; Generator for tests.reproducers.test_asyncgen_cleanup: cleanup that
 ;; raises.
 
-define raising [col]:
+def raising [col]:
     try:
         (yield 1)
     finally:

@@ -16,7 +16,6 @@ the REPL shows the expansion of any of them.
 | [`bind!`](compile-bind.md) | Bind a name to a ref, typed by the target shape |
 | [`ref`](compile-ref.md) | A ref to a name, attribute, subscript, or parameter |
 | [`unassigned?`, `default!`](compile-default-and-compile-unassigned.md) | Whether a location holds a value; store one unless it already does |
-| [`global`, `local`](compile-global-and-compile-local.md) | Declare which scope a name belongs to |
 | [`let*`](compile-letstar.md) | Sequential `let`, each binding seeing the ones before |
 | [`let-values`](compile-let-values.md) | `let` with unpacking |
 | [`labels`](compile-labels.md), [`flet`](compile-flet.md) | Local functions for a body, mutually recursive and not |
@@ -42,10 +41,9 @@ the REPL shows the expansion of any of them.
 
 | Macro | Does |
 |-------|------|
-| [`define-class`](compile-define-class.md) | Define a class, with a predicate named after it |
-| [`define-dataclass`](compile-define-dataclass.md) | A class through `dataclasses.dataclass` |
-| [`define-demanding`](compile-define-demanding.md) | A function wrapped for direct calls from Python |
-| [`define-coroutine`](compile-define-coroutine.md) | A function that Python sees as a coroutine function |
+| [`def`](compile-def.md) | Define a function and bind it in the current scope |
+| [`global`](compile-global.md) | Prefix over `var`, `def`, `class` and `syntax` that binds the form at the module |
+| [`class`](compile-class.md) | Define a class and bind it in the current scope |
 | [`super`](compile-super.md) | The superclass proxy inside a method |
 | [`decorate`](compile-decorate.md), [`decorate-subject`](compile-decorate-subject.md) | What `@` lines lower to, and the per-decorator dispatch |
 | [`when-main`](compile-when-main.md) | Python's `__name__` guard; prefer `entry-point` for a program's work |
@@ -66,7 +64,8 @@ the REPL shows the expansion of any of them.
 
 | Macro | Does |
 |-------|------|
-| [`define-syntax`](compile-define-syntax.md) | Define a transformer, with any of the rule and match kinds or a bare form; its template names are kept apart from the use site, see [Hygiene](../../guide/hygiene.md) |
+| [`syntax`](compile-syntax.md) | A transformer bound at the module from top level, or for the rest of a body inside one |
+| [`define-syntax`](compile-define-syntax.md) | The Scheme-layer spelling: a transformer bound at the module, with any of the rule and match kinds or a bare form; its template names are kept apart from the use site, see [Hygiene](../../guide/hygiene.md) |
 | [`extend-syntax`](compile-extend-syntax.md) | Add arms to an existing transformer |
 | [`let-syntax`](compile-let-syntax.md) | A transformer scoped to a body |
 | [`inline-macro`](compile-inline-macro.md) | Run a body at expand time and splice its result |

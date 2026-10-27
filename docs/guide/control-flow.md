@@ -26,10 +26,10 @@ first true one wins; with no match and no `else:`, the value is `None`:
   [else: "keep practicing"])
 ```
 
-Because an `if` has a value, one `define` can take a whole choice:
+Because an `if` has a value, one `var` can take a whole choice:
 
 ```koskari
-define label:
+var label:
   if (> score 90):
     "excellent"
   else:
@@ -81,7 +81,7 @@ Comparisons chain: `(< 0 x 10)` is `0 < x < 10`.
 ## `while`
 
 ```koskari
-define n 3
+var n 3
 while (> n 0):
   print n
   decr! n
@@ -111,7 +111,7 @@ is exhausted without a `break`.
 carry a value, which becomes the value of the loop:
 
 ```koskari
-define found:
+var found:
   for-each [v values]:
     when (> v 2):
       break v

@@ -111,7 +111,7 @@ pattern; extra keys are ignored. A literal key is written as a literal,
 match time, so keys can be computed:
 
 ```koskari
-define field "url"
+var field "url"
 
 match msg:
   case #{field: u}:      ; the key is whatever field holds, "url"
@@ -133,7 +133,7 @@ from the namespace for them, and rebinding one of those names in the
 enclosing scope does not change what the pattern tests:
 
 ```koskari
-define int float            ; does not reach the pattern below
+var int float            ; does not reach the pattern below
 
 match 2.5:
   case x :: int:
@@ -147,10 +147,10 @@ To test against your own type, bind it under another name.
 ### Callables are called as functions
 
 A predicate or extractor is an ordinary callable, and a plain Koskari
-`define` works without wrapping:
+`def` works without wrapping:
 
 ```koskari
-define splitext [name]:
+def splitext [name]:
     (return (name.rpartition "."))
 
 match path:

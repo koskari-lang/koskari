@@ -3,27 +3,27 @@
 ;; indexing and in-place mutation (item / set-item) in tight loops.  Returns
 ;; #(max-flips checksum); for n=7 that is #(16 228), a known oracle.
 
-define fannkuch [n]:
-    define perm1 (list (range n))
-    define count (* #[0] n)
-    define max-flips 0
-    define checksum 0
-    define perm-count 0
-    define r n
+def fannkuch [n]:
+    var perm1 (list (range n))
+    var count (* #[0] n)
+    var max-flips 0
+    var checksum 0
+    var perm-count 0
+    var r n
 
     while True:
         while (!= r 1):
             set! count[(- r 1)] r
             decr! r
 
-        define perm (list perm1)
-        define flips 0
-        define k perm[0]
+        var perm (list perm1)
+        var flips 0
+        var k perm[0]
         while (!= k 0):
-            define i 0
-            define j k
+            var i 0
+            var j k
             while (< i j):
-                define tmp perm[i]
+                var tmp perm[i]
                 set! perm[i] perm[j]
                 set! perm[j] tmp
                 incr! i
@@ -41,14 +41,14 @@ define fannkuch [n]:
             decr! checksum flips
 
         ;; advance perm1 to the next permutation
-        define advanced False
+        var advanced False
         while (not advanced):
             when (== r n):
                 return max-flips checksum
-            define perm0 perm1[0]
-            define i2 0
+            var perm0 perm1[0]
+            var i2 0
             while (< i2 r):
-                define j2 (+ i2 1)
+                var j2 (+ i2 1)
                 set! perm1[i2] perm1[j2]
                 set! i2 j2
 

@@ -113,7 +113,7 @@ class TestLoadModuleDemand(unittest.TestCase):
         try:
             path = os.path.join(tmpdir, 'demand_mod.ki')
             with open(path, 'w', encoding='utf-8') as fh:
-                fh.write('(define answer 99)\n')
+                fh.write('(var answer 99)\n')
             mod = new_module('demand_mod')
             init_module(mod, path)
             load_module_demand(mod)
@@ -129,7 +129,7 @@ class TestLoadModuleDemand(unittest.TestCase):
         try:
             path = os.path.join(tmpdir, 'facet_mod.ki')
             with open(path, 'w', encoding='utf-8') as fh:
-                fh.write('(define x 1)\n')
+                fh.write('(var x 1)\n')
             mod = new_module('facet_mod')
             init_module(mod, path)
             load_module_demand(mod)
@@ -146,7 +146,7 @@ class TestLoadModuleDemand(unittest.TestCase):
         try:
             path = os.path.join(tmpdir, 'facet_interactive.ki')
             with open(path, 'w', encoding='utf-8') as fh:
-                fh.write('(define x 1)\n')
+                fh.write('(var x 1)\n')
             mod = new_module('facet_interactive')
             init_module(mod, path)
             load_module_demand(mod, detach=False)

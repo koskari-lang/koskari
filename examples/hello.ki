@@ -17,20 +17,20 @@ Example koskari program
 """
 
 
-define-class FunTimes []:
+class FunTimes []:
 
-    define __init__ [self x]:
+    def __init__ [self x]:
         (self.set_x x)
 
-    define get_x [self]:
+    def get_x [self]:
         self.real_x
 
-    define set_x [self x]:
+    def set_x [self x]:
         set! self.real_x x
 
 
 (print "Hello, Koskari!")
-(define fun (FunTimes 10))
+(var fun (FunTimes 10))
 
 (print "fun:" fun)
 (print "fun.real_x:" fun.real_x)

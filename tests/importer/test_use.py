@@ -42,9 +42,9 @@ pytestmark = pytest.mark.phase_importer
 
 
 PROVIDER = """
-(define-syntax doubled (syntax-rules [] [(doubled x) (* x 2)]))
-(define doubled-name "doubled")
-(define plain-value 7)
+(syntax doubled (syntax-rules [] [(doubled x) (* x 2)]))
+(var doubled-name "doubled")
+(var plain-value 7)
 """
 
 
@@ -88,7 +88,7 @@ class TestUse(UseCase):
         self.write_ki('ki_use_prov', PROVIDER)
         self.write_ki('ki_use_user', """
         (use ki_use_prov doubled plain-value)
-        (define result (doubled plain-value))
+        (var result (doubled plain-value))
         """)
 
         mod = importlib.import_module('ki_use_user')
@@ -98,12 +98,12 @@ class TestUse(UseCase):
     async def test_use_runtime_facet_alongside_macro(self):
         # a feature with both a runtime and a compile facet brings both
         self.write_ki('ki_use_prov2', """
-        (define-syntax spoken (syntax-rules [] [(spoken x) x]))
-        (define spoken "aloud")
+        (syntax spoken (syntax-rules [] [(spoken x) x]))
+        (var spoken "aloud")
         """)
         self.write_ki('ki_use_user2', """
         (use ki_use_prov2 spoken)
-        (define result #[(spoken 42) spoken])
+        (var result #[(spoken 42) spoken])
         """)
 
         mod = importlib.import_module('ki_use_user2')
@@ -114,7 +114,7 @@ class TestUse(UseCase):
         self.write_ki('ki_use_prov3', PROVIDER)
         self.write_ki('ki_use_user3', """
         (use ki_use_prov3 [doubled as: twiced])
-        (define result (twiced 21))
+        (var result (twiced 21))
         """)
 
         mod = importlib.import_module('ki_use_user3')
@@ -153,7 +153,7 @@ class TestUse(UseCase):
     async def test_use_python_module_degrades_to_from_import(self):
         self.write_ki('ki_use_user5', """
         (use os.path join)
-        (define result (join "a" "b"))
+        (var result (join "a" "b"))
         """)
 
         mod = importlib.import_module('ki_use_user5')
@@ -164,7 +164,7 @@ class TestUse(UseCase):
         self.write_ki('ki_use_prov6', PROVIDER)
         self.write_ki('ki_use_user6', """
         (use ki_use_prov6 compile/doubled)
-        (define result (doubled 4))
+        (var result (doubled 4))
         """)
 
         mod = importlib.import_module('ki_use_user6')
@@ -176,8 +176,8 @@ class TestUse(UseCase):
         # binding: the bare candidate lands there, and no doubled-prefix
         # facet keys the compiler never declared are stored
         self.write_ki('ki_use_prov10', """
-        (define-syntax spoken (syntax-rules [] [(spoken x) x]))
-        (define spoken "aloud")
+        (syntax spoken (syntax-rules [] [(spoken x) x]))
+        (var spoken "aloud")
         """)
         self.write_ki('ki_use_user10', """
         (use ki_use_prov10 [spoken as: compile/said])
@@ -194,7 +194,7 @@ class TestUse(UseCase):
         from koskari.exceptions import SpecialError
         self.write_ki('ki_use_prov7', PROVIDER)
         self.write_ki('ki_use_user7', """
-        (define f (lambda f [] (begin (use ki_use_prov7 doubled) 1)))
+        (def f [] (begin (use ki_use_prov7 doubled) 1))
         """)
 
         with self.assertRaises(SpecialError):
@@ -207,7 +207,7 @@ class TestUse(UseCase):
         self.write_ki('ki_use_user8', """
         (use ki_use_prov8 doubled)
         (extend-syntax doubled (syntax-rules [] [(doubled x y) (* x y)]))
-        (define result #[(doubled 21) (doubled 6 7)])
+        (var result #[(doubled 21) (doubled 6 7)])
         """)
 
         mod = importlib.import_module('ki_use_user8')
@@ -225,7 +225,7 @@ class TestUseErrorFidelity(UseCase):
         pkg = os.path.join(self._tmpdir, 'ki_use_pkg')
         os.makedirs(pkg)
         with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-            fh.write("(define marker 1)\n")
+            fh.write("(var marker 1)\n")
         with open(os.path.join(pkg, 'broken.ki'), 'w') as fh:
             fh.write('(raise (RuntimeError "boom inside broken"))\n')
 
@@ -248,7 +248,7 @@ class TestUseErrorFidelity(UseCase):
         pkg = os.path.join(self._tmpdir, 'ki_use_pkg2')
         os.makedirs(pkg)
         with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-            fh.write("(define marker 1)\n")
+            fh.write("(var marker 1)\n")
         with open(os.path.join(pkg, 'needy.ki'), 'w') as fh:
             fh.write('(raise (ImportError "optional dependency missing"))\n')
 
@@ -287,7 +287,7 @@ class TestUseBare(UseCase):
         """) + PROVIDER)
         self.write_ki('ki_useb_user2', """
         (use ki_useb_prov2)
-        (define result (doubled plain-value))
+        (var result (doubled plain-value))
         """)
 
         mod = importlib.import_module('ki_useb_user2')
@@ -300,7 +300,7 @@ class TestUseBare(UseCase):
         self.write_ki('ki_useb_prov3', PROVIDER)
         self.write_ki('ki_useb_user3', """
         (use ki_useb_prov3)
-        (define result (doubled 5))
+        (var result (doubled 5))
         """)
 
         mod = importlib.import_module('ki_useb_user3')
@@ -312,7 +312,7 @@ class TestUseBare(UseCase):
         # is a real attribute and belongs in __all__
         self.write_ki('ki_useb_prov5', """
         (declare-exports flag)
-        (define flag None)
+        (var flag None)
         """)
 
         prov = importlib.import_module('ki_useb_prov5')

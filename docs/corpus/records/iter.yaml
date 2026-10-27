@@ -99,7 +99,7 @@ notes: range? from _ty('range', range) in bootstrap
 ---
 id: iter-item-constant-key-001
 feature: special/compile/item
-source: "(begin (define lst #[10 20 30]) (item lst 0))"
+source: "(begin (var lst #[10 20 30]) (item lst 0))"
 verify:
   eval: "10"
 references:
@@ -114,7 +114,7 @@ tags:
 ---
 id: iter-item-variable-key-001
 feature: special/compile/item
-source: "(begin (define lst #[10 20 30]) (let [[i 2]] (item lst i)))"
+source: "(begin (var lst #[10 20 30]) (let [[i 2]] (item lst i)))"
 verify:
   eval: "30"
 references:
@@ -129,7 +129,7 @@ tags:
 ---
 id: iter-set-item-store-001
 feature: special/compile/set-item
-source: "(begin (define lst #[1 2 3]) (set-item lst 1 99) (item lst 1))"
+source: "(begin (var lst #[1 2 3]) (set-item lst 1 99) (item lst 1))"
 verify:
   eval: "99"
 references:
@@ -815,16 +815,16 @@ id: iter-layout-while-accumulator-003
 feature: layout/while
 source: |-
   begin:
-    (define n 3)
-    (define acc 0)
+    (var n 3)
+    (var acc 0)
     while (> n 0):
       (incr! acc n)
       (decr! n)
     acc
   
 verify:
-  read: (begin (define n 3) (define acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
-  expand: (begin (define n 3) (define acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
+  read: (begin (var n 3) (var acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
+  expand: (begin (var n 3) (var acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
   eval: "6"
 references:
   - reference/specials/compile-while.md
@@ -878,19 +878,19 @@ id: iter-layout-while-fib-loop-001
 feature: layout/while
 source: |-
   begin:
-    define n 5
-    define v 0
-    define accu 1
+    var n 5
+    var v 0
+    var accu 1
     while (> n 0):
       decr! n
-      define tmp accu
+      var tmp accu
       set! accu (+ accu v)
       set! v tmp
     v
   
 verify:
-  read: (begin (define n 5) (define v 0) (define accu 1) (while (> n 0) (decr! n) (define tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
-  expand: (begin (define n 5) (define v 0) (define accu 1) (while (> n 0) (decr! n) (define tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
+  read: (begin (var n 5) (var v 0) (var accu 1) (while (> n 0) (decr! n) (var tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
+  expand: (begin (var n 5) (var v 0) (var accu 1) (while (> n 0) (decr! n) (var tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
   eval: "5"
 references:
   - reference/specials/compile-while.md
@@ -907,7 +907,7 @@ feature: macro/compile/for-each
 source: |-
   (begin
     (import-from itertools product)
-    (define result #[])
+    (var result #[])
     (for-each [[x y] (product (range 2) (range 2))]
       (result.append #[x y]))
     (len result))
@@ -929,13 +929,13 @@ id: iter-for-each-accumulate-002
 feature: macro/compile/for-each
 source: |-
   (begin
-    (define total 0)
+    (var total 0)
     (for-each [x seq] (setq total (+ total x)))
     total)
   
 verify:
-  read: (begin (define total 0) (for-each (x seq) (setq total (+ total x))) total)
-  expand: (begin (define total 0) (for-each (x seq) (setq total (+ total x))) total)
+  read: (begin (var total 0) (for-each (x seq) (setq total (+ total x))) total)
+  expand: (begin (var total 0) (for-each (x seq) (setq total (+ total x))) total)
   eval: "6"
 references:
   - reference/specials/compile-for-each.md
@@ -952,12 +952,12 @@ id: iter-for-each-multi-body-003
 feature: macro/compile/for-each
 source: |-
   (for-each [x seq]
-    (define doubled (* x 2))
+    (var doubled (* x 2))
     doubled)
   
 verify:
-  read: (for-each (x seq) (define doubled (* x 2)) doubled)
-  expand: (for-each (x seq) (define doubled (* x 2)) doubled)
+  read: (for-each (x seq) (var doubled (* x 2)) doubled)
+  expand: (for-each (x seq) (var doubled (* x 2)) doubled)
   eval: "6"
 references:
   - reference/specials/compile-for-each.md
@@ -1416,11 +1416,11 @@ notes: "filters do NOT compose: only the outermost whole-body when is the filter
 id: iter-list-each-multiform-no-injection-002
 feature: macro/compile/list-each
 source: |-
-  (list-each [x (range 0 4)] (define y x) (when (& x 1) x))
+  (list-each [x (range 0 4)] (var y x) (when (& x 1) x))
   
 verify:
-  read: (list-each [x (range 0 4)] (define y x) (when (& x 1) x))
-  expand: (list-each [x (range 0 4)] (begin (define y x) (when (& x 1) x)))
+  read: (list-each [x (range 0 4)] (var y x) (when (& x 1) x))
+  expand: (list-each [x (range 0 4)] (begin (var y x) (when (& x 1) x)))
   eval: "list:[null,1,null,3]"
 stability: evolving
 tags:
@@ -1430,7 +1430,7 @@ tags:
   - surprising
   - pitfall
   - iterate
-notes: "the filter applies only when the conditional encompasses the WHOLE body. In a multi-form body a trailing when is a plain expression, so misses collect None. corrective: move the extra forms inside the when -- (list-each [x seq] (when rule (define y ...) y)) -- or use when:/unless: clauses. To collect the None deliberately, write (if rule x None)."
+notes: "the filter applies only when the conditional encompasses the WHOLE body. In a multi-form body a trailing when is a plain expression, so misses collect None. corrective: move the extra forms inside the when -- (list-each [x seq] (when rule (var y ...) y)) -- or use when:/unless: clauses. To collect the None deliberately, write (if rule x None)."
 ---
 id: iter-each-when-body-filter-001
 feature: macro/compile/each
@@ -1484,7 +1484,7 @@ notes: "regression guard for the whole-body filter's matcher: `when` and `unless
 ---
 id: iter-for-each-bare-continue-001
 feature: special/compile/for-each
-source: "(begin (define out #[]) (for-each [x #[1 2 3]] (when (== x 2) continue) (.append out x)) out)"
+source: "(begin (var out #[]) (for-each [x #[1 2 3]] (when (== x 2) continue) (.append out x)) out)"
 verify:
   eval: "list:[1,3]"
 references:
@@ -1750,12 +1750,12 @@ id: iter-sort-key-itemgetter-001
 feature: builtin/itemgetter
 source: |-
   (begin
-    (define rows #[#{"k": 2} #{"k": 1}])
+    (var rows #[#{"k": 2} #{"k": 1}])
     (rows.sort key: (itemgetter "k"))
     rows)
   
 verify:
-  read: "(begin (define rows (#list (#dict (#tuple \"k\" 2)) (#dict (#tuple \"k\" 1)))) ((attr rows sort) key: (itemgetter \"k\")) rows)"
+  read: "(begin (var rows (#list (#dict (#tuple \"k\" 2)) (#dict (#tuple \"k\" 1)))) ((attr rows sort) key: (itemgetter \"k\")) rows)"
   eval: "list:[{\"k\":1},{\"k\":2}]"
 references:
   - agents/pitfalls.md
@@ -1774,12 +1774,12 @@ id: iter-sort-key-demand-lambda-002
 feature: builtin/demand
 source: |-
   (begin
-    (define xs #[3 1 2])
+    (var xs #[3 1 2])
     (xs.sort key: (demand {(- %1)}))
     xs)
   
 verify:
-  read: "(begin (define xs (#list 3 1 2)) ((attr xs sort) key: (demand (gensym-thunk (- %1)))) xs)"
+  read: "(begin (var xs (#list 3 1 2)) ((attr xs sort) key: (demand (gensym-thunk (- %1)))) xs)"
   eval: "list:[3,2,1]"
 references:
   - agents/pitfalls.md

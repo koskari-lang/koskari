@@ -36,17 +36,17 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define effects (list)
+var effects (list)
 
-define gen-fn [x]:
+def gen-fn [x]:
     (effects.append "ran")
     yield x
     yield (+ x 1)
 
-define call-direct []:
+def call-direct []:
     (gen-fn 10)
 
-define call-tail [x]:
+def call-tail [x]:
     (gen-fn x)
 """
 

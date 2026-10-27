@@ -49,4 +49,4 @@ print:
 
 For a **`compile/begin`** wrapper around the body, use
 [layout/block-begin](layout-block-begin.md) instead (for example
-**`define layout/my-head layout/block-begin`** in a **`.ki`** module).
+**`var layout/my-head layout/block-begin`** in a **`.ki`** module).

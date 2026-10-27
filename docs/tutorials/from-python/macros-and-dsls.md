@@ -23,20 +23,20 @@ define-route "/hello/{name}" hello [name]:
 :::{dialogue}
 What makes `define-route` exist?
 +++
-A `define-syntax` form. The rule names the shape to match and the code
+A `syntax` form. The rule names the shape to match and the code
 to produce:
 
 ```koskari
-define app (fastapi.FastAPI)
+var app (fastapi.FastAPI)
 
-define-syntax define-route:
+syntax define-route:
   syntax-rules []:
     define-route path name args body ...:
-      define name args body ...
+      def name args body ...
       (app.add_api_route path (coroutine-fn name) methods: #["GET"])
 ```
 
-Each use expands into a `define` and a registration call, at compile
+Each use expands into a `def` and a registration call, at compile
 time. Nothing about it is special at runtime.
 :::
 
@@ -49,12 +49,12 @@ block under the header.
 :::
 
 :::{dialogue}
-Why is the `define` in the template on one line?
+Why is the `def` in the template on one line?
 +++
 The template is read by the layout reader before the ellipsis is
 expanded, and a line holding `body ...` is two elements, so it would
 read as the call `(body ...)`. Keeping `body ...` on the header line
-makes it part of the `define` form. Where a body has to sit under a
+makes it part of the `def` form. Where a body has to sit under a
 block header, spell it `(begin body ...)`.
 :::
 
@@ -82,15 +82,15 @@ And the macro behind it?
 ```koskari
 import argparse
 
-define-syntax define-command:
+syntax define-command:
   syntax-rules []:
     define-command cli-name option fn-name [value] body ...:
-      define fn-name [value] body ...
+      def fn-name [value] body ...
 
-      define cli-name []:
-        define parser (argparse.ArgumentParser)
+      def cli-name []:
+        var parser (argparse.ArgumentParser)
         (parser.add_argument option)
-        define options (parser.parse_args)
+        var options (parser.parse_args)
         (fn-name (attr options value))
 ```
 
@@ -102,7 +102,7 @@ with flags, defaults, and help text, is more arms in the same rule.
 :::{dialogue}
 Why does the use site name `main` as well as `greet`?
 +++
-Hygiene. A name the template introduces on its own, such as a `define
+Hygiene. A name the template introduces on its own, such as a `def
 main` written inside the rule, is marked so it cannot collide with the
 caller's names. A name the caller supplies is bound as written. Both
 functions are meant to be called, so both names come from the use.
@@ -126,7 +126,7 @@ macro.
 ```
 +++
 ```koskari
-define-syntax unless:
+syntax unless:
   syntax-rules []:
     unless test body ...:
       if test:
@@ -147,7 +147,7 @@ How do I see what a macro produced?
 ```
 
 `unless` is a builtin, so that expansion comes from the builtin's
-template, a `cond`. The `define-syntax unless` above is a worked example
+template, a `cond`. The `syntax unless` above is a worked example
 of writing the rule; the definition in force here is the builtin's.
 
 Keep a parenthesized use beside the layout use while you learn; the

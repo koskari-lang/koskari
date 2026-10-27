@@ -43,36 +43,36 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import-from asyncio sleep
 
-define inner []:
+def inner []:
   yield 1
   (sleep 0)
   yield 2
   (sleep 0)
   yield 3
 
-define outer []:
+def outer []:
   yield-from (inner)
 
-define drain [src]:
-  define out (#list)
+def drain [src]:
+  var out (#list)
   for-each [v src]:
     (out.append v)
   out
 
-define fresh-mapped []:
+def fresh-mapped []:
   (drain (map identity (outer)))
 
-define fresh-plain []:
+def fresh-plain []:
   (drain (outer))
 
-define stepped-mapped []:
-  define g (outer)
-  define first (await ((g.__aiter__).__anext__))
+def stepped-mapped []:
+  var g (outer)
+  var first (await ((g.__aiter__).__anext__))
   #(first (await (drain (map identity g))))
 
-define stepped-plain []:
-  define g (outer)
-  define first (await ((g.__aiter__).__anext__))
+def stepped-plain []:
+  var g (outer)
+  var first (await ((g.__aiter__).__anext__))
   #(first (await (drain g)))
 """
 

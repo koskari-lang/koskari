@@ -62,9 +62,9 @@ group nested expressions. Save this as `fruits.ki` and run it the same
 way:
 
 ```koskari
-define fruits #["apple" "pear" "plum"]
+var fruits #["apple" "pear" "plum"]
 
-define shout [word]:
+def shout [word]:
     (+ (word.upper) "!")
 
 for-each [fruit fruits]:

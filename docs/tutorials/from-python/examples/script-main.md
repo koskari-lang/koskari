@@ -8,7 +8,7 @@ module.
 
 ```koskari
 @entry-point
-define main []:
+def main []:
   print "running as a program"
 ```
 
@@ -37,7 +37,7 @@ parameter's default do it:
 import sys
 
 @entry-point
-define main [args: (item-slice sys.argv 1)]:
+def main [args: (item-slice sys.argv 1)]:
   if args:
     print "hello," args[0]
   else:

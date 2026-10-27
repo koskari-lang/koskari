@@ -15,7 +15,7 @@
 import-from functools [lru_cache as: memoize]
 
 
-define fib-recur [n]:
+def fib-recur [n]:
     """
     Good old Fibonacci sequence, defined recursively.
     """
@@ -32,7 +32,7 @@ define fib-recur [n]:
 ;; can move away from this.
 @(memoize maxsize: None)
 @demand
-define fib-recur-decorated [n]:
+def fib-recur-decorated [n]:
     """
     Good old Fibonacci sequence, defined recursively, with a
     memoizing decorator.
@@ -49,7 +49,7 @@ define fib-recur-decorated [n]:
 ;; first one computed. A cache defined inside the body would be rebuilt
 ;; per call and only serve that call's own recursion.
 @let [[cache #{}]]
-define fib-recur-cached [n]:
+def fib-recur-cached [n]:
     """
     Good old Fibonacci sequence, defined recursively with
     a cache.
@@ -62,13 +62,13 @@ define fib-recur-cached [n]:
         if (< n 1) 0 n
 
     else:
-        define result (+ (fib-recur-cached (- n 1))
+        var result (+ (fib-recur-cached (- n 1))
                          (fib-recur-cached (- n 2)))
         set! cache[n] result
         result
 
 
-define fib-tail-recur [n]:
+def fib-tail-recur [n]:
     """
     Fibonacci sequence, defined recursively with
     tail-call optimization.
@@ -81,14 +81,14 @@ define fib-tail-recur [n]:
             inner (- n 1) accu (+ accu v)
 
 
-define fib-loop [n]:
+def fib-loop [n]:
     """
     Fibonacci sequence, defined iteratively.
     """
 
-    define tmp 0
-    define v 0
-    define accu 1
+    var tmp 0
+    var v 0
+    var accu 1
 
     while (> n 0):
         decr! n

@@ -20,7 +20,7 @@ import pytest
 
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SpecialError, SyntaxMatchError
 from koskari.lib import Module, symbol
 from koskari.reader import IndentAwareStream, LayoutReader, source_str
 
@@ -62,12 +62,12 @@ class TestDefineWithExpr(SpecialsTestCase):
         self.assertEqual(99, result)
 
 
-class TestDefineFunctionShorthand(SpecialsTestCase):
+class TestDefineFunction(SpecialsTestCase):
 
     async def test_define_double(self):
         src_str = """
         (begin
-          (define double [x] (mul x 2))
+          (define [double x] (mul x 2))
           (double 5))
         """
         expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
@@ -78,7 +78,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
     async def test_define_fact(self):
         src_str = """
         (begin
-          (define fact [n]
+          (define [fact n]
             (cond
               [(eq n 0) 1]
               [else: (mul n (fact (sub n 1)))]))
@@ -93,10 +93,10 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
         self.assertEqual(120, result)
 
 
-    async def test_define_function_shorthand_inline_return_annotation(self):
+    async def test_define_function_return_annotation_through_function(self):
         src_str = """
         (begin
-          (define f :: int [x] (mul x 2))
+          (define f (function f :: int [x] (mul x 2)))
           f)
         """
         expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
@@ -106,23 +106,10 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
         self.assertEqual(await f(5), 10)
 
 
-    async def test_define_function_shorthand_decl_bracket_still_works(self):
+    async def test_define_function_type_colon_return_through_function(self):
         src_str = """
         (begin
-          (define [f :: int] [x] (mul x 2))
-          f)
-        """
-        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
-                                      int=int)
-        f = await expr()
-        self.assertIs(f.__annotations__['return'], int)
-        self.assertEqual(await f(5), 10)
-
-
-    async def test_define_function_shorthand_type_colon_return_annotation(self):
-        src_str = """
-        (begin
-          (define g type: int [x] (mul x 2))
+          (define g (function g type: int [x] (mul x 2)))
           g)
         """
         expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
@@ -130,6 +117,144 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
         g = await expr()
         self.assertIs(g.__annotations__['return'], int)
         self.assertEqual(await g(5), 10)
+
+
+class TestDefineSchemeShape(SpecialsTestCase):
+
+    async def test_paren_head(self):
+        src_str = """
+        (begin
+          (define (double x) (mul x 2))
+          (double 4))
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        self.assertEqual(8, await expr())
+
+
+    async def test_head_without_formals(self):
+        expr, mod = self.compile_expr("(begin (define [answer] 42) (answer))")
+        self.assertEqual(42, await expr())
+
+
+    async def test_function_is_named(self):
+        expr, mod = self.compile_expr("(begin (define [named] 1) named)")
+        self.assertEqual("named", (await expr()).__name__)
+
+
+    async def test_old_shorthand_does_not_match(self):
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_expr("(define f [x] x)")
+
+
+    async def test_value_that_reads_as_formals(self):
+        # a name and a value, even when the value is a call
+        src_str = """
+        (begin
+          (define v [mk])
+          v)
+        """
+        expr, mod = self.compile_expr(src_str, mk=lambda: 7)
+        self.assertEqual(7, await expr())
+
+
+    async def test_pair_head_is_a_function_not_an_unpacking(self):
+        src_str = """
+        (begin
+          (define [a b] (mul b 3))
+          (a 2))
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda x, y: x * y)
+        self.assertEqual(6, await expr())
+
+
+    async def test_head_must_be_named(self):
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_expr("(define [1 x] x)")
+
+
+    async def test_typed_head_return_annotation(self):
+        src_str = """
+        (begin
+          (define [(f :: int) x] (mul x 2))
+          f)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
+        f = await expr()
+        self.assertIs(f.__annotations__['return'], int)
+        self.assertEqual(await f(5), 10)
+
+
+    async def test_typed_head_type_colon_return_annotation(self):
+        src_str = """
+        (begin
+          (define [(g type: int) x] (mul x 2))
+          g)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
+        g = await expr()
+        self.assertIs(g.__annotations__['return'], int)
+        self.assertEqual(await g(5), 10)
+
+
+    async def test_inline_return_type_is_rejected(self):
+        # the name takes the first formal slot, so a bare :: after it
+        # is the bare :: the formals parser refuses
+        with self.assertRaises(SpecialError):
+            self.compile_expr("(define [f :: int x] (mul x 2))")
+
+
+    async def test_inline_type_keyword_is_a_formal(self):
+        src_str = """
+        (begin
+          (define [g type: 1 x] (mul x type))
+          g)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        g = await expr()
+        self.assertNotIn('return', g.__annotations__)
+        # x follows a keyword formal, so it is keyword-only
+        self.assertEqual(await g(x=5), 5)
+        self.assertEqual(await g(x=5, type=3), 15)
+
+
+    async def test_typed_head_without_formals(self):
+        src_str = "(begin (define [(answer :: int)] 42) answer)"
+        expr, mod = self.compile_expr(src_str, int=int)
+        answer = await expr()
+        self.assertIs(answer.__annotations__['return'], int)
+        self.assertEqual(await answer(), 42)
+
+
+    async def test_define_global_typed_head_from_body(self):
+        src_str = """
+        (begin
+          (define [setup]
+            (define-global [(helper :: int) y] (mul y 10))
+            None)
+          (setup)
+          helper)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
+        helper = await expr()
+        self.assertIs(helper.__annotations__['return'], int)
+        self.assertEqual(await helper(2), 20)
+
+
+    async def test_define_global_function_from_body(self):
+        src_str = """
+        (begin
+          (define [setup]
+            (define-global [helper y] (mul y 10))
+            None)
+          (setup)
+          (helper 2))
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        self.assertEqual(20, await expr())
+        self.assertIn("helper", vars(mod))
 
 
 class TestDefineInlineTypedValue(SpecialsTestCase):
@@ -177,9 +302,9 @@ class TestDefineAnnotationBindings(SpecialsTestCase):
         self.assertEqual(f.annotation_bindings[0][0], "z")
         self.assertEqual(f.annotation_bindings[0][1], symbol("int"))
 
-    def test_function_shorthand_no_fragment_annotation_binding(self):
+    def test_function_form_no_fragment_annotation_binding(self):
         f = self.compile_fragment(
-            "(define f :: int [x] (mul x 2))", mul=lambda a, b: a * b)
+            "(define [f x] (mul x 2))", mul=lambda a, b: a * b)
         self.assertEqual(f.annotation_bindings, [])
 
 
@@ -188,7 +313,8 @@ class TestDefineKeywordHeadedFormals(SpecialsTestCase):
     async def test_define_return_type_with_keyword_headed_formal(self):
         src = """
         (begin
-          (define foo :: int [[x :: int] [y: 1 :: int]] (add x y))
+          (define foo
+            (function foo :: int [[x :: int] [y: 1 :: int]] (add x y)))
           foo)
         """
         expr, mod = self.compile_expr(src, int=int, add=lambda a, b: a + b)
@@ -199,18 +325,6 @@ class TestDefineKeywordHeadedFormals(SpecialsTestCase):
         self.assertEqual(await fn(1, 5), 6)
         self.assertEqual(await fn(1, y=7), 8)
 
-
-    async def test_define_decl_return_type_with_keyword_headed_formal(self):
-        src = """
-        (begin
-          (define [foo :: int] [[x :: int] [y: 1 :: int]] (add x y))
-          foo)
-        """
-        expr, mod = self.compile_expr(src, int=int, add=lambda a, b: a + b)
-        fn = await expr()
-        self.assertEqual(
-            fn.__annotations__, {"x": int, "y": int, "return": int})
-        self.assertEqual(await fn(1, y=7), 8)
 
 
 class TestDefineBareDoubleColonFormals(SpecialsTestCase):
@@ -223,7 +337,7 @@ class TestDefineBareDoubleColonFormals(SpecialsTestCase):
 
 
     async def test_define_inline_bare_double_colon_rejected(self):
-        src = "(define f [n :: int] n)"
+        src = "(define [f n :: int] n)"
         with self.assertRaises(SpecialError) as cm:
             self.compile_expr(src, int=int)
         self.assertIn("[(n :: int)]", str(cm.exception))
@@ -232,7 +346,7 @@ class TestDefineBareDoubleColonFormals(SpecialsTestCase):
     async def test_define_parenthesized_annotation_still_binds(self):
         src = """
         (begin
-          (define f [(n :: int)] n)
+          (define [f (n :: int)] n)
           f)
         """
         expr, mod = self.compile_expr(src, int=int)

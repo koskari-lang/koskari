@@ -48,14 +48,14 @@ class TestSharedName(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax set-slot
+(syntax set-slot
   (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
-(define-syntax read-slot
+(syntax read-slot
   (syntax-rules [] [(read-slot) (datumq shared-slot)]))
 
 (set-slot 7)
-(define via-macro (read-slot))
-(define via-name shared-slot)
+(var via-macro (read-slot))
+(var via-name shared-slot)
 """
 
     async def test_templates_share_the_raw_name(self):
@@ -71,14 +71,14 @@ class TestRawForm(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax raw-name
+(syntax raw-name
   (syntax-rules [] [(raw-name x) (quote (datumq x))]))
-(define-syntax tagged
+(syntax tagged
   (syntax-rules []
     [(tagged x ...) (#list (#tuple x (quote (datumq x))) ...)]))
 
-(define raw (raw-name 5))
-(define rows (tagged 1 2))
+(var raw (raw-name 5))
+(var rows (tagged 1 2))
 """
 
     async def test_pattern_variable_stays_raw(self):
@@ -100,15 +100,15 @@ class TestNestedDirective(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax make-setter
+(syntax make-setter
   (syntax-rules []
     [(make-setter mname)
-     (define-syntax mname
+     (global syntax mname
        (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
 
 (make-setter set-slot)
 (set-slot 11)
-(define got slot)
+(var got slot)
 """
 
     async def test_inner_template_writes_the_raw_name(self):
@@ -123,15 +123,15 @@ class TestDatumIsOrdinary(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax make-suffixer
+(syntax make-suffixer
   (syntax-rules []
     [(make-suffixer mname)
-     (define-syntax mname
+     (global syntax mname
        (macro-rules [] [(mname s) (datum (symbol f"{s.datum}-x"))]))]))
 
 (make-suffixer suffixed)
-(define abc-x 5)
-(define got (suffixed abc))
+(var abc-x 5)
+(var got (suffixed abc))
 """
 
     async def test_datum_call_passes_through(self):
@@ -145,7 +145,7 @@ class TestArity(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax bad (syntax-rules [] [(bad) (datumq a b)]))
+(syntax bad (syntax-rules [] [(bad) (datumq a b)]))
 (bad)
 """
 

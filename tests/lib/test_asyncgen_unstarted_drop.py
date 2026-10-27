@@ -35,7 +35,7 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define produce (lambda [n] (for-each [i (range n)] (yield i))))
+(define [produce n] (for-each [i (range n)] (yield i)))
 """
 
 

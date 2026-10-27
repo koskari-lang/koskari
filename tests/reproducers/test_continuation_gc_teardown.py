@@ -41,12 +41,12 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SHIFT_SRC = """
-(define leak-k None)
+(var leak-k None)
 
-(define capture-and-abandon (lambda [x]
-  (define-global leak-k None)
+(def capture-and-abandon [x]
+  (global var leak-k None)
   (reset
-    (+ x (shift k (begin (setq leak-k k) 100))))))
+    (+ x (shift k (begin (setq leak-k k) 100)))))
 
 (capture-and-abandon 1)
 (capture-and-abandon 2)
@@ -54,9 +54,9 @@ SHIFT_SRC = """
 """
 
 GEN_SRC = """
-(define pairs-via-yield (lambda [d]
+(def pairs-via-yield [d]
   (for-each [pair (.items d)]
-    (yield pair))))
+    (yield pair)))
 """
 
 

@@ -37,14 +37,14 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-define pair_of [v]:
+define [pair_of v]:
     match v:
         case #[a b]:
             (+ a b)
         else:
             "miss"
 
-define keyed [v]:
+define [keyed v]:
     match v:
         case #{"k": x}:
             x

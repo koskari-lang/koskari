@@ -307,7 +307,7 @@ notes: every listed key must be present; extra keys are ignored
 id: match-mapping-extern-key-001
 feature: special/compile/match
 source: |-
-  (begin (define key "dyn") (match #{"dyn": 9} [[#{key: v}] v] [else: "missing"]))
+  (begin (var key "dyn") (match #{"dyn": 9} [[#{key: v}] v] [else: "missing"]))
   
 verify:
   eval: "9"
@@ -341,7 +341,7 @@ notes: uses the baked fixture seq=(1,2,3); a non-mapping falls past mapping arms
 id: match-predicate-001
 feature: special/compile/match
 source: |-
-  (begin (define pos? (lambda [v] (> v 0))) (match 5 [[(? pos?)] "positive"] [else: "nope"]))
+  (begin (def pos? [v] (> v 0)) (match 5 [[(? pos?)] "positive"] [else: "nope"]))
   
 verify:
   eval: '"positive"'
@@ -359,7 +359,7 @@ notes: the predicate is called from the function the match is in, as a call in t
 id: match-app-001
 feature: special/compile/match
 source: |-
-  (begin (define half (lambda [v] (// v 2))) (match 10 [[(app half h)] h]))
+  (begin (def half [v] (// v 2)) (match 10 [[(app half h)] h]))
   
 verify:
   eval: "5"
@@ -377,7 +377,7 @@ notes: (app f pat) calls f on the subject and matches pat against the result
 id: match-app-destructure-001
 feature: special/compile/match
 source: |-
-  (begin (define dm3 (lambda [v] (divmod v 3))) (match 10 [[(app dm3 #[q r])] r] [else: "no"]))
+  (begin (var dm3 (lambda [v] (divmod v 3))) (match 10 [[(app dm3 #[q r])] r] [else: "no"]))
   
 verify:
   eval: "1"
@@ -396,7 +396,7 @@ notes: the extraction result is itself pattern-matched -- here destructured as a
 id: match-class-001
 feature: special/compile/match
 source: |-
-  (begin (import-from dataclasses dataclass) (define-class Point [] (define x :: int 0) (define y :: int 0)) (define P (dataclass Point)) (match (P 3 4) [[(item P a b)] b] [else: "no"]))
+  (begin (import-from dataclasses dataclass) (class Point [] (var x :: int 0) (var y :: int 0)) (var P (dataclass Point)) (match (P 3 4) [[(item P a b)] b] [else: "no"]))
   
 verify:
   eval: "4"
@@ -533,9 +533,9 @@ source: |-
   begin:
       import-from dataclasses dataclass
       @dataclass
-      define-class Point []:
-          define x :: int 0
-          define y :: int 0
+      class Point []:
+          var x :: int 0
+          var y :: int 0
       match (Point 3 4):
           case Point[a b]:
               b

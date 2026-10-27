@@ -91,7 +91,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         # the sentinel is stored on the captured operand stack, and k is
         # bound only in the module namespace, so the continuation dies
         # by refcount rather than by cycle collection
-        src = "(define k (reset (#tuple (call make_sentinel) (shift k k))))"
+        src = "(var k (reset (#tuple (call make_sentinel) (shift k k))))"
         module = new_module("cont_teardown")
         vars(module)["__file__"] = "<cont_teardown>"
         vars(module)["make_sentinel"] = Sentinel

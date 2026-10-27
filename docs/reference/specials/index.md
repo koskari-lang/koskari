@@ -5,7 +5,7 @@ names one, the compiler emits bytecode for it directly, following the
 form's own rules for which arguments are evaluated and when. Every other
 head in call position is a runtime call. Each page below gives the
 form's symbol, syntax, behaviour, and examples; the surface names most
-programs write, `if`, `when`, `set!`, `define-class`, are
+programs write, `if`, `when`, `set!`, `class`, are
 [macros](../macros/index.md) that lower to these.
 
 The compiler binds each special under its `compile/` name, and the
@@ -17,9 +17,11 @@ special, a macro, and a call is in
 
 | Form | Does |
 |------|------|
-| [`define`](compile-define.md) | Bind a name, or a function when formals follow |
-| [`define-global`](compile-define-global.md) | Bind a module-level name from inside a function |
-| [`define-values`](compile-define-values.md) | Bind several names by unpacking one value |
+| [`var`](compile-var.md) | Bind a name in the current scope, with an optional type, or several names by unpacking |
+| [`define`](compile-define.md) | The Scheme-layer spelling of `var`, or of `def` when the name position is a pair `[NAME FORMALS ...]` |
+| [`define-global`](compile-define-global.md) | Bind a name at the module from any depth; what `global var` and `global def` lower to |
+| [`define-values`](compile-define-values.md) | Bind the names of a pattern in the current scope; what `var` over a pattern lowers to |
+| [`define-global-values`](compile-define-global-values.md) | Bind the names of a pattern at the module; what `global var` over a pattern lowers to |
 | [`function`](compile-function.md) | A named function value that is not bound |
 | [`lambda`](compile-lambda.md) | An anonymous function value; formals, defaults, rest collectors, annotations, by-ref |
 | [`let`](compile-let.md) | Lexical bindings for a body; named `let` for loops |
@@ -31,7 +33,7 @@ special, a macro, and a call is in
 | [`deref`](compile-deref.md) | Read through a ref |
 | [`takeq`](compile-takeq.md) | Read a binding and clear it |
 | [`delq`](compile-delq.md) | Delete a binding |
-| [`globals`](compile-globals.md), [`locals`](compile-locals.md) | The module namespace; the current frame's namespace |
+| [`globals`](compile-globals.md), [`vars`](compile-vars.md) | The module namespace; the current scope's namespace, or an object's `__dict__` |
 | [`parameter`](compile-parameter.md), [`parameterize`](compile-parameterize.md) | Read a dynamic parameter; rebind parameters for a body |
 
 ## Control flow
@@ -62,7 +64,7 @@ special, a macro, and a call is in
 | [`inplace`](compile-inplace.md) | Update a variable in place; the special under `incr!` and `decr!` |
 | [`call`](compile-call.md) | Call a value; forces a runtime call past a same-named macro |
 | [`call-attr`](compile-call-attr.md) | Call a method by name; `(obj.method ...)` reads to this |
-| [`class`](compile-class.md) | Build a class value; what `define-class` lowers to |
+| [`build-class`](compile-build-class.md) | Build a class value without binding a name; what `class` lowers to |
 | [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests; a tuple as the second operand tests several types |
 | [`#str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional bare format spec |
 | [`#list`, `#tuple`, `#list-append`](object-operators/index.md#collection-builders) | Build a list or tuple; append to a list |

@@ -8,7 +8,7 @@ This directory contains the design documentation for koskari, organized into thr
 
 ## Structure
 
-- **[SPECIALS.md](SPECIALS.md)**: Reference for implemented compiler special forms (compile/bytecode, compile/begin, compile/call, compile/lambda, compile/function, compile/try, compile/class, compile/define-syntax, import, import-from, and many more; see SPECIALS.md for full list), with use-cases and examples
+- **[SPECIALS.md](SPECIALS.md)**: Reference for implemented compiler special forms (compile/bytecode, compile/begin, compile/call, compile/lambda, compile/function, compile/try, compile/var, compile/build-class, compile/define-syntax, import, import-from, and many more; see SPECIALS.md for full list), with use-cases and examples
 - **[MACROS.md](MACROS.md)**: Reference for implemented macros (set!, ref, etc.) defined in basics.ki; format mirrors SPECIALS.md
 - **[OPCODES.md](OPCODES.md)**: Canonical reference for implemented opcodes
 - **[LAYOUTS.md](LAYOUTS.md)**: Layout handler rollup; normative layout syntax graduated to [docs/reference/reader-layout.md](../docs/reference/reader-layout.md)

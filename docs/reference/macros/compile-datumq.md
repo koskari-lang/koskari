@@ -29,14 +29,14 @@ nested form.
 **Examples:**
 
 ```koskari
->>> define d (datumq (+ 1 2))
+>>> var d (datumq (+ 1 2))
 >>> d.datum
 (+ 1 2)
 ```
 
 ```koskari
-(define-syntax set-slot
-  (syntax-rules [] [(set-slot v) (define -'shared-slot v)]))
+(syntax set-slot
+  (syntax-rules [] [(set-slot v) (var -'shared-slot v)]))
 
 (set-slot 7)
 shared-slot

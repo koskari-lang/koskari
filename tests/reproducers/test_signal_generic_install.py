@@ -45,22 +45,22 @@ SRC = """
 import _thread
 import-from builtins sorted
 
-define key-fn (demand (lambda [x *: rest] x))
+var key-fn (demand (lambda [x *: rest] x))
 
-define sort-under-signal []:
+def sort-under-signal []:
     (_thread.interrupt_main)
-    define result (sorted #[3 1 2] key: key-fn)
-    define n 0
+    var result (sorted #[3 1 2] key: key-fn)
+    var n 0
     while (< n 1):
         setq n (+ n 1)
     result
 
-define filter-under-signal []:
+def filter-under-signal []:
     (_thread.interrupt_main)
-    define acc #[]
+    var acc #[]
     for-each [v (filter (lambda [x *: rest] (> x 1)) #[1 2 3])]:
         (acc.append v)
-    define n 0
+    var n 0
     while (< n 1):
         setq n (+ n 1)
     acc

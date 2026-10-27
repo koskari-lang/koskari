@@ -30,7 +30,7 @@ quoted head is not gathered, and stays a sibling of the enclosing form.
 **Examples:**
 
 ```koskari
->>> define form:
+>>> var form:
 ...   'begin:
 ...     foo
 ...     bar
@@ -41,7 +41,7 @@ quoted head is not gathered, and stays a sibling of the enclosing form.
 A nested block stays a nested `#block:` entry:
 
 ```koskari
->>> define form:
+>>> var form:
 ...   'begin:
 ...     if flag:
 ...       yes

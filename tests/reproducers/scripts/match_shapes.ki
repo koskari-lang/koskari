@@ -1,6 +1,6 @@
 ;; Reproducer: runtime match/case over a dataclass shape hierarchy.
 ;;
-;; Point, Plane, Square, and Cube are @dataclass define-classes, so
+;; Point, Plane, Square, and Cube are @dataclass classes, so
 ;; positional class patterns resolve fields through __match_args__.  The
 ;; verify functions drive one consumer through the whole pattern
 ;; vocabulary: class patterns, keyword-field literals, guards, or / not,
@@ -12,28 +12,28 @@ import-from dataclasses dataclass
 
 
 @dataclass
-define-class Point []:
-    define x :: int 0
-    define y :: int 0
+class Point []:
+    var x :: int 0
+    var y :: int 0
 
 
 @dataclass
-define-class Plane []:
-    define w :: int 0
-    define h :: int 0
+class Plane []:
+    var w :: int 0
+    var h :: int 0
 
 
 @dataclass
-define-class Square []:
-    define side :: int 0
+class Square []:
+    var side :: int 0
 
 
 @dataclass
-define-class Cube []:
-    define side :: int 0
+class Cube []:
+    var side :: int 0
 
 
-define area [shape]:
+def area [shape]:
     match shape:
         case Point[x y]:
             0
@@ -47,7 +47,7 @@ define area [shape]:
             None
 
 
-define describe [shape]:
+def describe [shape]:
     match shape:
         case Point[x: 0 y: 0]:
             "origin"
@@ -65,7 +65,7 @@ define describe [shape]:
             "unknown"
 
 
-define side-of [shape]:
+def side-of [shape]:
     match shape:
         case (or Square[s] Cube[s]):
             s
@@ -73,7 +73,7 @@ define side-of [shape]:
             None
 
 
-define summarize [shapes]:
+def summarize [shapes]:
     match shapes:
         case #[]:
             "empty"
@@ -85,7 +85,7 @@ define summarize [shapes]:
             "not-a-sequence"
 
 
-define from-message [msg]:
+def from-message [msg]:
     match msg:
         case #{"shape": "square" "side": s}:
             (Square s)
@@ -97,7 +97,7 @@ define from-message [msg]:
             None
 
 
-define lookup [msg key]:
+def lookup [msg key]:
     match msg:
         case #{key: v}:
             v
@@ -105,7 +105,7 @@ define lookup [msg key]:
             None
 
 
-define grade [shape]:
+def grade [shape]:
     match shape:
         case (app area 0):
             "flat"
@@ -117,7 +117,7 @@ define grade [shape]:
             "unmeasured"
 
 
-define verify_area []:
+def verify_area []:
     (and (equal? (area (Point 3 5)) 0)
          (equal? (area (Square 12)) 144)
          (equal? (area (Plane 4 8)) 32)
@@ -125,7 +125,7 @@ define verify_area []:
          (equal? (area "nonsense") None))
 
 
-define verify_describe []:
+def verify_describe []:
     (and (equal? (describe (Point 0 0)) "origin")
          (equal? (describe (Point 3 5)) "point")
          (equal? (describe (Square 500)) "big-square")
@@ -136,13 +136,13 @@ define verify_describe []:
          (equal? (describe 99) "unknown"))
 
 
-define verify_or_pattern []:
+def verify_or_pattern []:
     (and (equal? (side-of (Square 7)) 7)
          (equal? (side-of (Cube 9)) 9)
          (equal? (side-of (Plane 2 3)) None))
 
 
-define verify_sequences []:
+def verify_sequences []:
     (and (equal? (summarize #()) "empty")
          (equal? (summarize #((Point 1 2))) "one-point")
          (equal? (summarize #((Square 1))) 0)
@@ -152,10 +152,10 @@ define verify_sequences []:
          (equal? (summarize 55) "not-a-sequence"))
 
 
-define verify_mappings []:
-    define sq (from-message #{"shape": "square" "side": 9})
-    define pl (from-message #{"shape": "plane" "w": 2 "h": 3})
-    define pt (from-message #{"x": 1 "y": 2})
+def verify_mappings []:
+    var sq (from-message #{"shape": "square" "side": 9})
+    var pl (from-message #{"shape": "plane" "w": 2 "h": 3})
+    var pt (from-message #{"x": 1 "y": 2})
     (and (equal? sq (Square 9))
          (equal? pl (Plane 2 3))
          (equal? pt (Point 1 2))
@@ -166,14 +166,14 @@ define verify_mappings []:
          (equal? (from-message #(1 2)) None))
 
 
-define verify_computed_key []:
-    define msg #{"alpha": 1 "beta": 2}
+def verify_computed_key []:
+    var msg #{"alpha": 1 "beta": 2}
     (and (equal? (lookup msg "alpha") 1)
          (equal? (lookup msg "beta") 2)
          (equal? (lookup msg "gamma") None))
 
 
-define verify_extraction []:
+def verify_extraction []:
     (and (equal? (grade (Point 1 1)) "flat")
          (equal? (grade (Square 20)) "large")
          (equal? (grade (Square 5)) "small")

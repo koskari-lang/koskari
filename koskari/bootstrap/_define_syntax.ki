@@ -27,16 +27,15 @@ Portion of koskari.builtins
 
 let []:
 
-  (define transformer-binding-name
+  (define [transformer-binding-name name]
     ;; The binding key for a transformer written as NAME, as a datum-wrapped
     ;; symbol ready to splice into binding position: compile/NAME, or NAME
     ;; unchanged when it already carries the prefix. One home for the rule
     ;; every define-syntax and extend-syntax arm applies.
 
-    (lambda transformer-binding-name (name)
-      (define n (str name))
-      (datum (symbol (cond ((n.startswith "compile/") n)
-                            (else: f"compile/{n}"))))))
+    (var n (str name))
+    (datum (symbol (cond ((n.startswith "compile/") n)
+                          (else: f"compile/{n}")))))
 
 
   (define-global compile/define-syntax
@@ -49,37 +48,43 @@ let []:
           bare-syntax]
 
       [(define-syntax name (bare-syntax slot template))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (bare-syntax ,name ,slot ,template))]
 
       [(define-syntax name (syntax-rules literals rule ...))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (syntax-rules ,name ,literals ,@rule))]
 
       [(define-syntax name (syntax-match rule ...))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (syntax-match ,name ,@rule))]
 
       [(define-syntax name (macro-rules literals rule ...))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (macro-rules ,name ,literals ,@rule))]
 
       [(define-syntax name (macro-match rule ...))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (macro-match ,name ,@rule))]
 
       [(define-syntax name (special-rules literals rule ...))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (special-rules ,name ,literals ,@rule))]
 
       [(define-syntax name (special-match rule ...))
-        (define bound (transformer-binding-name name.datum))
+        (var bound (transformer-binding-name name.datum))
         `(define-global ,bound (special-match ,name ,@rule))]))
 
 
   (define-global compile/extend-syntax
     ;; the macro for extending macros; raw like define-syntax above,
-    ;; since the definer is not yet usable within this same unit
+    ;; since the definer is not yet usable within this same unit.
+    ;;
+    ;; A transformer is a module binding, so the extension is stored
+    ;; there with define-global from any depth, and its arms exist once
+    ;; the form has run. A body syntax lives only in the compiler's
+    ;; overlay, so extending it fails on the read of compile/NAME when
+    ;; the body runs, as any other use before definition does.
 
     (macro-rules compile/extend-syntax
         [syntax-rules syntax-match
@@ -88,32 +93,32 @@ let []:
           bare-syntax]
 
       [(extend-syntax name (bare-syntax slot template))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))]
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))]
 
       [(extend-syntax name (syntax-rules literals rule ...))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))]
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))]
 
       [(extend-syntax name (syntax-match rule ...))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (syntax-match ,name ,@rule)))]
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (syntax-match ,name ,@rule)))]
 
       [(extend-syntax name (macro-rules literals rule ...))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))]
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))]
 
       [(extend-syntax name (macro-match rule ...))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (macro-match ,name ,@rule)))]
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (macro-match ,name ,@rule)))]
 
       [(extend-syntax name (special-rules literals rule ...))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))]
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))]
 
       [(extend-syntax name (special-match rule ...))
-        (define bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (special-match ,name ,@rule)))]))
+        (var bound (transformer-binding-name name.datum))
+        `(define-global ,bound (+ ,bound (special-match ,name ,@rule)))]))
 
 
   ;; The docstring forms of define-syntax and extend-syntax arrive as
@@ -124,7 +129,7 @@ let []:
     (+ compile/define-syntax
         (macro-rules compile/define-syntax []
           [(define-syntax name docstr (form ...))
-            (define bound (transformer-binding-name name.datum))
+            (var bound (transformer-binding-name name.datum))
             `(begin
               (define-syntax ,name (,@form))
               ((attr ,bound append_doc) ,docstr))])))
@@ -134,7 +139,7 @@ let []:
     (+ compile/extend-syntax
         (macro-rules compile/extend-syntax []
           [(extend-syntax name docstr (form ...))
-            (define bound (transformer-binding-name name.datum))
+            (var bound (transformer-binding-name name.datum))
             `(begin
               (extend-syntax ,name (,@form))
               ((attr ,bound append_doc) ,docstr))])))
@@ -183,23 +188,50 @@ define-syntax let-syntax:
   special-rules []:
     case [c (let-syntax name (syntax-rules literals rule ...) body ...)]:
       ; the each macro isn't defined yet, so we use a manual generator thunk
-      define src `(syntax-rules ,name.datum ,literals.datum
+      var src `(syntax-rules ,name.datum ,literals.datum
                   ,@({(for-each [r rule] (yield r.datum))}))
-      define bdy `(begin ,@({(for-each [b body] (yield b.datum))}))
-      define frag (c.full_compile src)
-      define expr (frag.as_expression (vars c.module))
+      var bdy `(begin ,@({(for-each [b body] (yield b.datum))}))
+      var frag (c.full_compile src)
+      var expr (frag.as_expression (vars c.module))
 
       ; the overlay key is the binding spelling, so resolution finds the
       ; local syntax through the same compile/ probe as a global one
-      define n (str name.datum)
-      define key (cond ((n.startswith "compile/") n)
+      var n (str name.datum)
+      var key (cond ((n.startswith "compile/") n)
                        (else: f"compile/{n}"))
 
       with [(c.macro_overlay key (expr))]:
         (c.full_compile bdy)
 
 
-define-syntax datum:
+define-syntax syntax:
+  """
+  Define a syntax transformer. At module top level it is bound as
+  define-syntax binds it; inside a body it applies to the rest of
+  that body.
+  """
+
+  special-rules []:
+    case [c (syntax name rest ...)]:
+      var parts (list ({(for-each [r rest] (yield r.datum))}))
+      if (== c.scope_depth 0):
+        (c.full_compile `(define-syntax ,name.datum ,@parts))
+
+      else:
+        ;; the transformer form is the last part, after any docstring
+        var form (item parts -1)
+        var src `(,(car form) ,name.datum ,@(cdr form))
+        var expr ((c.full_compile src).as_expression (vars c.module))
+
+        var n (str name.datum)
+        var key (cond ((n.startswith "compile/") n)
+                         (else: f"compile/{n}"))
+
+        (c.scope_overlay key (expr))
+        (c.full_compile None)
+
+
+syntax datum:
   """
   Captures `expr` form in a datum, recording the source position
   """
@@ -211,7 +243,7 @@ define-syntax datum:
       `(call datum ,expr ,(getattr expr "position" None))
 
 
-define-syntax datumq:
+syntax datumq:
   """
   Captures `expr` quoted, as written, in a datum, recording the source
   position

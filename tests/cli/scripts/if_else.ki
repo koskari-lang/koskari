@@ -1,6 +1,6 @@
 ;; Branches on a comparison so the compiled body carries a jump.
 
-define x 1
+var x 1
 if (== x 1):
   (print "one")
 else:

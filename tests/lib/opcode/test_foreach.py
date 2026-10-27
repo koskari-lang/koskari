@@ -506,31 +506,31 @@ class TestIterNextStoreOpcodes(CevalTest):
 
 
 FUSED_SRC = """
-(define total [items]
+(define [total items]
   (define acc 0)
   (for-each [x items]
     (set! acc (+ acc x)))
   acc)
 
-(define gen [n]
+(define [gen n]
   (define i 0)
   (while (< i n)
     (yield i)
     (set! i (+ i 1))))
 
-(define total-gen [n]
+(define [total-gen n]
   (define acc 0)
   (for-each [x (gen n)]
     (set! acc (+ acc x)))
   acc)
 
-(define total-second [it]
+(define [total-second it]
   (define acc 0)
   (for-each [x it]
     (set! acc (+ acc (item x 1))))
   acc)
 
-(define collect-k [choices]
+(define [collect-k choices]
   (reset
     (+ 100 (shift k
              (let [[out (#list)]]

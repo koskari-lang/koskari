@@ -8,82 +8,82 @@
 ;; it untouched.
 
 
-define kos_add_t [a b]:
+def kos_add_t [a b]:
     + (* a 1) b
 
 
-define kos_sub_t [a b]:
+def kos_sub_t [a b]:
     - (* a 1) b
 
 
-define kos_mul_t [a b]:
+def kos_mul_t [a b]:
     * (* a 1) b
 
 
-define kos_mod_t [a b]:
+def kos_mod_t [a b]:
     % (* a 1) b
 
 
-define kos_floordiv_t [a b]:
+def kos_floordiv_t [a b]:
     // (* a 1) b
 
 
-define kos_truediv_t [a b]:
+def kos_truediv_t [a b]:
     / (* a 1) b
 
 
-define kos_pow_t [a b]:
+def kos_pow_t [a b]:
     ** (* a 1) b
 
 
-define kos_and_t [a b]:
+def kos_and_t [a b]:
     & (* a 1) b
 
 
-define kos_or_t [a b]:
+def kos_or_t [a b]:
     | (* a 1) b
 
 
-define kos_xor_t [a b]:
+def kos_xor_t [a b]:
     ^ (* a 1) b
 
 
-define kos_lshift_t [a b]:
+def kos_lshift_t [a b]:
     << (* a 1) b
 
 
-define kos_rshift_t [a b]:
+def kos_rshift_t [a b]:
     >> (* a 1) b
 
 
-define alias_binding [a]:
-    define t (* a 1)
-    define u t
-    define v (+ t 1)
+def alias_binding [a]:
+    var t (* a 1)
+    var u t
+    var v (+ t 1)
     #(t u v)
 
 
-define alias_list [a]:
-    define xs #[(* a 1)]
-    define y (+ xs[0] 1)
+def alias_list [a]:
+    var xs #[(* a 1)]
+    var y (+ xs[0] 1)
     #(xs y)
 
 
-define alias_slot [a]:
-    define t (* a 1)
-    define u t
+def alias_slot [a]:
+    var t (* a 1)
+    var u t
     incr! t 1
     #(t u)
 
 
-define chained [a n]:
-    define acc (* a 1)
+def chained [a n]:
+    var acc (* a 1)
     for-each [i (range n)]:
         set! acc (& (+ (* acc 3) i) 0xffffffff)
     acc
 
 
-define small_result [a]:
+def small_result [a]:
     - (* a 1) 256
 
 

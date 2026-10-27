@@ -2,8 +2,8 @@
 ;; function taking the keywords it is sent, called with a **: operand
 ;; the test builds.
 
-define f [a: 1 **: kw]:
+def f [a: 1 **: kw]:
     kw
 
-define spread [d]:
+def spread [d]:
     (f **: d)

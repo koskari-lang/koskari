@@ -9,7 +9,7 @@ otherwise the value is `None`.
 **Examples:**
 
 ```koskari
-define invite [user]:
+def invite [user]:
   unless user:
     return "missing user"
   f"sent to {user.email}"

@@ -51,7 +51,8 @@ A module with a docstring and a doctest.
 8
 """
 
-define-demanding twice [x]:
+@demand
+def twice [x]:
     (* x 2)
 '''
 

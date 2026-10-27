@@ -49,9 +49,9 @@ import-from dataclasses dataclass
 import-from os.path basename
 import-from time perf_counter
 
-import-from koskari.matcher:
-    APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
-    MATCH ONEOF PREDICATE SYMBOL make_matcher
+(import-from koskari.matcher
+  APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
+  MATCH ONEOF PREDICATE SYMBOL make_matcher)
 import-from koskari.syntax SpecialTransform Syntax
 
 
@@ -59,68 +59,68 @@ import-from koskari.syntax SpecialTransform Syntax
 
 
 @dataclass
-define-class Point []:
-    define x :: int 0
-    define y :: int 0
+class Point []:
+    var x :: int 0
+    var y :: int 0
 
 
-define SUBJ_SEQ3 #(#(1 2 3))
-define SUBJ_SEQ2 #(#(1 2))
-define SUBJ_PT #((Point 3 4))
-define SUBJ_STR #("not-a-point")
-define SUBJ_MAP #(#{"kind": "job" "url": "http://x"})
-define SUBJ_TUP #(#(1 2))
-define SUBJ_SEVEN #(7)
+var SUBJ_SEQ3 #(#(1 2 3))
+var SUBJ_SEQ2 #(#(1 2))
+var SUBJ_PT #((Point 3 4))
+var SUBJ_STR #("not-a-point")
+var SUBJ_MAP #(#{"kind": "job" "url": "http://x"})
+var SUBJ_TUP #(#(1 2))
+var SUBJ_SEVEN #(7)
 
-define M_SEQ (make_matcher
+var M_SEQ (make_matcher
     (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
 
-define M_CLS (make_matcher
+var M_CLS (make_matcher
     (MATCH (CLASS "Point"
         (FIELD (CAPTURE "a"))
         (FIELD (CAPTURE "b"))))
     #{"Point": Point})
 
-define M_MAP (make_matcher
+var M_MAP (make_matcher
     (MATCH (MAP
         (MAP_ENTRY "kind" (LITERAL "job"))
         (MAP_ENTRY "url" (CAPTURE "u")))))
 
-define M_ONEOF (make_matcher
+var M_ONEOF (make_matcher
     (MATCH (ONEOF
         (LITERAL 0) (LITERAL 1) (LITERAL 2) (LITERAL 3)
         (LITERAL 4) (LITERAL 5) (LITERAL 6) (LITERAL 7))))
 
-define M_SYNTAX (make_matcher
+var M_SYNTAX (make_matcher
     (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body")))
 
-define FORM_LET '(mylet [[x 1] [y 2]] (+ x y))
+var FORM_LET '(mylet [[x 1] [y 2]] (+ x y))
 
-define syntax-arm [compiler source result]:
+def syntax-arm [compiler source result]:
     None
 
 ;; a syntax of three arms, the let shape last: the syntax tries each
 ;; arm's matcher in order
-define S_SYNTAX (Syntax "mylet" #(
+var S_SYNTAX (Syntax "mylet" #(
     (SpecialTransform (MATCH (SYMBOL "head") (LITERAL 0)) syntax-arm)
     (SpecialTransform (MATCH (SYMBOL "head") (SYMBOL "only")) syntax-arm)
     (SpecialTransform
         (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body"))
         syntax-arm)))
 
-define ki-pred [v]:
+def ki-pred [v]:
     True
 
-define ki-extract [v]:
+def ki-extract [v]:
     v
 
-define M_PRED_PY (make_matcher (MATCH (PREDICATE "p")) #{"p": bool})
+var M_PRED_PY (make_matcher (MATCH (PREDICATE "p")) #{"p": bool})
 
-define M_PRED_KI (make_matcher (MATCH (PREDICATE "p")) #{"p": ki-pred})
+var M_PRED_KI (make_matcher (MATCH (PREDICATE "p")) #{"p": ki-pred})
 
-define M_APP_PY (make_matcher (MATCH (APP "f" (CAPTURE "x"))) #{"f": abs})
+var M_APP_PY (make_matcher (MATCH (APP "f" (CAPTURE "x"))) #{"f": abs})
 
-define M_APP_KI (make_matcher
+var M_APP_KI (make_matcher
     (MATCH (APP "f" (CAPTURE "x")))
     #{"f": ki-extract})
 
@@ -128,7 +128,7 @@ define M_APP_KI (make_matcher
 ;; === statement-tier consumers ===
 
 
-define m8 [v]:
+def m8 [v]:
     match v:
         case 0:
             "a0"
@@ -150,7 +150,7 @@ define m8 [v]:
             "meh"
 
 
-define m-guarded [v]:
+def m-guarded [v]:
     match v:
         case x :: int when (> x 5):
             "big"
@@ -160,7 +160,7 @@ define m-guarded [v]:
             "other"
 
 
-define m-externs [v]:
+def m-externs [v]:
     match v:
         case x :: float:
             "float"
@@ -174,7 +174,7 @@ define m-externs [v]:
             "other"
 
 
-define s8 [v]:
+def s8 [v]:
     switch v:
         case [0]:
             "a0"
@@ -196,7 +196,7 @@ define s8 [v]:
             "meh"
 
 
-define c8 [v]:
+def c8 [v]:
     cond:
         [(== v 0) "a0"]
         [(== v 1) "a1"]
@@ -212,77 +212,77 @@ define c8 [v]:
 ;; === cells ===
 
 
-define cell-noop []:
+def cell-noop []:
     None
 
 
-define cell-engine-seq-hit []:
+def cell-engine-seq-hit []:
     (M_SEQ SUBJ_SEQ3)
 
-define cell-engine-seq-miss []:
+def cell-engine-seq-miss []:
     (M_SEQ SUBJ_SEQ2)
 
-define cell-engine-class-hit []:
+def cell-engine-class-hit []:
     (M_CLS SUBJ_PT)
 
-define cell-engine-class-miss []:
+def cell-engine-class-miss []:
     (M_CLS SUBJ_STR)
 
-define cell-engine-map-hit []:
+def cell-engine-map-hit []:
     (M_MAP SUBJ_MAP)
 
-define cell-engine-map-miss []:
+def cell-engine-map-miss []:
     (M_MAP SUBJ_TUP)
 
-define cell-engine-oneof-backtrack []:
+def cell-engine-oneof-backtrack []:
     (M_ONEOF SUBJ_SEVEN)
 
-define cell-engine-pred-py []:
+def cell-engine-pred-py []:
     (M_PRED_PY SUBJ_SEVEN)
 
-define cell-engine-pred-ki []:
+def cell-engine-pred-ki []:
     (M_PRED_KI SUBJ_SEVEN)
 
-define cell-engine-app-py []:
+def cell-engine-app-py []:
     (M_APP_PY SUBJ_SEVEN)
 
-define cell-engine-app-ki []:
+def cell-engine-app-ki []:
     (M_APP_KI SUBJ_SEVEN)
 
-define cell-syntax-dispatch []:
+def cell-syntax-dispatch []:
     (M_SYNTAX FORM_LET)
 
-define cell-syntax-select []:
+def cell-syntax-select []:
     (S_SYNTAX.match_transformer FORM_LET)
 
-define cell-match-first-arm []:
+def cell-match-first-arm []:
     (m8 0)
 
-define cell-match-last-arm []:
+def cell-match-last-arm []:
     (m8 7)
 
-define cell-match-else []:
+def cell-match-else []:
     (m8 99)
 
-define cell-match-guarded []:
+def cell-match-guarded []:
     (m-guarded 9)
 
-define cell-match-externs []:
+def cell-match-externs []:
     (m-externs 7)
 
 ;; deliberately the same call as cell-match-last-arm: the anchor tier
 ;; re-reports it beside switch and cond so the ratio rows read together
-define cell-anchor-match []:
+def cell-anchor-match []:
     (m8 7)
 
-define cell-anchor-switch []:
+def cell-anchor-switch []:
     (s8 7)
 
-define cell-anchor-cond []:
+def cell-anchor-cond []:
     (c8 7)
 
 
-define CELLS #(
+var CELLS #(
     #("engine-seq-hit" cell-engine-seq-hit)
     #("engine-seq-miss" cell-engine-seq-miss)
     #("engine-class-hit" cell-engine-class-hit)
@@ -309,19 +309,19 @@ define CELLS #(
 ;; === harness ===
 
 
-define time-loop [fn n]:
+def time-loop [fn n]:
     """
     Time n calls of fn under the uniform harness loop; returns seconds
     """
 
-    define t0 (perf_counter)
+    var t0 (perf_counter)
     for-each [_i (range n)]:
         (fn)
-    define t1 (perf_counter)
+    var t1 (perf_counter)
     (- t1 t0)
 
 
-define run-cells [names iterations]:
+def run-cells [names iterations]:
     """
     Warm up, measure the baseline, then time each selected cell.
 
@@ -330,7 +330,7 @@ define run-cells [names iterations]:
     :return: list of #(name ns-per-op) rows, baseline-subtracted
     """
 
-    define selected (list)
+    var selected (list)
     for-each [[cname cfn] CELLS]:
         when (or (None? names) (in? cname names)):
             (selected.append #(cname cfn))
@@ -341,30 +341,30 @@ define run-cells [names iterations]:
         (time-loop cfn 100)
 
     (time-loop cell-noop 100)
-    define baseline (time-loop cell-noop iterations)
+    var baseline (time-loop cell-noop iterations)
 
-    define rows (list)
+    var rows (list)
     for-each [[cname cfn] selected]:
-        define secs (time-loop cfn iterations)
-        define nsop (/ (* (- secs baseline) 1e9) iterations)
+        var secs (time-loop cfn iterations)
+        var nsop (/ (* (- secs baseline) 1e9) iterations)
         (rows.append #(cname nsop))
     rows
 
 
-define report-text [rows iterations]:
+def report-text [rows iterations]:
     """
     Print the per-cell table and the anchor ratios
     """
 
     print f"matchbench: {iterations} iterations/cell, baseline-subtracted"
     print ""
-    define found (dict)
+    var found (dict)
     for-each [[cname nsop] rows]:
         (found.__setitem__ cname nsop)
         print f"  {(cname.ljust 24)} {nsop:10.1f} ns/op"
-    define am (found.get "anchor-match")
-    define asw (found.get "anchor-switch")
-    define ac (found.get "anchor-cond")
+    var am (found.get "anchor-match")
+    var asw (found.get "anchor-switch")
+    var ac (found.get "anchor-cond")
     when (and am asw):
         print ""
         print f"  match/switch ratio: {(/ am asw):.2f}x"
@@ -373,15 +373,15 @@ define report-text [rows iterations]:
     return 0
 
 
-define report-json [rows iterations]:
+def report-json [rows iterations]:
     """
     Emit the rows as a JSON object on stdout
     """
 
-    define cells (dict)
+    var cells (dict)
     for-each [[cname nsop] rows]:
         (cells.__setitem__ cname nsop)
-    define payload #{
+    var payload #{
         "iterations": iterations
         "unit": "ns/op"
         "cells": cells}
@@ -392,7 +392,7 @@ define report-json [rows iterations]:
 ;; === entry points ===
 
 
-define build_arguments [parser]:
+def build_arguments [parser]:
     """
     Register the matchbench options on a parser or subparser
     """
@@ -408,7 +408,7 @@ define build_arguments [parser]:
     return parser
 
 
-define run [options]:
+def run [options]:
     """
     Run the selected cells and report
 
@@ -416,8 +416,8 @@ define run [options]:
     :return: integer exit code
     """
 
-    define names (or options.cells None)
-    define rows (run-cells names options.iterations)
+    var names (or options.cells None)
+    var rows (run-cells names options.iterations)
     if options.json:
         (report-json rows options.iterations)
     else:
@@ -426,7 +426,7 @@ define run [options]:
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Parse arguments and run the benchmark
 
@@ -437,9 +437,9 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [name *: args] argv
+    var [name *: args] argv
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: (basename name)
         description: "Matcher and match/case micro-benchmarks")
 

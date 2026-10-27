@@ -39,20 +39,20 @@ pytestmark = pytest.mark.phase_reproducers
 SLEEP_SRC = """
 import-from asyncio sleep
 
-define results #{}
+var results #{}
 
-define worker [name delay]:
+def worker [name delay]:
     (parameterize [[p name]]
         (sleep delay)
         (set! (item results name) (parameterq p "unset")))
 
-define main []:
-    define t1 (create-task (defer worker "A" 0.01))
-    define t2 (create-task (defer worker "B" 0.02))
+def main []:
+    var t1 (create-task (defer worker "A" 0.01))
+    var t2 (create-task (defer worker "B" 0.02))
     (sleep 0.05)
     (parameterq p "root-default")
 
-define outcome (main)
+var outcome (main)
 """
 
 
@@ -61,32 +61,32 @@ define outcome (main)
 HANDSHAKE_SRC = """
 import-from asyncio Event sleep
 
-define a-bound (Event)
-define b-done (Event)
-define reads #{}
+var a-bound (Event)
+var b-done (Event)
+var reads #{}
 
-define worker-a []:
+def worker-a []:
     (parameterize [[q "A"]]
         (set! (item reads "a-first") (parameterq q "unset"))
         (a-bound.set)
         (b-done.wait)
         (set! (item reads "a-second") (parameterq q "unset")))
 
-define worker-b []:
+def worker-b []:
     (a-bound.wait)
     (parameterize [[q "B"]]
         (set! (item reads "b-inside") (parameterq q "unset")))
     (set! (item reads "b-after") (parameterq q "unset"))
     (b-done.set)
 
-define main []:
-    define ta (create-task (defer worker-a))
-    define tb (create-task (defer worker-b))
+def main []:
+    var ta (create-task (defer worker-a))
+    var tb (create-task (defer worker-b))
     (await ta)
     (await tb)
     (parameterq q "root-default")
 
-define outcome (main)
+var outcome (main)
 """
 
 
@@ -96,11 +96,11 @@ define outcome (main)
 # extent lands in the forking context's own table, so the fork captures
 # the extents applied at creation and nothing later.
 FORK_SRC = """
-(define run-checks (lambda []
-  (define out #{})
+(def run-checks []
+  (var out #{})
 
   ;; parent->child through the root scope
-  (define k1-ref (ref (parameter k1)))
+  (var k1-ref (ref (parameter k1)))
   (k1-ref.store "parent-wrote")
   (set! (item out "child-sees-parent")
         (await (defer (lambda [] (parameterq k1 "unset")))))
@@ -111,7 +111,7 @@ FORK_SRC = """
 
   ;; the fork captures the extent applied at creation, and it survives
   ;; the extent's exit
-  (define captured
+  (var captured
     (parameterize [[k3 "extent-value"]]
       (create-task (defer (lambda [] (parameterq k3 "unset"))))))
   (set! (item out "after-extent") (parameterq k3 "outside"))
@@ -120,14 +120,14 @@ FORK_SRC = """
   ;; a defer evaluates at its await, under the awaiter's extent: an
   ;; extent entered between the defer and the await is visible to it,
   ;; as a ContextVar set before a direct await is
-  (define late (defer (lambda [] (parameterq k4 "child-default"))))
+  (var late (defer (lambda [] (parameterq k4 "child-default"))))
   (set! (item out "child-k4")
         (parameterize [[k4 "at-await"]]
           (await late)))
 
-  out))
+  out)
 
-(define fork-results (run-checks))
+(var fork-results (run-checks))
 """
 
 
@@ -136,20 +136,20 @@ FORK_SRC = """
 DROP_SRC = """
 import-from asyncio Event sleep
 
-define never (Event)
+var never (Event)
 
-define stuck []:
+def stuck []:
     (parameterize [[r "stuck-binding"]]
         (never.wait))
 
-define main []:
-    define t (create-task (defer stuck))
+def main []:
+    var t (create-task (defer stuck))
     (sleep 0.01)
-    define seen (parameterq r "parent-default")
+    var seen (parameterq r "parent-default")
     (t.cancel)
     seen
 
-define outcome (main)
+var outcome (main)
 """
 
 

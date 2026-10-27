@@ -23,8 +23,8 @@ to them. Inner calls finish before the call around them, so
 A file is a sequence of forms, run from top to bottom:
 
 ```koskari
-(define width 6)
-(define height 7)
+(var width 6)
+(var height 7)
 (print "area:" (* width height))
 ```
 
@@ -33,7 +33,7 @@ element is a call, and a line ending in `:` opens a block whose indented
 lines are arguments to it:
 
 ```koskari
-define width 6
+var width 6
 if (> width 5):
   print "wide"
 else:
@@ -62,7 +62,7 @@ which is what puts a Koskari line in a traceback.
 The compiler walks each form. When a form's head names a macro, the
 macro receives the form and returns a new one, and the walk continues
 on the result. `if` is a macro over `cond`; `when`, `unless`, `set!`,
-`define-class`, and the comprehension forms `each`, `list-each`, and
+`class`, and the comprehension forms `each`, `list-each`, and
 `dict-each` are macros too:
 
 ```koskari
@@ -73,7 +73,7 @@ on the result. `if` is a macro over `cond`; `when`, `unless`, `set!`,
 `for-each` is a compiler special rather than a macro; the comprehension
 macros expand into it, and it expands no further.
 
-Expansion is where a program's vocabulary grows. A `define-syntax` in
+Expansion is where a program's vocabulary grows. A `syntax` in
 your own module adds a head the walk knows about, and its uses lower to
 ordinary forms before compilation. See
 [Macros and hygiene](macros-and-hygiene.md).
@@ -81,7 +81,7 @@ ordinary forms before compilation. See
 ## Compile
 
 Once a form has no macro left in it, the compiler emits bytecode for it.
-The heads it handles itself are the **special forms**: `define`,
+The heads it handles itself are the **special forms**: `var`,
 `lambda`, `cond`, `try`, `while`, the operators, the imports, and about
 a hundred more, each with a page in the
 [reference](../reference/specials/index.md). Anything else in head
@@ -94,12 +94,12 @@ instructions above, then call with one argument. The inner call leaves
 its value on the stack where the outer call finds it, which is why
 evaluation is inside out.
 
-Compile errors are shape errors: a `define` with no name, a `lambda`
+Compile errors are shape errors: a `var` with no name, a `lambda`
 whose formals are not a list, a form that matches none of a special's
 patterns. They are raised as `CompilerError` before the module runs.
 
 ```koskari
-(define)
+(var)
 ```
 
 reads fine and fails here.

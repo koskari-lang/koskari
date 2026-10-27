@@ -53,13 +53,12 @@ class TestTailCallWide(SpecialsTestCase):
 
         src = f"""
         (begin
-          (define target (lambda [*: xs] xs))
+          (define [target *: xs] xs)
           (define p (partial target))
-          (define inner
-            (lambda []
-              (define keep (lambda [] 1))
-              (p {NUMS})))
-          (define outer (lambda [] (inner)))
+          (define [inner]
+              (define [keep] 1)
+              (p {NUMS}))
+          (define [outer] (inner))
           (outer))
         """
 
@@ -76,10 +75,10 @@ class TestTailCallWide(SpecialsTestCase):
 
         src = f"""
         (begin
-          (define target (lambda [*: xs] xs))
+          (define [target *: xs] xs)
           (define p (partial target))
-          (define inner (lambda [] (p {NUMS})))
-          (define outer (lambda [] (len (inner))))
+          (define [inner] (p {NUMS}))
+          (define [outer] (len (inner)))
           (outer))
         """
         expr, mod = self.compile_expr(src, partial=partial, len=len)
@@ -94,11 +93,10 @@ class TestTailCallWide(SpecialsTestCase):
 
         src = f"""
         (begin
-          (define target (lambda [*: xs] xs))
-          (define inner
-            (lambda []
-              (define keep (lambda [] 1))
-              (let [[k 1]] (target {NUMS}))))
+          (define [target *: xs] xs)
+          (define [inner]
+              (define [keep] 1)
+              (let [[k 1]] (target {NUMS})))
           (inner))
         """
 
@@ -114,11 +112,10 @@ class TestTailCallWide(SpecialsTestCase):
 
         src = f"""
         (begin
-          (define target (lambda [*: xs **: kw] #(xs (sorted (kw.items)))))
-          (define inner
-            (lambda []
-              (define keep (lambda [] 1))
-              (let [[k 1]] (target {NUMS} a: 1 b: 2))))
+          (define [target *: xs **: kw] #(xs (sorted (kw.items))))
+          (define [inner]
+              (define [keep] 1)
+              (let [[k 1]] (target {NUMS} a: 1 b: 2)))
           (inner))
         """
 

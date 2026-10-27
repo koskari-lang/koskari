@@ -14,10 +14,10 @@ class Point:
 ```
 +++
 ```koskari
-define-class Point []:
+class Point []:
   """ A point in 2D space """
-  define x :: int 0
-  define y :: int 0
+  var x :: int 0
+  var y :: int 0
 ```
 :::
 
@@ -25,7 +25,7 @@ define-class Point []:
 What is the `[]`?
 +++
 The base list. Empty means no explicit base, as `class Point:` does.
-`define-class Child (Parent):` subclasses. The `::` carries an
+`class Child (Parent):` subclasses. The `::` carries an
 annotation, and it lands in `__annotations__` as the real type object.
 :::
 
@@ -43,12 +43,12 @@ class Point:
 ```
 +++
 ```koskari
-define-class Point []:
-  define __init__ [self x y]:
+class Point []:
+  def __init__ [self x y]:
     set! self.x x
     set! self.y y
 
-  define coord [self]:
+  def coord [self]:
     #(self.x self.y)
 ```
 :::
@@ -78,15 +78,15 @@ class Circle:
 ```
 +++
 ```koskari
-define-class Circle []:
-  define _radius :: float 0.0
+class Circle []:
+  var _radius :: float 0.0
 
   @property
-  define radius [self]:
+  def radius [self]:
     self._radius
 
   @radius.setter
-  define radius [self value]:
+  def radius [self value]:
     set! self._radius (float value)
 ```
 :::
@@ -95,7 +95,7 @@ define-class Circle []:
 Does `property` need `@demand`?
 +++
 No. Koskari's `property` wraps a Koskari accessor for the demand path
-itself, so a getter, setter, and deleter are plain `define` forms.
+itself, so a getter, setter, and deleter are plain `def` forms.
 :::
 
 ## Python decorators
@@ -116,19 +116,19 @@ p = Point(3, 5)
 import-from dataclasses dataclass
 
 @dataclass
-define-class Point []:
-  define x :: int 0
-  define y :: int 0
+class Point []:
+  var x :: int 0
+  var y :: int 0
 
-define p (Point 3 5)
+var p (Point 3 5)
 ```
 :::
 
 :::{dialogue}
 Which decorators work?
 +++
-Any importable callable, above `define-class` or above a method. The
-class body's annotated `define` forms are what `dataclass` reads, so it
+Any importable callable, above `class` or above a method. The
+class body's annotated `var` forms are what `dataclass` reads, so it
 generates `__init__`, `__repr__`, and `__eq__` as it would for the
 Python spelling.
 :::
@@ -143,7 +143,7 @@ p.x
 ```
 +++
 ```koskari
-define p (Point 3 5)
+var p (Point 3 5)
 (instance? p Point)
 p.x
 ```
@@ -165,16 +165,16 @@ Save as `point.ki`:
 import-from dataclasses dataclass
 
 @dataclass
-define-class Point []:
-  define x :: int 0
-  define y :: int 0
+class Point []:
+  var x :: int 0
+  var y :: int 0
 
-  define label [self]:
+  def label [self]:
     f"Point at ({self.x}, {self.y})"
 
 @entry-point
-define main []:
-  define p (Point 1 2)
+def main []:
+  var p (Point 1 2)
   print (p.label)
   print p
 ```

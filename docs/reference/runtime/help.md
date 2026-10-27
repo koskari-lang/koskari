@@ -10,8 +10,8 @@ inspect macros, layout handlers, syntax transformers, and other registered
 objects.
 
 **Behaviour:** Collects help text for **`name`** by looking up bindings in
-**`ns`**. For a simple name such as **`define`**, lookup tries **`define`**,
-**`compile/define`**, **`layout/define`**, and **`match/define`**. Names that
+**`ns`**. For a simple name such as **`var`**, lookup tries **`var`**,
+**`compile/var`**, **`layout/var`**, and **`match/var`**. Names that
 already start with **`compile/`**, **`layout/`**, or **`match/`** are looked up
 directly.
 
@@ -30,7 +30,7 @@ for the name **`help`** itself. With one argument, **`obj`** is quoted and
 (help)
 
 ;; Help for a name in the globals namespace
-(help define)
+(help var)
 (help if)
 
 ;; Fully qualified names

@@ -87,7 +87,7 @@ class TestCreateTask(SpecialsTestCase):
 
         src = """
         (begin
-          (define t (create_task (defer work)))
+          (var t (create_task (defer work)))
           (await (sleep 0))
           (t.cancel)
           t)

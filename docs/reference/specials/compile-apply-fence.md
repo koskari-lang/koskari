@@ -32,7 +32,7 @@ readings for the module.
 A fence reads as a single value, so it may appear in expression position:
 
 ````text
-define script ```bash
+var script ```bash
 cd foo/bar/baz
 curl -s https://example.org/api/data/
 ```
@@ -104,10 +104,10 @@ Positional arguments passed to the callable become the script's `$1`,
 `ProcessResult` whose `text` is the decoded stdout:
 
 ````text
->>> define rev ```bash
+>>> var rev ```bash
 ... echo -n "$@" | rev
 ... ```
->>> define ohai (rev "Hello" 123 "World")
+>>> var ohai (rev "Hello" 123 "World")
 >>> ohai
 <ProcessResult 'bash' returncode=0>
 >>> ohai.text
@@ -120,14 +120,14 @@ expression evaluates directly to the result:
 
 ````text
 ;; each (report) launches the subprocess and yields a ProcessResult
-define report ```bash
+var report ```bash
 curl -s https://example.org/api/summary/
 ```
-define summary (.json (.raise_for_status (report)))
+var summary (.json (.raise_for_status (report)))
 
 ;; immediate: True -- no callable; the fence is the ProcessResult
-define lookup ```bash immediate: True
+var lookup ```bash immediate: True
 hostname -f
 ```
-define hostname lookup.text
+var hostname lookup.text
 ````

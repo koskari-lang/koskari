@@ -20,31 +20,31 @@ Chain shapes exercising koskari.itertools; imported by tests.itertools
 import-from koskari.itertools chain
 
 
-(define mixed (list (chain #[1 2] #(3) "ab")))
+(var mixed (list (chain #[1 2] #(3) "ab")))
 
-(define no-sources (list (chain)))
+(var no-sources (list (chain)))
 
-(define one-source (list (chain (range 3))))
+(var one-source (list (chain (range 3))))
 
-(define empty-sources (list (chain #[] #[1] #[] #[2] #[])))
+(var empty-sources (list (chain #[] #[1] #[] #[2] #[])))
 
-(define nested (list (chain (chain #[1] #[2]) (chain) #[3])))
+(var nested (list (chain (chain #[1] #[2]) (chain) #[3])))
 
 
-define counting []:
+def counting []:
   yield 10
   yield 20
 
-(define generator-source (list (chain (counting) #[30])))
+(var generator-source (list (chain (counting) #[30])))
 
 
-(define visits #[])
+(var visits #[])
 
-define visiting [tag]:
+def visiting [tag]:
   (visits.append tag)
   yield tag
 
-(define lazy-chain (chain (visiting 1) (visiting 2) (visiting 3)))
-(define lazy-first (next (iter lazy-chain)))
-(define visits-after-first (list visits))
-(define lazy-rest (list lazy-chain))
+(var lazy-chain (chain (visiting 1) (visiting 2) (visiting 3)))
+(var lazy-first (next (iter lazy-chain)))
+(var visits-after-first (list visits))
+(var lazy-rest (list lazy-chain))

@@ -10,7 +10,7 @@ builtins; there is no separate collector.
 The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`);
 handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an
 existing handler by binding **`layout/<head>`** to another layout name (for
-example **`define layout/foo layout/block-begin`**) instead of adding Python
+example **`var layout/foo layout/block-begin`**) instead of adding Python
 code.
 
 
@@ -163,7 +163,7 @@ begin:
 **Symbol:** `layout/block-begin`
 
 **Use-case:** Opt-in **`compile/begin`** wrap. Bind with
-**`define layout/<head> layout/block-begin`** in **`.ki`**.
+**`var layout/<head> layout/block-begin`** in **`.ki`**.
 
 **Behaviour:** **`(HEAD ARG … (compile/begin BODY …))`**. No peers.
 
@@ -176,7 +176,7 @@ begin:
 
 **Use-case:** Opt-in splice of an indented body onto the header as one list
 with no implicit calls at all, for heads whose block only breaks a long line.
-Bind with **`define layout/<head> layout/inline-block`** in **`.ki`**.
+Bind with **`var layout/<head> layout/inline-block`** in **`.ki`**.
 
 **Behaviour:** **`(HEAD ARG … LINE-FORM …)`**. No peers.
 
@@ -242,16 +242,16 @@ syntax forms
 
 **Symbol:** `layout/class`
 
-**Use-case:** Class **expression** block syntax. Lowers to `(compile/class NAME SUPERS
-(compile/begin BODY))`. The form evaluates to the new class object; it does **not**
-by itself bind **NAME** in the module (see [SPECIALS.md](SPECIALS.md) §
-compile/class). To define a named class in one step, use **`layout/define-class`**
-or wrap with **`compile/define`**.
+**Use-case:** Class **definition** block syntax. Lowers to `(class NAME SUPERS
+(begin BODY))`, which the **`class`** binding macro expands to
+**`(var NAME (build-class NAME SUPERS …))`** (see [MACROS.md](MACROS.md) §
+compile/class), binding **NAME** in the scope the block appears in. Under
+**`global`** (`global class NAME:`) the binding goes to the module.
 
 The superclass list may be omitted; when missing, the expansion uses `()` (nil).
 
 **Behaviour:** No peers. Parses header as `(class NAME)` or `(class NAME SUPERS)`.
-When supers are omitted, uses nil so the result is `(compile/class NAME () BODY)`.
+When supers are omitted, uses nil so the result is `(class NAME () BODY)`.
 When present, SUPERS is the parsed form (e.g. a single base or a parenthesized
 list). Raises LayoutError if the header has fewer than two elements (missing
 name) or more than three (extra forms after supers).
@@ -261,11 +261,11 @@ name) or more than three (extra forms after supers).
 ```
 class NAME:
   BODY
-;; → (compile/class NAME () (compile/begin BODY))
+;; → (class NAME () (begin BODY))
 
 class NAME (Base1 Base2):
   BODY
-;; → (compile/class NAME (Base1 Base2) (compile/begin BODY))
+;; → (class NAME (Base1 Base2) (begin BODY))
 ```
 
 **Examples:**
@@ -273,61 +273,47 @@ class NAME (Base1 Base2):
 ```scheme
 class C:
   x
-;; → (compile/class C () (compile/begin x))
+;; → (class C () (begin x))
 
 class C (Base):
   x
-;; → (compile/class C (Base) (compile/begin x))
+;; → (class C (Base) (begin x))
 
 class C ():
   x
-;; → (compile/class C () (compile/begin x))
+;; → (class C () (begin x))
 ```
 
 **Implementation:** `koskari/reader/layouts/classes.layout_class`
 
 
-## layout/define-class
+## layout/build-class
 
-**Symbol:** `layout/define-class`
+**Symbol:** `layout/build-class`
 
-**Use-case:** Class **definition** block syntax: lowers to
-`(compile/define-class NAME SUPERS (compile/begin BODY))`, which the
-**`compile/define-class`** macro expands to **`define`** plus **`class`** (see
-[MACROS.md](MACROS.md) § compile/define-class). Same header shape as
-**`layout/class`**, but the read result binds **NAME** to the class after
-expansion.
-
-**Behaviour:** No peers. Parses header as `(define-class NAME)` or
-`(define-class NAME SUPERS)`. When supers are omitted, uses nil. Raises
-LayoutError if the header has fewer than two elements (missing name) or more
-than three.
+**Use-case:** Class **expression** block syntax: lowers to
+`(build-class NAME SUPERS (begin BODY))`. The form evaluates to the new class
+object and binds nothing (see [SPECIALS.md](SPECIALS.md) § compile/build-class).
+Same header shape and errors as **`layout/class`**.
 
 **Syntax:**
 
 ```
-define-class NAME:
+build-class NAME (Base1 Base2):
   BODY
-;; → (compile/define-class NAME () (compile/begin BODY))
-
-define-class NAME (Base1 Base2):
-  BODY
-;; → (compile/define-class NAME (Base1 Base2) (compile/begin BODY))
+;; → (build-class NAME (Base1 Base2) (begin BODY))
 ```
 
 **Examples:**
 
 ```scheme
-define-class C:
-  x
-;; → (compile/define-class C () (compile/begin x))
-
-define-class C (Base):
-  x
-;; → (compile/define-class C (Base) (compile/begin x))
+var C:
+  build-class C (Base):
+    x
+;; → (var C (build-class C (Base) (begin x)))
 ```
 
-**Implementation:** `koskari/reader/layouts/classes.layout_define_class`
+**Implementation:** `koskari/reader/layouts/classes.layout_build_class`
 
 
 ## layout/if
@@ -876,7 +862,7 @@ Layouts without peers receive an empty list.
 
 1. Flat splicing only (header followed by body forms in one list): no handler
    needed — default **`layout/block`** applies.
-2. **`compile/begin`** wrap: **`define layout/<head> layout/block-begin`** in
+2. **`compile/begin`** wrap: **`var layout/<head> layout/block-begin`** in
    **`.ki`**, or implement a custom handler.
 3. Otherwise implement **`read(reader, source, peers)`** under
    `koskari/reader/layouts/`, decorate with `@layout(symbol('layout/head'),

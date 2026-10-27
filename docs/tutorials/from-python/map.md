@@ -59,7 +59,7 @@ x += 1
 ```
 +++
 ```koskari
-define x 6
+var x 6
 set! x 7
 incr! x
 ```
@@ -110,7 +110,7 @@ def f(x, y=2):
 ```
 +++
 ```koskari
-define f [x y: 2]:
+def f [x y: 2]:
   (+ x y)
 ```
 :::
@@ -122,7 +122,7 @@ class C(Base):
 ```
 +++
 ```koskari
-define-class C (Base):
+class C (Base):
   ...
 ```
 :::
@@ -164,10 +164,10 @@ What looks like Python and is not?
 +++
 - **A line is one form.** `print "hi"` on its own line is a call. A lone
   `print` is the function.
-- **`define` and `set!`.** `define` introduces a name; `set!` changes one
+- **`var` and `set!`.** `var` introduces a name; `set!` changes one
   that exists. Python's `=` does both.
 - **`[a b]` is not a list.** Square brackets read like parentheses. In
-  `define f [x y]` they hold the parameters. A list literal is `#[...]`.
+  `def f [x y]` they hold the parameters. A list literal is `#[...]`.
 - **`None` and `nil`.** `None` is Python's. `nil` is the empty Lisp
   list. `(None? x)` and `(nil? x)` ask different questions.
 - **Truth tests are Python's.** `if`, `while`, and `cond` test Python
@@ -182,7 +182,7 @@ What looks like Python and is not?
 :::{dialogue}
 What has no Python counterpart?
 +++
-- **Macros.** `define-syntax` rewrites code before it runs. See
+- **Macros.** `syntax` rewrites code before it runs. See
   [Macros](macros-and-dsls.md).
 - **By-reference parameters.** A function can write into its caller's
   variable. See

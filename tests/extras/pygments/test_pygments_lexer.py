@@ -51,7 +51,7 @@ class TestPygmentsLexer(unittest.TestCase):
 
 
     def test_lexer_covers_full_source(self):
-        source = '(define x 1)'
+        source = '(var x 1)'
         lexer = self.KoskariLexer()
         spans = list(lexer.get_tokens_unprocessed(source))
         covered = sum(len(value) for _idx, _tok, value in spans)
@@ -71,9 +71,9 @@ class TestPygmentsLexer(unittest.TestCase):
     def test_lexer_marks_surface_specials(self):
         from pygments.token import Name
         lexer = self.KoskariLexer()
-        spans = list(lexer.get_tokens_unprocessed('(define x 1)'))
-        define_tok = [tok for _idx, tok, val in spans if val == 'define'][0]
-        self.assertEqual(define_tok, Name.Builtin)
+        spans = list(lexer.get_tokens_unprocessed('(var x 1)'))
+        var_tok = [tok for _idx, tok, val in spans if val == 'var'][0]
+        self.assertEqual(var_tok, Name.Builtin)
 
 
     def test_lexer_marks_import_as_special(self):
@@ -84,10 +84,10 @@ class TestPygmentsLexer(unittest.TestCase):
         self.assertEqual(import_tok, Name.Builtin)
 
 
-    def test_highlight_define(self):
+    def test_highlight_var(self):
         from koskari.extras.pygments import highlight_source
-        html = highlight_source('(define x 1)')
-        self.assertIn('define', html)
+        html = highlight_source('(var x 1)')
+        self.assertIn('var', html)
 
 
     def test_highlight_collections(self):

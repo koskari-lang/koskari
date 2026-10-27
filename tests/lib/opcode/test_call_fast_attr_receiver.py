@@ -36,38 +36,38 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define-class Counter []
-  (define __init__ [self] (set-attr self count 0))
-  (define bump [self] (set-attr self count (+ self.count 1)) self)
-  (define bump_by [self n: 1] (set-attr self count (+ self.count n)) self))
+(class Counter []
+  (define [__init__ self] (set-attr self count 0))
+  (define [bump self] (set-attr self count (+ self.count 1)) self)
+  (define [bump_by self n: 1] (set-attr self count (+ self.count n)) self))
 
-(define-class Lazy []
-  (define __init__ [self] (set-attr self count 0))
-  (define __getattr__ [self name]
+(class Lazy []
+  (define [__init__ self] (set-attr self count 0))
+  (define [__getattr__ self name]
     (if (== name "bump")
         (lambda [] (set-attr self count (+ self.count 1)) self)
         (raise (AttributeError name)))))
 
-(define drive (lambda [o n]
+(define [drive o n]
   (define i 0)
   (define last None)
   (while (< i n)
     (set! last (o.bump))
     (incr! i))
-  last))
+  last)
 
-(define drive_default (lambda [o n]
+(define [drive_default o n]
   (define i 0)
   (while (< i n)
     (o.bump_by)
     (incr! i))
-  o.count))
+  o.count)
 
-(define local_only (lambda [make]
+(define [local_only make]
   (define o (make))
   (o.bump)
   (o.bump)
-  o.count))
+  o.count)
 """
 
 

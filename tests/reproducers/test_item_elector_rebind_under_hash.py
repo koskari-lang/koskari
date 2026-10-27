@@ -40,9 +40,9 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define store-twice [key hooks]:
+def store-twice [key hooks]:
     let [[d (dict)] [k key] [n 0]]:
-        define rebind []:
+        def rebind []:
             set! d None
         (hooks.append (demand rebind))
         while (< n 2):
@@ -51,9 +51,9 @@ define store-twice [key hooks]:
             setq n (+ n 1)
         d
 
-define load-twice [key hooks]:
+def load-twice [key hooks]:
     let [[d (dict)] [k key] [n 0] [seen #[]]]:
-        define rebind []:
+        def rebind []:
             set! d None
         (hooks.append (demand rebind))
         (d.__setitem__ key 7)
@@ -63,9 +63,9 @@ define load-twice [key hooks]:
             setq n (+ n 1)
         #(d seen)
 
-define inplace-twice [key hooks]:
+def inplace-twice [key hooks]:
     let [[d (dict)] [k key] [n 0]]:
-        define rebind []:
+        def rebind []:
             set! d None
         (hooks.append (demand rebind))
         (d.__setitem__ key 1)

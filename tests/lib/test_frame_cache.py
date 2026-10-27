@@ -39,49 +39,49 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define log (list))
+(var log (list))
 
-(define rec (lambda [n bind]
-  (when bind (define x n))
+(define [rec n bind]
+  (when bind (var x n))
   (when (> n 0) (rec (- n 1) bind))
   (log.append (try x [[NameError] "unbound"]))
-  None))
+  None)
 
-(define fib (lambda [n]
-  (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
+(define [fib n]
+  (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
 
-(define depth (lambda [n]
-  (if (<= n 0) 0 (+ 1 (depth (- n 1))))))
+(define [depth n]
+  (if (<= n 0) 0 (+ 1 (depth (- n 1)))))
 
-(define holder (lambda [obj n]
-  (define keep obj)
+(define [holder obj n]
+  (var keep obj)
   (when (> n 0) (holder obj (- n 1)))
-  keep))
+  keep)
 """
 
 
 GENERAL_SRC = """
-(define kw [a b: 0] #(a b))
-(define star [a *: rest] #(a rest))
-(define kwonly [a *: rest k: 1] #(a rest k))
-(define opts [a **: more] #(a more))
+(def kw [a b: 0] #(a b))
+(def star [a *: rest] #(a rest))
+(def kwonly [a *: rest k: 1] #(a rest k))
+(def opts [a **: more] #(a more))
 
-(define depthkw [n step: 1]
+(def depthkw [n step: 1]
   (if (<= n 0) 0 (+ 1 (depthkw (- n step) step: step))))
 
-(define run_kw []
+(def run_kw []
   #((kw 1 b: 2) (kw 3) (kw a: 4 b: 5) (kw 6) (kw b: 7 a: 8)))
 
-(define run_star []
+(def run_star []
   #((star 1 2 3) (star 4) (star 5 6) (star 7)))
 
-(define run_kwonly []
+(def run_kwonly []
   #((kwonly 1 2 k: 5) (kwonly 3) (kwonly 4 5 6) (kwonly 7 k: 8)))
 
-(define run_opts []
+(def run_opts []
   #((opts 1 x: 2) (opts 3) (opts 4 y: 5 z: 6) (opts 7)))
 
-(define run_bad []
+(def run_bad []
   #((kw 1 b: 2)
     (try (kw 10 b: 5 nope: 1) [[TypeError] "bad"])
     (kw 1)
@@ -91,30 +91,30 @@ GENERAL_SRC = """
     (try (star 3 4 nope: 1) [[TypeError] "bad"])
     (star 5)))
 
-(define-class Scaler ()
+(class Scaler []
   (begin
-    (define __init__ [self base: 1] (set-attr self base base))
-    (define scale [self x factor: 1] (* self.base x factor))))
+    (def __init__ [self base: 1] (set-attr self base base))
+    (def scale [self x factor: 1] (* self.base x factor))))
 
-(define run_method []
-  (define s (Scaler base: 2))
+(def run_method []
+  (var s (Scaler base: 2))
   #((s.scale 3 factor: 4) (s.scale 5) (s.scale x: 6 factor: 7) (s.scale 8)))
 
-(define-class Point ()
+(class Point []
   (begin
-    (define __init__ [self x y: 0 *: more]
+    (def __init__ [self x y: 0 *: more]
       (set-attr self x x)
       (set-attr self y y)
       (set-attr self more more))))
 
-(define coords [p] #(p.x p.y p.more))
+(def coords [p] #(p.x p.y p.more))
 
-(define box #{"v": 1})
-(define inner (list))
-(define byref [a &n: 0 b: 0] #(a n b))
-(define box-ref &(item box "v"))
+(var box #{"v": 1})
+(var inner (list))
+(def byref [a &n: 0 b: 0] #(a n b))
+(var box-ref &(item box "v"))
 
-(define empty-check []
+(def empty-check []
   (when (not inner)
     (inner.append (byref 100 n: box-ref b: 200)))
   False)
@@ -122,28 +122,28 @@ GENERAL_SRC = """
 (bind! reentering (dynamic { (item box "v") } { (set! (item box "v") %1) }
                            { None } empty-check))
 
-(define run_reenter []
+(def run_reenter []
   #((byref 1 n: box-ref b: 2) (byref 3 n: &reentering b: 4)
     (byref 5 n: box-ref b: 6)))
 
-(define run_init []
+(def run_init []
   #((coords (Point 1 y: 2)) (coords (Point 3)) (coords (Point x: 4 y: 5))
     (coords (Point 6 7 8 9)) (coords (Point 10))))
 """
 
 
 CONT_SRC = """
-(define saved (list))
+(var saved (list))
 
-(define capture [n step: 1]
-  (define local (* n step))
+(def capture [n step: 1]
+  (var local (* n step))
   (+ local (shift k (begin (saved.append k) 0))))
 
-(define run_capture []
+(def run_capture []
   #((reset (capture 100)) (reset (capture 200 step: 2))
     (reset (capture 7)) (reset (capture 8 step: 3))))
 
-(define resume_saved []
+(def resume_saved []
   #((call (item saved 0) 1) (call (item saved 1) 2)
     (call (item saved 0) 5)))
 """

@@ -91,7 +91,7 @@ n -= 2
 ```
 +++
 ```koskari
-define x 6
+var x 6
 set! x 7
 incr! x
 decr! n 2
@@ -101,7 +101,7 @@ decr! n 2
 :::{dialogue}
 Why two words for `=`?
 +++
-`define` introduces a name in the current scope. `set!` stores into a
+`var` introduces a name in the current scope. `set!` stores into a
 name that exists; inside a function, a `set!` to a name bound nowhere
 is a compile error that names the fix. Python lets one symbol do both
 and infers which you meant.
@@ -132,7 +132,7 @@ else:
 ```
 +++
 ```koskari
-define s:
+var s:
   if (< x 0):
     "negative"
   elif (== x 0):
@@ -143,10 +143,10 @@ define s:
 :::
 
 :::{dialogue}
-Why does the `define` go outside?
+Why does the `var` go outside?
 +++
 An `if` is an expression. Its value is the value of the branch that
-ran, so one `define` takes the whole choice. Python's `if` is a
+ran, so one `var` takes the whole choice. Python's `if` is a
 statement, so each branch assigns.
 :::
 
@@ -161,7 +161,7 @@ def invite(user):
 ```
 +++
 ```koskari
-define invite [user]:
+def invite [user]:
   unless user:
     return "missing user"
   unless user.email:
@@ -220,7 +220,7 @@ Both, as in Python: the `else:` peer runs when the loop ends without a
 loop:
 
 ```koskari
-define found:
+var found:
   for-each [v values]:
     when (> v 2):
       break v
@@ -248,7 +248,7 @@ not a
 Save as `countdown.ki`:
 
 ```koskari
-define countdown [n]:
+def countdown [n]:
   while (> n 0):
     print n
     decr! n
@@ -256,7 +256,7 @@ define countdown [n]:
     print "lift-off"
 
 @entry-point
-define main []:
+def main []:
   (countdown 3)
 ```
 

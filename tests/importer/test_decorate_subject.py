@@ -113,7 +113,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define inc (lambda [v] (+ v 1)))
+          (def inc [v] (+ v 1))
           (decorate-subject inc 41))
         """
         expr, _mod = self.compile_expr(src)
@@ -127,8 +127,8 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define d1 (lambda [v] f"1<{v}>"))
-          (define d2 (lambda [v] f"2<{v}>"))
+          (def d1 [v] f"1<{v}>")
+          (def d2 [v] f"2<{v}>")
           (decorate [d1 d2] "x"))
         """
         expr, _mod = self.compile_expr(src)
@@ -142,25 +142,25 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define d1 (lambda [fn] (lambda [x] (fn (fn x)))))
-          (decorate [d1] (define add3 [x] (+ x 3)))
+          (def d1 [fn] (lambda [x] (fn (fn x))))
+          (decorate [d1] (def add3 [x] (+ x 3)))
           (add3 1))
         """
         expr, _mod = self.compile_expr(src)
         self.assertEqual(7, await expr())
 
 
-    async def test_define_demanding_binds_decorated_value(self):
+    async def test_decorator_over_demand_binds_decorated_value(self):
         """
-        A decorated define-demanding binds the decorator's result,
-        applied to the demand wrapper, under its name
+        A decorator stacked over demand on a def binds the decorator's
+        result, applied to the demand wrapper, under its name
         """
 
         src = """
         (begin
-          (define seen #[])
-          (define tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
-          (decorate [tag] (define-demanding cached [n] n))
+          (var seen #[])
+          (def tag [x] (begin (seen.append (type x).__name__) "DECORATED"))
+          (decorate [tag demand] (def cached [n] n))
           (#list seen cached))
         """
         expr, _mod = self.compile_expr(src)
@@ -169,12 +169,12 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DECORATED", cached)
 
 
-    async def test_define_coroutine_binds_decorated_value(self):
+    async def test_decorator_over_coroutine_fn_binds_decorated_value(self):
         src = """
         (begin
-          (define seen #[])
-          (define tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
-          (decorate [tag] (define-coroutine co [n] n))
+          (var seen #[])
+          (def tag [x] (begin (seen.append (type x).__name__) "DECORATED"))
+          (decorate [tag coroutine-fn] (def co [n] n))
           (#list seen co))
         """
         expr, _mod = self.compile_expr(src)
@@ -183,29 +183,27 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DECORATED", co)
 
 
-    async def test_define_dataclass_binds_decorated_value(self):
+    async def test_class_binds_decorated_value(self):
         src = """
         (begin
-          (define seen #[])
-          (define tag (lambda [x] (begin (seen.append (type x).__name__) x)))
-          (decorate [tag] (define-dataclass DC [] (define x :: int 0)))
-          (#list seen DC (DC? (DC)) (DC? 1)))
+          (var seen #[])
+          (def tag [x] (begin (seen.append (type x).__name__) x))
+          (decorate [tag] (class DC [] (var x :: int 0)))
+          (#list seen DC))
         """
         expr, _mod = self.compile_expr(src)
-        seen, dc, is_dc, is_int = await expr()
+        seen, dc = await expr()
         self.assertEqual(["type"], seen)
         self.assertEqual("DC", dc.__name__)
-        self.assertEqual(0, dc().x)
-        self.assertTrue(is_dc)
-        self.assertFalse(is_int)
+        self.assertEqual(0, dc.x)
 
 
     async def test_define_global_binds_decorated_value(self):
         src = """
         (begin
-          (define seen #[])
-          (define tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
-          (decorate [tag] (define-global gl [n] n))
+          (var seen #[])
+          (def tag [x] (begin (seen.append (type x).__name__) "DECORATED"))
+          (decorate [tag] (global def gl [n] n))
           (#list seen gl))
         """
         expr, _mod = self.compile_expr(src)
@@ -223,7 +221,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (decorate [(let [[c 0]])]
-            (define counter [] (incr! c) c))
+            (def counter [] (incr! c) c))
           #[(counter) (counter) (counter)])
         """
         expr, _mod = self.compile_expr(src)
@@ -237,9 +235,9 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define c "module-c")
+          (var c "module-c")
           (decorate [(let [[c 0]])]
-            (define counter [] (incr! c) c))
+            (def counter [] (incr! c) c))
           (counter)
           (counter)
           #[(counter) c])
@@ -277,7 +275,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-parameter deco-vol-a "quiet")
-          (define inside
+          (var inside
             (decorate [(parameterize [[deco-vol-a "loud"]])]
               (begin deco-vol-a)))
           #[inside deco-vol-a])
@@ -297,11 +295,11 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (decorate [(call-with [(cm)])]
-            (define shout [w]
+            (def shout [w]
               (log.append w)
               w))
-          (define r1 (shout "a"))
-          (define r2 (shout "b"))
+          (var r1 (shout "a"))
+          (var r2 (shout "b"))
           #[r1 r2])
         """
         expr, _mod = self.compile_expr(
@@ -323,7 +321,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         (begin
           (define-parameter deco-vol-b "quiet")
           (decorate [(call-parameterize [[deco-vol-b "loud"]])]
-            (define speak [] deco-vol-b))
+            (def speak [] deco-vol-b))
           #[(speak) deco-vol-b])
         """
         expr, _mod = self.compile_expr(src)
@@ -332,7 +330,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
     async def test_call_with_wrapper_keeps_coroutine_function(self):
         """
-        call-with over a define-coroutine delivers a coroutine function
+        call-with over a coroutine function delivers a coroutine function
         whose Python call returns an awaitable, while a plain subject
         keeps a plain wrapper
         """
@@ -341,10 +339,10 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         made = []
         src = """
         (begin
+          (decorate [(call-with [(cm)]) coroutine-fn]
+            (def co [n] (* n 2)))
           (decorate [(call-with [(cm)])]
-            (define-coroutine co [n] (* n 2)))
-          (decorate [(call-with [(cm)])]
-            (define pl [n] n))
+            (def pl [n] n))
           #[co pl])
         """
         expr, _mod = self.compile_expr(
@@ -360,7 +358,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
     async def test_call_parameterize_wrapper_keeps_coroutine_function(self):
         """
-        call-parameterize over a define-coroutine delivers a coroutine
+        call-parameterize over a coroutine function delivers a coroutine
         function whose Python call returns an awaitable, while a plain
         subject keeps a plain wrapper
         """
@@ -368,10 +366,10 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-parameter deco-vol-d "quiet")
+          (decorate [(call-parameterize [[deco-vol-d "loud"]]) coroutine-fn]
+            (def co [n] #[n deco-vol-d]))
           (decorate [(call-parameterize [[deco-vol-d "loud"]])]
-            (define-coroutine co [n] #[n deco-vol-d]))
-          (decorate [(call-parameterize [[deco-vol-d "loud"]])]
-            (define pl [n] n))
+            (def pl [n] n))
           #[co pl])
         """
         expr, _mod = self.compile_expr(src)
@@ -394,7 +392,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (decorate [(call-with [(cm)])]
-            (define shout [w]
+            (define [shout w]
               \"\"\"
               original docstring
               \"\"\"
@@ -418,9 +416,9 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define a (function aname [x] x))
+          (var a (function aname [x] x))
           (setattr a "mark" "m1")
-          (define b (lambda [x] x))
+          (def b [x] x)
           (decorate-wraps a b)
           #[(is b.__wrapped__ a) b.mark b.__name__])
         """
@@ -439,7 +437,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
           (define-parameter deco-vol-c "v0")
           (decorate [(let [[n 0]])
                              (call-parameterize [[deco-vol-c "v1"]])]
-            (define f []
+            (def f []
               (incr! n)
               f"{n}:{deco-vol-c}"))
           #[(f) (f)])
@@ -451,12 +449,12 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
     async def test_entry_point_arm_binds_slot_and_name(self):
         """
         entry-point binds the subject as the module's __entry__ and
-        delivers it unchanged, so the define binds the same function
+        delivers it unchanged, so the def binds the same function
         """
 
         src = """
         (begin
-          (decorate [entry-point] (define main [] 7))
+          (decorate [entry-point] (def main [] 7))
           #[(is __entry__ main) (main)])
         """
         expr, mod = self.compile_expr(src)
@@ -472,8 +470,8 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define tag (lambda [f] (setattr f "tagged" True) f))
-          (decorate [tag entry-point] (define main [] 1))
+          (def tag [f] (setattr f "tagged" True) f)
+          (decorate [tag entry-point] (def main [] 1))
           #[(is __entry__ main) main.tagged])
         """
         expr, _mod = self.compile_expr(src)
@@ -487,7 +485,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define f (decorate [entry-point] (lambda [] 2)))
+          (var f (decorate [entry-point] (lambda [] 2)))
           #[(is __entry__ f) (__entry__)])
         """
         expr, _mod = self.compile_expr(src)

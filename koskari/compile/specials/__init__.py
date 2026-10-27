@@ -25,7 +25,7 @@ from ...syntax import special
 from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call, special_call_attr
-from .class_ import special_class
+from .class_ import special_build_class
 from .collections import (
     special_build_list, special_build_tuple, special_list_append)
 from .conditionals import special_and, special_cond, special_or, special_switch
@@ -78,9 +78,10 @@ from .syntax import (
     special_compile_syntax_rules)
 from .thunk import special_gensym_thunk
 from .variables import (
-    special_define, special_define_global, special_define_values, special_delq,
-    special_globals, special_locals, special_setq, special_setq_values,
-    special_takeq)
+    special_define, special_define_global, special_define_global_values,
+    special_define_values, special_delq,
+    special_globals, special_setq, special_setq_values,
+    special_takeq, special_var)
 
 
 __all__ = (
@@ -107,10 +108,10 @@ __all__ = (
     "special_bracket_cons",
     "special_bracket_proper",
     "special_break",
+    "special_build_class",
     "special_bytecode",
     "special_call",
     "special_call_attr",
-    "special_class",
     "special_call_cc",
     "special_compile_macro_match",
     "special_compile_macro_rules",
@@ -130,6 +131,7 @@ __all__ = (
     "special_del_item",
     "special_define",
     "special_define_global",
+    "special_define_global_values",
     "special_define_values",
     "special_delq",
     "special_dir",
@@ -166,7 +168,6 @@ __all__ = (
     "special_list_append",
     "special_load_exception",
     "special_let_cc",
-    "special_locals",
     "special_lt",
     "special_matrix_multiply",
     "special_modulo",
@@ -208,6 +209,7 @@ __all__ = (
     "special_type",
     "special_unquote",
     "special_unquote_splicing",
+    "special_var",
     "special_vars",
     "special_while",
     "special_with",

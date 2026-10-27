@@ -39,7 +39,7 @@ import-from logging basicConfig
 ;; A variety self-registers simply by defining its `job/<type>` syntax,
 ;; which owns that type's header grammar and tag-injects the sub-items.
 
-define-syntax job:
+syntax job:
     macro-rules []:
         case (job tp rest ...):
             ;; the type tag is a label: its base names the variety
@@ -53,26 +53,26 @@ define-syntax job:
 ;; self-dispatch) and each resulting binding is registered by name. An
 ;; unnamed config (settings start with a keyword) is rewritten with a `()`
 ;; name sentinel; a named one keeps its symbol.
-define-syntax jobset:
+syntax jobset:
     macro-rules []:
         case (jobset jsname entry ...):
-            define configs #[]
-            define jobforms #[]
-            define regs #[]
+            var configs #[]
+            var jobforms #[]
+            var regs #[]
 
             ;; an entry is the caller's code: it goes back out as its
             ;; match, or rebuilt inside a datum, so hygiene leaves it be
             for-each [e entry]:
-                define-values [head [tp rest]] e.datum
+                var [head [tp rest]] e.datum
                 if (== (str head.base) "config"):
-                    define newhead (symbol f"config/{tp.base}")
+                    var newhead (symbol f"config/{tp.base}")
                     if (or (nil? rest) (keyword? (car rest))):
                         (configs.append (datum (cons newhead nil rest)))
                     else:
                         (configs.append (datum (cons newhead rest)))
                 else:
                     (jobforms.append e)
-                    define jname (car rest)
+                    var jname (car rest)
                     (regs.append
                         `(.register ,jsname ,(str jname.base) ,(datum jname)))
 
@@ -81,25 +81,25 @@ define-syntax jobset:
             `(begin
                 ,@configs
                 ,@jobforms
-                (define ,jsname (JobSet ,(str jsname.datum.base)))
-                (define ,-'default/storage)
+                (var ,jsname (JobSet ,(str jsname.datum.base)))
+                (var ,-'default/storage)
                 (if &,-'default/storage
                     (.bind-store ,jsname ,-'default/storage)
                     (.bind-store ,jsname None))
-                (define ,-'default/access)
+                (var ,-'default/access)
                 (if &,-'default/access
                     (.bind-access ,jsname ,-'default/access)
                     (.bind-access ,jsname None))
                 ,@regs)
 
 
-define-syntax config:
+syntax config:
     syntax-rules []:
         case (config (tp name) params ...):
             (.configure name params ...)
 
 
-define-syntax handler:
+syntax handler:
     syntax-rules []:
         case (handler (tp name) [formals ...] body ...):
             (.handler name (lambda [formals ...] body ...))
@@ -110,7 +110,7 @@ define-syntax handler:
 ;; A second inherited CODE sub-item: `on-error [err msg]:` routes to the
 ;; job's `on-error` setter. Varieties that support it (e.g. kafka) define
 ;; the method; others simply never receive the sub-item.
-define-syntax on-error:
+syntax on-error:
     syntax-rules []:
         case (on-error (tp name) [formals ...] body ...):
             (.on-error name (lambda [formals ...] body ...))
@@ -121,7 +121,7 @@ define-syntax on-error:
 ;; `allow #[..]` -- the access sub-item: the group names whose members
 ;; may trigger the job. A childless line in the job block (no colon, no
 ;; body), routed to the inherited `allow` setter.
-define-syntax allow:
+syntax allow:
     syntax-rules []:
         case (allow (tp name) groups):
             (.allow name groups)
@@ -133,7 +133,7 @@ define-syntax allow:
 ;; `(with-subitems (cron name) subitem ...)` and this maps the tag into
 ;; each. Syntax-rules varieties can inline the same `(subhead (t n) ...)
 ;; ...` pattern directly instead.
-define-syntax with-subitems:
+syntax with-subitems:
     syntax-rules []:
         case (with-subitems tag (subhead subrest ...) ...):
             (begin (subhead tag subrest ...) ...)
@@ -149,8 +149,8 @@ define-syntax with-subitems:
 ;;
 ;;     config kafka:
 ;;         sasl_plain_password: (reqenv "SECRET_KAFKA_PASS")
-define reqenv [name]:
-    define val (os.getenv name)
+def reqenv [name]:
+    var val (os.getenv name)
     when (None? val):
         raise (KeyError f"required environment variable unset: {name}")
     val
@@ -162,11 +162,11 @@ define reqenv [name]:
 ;; an EXPORTED helper (not basicConfig directly), because a macro's free
 ;; names resolve at the USE site -- and the user module imports the
 ;; kosrunner exports, not logging.basicConfig.
-define configure-logging [**: kw]:
+def configure-logging [**: kw]:
     (basicConfig **: kw)
 
 
-define-syntax config/logging:
+syntax config/logging:
     syntax-rules []:
         case (config/logging () setting ...):
             (configure-logging setting ...)

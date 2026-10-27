@@ -2,11 +2,11 @@
 ;; sequence of an each is evaluated when the form runs, in the scope
 ;; the form is in.
 
-define src #[1 2 3]
-define gen (each [x src] (* x 10))
-define-global src #[7]
-define after_rebind (list gen)
+var src #[1 2 3]
+var gen (each [x src] (* x 10))
+global var src #[7]
+var after_rebind (list gen)
 
-define-class K []:
-    define names #["a" "b"]
-    define table (dict-each [n names] key: n value: 1)
+class K []:
+    var names #["a" "b"]
+    var table (dict-each [n names] key: n value: 1)

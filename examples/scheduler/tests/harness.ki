@@ -12,25 +12,24 @@ import httpx
 
 import-from unittest IsolatedAsyncioTestCase
 
-import-from kosrunner:
-    RunStore JobSet StorageConfig WebhookJob WebhookConfig
+(import-from kosrunner RunStore JobSet StorageConfig WebhookJob WebhookConfig)
 
 
-define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
+class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
     """
     Base for tests exercising kosrunner through its live async surface: a
     temp-dir store, an ASGI HTTP client, and a one-call webhook builder.
     """
 
-    define temp-store [self]:
+    def temp-store [self]:
         """
         A RunStore rooted at a fresh temp dir, opened for the test and
         closed on teardown.
         """
 
-        define tmp (tempfile.TemporaryDirectory)
+        var tmp (tempfile.TemporaryDirectory)
         (self.addCleanup tmp.cleanup)
-        define store (RunStore tmp.name)
+        var store (RunStore tmp.name)
         (store.open)
         ;; coroutine-fn: addAsyncCleanup only awaits native coroutine
         ;; functions; a bare koskari method would be called and its
@@ -39,35 +38,35 @@ define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
         store
 
 
-    define jobset-with-store [self]:
+    def jobset-with-store [self]:
         """
         A JobSet whose RunStore is rooted at a fresh temp dir (via the same
         bind-store path production uses, seeded with an explicit root),
         opened for the test and closed on teardown.
         """
 
-        define tmp (tempfile.TemporaryDirectory)
+        var tmp (tempfile.TemporaryDirectory)
         (self.addCleanup tmp.cleanup)
-        define js (JobSet "test")
+        var js (JobSet "test")
         (js.bind-store (StorageConfig root: tmp.name))
         (js.store.open)
         (self.addAsyncCleanup (coroutine-fn js.store.close))
         js
 
 
-    define http-client [self server]:
+    def http-client [self server]:
         """
         An httpx.AsyncClient wired to `server.app` over ASGITransport (no
         live uvicorn), closed on teardown.
         """
 
-        define transport (httpx.ASGITransport app: server.app)
-        define client (httpx.AsyncClient transport: transport base_url: "http://test")
+        var transport (httpx.ASGITransport app: server.app)
+        var client (httpx.AsyncClient transport: transport base_url: "http://test")
         (self.addAsyncCleanup client.aclose)
         client
 
 
-    define webhook [self server route handler jobset: None prefix: "/webhook" **: config]:
+    def webhook [self server route handler jobset: None prefix: "/webhook" **: config]:
         """
         Build a WebhookJob, wire its config and handler, optionally register
         it on `jobset` (so its runs are tracked and async replies have a
@@ -79,8 +78,8 @@ define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
         live webhook serves.
         """
 
-        define job (WebhookJob route)
-        define base (WebhookConfig prefix: prefix **: config)
+        var job (WebhookJob route)
+        var base (WebhookConfig prefix: prefix **: config)
         (job.configure via: base)
         (job.handler handler)
         unless (None? jobset):

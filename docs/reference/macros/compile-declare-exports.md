@@ -17,9 +17,9 @@ that one binding.
 ;; shapes.ki
 (declare-exports area define-shape)
 
-define area [w h] (* w h)
+def area [w h] (* w h)
 
-define-syntax define-shape:
+syntax define-shape:
   ...
 ```
 

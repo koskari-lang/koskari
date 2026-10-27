@@ -34,7 +34,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define f (lambda [a *: nil b c] #[a b c]))
+(def f [a *: nil b c] #[a b c])
 """
 
 

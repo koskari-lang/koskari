@@ -155,9 +155,9 @@ the driver discovers every non-underscore module in `py/`.
 
    ```koskari
    ;; ki/square_sum.ki
-   define square_sum [n]:
-       define acc 0
-       define i 0
+   def square_sum [n]:
+       var acc 0
+       var i 0
        while (< i n):
            set! acc (+ acc (* i i))
            set! i (+ i 1)

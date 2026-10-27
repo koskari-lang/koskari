@@ -81,7 +81,7 @@ class TestCompilerErrorRendering(unittest.IsolatedAsyncioTestCase):
 
     async def test_str_includes_source_line_and_caret(self):
         with NamedTemporaryFile("w+", suffix=".ki", delete=True) as src:
-            src.write("(define x 1)\n(+ x 2)\n")
+            src.write("(var x 1)\n(+ x 2)\n")
             src.flush()
 
             err = CompilerError("bad form", position=(2, 3), filename=src.name)

@@ -37,22 +37,22 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define log (list))
+(var log (list))
 
-(define plain (lambda []
+(def plain []
   (yield 1)
-  (yield 2)))
+  (yield 2))
 
-(define with_cleanup (lambda []
+(def with_cleanup []
   (try (begin (yield 1) (yield 2))
-    [finally: (log.append "cleanup")])))
+    [finally: (log.append "cleanup")]))
 
-(define cleanup_raises (lambda []
+(def cleanup_raises []
   (try (begin (yield 1) (yield 2))
-    [finally: (raise (ValueError "cleanup failed"))])))
+    [finally: (raise (ValueError "cleanup failed"))]))
 
-(define raises_generator_exit (lambda []
-  (raise (GeneratorExit "deliberate"))))
+(def raises_generator_exit []
+  (raise (GeneratorExit "deliberate")))
 """
 
 

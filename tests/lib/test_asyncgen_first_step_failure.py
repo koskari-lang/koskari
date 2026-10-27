@@ -34,12 +34,12 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define produce (lambda [n] (for-each [i (range n)] (yield i))))
+(define [produce n] (for-each [i (range n)] (yield i)))
 
-(define first_of (lambda [g] (for-each [x g] (return x))))
+(define [first_of g] (for-each [x g] (return x)))
 
-(define deep (lambda [n g]
-  (if (== n 0) (first_of g) (+ 0 (deep (- n 1) g)))))
+(define [deep n g]
+  (if (== n 0) (first_of g) (+ 0 (deep (- n 1) g))))
 """
 
 

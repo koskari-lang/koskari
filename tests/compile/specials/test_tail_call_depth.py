@@ -40,28 +40,28 @@ pytestmark = pytest.mark.phase_specials
 TAIL_SHAPES = {
     "call": """
         (begin
-          (define loop
+          (var loop
             (lambda [n]
               (cond [(== n 0) "done"] [True (call loop (- n 1))])))
           (call loop depth))
     """,
     "var": """
         (begin
-          (define loop
+          (var loop
             (lambda [n]
               (cond [(== n 0) "done"] [True (loop (- n 1))])))
           (loop depth))
     """,
     "names": """
         (begin
-          (define loop
+          (var loop
             (lambda [n]
               (cond [(== n 0) "done"] [True (loop n: (- n 1))])))
           (loop n: depth))
     """,
     "attr": """
         (begin
-          (define loop
+          (var loop
             (lambda [n]
               (cond [(== n 0) "done"] [True (box.loop (- n 1))])))
           (setattr box "loop" loop)
@@ -69,7 +69,7 @@ TAIL_SHAPES = {
     """,
     "star": """
         (begin
-          (define loop
+          (var loop
             (lambda [n]
               (cond [(== n 0) "done"] [True (loop *: #[(- n 1)])])))
           (loop *: #[depth]))
@@ -80,7 +80,7 @@ TAIL_SHAPES = {
 # longer in tail position
 NON_TAIL = """
     (begin
-      (define loop
+      (var loop
         (lambda [n]
           (cond [(== n 0) 0] [True (+ 1 (loop (- n 1)))])))
       (loop depth))

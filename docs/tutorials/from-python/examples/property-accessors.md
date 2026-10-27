@@ -20,7 +20,7 @@ ordinary `@property` syntax; the demand path is wired for you:
 
 ```koskari
 @property
-define radius [self]:      ; stored as Demand(radius) automatically
+def radius [self]:      ; stored as Demand(radius) automatically
   self._radius
 ```
 
@@ -33,32 +33,32 @@ import-from dataclasses dataclass
 
 
 @dataclass
-define-class Circle []:
+class Circle []:
   """ A circle with a validated radius. """
 
-  define _radius :: float 0.0
+  var _radius :: float 0.0
 
   @property
-  define radius [self]:
+  def radius [self]:
     self._radius
 
   @radius.setter
-  define radius [self value]:
+  def radius [self value]:
     when (< value 0):
       raise (ValueError "radius must be non-negative")
     (set! self._radius (float value))
 
   @radius.deleter
-  define radius [self]:
+  def radius [self]:
     (set! self._radius 0.0)
 
-  define area [self]:
+  def area [self]:
     (* 3.14159 self._radius self._radius)
 
 
 @entry-point
-define main []:
-  define c (Circle)
+def main []:
+  var c (Circle)
   (set! c.radius 5.0)
   print "radius:" c.radius
   print "area:"   (c.area)
@@ -89,5 +89,5 @@ a `@dataclass` class.
 ## See also
 
 - [From Python: Classes and objects -- Property accessors](../classes-and-objects.md#properties)
-- [layout/define-class](../../../reference/layouts/layout-define-class.md)
+- [layout/class](../../../reference/layouts/layout-class.md)
 - [compile/decorate](../../../reference/macros/compile-decorate.md)

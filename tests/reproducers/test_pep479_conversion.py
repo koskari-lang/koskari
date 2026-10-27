@@ -39,21 +39,22 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define leakgen [it]:
+def leakgen [it]:
     (yield 1)
     (yield (next it))
     (yield 3)
 
-define aleakgen [ait]:
+def aleakgen [ait]:
     (yield 1)
     (yield (await (ait.__anext__)))
     (yield 3)
 
-define-coroutine leakcoro [it]:
+@coroutine-fn
+def leakcoro [it]:
     (next it)
 
-define consume [gen]:
-    define col #[]
+def consume [gen]:
+    var col #[]
     try:
         (for-each [v gen]
             (col.append v))
@@ -63,8 +64,8 @@ define consume [gen]:
     except [RuntimeError as: e]:
         #["runtime" col (str e) (type e.__cause__).__name__]
 
-define aconsume [agen]:
-    define col #[]
+def aconsume [agen]:
+    var col #[]
     try:
         (for-each [v agen]
             (col.append v))
@@ -74,7 +75,7 @@ define aconsume [agen]:
     except [RuntimeError as: e]:
         #["runtime" col (str e) (type e.__cause__).__name__]
 
-define mapped [it]:
+def mapped [it]:
     (list (map next #[it it it]))
 """
 

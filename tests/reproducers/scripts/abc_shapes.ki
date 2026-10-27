@@ -1,4 +1,4 @@
-;; Reproducer: define-class inheriting abc.ABC with @abstractmethod methods.
+;; Reproducer: class inheriting abc.ABC with @abstractmethod methods.
 ;;
 ;; Shape is an abstract root (inherits ABC) declaring an abstract `area`
 ;; property.  Point2D is a concrete coordinate, Shape2D is an abstract
@@ -12,59 +12,59 @@ import-from abc ABC abstractmethod
 
 ;; Abstract root: every Shape must provide an area.
 
-define-class Shape [ABC]:
+class Shape [ABC]:
 
     @property
     @abstractmethod
-    define area [self]:
+    def area [self]:
         None
 
 
 ;; Concrete coordinate; a point encloses no area.
 
-define-class Point2D [Shape]:
+class Point2D [Shape]:
 
-    define __init__ [self x y]:
+    def __init__ [self x y]:
         set! self.x x
         set! self.y y
 
     @property
-    define area [self]:
+    def area [self]:
         0
 
 
 ;; Abstract positioned 2D shape; leaves `area` abstract.
 
-define-class Shape2D [Shape]:
+class Shape2D [Shape]:
 
-    define __init__ [self origin]:
+    def __init__ [self origin]:
         set! self.origin origin
 
 
 ;; Concrete rectangle anchored at a coordinate.
 
-define-class Rectangle [Shape2D]:
+class Rectangle [Shape2D]:
 
-    define __init__ [self coordinate height width]:
+    def __init__ [self coordinate height width]:
         (.__init__ (super) coordinate)
         set! self.height height
         set! self.width width
 
     @property
-    define area [self]:
+    def area [self]:
         (* self.width self.height)
 
 
-define verify_point []:
-    define p (Point2D 3 4)
+def verify_point []:
+    var p (Point2D 3 4)
     (and (equal? p.x 3)
          (equal? p.y 4)
          (equal? p.area 0))
 
 
-define verify_rectangle []:
-    define origin (Point2D 1 2)
-    define r (Rectangle origin 5 4)
+def verify_rectangle []:
+    var origin (Point2D 1 2)
+    var r (Rectangle origin 5 4)
     (and (equal? r.width 4)
          (equal? r.height 5)
          (equal? r.area 20)

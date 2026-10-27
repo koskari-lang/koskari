@@ -1,6 +1,9 @@
 # compile/define-syntax
 **Symbol:** `compile/define-syntax`
 
+`define-syntax` is the Scheme-layer spelling of
+[`syntax`](compile-syntax.md) at module top level, and of `global syntax`.
+
 **Syntax:** Matches **`(define-syntax NAME TRANSFORMER)`** where **`TRANSFORMER`** is:
 
 - `(syntax-rules literals rule ...)` -> `(define-global compile/name (syntax-rules name literals rule ...))`

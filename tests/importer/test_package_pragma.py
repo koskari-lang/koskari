@@ -281,18 +281,18 @@ class TestPackagePragmaImport(unittest.IsolatedAsyncioTestCase):
             "(package-pragma [compiler/tco-enable False])\n")
         self._write(
             'kospkgp/mod.ki',
-            "(define seen (pragma compiler/tco-enable))\n")
+            "(var seen (pragma compiler/tco-enable))\n")
         self._write('kospkgp/sub/__init__.ki', "\n")
         self._write(
             'kospkgp/sub/deep.ki',
-            "(define seen (pragma compiler/tco-enable))\n")
+            "(var seen (pragma compiler/tco-enable))\n")
         self._write(
             'kospkgp/sub2/__init__.ki',
             "(package-pragma [compiler/call-brackets 'error])\n")
         self._write(
             'kospkgp/sub2/deep.ki',
-            "(define seen-tco (pragma compiler/tco-enable))\n"
-            "(define seen-brackets (pragma compiler/call-brackets))\n")
+            "(var seen-tco (pragma compiler/tco-enable))\n"
+            "(var seen-brackets (pragma compiler/call-brackets))\n")
 
 
     async def test_package_slot_survives_load(self):
@@ -330,7 +330,7 @@ class TestPackagePragmaImport(unittest.IsolatedAsyncioTestCase):
         self._write_tree()
         self._write(
             'kossolo.ki',
-            "(define seen (pragma compiler/tco-enable))\n")
+            "(var seen (pragma compiler/tco-enable))\n")
         solo = importlib.import_module('kossolo')
         self.assertIs(True, solo.seen)
 

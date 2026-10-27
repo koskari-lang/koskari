@@ -3,28 +3,28 @@
 ;; __slots__ class, with ints and with floats, and an accumulator held
 ;; on the instance that outside code keeps a reference to.
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define-class DictBox []:
+class DictBox []:
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.i 0
         set! self.a 0
         set! self.b 0
 
 
-define-class SlotBox []:
+class SlotBox []:
 
-    define __slots__ #("i" "a" "b")
+    var __slots__ #("i" "a" "b")
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.i 0
         set! self.a 0
         set! self.b 0
 
 
-define churn [box n x]:
+def churn [box n x]:
     set! box.i 0
     set! box.a (& x MASK32)
     set! box.b 1
@@ -36,15 +36,15 @@ define churn [box n x]:
     (& (^ box.a box.b) MASK32)
 
 
-define churn_dict [n x]:
+def churn_dict [n x]:
     churn (DictBox) n x
 
 
-define churn_slots [n x]:
+def churn_slots [n x]:
     churn (SlotBox) n x
 
 
-define churn_float [box n]:
+def churn_float [box n]:
     set! box.i 0
     set! box.a 1.5
     set! box.b 0.25
@@ -56,17 +56,17 @@ define churn_float [box n]:
     #(box.a box.b)
 
 
-define churn_float_dict [n]:
+def churn_float_dict [n]:
     churn_float (DictBox) n
 
 
-define churn_float_slots [n]:
+def churn_float_slots [n]:
     churn_float (SlotBox) n
 
 
-define shared_value [n]:
-    define box (SlotBox)
-    define seed (* n 1000)
+def shared_value [n]:
+    var box (SlotBox)
+    var seed (* n 1000)
     set! box.a seed
     incr! box.a 1
     incr! box.a 1

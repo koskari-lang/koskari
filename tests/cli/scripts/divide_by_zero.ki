@@ -1,7 +1,7 @@
-define f [x]:
+def f [x]:
     (/ x 0)
 
-define g [y]:
+def g [y]:
     f y
 
 g 3

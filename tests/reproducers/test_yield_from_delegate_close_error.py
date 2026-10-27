@@ -37,7 +37,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define outer (lambda [] (yield-from (inner))))
+(def outer [] (yield-from (inner)))
 """
 
 

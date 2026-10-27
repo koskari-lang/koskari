@@ -14,7 +14,7 @@
 """
 tests.reproducers.test_super_init_repro
 
-Full-stack reproducer: layout define-class, subclass calls superclass
+Full-stack reproducer: layout class, subclass calls superclass
 __init__ via (super) with arguments.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>

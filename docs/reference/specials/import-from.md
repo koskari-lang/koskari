@@ -10,7 +10,9 @@
 
 `MODULE` is an unquoted symbol (same leading-dot convention as `import`). Each
 `NAME` is a symbol used as both the attribute name and the binding name unless
-a `[NAME as: BIND]` member overrides the binding.
+a `[NAME as: BIND]` member overrides the binding. A long member list wraps in
+the parenthesised form, with the continuation lines indented inside the
+parens; `import-from` has no block layout of its own.
 
 **Use-case:** Import specific names from a module into the current namespace.
 Mirrors Python's `from MODULE import NAME [as BIND], ...`.

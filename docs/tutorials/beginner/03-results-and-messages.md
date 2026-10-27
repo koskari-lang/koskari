@@ -17,7 +17,7 @@ At the prompt, whenever a line produces a value worth seeing:
 :::
 
 :::{dialogue}
-What about `(define x 99)`?
+What about `(var x 99)`?
 +++
 Nothing is shown. Giving a name a value is a quiet job; there is no
 result to look at. Ask for `x` afterwards and you see `99`.

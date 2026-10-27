@@ -10,7 +10,7 @@ How do we keep three fruits under one name?
 In a list, written with `#[` and `]`:
 
 ```koskari
-define fruits #["apple" "pear" "plum"]
+var fruits #["apple" "pear" "plum"]
 ```
 
 The items are separated by spaces, nothing else.
@@ -123,9 +123,9 @@ Can we make a new list out of an old one?
 `list-each` builds a list from the value of its body, once per item:
 
 ```koskari
-define prices #[3 4 5]
+var prices #[3 4 5]
 
-define doubled:
+var doubled:
   list-each [price prices]:
     (* price 2)
 
@@ -139,7 +139,7 @@ That prints `[6, 8, 10]`. `prices` is unchanged.
 What does this print?
 +++
 ```koskari
-define scores #[7 10 4]
+var scores #[7 10 4]
 
 for-each [score scores]:
   if (>= score 10):

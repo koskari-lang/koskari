@@ -153,17 +153,6 @@ Two pieces of work:
 
 ## Compiler
 
-### Binding forms and builder forms (rename)
-
-One word per role: `define` stays as the by-form purist spelling,
-`def` defines a function, `var` binds a value, `global` binds at the
-module, `class` defines a class (today `define-class`); the builders
-become `build-class` and `build-function`, `lambda` unchanged. With
-it a zero-arity `(vars)` on the existing special and a namespace repr
-for the CLI. Five migration steps, each green.
-
-Ref: [language/binding-forms-rename.md](language/binding-forms-rename.md).
-
 ### Extent verification and dead-region sweep
 
 Add the TAIL-under-non-discardable-extent check to the finalize walk
@@ -481,14 +470,24 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ### Dataclass builder in Koskari (proposed)
 
-`define-dataclass` applies the stdlib decorator, which generates the
-methods by `exec` against the module's `__dict__` and so leans on the
-module namespace relaying as a dict. A `dataclass` builtin in the
-bootstrap would collect the annotated fields, set `__dataclass_fields__`
-and `__dataclass_params__` for the stdlib helpers, and compile
-`__init__`, `__repr__`, `__eq__` and the rest as Koskari functions.
+`@dataclass` over a `class` applies the stdlib decorator, which
+generates the methods by `exec` against the module's `__dict__` and so
+leans on the module namespace relaying as a dict. A `dataclass` builtin
+in the bootstrap would collect the annotated fields, set
+`__dataclass_fields__` and `__dataclass_params__` for the stdlib
+helpers, and compile `__init__`, `__repr__`, `__eq__` and the rest as
+Koskari functions.
 
 Ref: [language/dataclass-builder.md](language/dataclass-builder.md).
+
+### Module-level `__annotations__` (proposed)
+
+`var x :: int 5` records its type on the fragment, but the only consumer
+is the class builder, which writes the class's `__annotations__`. At
+module top level the type is dropped, where Python's `x: int = 5` fills
+the module's `__annotations__`; `define-global NAME :: TYPE` from a body
+has the same gap. The module load would collect the top-level bindings
+into `__annotations__`, and a body's global binding would reach it too.
 
 - **Reader macro helpers** — bootstrap **`set-macro-character`** /
   **`read-atom`** helpers for `examples/reader-macro/dollars.ki`, reader
@@ -517,7 +516,7 @@ to hundreds–thousands of entries covering every builtin special and macro
 via an autonomous Claude Code agent in its own git worktree, one PR per
 batch. Mandate per special/macro: basic, variant, block/layout, and
 invalid+corrective entries; priority on patterns common in real code
-(`define-class`, `for-each`, `define-syntax`, `try/except`, `let`, async).
+(`class`, `for-each`, `define-syntax`, `try/except`, `let`, async).
 The PR's `make test` (`phase_corpus`) is the authoritative backstop.
 
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);

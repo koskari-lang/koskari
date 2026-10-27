@@ -9,16 +9,16 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner KafkaJob UmbJob require-extra
 
 
-define-class TestRequireExtra [SchedulerAsyncTestCase]:
+class TestRequireExtra [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define test-present-module-is-returned [self]:
+    def test-present-module-is-returned [self]:
         import json
         (self.assertIs (require-extra "json" "irrelevant") json)
 
 
     @coroutine-fn
-    define test-absent-module-names-the-module-and-the-extra [self]:
+    def test-absent-module-names-the-module-and-the-extra [self]:
         with [caught (self.assertRaises ImportError)]:
             (require-extra "no_such_client_library" "someextra")
         ;; one contiguous message: koskari does NOT join adjacent string
@@ -29,7 +29,7 @@ define-class TestRequireExtra [SchedulerAsyncTestCase]:
                 " pip install koskari-kosrunner[someextra]"))
 
 
-define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
+class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
     """
     Both broker varieties check at construction, so a definition naming one
     whose extra was never installed dies at LOAD time. The check is
@@ -37,7 +37,7 @@ define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
     both extras installed.
     """
 
-    define hide-module [self name]:
+    def hide-module [self name]:
         """
         Make `name` unimportable for the duration of one test by stashing
         None under it in sys.modules -- which is what the import machinery
@@ -45,10 +45,10 @@ define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
         raised from the real import, not a stubbed one.
         """
 
-        define saved (sys.modules.get name)
+        var saved (sys.modules.get name)
         (set! (item sys.modules name) None)
 
-        define restore []:
+        def restore []:
             if (None? saved):
                 (sys.modules.pop name None)
             else:
@@ -58,7 +58,7 @@ define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-kafka-job-names-the-kafka-extra [self]:
+    def test-kafka-job-names-the-kafka-extra [self]:
         (self.hide-module "aiokafka")
         with [caught (self.assertRaises ImportError)]:
             (KafkaJob "topic.orders")
@@ -67,7 +67,7 @@ define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-umb-job-names-the-umb-extra [self]:
+    def test-umb-job-names-the-umb-extra [self]:
         (self.hide-module "stompman")
         with [caught (self.assertRaises ImportError)]:
             (UmbJob "/topic/VirtualTopic.eng.test")

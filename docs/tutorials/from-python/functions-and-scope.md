@@ -13,7 +13,7 @@ def greet(name, greeting="hello"):
 ```
 +++
 ```koskari
-define greet [name greeting: "hello"]:
+def greet [name greeting: "hello"]:
   f"{greeting} {name}"
 ```
 :::
@@ -48,7 +48,7 @@ def first_even(xs):
 ```
 +++
 ```koskari
-define first-even [xs]:
+def first-even [xs]:
   for-each [x xs]:
     when (== 0 (% x 2)):
       return x
@@ -60,7 +60,7 @@ define first-even [xs]:
 When do I write `return`?
 +++
 To leave early. Otherwise the last form is the result. `return` with
-two or more arguments returns a tuple, and `define-values [a b] (f)`
+two or more arguments returns a tuple, and `var [a b] (f)`
 unpacks it.
 :::
 
@@ -74,16 +74,16 @@ def area():
 ```
 +++
 ```koskari
-define area []:
+def area []:
   let [[w 6] [h 7]]:
     (* w h)
 ```
 :::
 
 :::{dialogue}
-What does `let` add over `define`?
+What does `let` add over `var`?
 +++
-Scope. The names exist only inside the `let` body. A `define` in a
+Scope. The names exist only inside the `let` body. A `var` in a
 function body is local to the function, as in Python, but a `let` can
 scope names to one calculation inside it.
 :::
@@ -97,7 +97,7 @@ def count_down(n):
 ```
 +++
 ```koskari
-define count-down [n]:
+def count-down [n]:
   let loop [[n n]]:
     when (> n 0):
       print n
@@ -128,9 +128,9 @@ def make_counter():
 ```
 +++
 ```koskari
-define make-counter []:
-  define count 0
-  define tick []:
+def make-counter []:
+  var count 0
+  def tick []:
     incr! count
     count
   tick
@@ -141,7 +141,7 @@ define make-counter []:
 Where is `nonlocal`?
 +++
 Not needed. `set!` and `incr!` store into the name they find, and the
-inner function finds the outer `count`. `global` and `local` exist for
+inner function finds the outer `count`. `var` and `global` exist for
 the cases where you want to say so explicitly.
 :::
 
@@ -158,10 +158,10 @@ value[0]   # 11
 ```
 +++
 ```koskari
-define bump [&n]:
+def bump [&n]:
   incr! n
 
-define value 10
+var value 10
 (bump &value)
 value   ; 11
 ```
@@ -193,7 +193,7 @@ import-from functools lru_cache
 
 @(lru_cache maxsize: None)
 @demand
-define fib [n]:
+def fib [n]:
   ...
 ```
 :::
@@ -238,11 +238,11 @@ around a Koskari lambda. See
 Save as `greet.ki`:
 
 ```koskari
-define greet [name greeting: "hello" punct: "!"]:
+def greet [name greeting: "hello" punct: "!"]:
   (+ greeting " " name punct)
 
 @entry-point
-define main []:
+def main []:
   print (greet "Ada")
   print (greet "Grace" greeting: "Hi" punct: ".")
 ```

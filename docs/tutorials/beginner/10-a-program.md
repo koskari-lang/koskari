@@ -19,15 +19,15 @@ loaded, when the file is run directly with `koskari`, and not when
 another file borrows its definitions:
 
 ```koskari
-define greet [name]:
+def greet [name]:
   print f"hello, {name}"
 
 @entry-point
-define main []:
+def main []:
   (greet "Ada")
 ```
 
-The `@` line sits over the `define` and marks it. Any name works;
+The `@` line sits over the `def` and marks it. Any name works;
 `main` is the custom.
 :::
 
@@ -70,12 +70,12 @@ Save this as `report.ki` and run `koskari report.ki`:
 ```koskari
 import-from statistics mean
 
-define scores #[72 88 95 61 88]
+var scores #[72 88 95 61 88]
 
-define average [numbers]:
+def average [numbers]:
   (round (mean numbers) 1)
 
-define grade [score]:
+def grade [score]:
   if (>= score 90):
     "A"
   elif (>= score 80):
@@ -85,13 +85,13 @@ define grade [score]:
   else:
     "D"
 
-define report [numbers]:
+def report [numbers]:
   for-each [score numbers]:
     print f"{score}: {(grade score)}"
   print f"average {(average numbers)}, best {(max numbers)}"
 
 @entry-point
-define main []:
+def main []:
   (report scores)
 ```
 :::
@@ -123,6 +123,6 @@ choice, a loop, and text, from the chapters before.
 What would you change first?
 +++
 The scores. Then the grade boundaries. Then add a line to `report` that
-counts how many scores are above the average, which needs a `define`
+counts how many scores are above the average, which needs a `var`
 before the loop and an `if` inside it.
 :::

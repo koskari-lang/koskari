@@ -11,7 +11,7 @@ program is `examples/fib.ki` in the repository.
 import-from functools [lru_cache as: memoize]
 
 
-define fib-recur [n]:
+def fib-recur [n]:
   if (< n 2):
     if (< n 1) 0 n
   else:
@@ -20,7 +20,7 @@ define fib-recur [n]:
 
 @(memoize maxsize: None)
 @demand
-define fib-recur-decorated [n]:
+def fib-recur-decorated [n]:
   if (< n 2):
     if (< n 1) 0 n
   else:
@@ -28,19 +28,19 @@ define fib-recur-decorated [n]:
 
 
 @let [[cache #{}]]
-define fib-recur-cached [n]:
+def fib-recur-cached [n]:
   if (in n cache):
     cache[n]
   elif (< n 2):
     if (< n 1) 0 n
   else:
-    define result (+ (fib-recur-cached (- n 1))
+    var result (+ (fib-recur-cached (- n 1))
                      (fib-recur-cached (- n 2)))
     set! cache[n] result
     result
 
 
-define fib-tail-recur [n]:
+def fib-tail-recur [n]:
   let inner [[n n] [v 0] [accu 1]]:
     if (< n 1):
       v
@@ -48,10 +48,10 @@ define fib-tail-recur [n]:
       inner (- n 1) accu (+ accu v)
 
 
-define fib-loop [n]:
-  define tmp 0
-  define v 0
-  define accu 1
+def fib-loop [n]:
+  var tmp 0
+  var v 0
+  var accu 1
   while (> n 0):
     decr! n
     set! tmp accu
@@ -61,7 +61,7 @@ define fib-loop [n]:
 
 
 @entry-point
-define main []:
+def main []:
   print "fib-recur:" (fib-recur 20)
   print "fib-recur-decorated:" (fib-recur-decorated 20)
   print "fib-recur-cached:" (fib-recur-cached 20)
@@ -72,7 +72,7 @@ define main []:
 `lru_cache` caches a returned value, so `fib-recur-decorated` stacks
 `@demand` under it: without that the decorator would cache coroutines.
 `@let` closes `fib-recur-cached` over one dict that outlives each call,
-which a `define` inside the body would not.
+which a `var` inside the body would not.
 
 ## Run
 
@@ -97,10 +97,10 @@ fib-loop: 6765
 | Name | Technique |
 |------|-----------|
 | `fib-recur` | Layout `if` / `else`, direct recursion |
-| `fib-recur-decorated` | `@(memoize ...)` and `@demand` stacked on `define` |
-| `fib-recur-cached` | `@let` over a `define`, `elif`, `set!` on a subscript |
+| `fib-recur-decorated` | `@(memoize ...)` and `@demand` stacked on `def` |
+| `fib-recur-cached` | `@let` over a `def`, `elif`, `set!` on a subscript |
 | `fib-tail-recur` | Named `let` loop, tail calls |
-| `fib-loop` | `while`, `decr!`, `incr!`, local `define` bindings |
+| `fib-loop` | `while`, `decr!`, `incr!`, local `var` bindings |
 
 ## See also
 

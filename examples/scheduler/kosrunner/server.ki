@@ -14,25 +14,28 @@
 
 import logging
 
+import-from dataclasses dataclass
+
 (use .job Config watch-task)
 
 
-define logger (logging.getLogger "kosrunner.server")
+var logger (logging.getLogger "kosrunner.server")
 
 
-define-dataclass ServerConfig [Config]:
+@dataclass
+class ServerConfig [Config]:
     """
     Shared shape for HTTP-server-backed configs (webhook, admin). The
     server is interned by host:port, so two of these sharing a port share
     one server; each mounts under its own prefix.
     """
 
-    define [host :: str] "0.0.0.0"
-    define [port :: int] 8080
-    define [prefix :: str] ""
+    var host :: str "0.0.0.0"
+    var port :: int 8080
+    var prefix :: str ""
 
 
-define normalize-prefix [prefix]:
+def normalize-prefix [prefix]:
     """
     Normalize a mount prefix to root-relative form: leading slash
     ensured, trailing slashes stripped, so "/" and "" both mean the
@@ -41,11 +44,11 @@ define normalize-prefix [prefix]:
     hostname.
     """
 
-    define p (.strip (or prefix "") "/")
+    var p (.strip (or prefix "") "/")
     (if p f"/{p}" "")
 
 
-define-class RequestContext []:
+class RequestContext []:
     """
     The request-context seam (Phase 5). A route handler sees only what it
     needs off the raw Request -- headers now, resolved identity later (R4/
@@ -54,11 +57,11 @@ define-class RequestContext []:
     caller's identity here) without reaching into every route again.
     """
 
-    define __init__ [self request]:
+    def __init__ [self request]:
         set! self.headers request.headers
         set! self.query request.query_params
 
-    define header [self name default: None]:
+    def header [self name default: None]:
         """
         Look up a request header (case-insensitive, via FastAPI's Headers),
         returning `default` when it is absent.
@@ -66,7 +69,7 @@ define-class RequestContext []:
 
         (self.headers.get name default)
 
-    define param [self name default: None]:
+    def param [self name default: None]:
         """
         Look up a query parameter (via FastAPI's QueryParams), returning
         `default` when it is absent.
@@ -75,7 +78,7 @@ define-class RequestContext []:
         (self.query.get name default)
 
 
-define-class HttpServer []:
+class HttpServer []:
     """
     A shared FastAPI/uvicorn server. It is interned by host:port (see
     get-server), so any jobs that resolve to the same host:port -- webhook
@@ -83,7 +86,7 @@ define-class HttpServer []:
     under its own prefix. The prefix lives on the route, not the server.
     """
 
-    define __init__ [self host port]:
+    def __init__ [self host port]:
         import fastapi
         set! self.host host
         set! self.port port
@@ -92,7 +95,7 @@ define-class HttpServer []:
         set! self._serve_task None
 
 
-    define add-route [self prefix name handler]:
+    def add-route [self prefix name handler]:
         """
         POST {prefix}/{name}; the parsed JSON body and a RequestContext
         are passed to handler. An HTTPException the handler raises (e.g. a
@@ -102,16 +105,16 @@ define-class HttpServer []:
         """
 
         import-from fastapi HTTPException Request
-        define path f"{prefix}/{name}"
+        var path f"{prefix}/{name}"
         (logger.info "route POST %s" path)
-        define app self.app
+        var app self.app
 
         @(app.post path)
         @coroutine-fn
-        define inner [[request :: Request]]:
-            define ctx (RequestContext request)
+        def inner [[request :: Request]]:
+            var ctx (RequestContext request)
             try:
-                define payload (request.json)
+                var payload (request.json)
                 (handler payload ctx)
             except [HTTPException]:
                 (raise)
@@ -119,41 +122,41 @@ define-class HttpServer []:
                 (logger.error "route failed: %s" path exc_info: True)
 
 
-    define add-listing [self prefix name handler]:
+    def add-listing [self prefix name handler]:
         """
         GET {prefix}/{name}; handler takes a RequestContext and returns
         data
         """
 
         import-from fastapi Request
-        define path f"{prefix}/{name}"
+        var path f"{prefix}/{name}"
         (logger.info "route GET %s" path)
-        define app self.app
+        var app self.app
 
         @(app.get path)
         @coroutine-fn
-        define inner [[request :: Request]]:
+        def inner [[request :: Request]]:
             (handler (RequestContext request))
 
 
-    define add-action [self prefix name handler]:
+    def add-action [self prefix name handler]:
         """
         POST {prefix}/{name}/{item}; the path item and a RequestContext
         are passed to handler
         """
 
         import-from fastapi Request
-        define path f"{prefix}/{name}/{{item}}"
+        var path f"{prefix}/{name}/{{item}}"
         (logger.info "route POST %s" path)
-        define app self.app
+        var app self.app
 
         @(app.post path)
         @coroutine-fn
-        define inner [item [request :: Request]]:
+        def inner [item [request :: Request]]:
             (handler item (RequestContext request))
 
 
-    define add-detail [self prefix name handler]:
+    def add-detail [self prefix name handler]:
         """
         GET {prefix}/{name}/{item}; the path item and a RequestContext are
         passed to handler, which returns the item's data (or None -> null
@@ -161,17 +164,17 @@ define-class HttpServer []:
         """
 
         import-from fastapi Request
-        define path f"{prefix}/{name}/{{item}}"
+        var path f"{prefix}/{name}/{{item}}"
         (logger.info "route GET %s" path)
-        define app self.app
+        var app self.app
 
         @(app.get path)
         @coroutine-fn
-        define inner [item [request :: Request]]:
+        def inner [item [request :: Request]]:
             (handler item (RequestContext request))
 
 
-    define add-page [self path handler]:
+    def add-page [self path handler]:
         """
         GET {path}; handler takes a RequestContext and returns a Response
         (HTML). Used by the UI variety to serve rendered pages.
@@ -179,32 +182,32 @@ define-class HttpServer []:
 
         import-from fastapi Request
         (logger.info "route GET %s (html)" path)
-        define app self.app
+        var app self.app
 
         @(app.get path)
         @coroutine-fn
-        define inner [[request :: Request]]:
+        def inner [[request :: Request]]:
             (handler (RequestContext request))
 
 
-    define add-page-item [self path handler]:
+    def add-page-item [self path handler]:
         """
         GET {path}/{item}; the path item and a RequestContext are passed
         to handler, which returns a Response (HTML).
         """
 
         import-from fastapi Request
-        define full f"{path}/{{item}}"
+        var full f"{path}/{{item}}"
         (logger.info "route GET %s (html)" full)
-        define app self.app
+        var app self.app
 
         @(app.get full)
         @coroutine-fn
-        define inner [item [request :: Request]]:
+        def inner [item [request :: Request]]:
             (handler item (RequestContext request))
 
 
-    define add-form [self path handler]:
+    def add-form [self path handler]:
         """
         POST {path}/{item} with an HTML form body; the path item, the
         form fields as a dict, and a RequestContext are passed to handler.
@@ -212,18 +215,18 @@ define-class HttpServer []:
         """
 
         import-from fastapi Request
-        define full f"{path}/{{item}}"
+        var full f"{path}/{{item}}"
         (logger.info "route POST %s (form)" full)
-        define app self.app
+        var app self.app
 
         @(app.post full)
         @coroutine-fn
-        define inner [item [request :: Request]]:
-            define form (dict (request.form))
+        def inner [item [request :: Request]]:
+            var form (dict (request.form))
             (handler item form (RequestContext request))
 
 
-    define start [self]:
+    def start [self]:
         when self._server:
             (return)
 
@@ -231,7 +234,7 @@ define-class HttpServer []:
 
         import-from uvicorn Config Server
 
-        define config (Config self.app
+        var config (Config self.app
             host: self.host
             port: self.port)
 
@@ -245,7 +248,7 @@ define-class HttpServer []:
             f"http server on {self.host}:{self.port}")
 
 
-    define stop [self]:
+    def stop [self]:
         when self._server:
             set! self._server.should_exit True   ; makes uvicorn's serve() return
             (self._server.shutdown)              ; graceful: drain in-flight requests
@@ -254,13 +257,13 @@ define-class HttpServer []:
 
 
 ;; one server per host:port, shared across every job that resolves there
-define _servers #{}
+var _servers #{}
 
 
-define get-server [config]:
-    define key f"{config.host}:{config.port}"
+def get-server [config]:
+    var key f"{config.host}:{config.port}"
 
-    define server (_servers.get key)
+    var server (_servers.get key)
     unless server:
         set! server (HttpServer config.host config.port)
         (set! (item _servers key) server)
@@ -268,7 +271,7 @@ define get-server [config]:
     server
 
 
-define stop-all-servers []:
+def stop-all-servers []:
     """
     Stop every interned server. Called at jobset teardown so the shared
     uvicorn serve() tasks return and the loop can drain and exit.

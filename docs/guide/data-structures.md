@@ -84,7 +84,7 @@ Quasiquote is the template form. A backtick quotes the structure and a
 comma evaluates one part inside it; `,@` splices a sequence:
 
 ```koskari
-define name "Ada"
+var name "Ada"
 `(hello ,name)          ;; (hello "Ada")
 `(1 ,@#[2 3] 4)         ;; (1 2 3 4)
 ```

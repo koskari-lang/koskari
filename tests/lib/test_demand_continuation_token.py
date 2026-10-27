@@ -36,13 +36,13 @@ pytestmark = pytest.mark.phase_lib
 SRC = """
 (define box #[None])
 
-(define capture (lambda [x]
-  (call/cc (lambda [k] (set! (item box 0) k) x))))
+(define [capture x]
+  (call/cc (lambda [k] (set! (item box 0) k) x)))
 
-(define apply_saved (lambda [x]
-  (call (item box 0) x)))
+(define [apply_saved x]
+  (call (item box 0) x))
 
-(define apply_via (lambda [f x] (f x)))
+(define [apply_via f x] (f x))
 """
 
 

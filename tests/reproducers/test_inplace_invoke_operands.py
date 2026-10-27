@@ -138,8 +138,8 @@ class TestCaptureInsideResumedSlice(SpecialsTestCase):
     async def test_reentry_replays_the_handler_remainder(self):
         src = """
         ((lambda []
-          (define st (call make_state))
-          (define r (reset
+          (var st (call make_state))
+          (var r (reset
                       (call add 100
                             (shift d (call add 1000 (call d 1)))
                             (call/cc (lambda [k] (call stash st k) 0)))))

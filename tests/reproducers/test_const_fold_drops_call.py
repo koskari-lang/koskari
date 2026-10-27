@@ -34,13 +34,13 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define calls #[])
-(define f (lambda [] (calls.append 1) None))
-(define d #{"k": "v"})
+(var calls #[])
+(def f [] (calls.append 1) None)
+(var d #{"k": "v"})
 
-(define op-result (+ (begin (f) 1) 2))
-(define list-result #[(begin (f) 1)])
-(define item-result (item d (begin (f) "k")))
+(var op-result (+ (begin (f) 1) 2))
+(var list-result #[(begin (f) 1)])
+(var item-result (item d (begin (f) "k")))
 """
 
 

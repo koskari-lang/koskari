@@ -21,7 +21,7 @@ to **`(call compile ...)`**. See [compile/compileq](../macros/compile-compileq.m
 **Examples:**
 
 ```koskari
-(call compile '(lambda [x] (+ x 1)) (locals))
+(call compile '(lambda [x] (+ x 1)) (vars))
 ```
 
 See also [evaluate](evaluate.md) to compile and run in one step.

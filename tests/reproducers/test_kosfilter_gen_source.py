@@ -40,36 +40,36 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import-from asyncio sleep
 
-define gen-plain []:
+def gen-plain []:
     yield 1
     yield 2
     yield 3
     yield 4
 
-define gen-await []:
+def gen-await []:
     (await (sleep 0.001))
     yield 10
     (await (sleep 0.001))
     yield 3
     yield 20
 
-define odd? [x]:
+def odd? [x]:
     (== 1 (% x 2))
 
-define big? [x]:
+def big? [x]:
     (await (sleep 0))
     (> x 5)
 
-define consume [it]:
-    define total 0
+def consume [it]:
+    var total 0
     for-each [v it]:
         set! total (+ total v)
     total
 
-define grab [x]:
+def grab [x]:
     (shift k x)
 
-define capture-attempt [m]:
+def capture-attempt [m]:
     (reset (consume m))
 """
 

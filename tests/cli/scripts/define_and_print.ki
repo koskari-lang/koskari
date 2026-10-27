@@ -1,7 +1,7 @@
 ;; Defines a binding and then prints a computed value.
 
-(define x 6)
-(define y 7)
+(var x 6)
+(var y 7)
 
 (print x y (* x y))
 

@@ -203,13 +203,13 @@ class TestSetItemShapes(SpecialsTestCase):
         # read: every row resolves it through the general deref
         src_str = """
         (let [[lst (#list 0 0 0 0)] [d (#dict (#tuple "k" 1))] [i 1] [v 5]]
-          (define f (lambda []
+          (define [f]
             (set-item lst i v) (set-item lst 2 v) (set-item lst 3 1)
             (inplace-item + lst i 1)
-            (define r (ref-item lst i))
-            (define t (take-item d "k"))
+            (var r (ref-item lst i))
+            (var t (take-item d "k"))
             (del-item lst 3)
-            (#tuple (item lst i) (r.deref) t)))
+            (#tuple (item lst i) (r.deref) t))
           (#tuple (f) lst d))
         """
         expr, mod = self.compile_expr(src_str)
@@ -332,11 +332,11 @@ class TestItemShapes(SpecialsTestCase):
     async def test_accesses_land(self):
         src_str = """
         (let [[lst (#list 10 20 30)] [d (#dict (#tuple "k" 1))] [i 1]]
-          (define f (lambda [o] (#tuple (item o i) (item lst (+ i 1)))))
-          (define fr (f lst))
-          (define r (ref-item lst (+ i 1)))
-          (define rv (r.deref))
-          (define t (take-item d "k"))
+          (define [f o] (#tuple (item o i) (item lst (+ i 1))))
+          (var fr (f lst))
+          (var r (ref-item lst (+ i 1)))
+          (var rv (r.deref))
+          (var t (take-item d "k"))
           (del-item lst i)
           (#tuple fr rv t lst d))
         """

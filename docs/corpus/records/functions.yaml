@@ -102,7 +102,7 @@ notes: shared helper_function pipeline with lambda
 ---
 id: function-define-shorthand-001
 feature: special/compile/define
-source: (begin (define double [x] (* x 2)) (double 5))
+source: (begin (define [double x] (* x 2)) (double 5))
 verify:
   eval: "10"
 references:
@@ -116,7 +116,7 @@ notes: lowers to compile/function
 ---
 id: function-define-fact-001
 feature: special/compile/define
-source: "(begin (define fact [n] (cond [(== n 0) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
+source: "(begin (define [fact n] (cond [(== n 0) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
 verify:
   eval: "120"
 references:
@@ -129,24 +129,26 @@ notes: requires eq mul sub at eval
 ---
 id: function-define-return-type-001
 feature: special/compile/define
-source: "(begin (define f :: int [x] (* x 2)) f)"
+source: "(begin (define f (function f :: int [x] (* x 2))) f)"
 verify:
   eval: "@annotations:return:int"
 references:
   - reference/specials/compile-define.md
+  - reference/specials/compile-function.md
 stability: evolving
 tags:
   - function
   - define
-notes: build step only — invoke in function-define-return-type-invoke-001
+notes: "a typed function value from compile/function carries its return type. build step only -- invoke in function-define-return-type-invoke-001"
 ---
 id: function-define-return-type-invoke-001
 feature: special/compile/define
-source: "(begin (define f :: int [x] (* x 2)) (f 5))"
+source: "(begin (define f (function f :: int [x] (* x 2))) (f 5))"
 verify:
   eval: "10"
 references:
   - reference/specials/compile-define.md
+  - reference/specials/compile-function.md
 stability: evolving
 tags:
   - function
@@ -155,7 +157,7 @@ notes: call step only — no compile annotation check on a value result
 ---
 id: function-define-global-shorthand-001
 feature: special/compile/define-global
-source: (begin (define-global bump [x] (+ x 1)) (bump 41))
+source: (begin (define-global [bump x] (+ x 1)) (bump 41))
 verify:
   eval: "42"
 references:
@@ -212,7 +214,7 @@ notes: zero placeholders
 ---
 id: function-compose-identity-001
 feature: macro/compile/function-compose
-source: (begin (define id [x] x) ((function-compose id) 42))
+source: (begin (def id [x] x) ((function-compose id) 42))
 verify:
   eval: "42"
 references:
@@ -228,7 +230,7 @@ notes: koskari/bootstrap/_functions.ki; requires builtins at expand
 ---
 id: function-compose-chain-001
 feature: macro/compile/function-compose
-source: (begin (define double [x] (* x 2)) (define add-one [x] (+ x 1)) ((function-compose add-one double) 5))
+source: (begin (def double [x] (* x 2)) (def add-one [x] (+ x 1)) ((function-compose add-one double) 5))
 verify:
   eval: "11"
 references:
@@ -258,50 +260,54 @@ notes: koskari/bootstrap/_functions.ki decorate [] fn; requires builtins at expa
 ---
 id: function-decorate-define-001
 feature: macro/compile/decorate
-source: (begin (decorate [] (define sq [x] (* x x))) (sq 4))
+source: (begin (decorate [] (def sq [x] (* x x))) (sq 4))
 verify:
   eval: "16"
 references:
   - reference/macros/compile-decorate.md
-  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
 stability: evolving
 tags:
   - function
   - macro
   - decorate
-notes: koskari/bootstrap/_functions.ki; define form wraps function shorthand
+notes: koskari/bootstrap/_functions.ki; def wraps the function shorthand
 ---
-id: function-define-coroutine-001
-feature: macro/compile/define-coroutine
-source: (define-coroutine idle [] 1)
+id: function-decorate-coroutine-fn-001
+feature: macro/compile/decorate
+source: (decorate [coroutine-fn] (def idle [] 1))
 verify:
-  expand: (define idle (coroutine-fn (function idle [] 1)))
+  expand: (var idle (decorate [coroutine-fn] (function idle [] 1)))
 references:
-  - reference/macros/compile-define-coroutine.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-coroutine
+  - decorate
+  - coroutine-fn
   - await
   - concurrency
-notes: koskari/bootstrap/_functions.ki; eval yields coroutine via coroutine-fn; requires builtins at expand
+notes: koskari/bootstrap/_decorator.ki; what @coroutine-fn above def reads to. decorate hoists the def name and binds the coroutine-fn wrapped function
 ---
-id: function-define-demanding-001
-feature: macro/compile/define-demanding
-source: (define-demanding sync-id [x] x)
+id: function-decorate-demand-001
+feature: macro/compile/decorate
+source: (decorate [demand] (def sync-id [x] x))
 verify:
-  expand: (define sync-id (demand (function sync-id [x] x)))
+  expand: (var sync-id (decorate [demand] (function sync-id [x] x)))
 references:
-  - reference/macros/compile-define-demanding.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-demanding
+  - decorate
+  - demand
   - await
   - concurrency
-notes: koskari/bootstrap/_functions.ki; demand wrapper for on-demand eval path
+notes: koskari/bootstrap/_decorator.ki; what @demand above def reads to. decorate hoists the def name and binds the demand wrapped function, which runs on the demand path when Python calls it
 ---
 id: function-yield-basic-001
 feature: special/compile/yield
@@ -413,81 +419,89 @@ tags:
   - concurrency
 notes: zero-arg form emits cooperative suspend; form value is None
 ---
-id: function-define-coroutine-param-002
-feature: macro/compile/define-coroutine
+id: function-decorate-coroutine-fn-param-002
+feature: macro/compile/decorate
 source: |-
-  (define-coroutine counter [n] n)
+  (decorate [coroutine-fn] (def counter [n] n))
   
 verify:
-  expand: (define counter (coroutine-fn (function counter (n) n)))
+  expand: (var counter (decorate [coroutine-fn] (function counter [n] n)))
 references:
-  - reference/macros/compile-define-coroutine.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-coroutine
+  - decorate
+  - coroutine-fn
   - await
   - concurrency
-notes: with a parameter; expands to coroutine-fn wrapping a function form with formals
+notes: with a parameter; decorate hoists the def name and wraps the function form, formals intact, in coroutine-fn
 ---
-id: function-define-demanding-eval-002
-feature: macro/compile/define-demanding
+id: function-decorate-demand-eval-002
+feature: macro/compile/decorate
 source: |-
-  (begin (define-demanding sync-id [x] x) (sync-id 42))
+  (begin (decorate [demand] (def sync-id [x] x)) (sync-id 42))
   
 verify:
-  read: (begin (define-demanding sync-id (x) x) (sync-id 42))
-  expand: (begin (define-demanding sync-id (x) x) (sync-id 42))
+  read: (begin (decorate [demand] (def sync-id [x] x)) (sync-id 42))
+  expand: (begin (decorate [demand] (def sync-id [x] x)) (sync-id 42))
   eval: "42"
 references:
-  - reference/macros/compile-define-demanding.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-demanding
+  - decorate
+  - demand
   - await
   - concurrency
 notes: demand-wrapped function; calling sync-id 42 returns 42 directly (sync-safe)
 ---
-id: function-define-demanding-two-param-003
-feature: macro/compile/define-demanding
+id: function-decorate-demand-two-param-003
+feature: macro/compile/decorate
 source: |-
-  (define-demanding add [x y] (+ x y))
+  (decorate [demand] (def add [x y] (+ x y)))
   
 verify:
-  expand: (define add (demand (function add (x y) (+ x y))))
+  expand: (var add (decorate [demand] (function add [x y] (+ x y))))
 references:
-  - reference/macros/compile-define-demanding.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-demanding
+  - decorate
+  - demand
   - await
   - concurrency
-notes: two-param form; expands to define with demand wrapper around function
+notes: two-param form; expands to var binding the demand-decorated function
 ---
-id: function-define-coroutine-type-003
-feature: macro/compile/define-coroutine
+id: function-decorate-coroutine-fn-type-003
+feature: macro/compile/decorate
 source: |-
-  (begin (define-coroutine gen [n] (yield n)) (str (type gen)))
+  (begin (decorate [coroutine-fn] (def gen [n] (yield n))) (str (type gen)))
   
 verify:
-  read: (begin (define-coroutine gen (n) (yield n)) (str (type gen)))
-  expand: (begin (define-coroutine gen (n) (yield n)) (str (type gen)))
+  read: (begin (decorate [coroutine-fn] (def gen [n] (yield n))) (str (type gen)))
+  expand: (begin (decorate [coroutine-fn] (def gen [n] (yield n))) (str (type gen)))
   eval: '"<class ''function''>"'
 references:
-  - reference/macros/compile-define-coroutine.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-coroutine
+  - decorate
+  - coroutine-fn
   - await
   - concurrency
-notes: define-coroutine binds a function slot; type check confirms it is a Python function wrapping coroutine-fn
+notes: "@coroutine-fn over def binds a native Python function (an async def wrapper), not a KosCallable; type check confirms it"
 ---
 id: function-named-two-param-003
 feature: special/compile/function
@@ -581,11 +595,11 @@ notes: decorate [] with two-arg lambda; [] reads as nil in printed form; result 
 id: function-compose-double-003
 feature: macro/compile/function-compose
 source: |-
-  (begin (define add-one [x] (+ x 1)) (define double [x] (* x 2)) ((function-compose double add-one) 3))
+  (begin (def add-one [x] (+ x 1)) (def double [x] (* x 2)) ((function-compose double add-one) 3))
   
 verify:
-  read: (begin (define add-one (x) (+ x 1)) (define double (x) (* x 2)) ((function-compose double add-one) 3))
-  expand: (begin (define add-one (x) (+ x 1)) (define double (x) (* x 2)) ((function-compose double add-one) 3))
+  read: (begin (def add-one (x) (+ x 1)) (def double (x) (* x 2)) ((function-compose double add-one) 3))
+  expand: (begin (def add-one (x) (+ x 1)) (def double (x) (* x 2)) ((function-compose double add-one) 3))
   eval: "8"
 references:
   - reference/macros/compile-function-compose.md
@@ -602,7 +616,7 @@ id: function-define-keyword-arg-default-001
 feature: special/compile/define
 source: |-
   begin:
-    define around [i reach: 1]:
+    define [around i reach: 1]:
       (range (- i reach) (+ i reach 1))
     (list (around 3))
   
@@ -621,7 +635,7 @@ id: function-define-keyword-arg-call-002
 feature: special/compile/define
 source: |-
   begin:
-    define around [i reach: 1]:
+    define [around i reach: 1]:
       (range (- i reach) (+ i reach 1))
     (list (around 3 reach: 2))
   
@@ -640,7 +654,7 @@ id: function-define-star-args-003
 feature: special/compile/define
 source: |-
   (begin
-    (define f [x *: rest] (len rest))
+    (define [f x *: rest] (len rest))
     (f 1 2 3 4))
   
 verify:
@@ -658,7 +672,7 @@ id: function-define-star-kwargs-004
 feature: special/compile/define
 source: |-
   (begin
-    (define f [**: kwargs] (len kwargs))
+    (define [f **: kwargs] (len kwargs))
     (f x: 1 y: 2))
   
 verify:
@@ -677,7 +691,7 @@ id: function-call-star-spread-001
 feature: special/compile/call
 source: |-
   (begin
-    (define f [x] x)
+    (def f [x] x)
     (f *: #[42]))
   
 verify:
@@ -726,10 +740,10 @@ notes: functools.partial is bound by default (KosPartial); (partial + 10) fixes 
 ---
 id: function-partial-import-multi-001
 feature: builtin/partial
-source: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+source: (begin (import-from functools partial) (var add3 (partial + 1 2)) (add3 4))
 verify:
-  read: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
-  expand: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+  read: (begin (import-from functools partial) (var add3 (partial + 1 2)) (add3 4))
+  expand: (begin (import-from functools partial) (var add3 (partial + 1 2)) (add3 4))
   eval: "7"
 stability: evolving
 tags:
@@ -804,7 +818,7 @@ source: |-
   
 verify:
   read: (labels [[fact [n] (if (== n 0) 1 (* n (fact (- n 1))))]] (fact 5))
-  expand: (let [] (define fact (function fact [n] (if (== n 0) 1 (* n (fact (- n 1)))))) (fact 5))
+  expand: (let [] (var fact (function fact [n] (if (== n 0) 1 (* n (fact (- n 1)))))) (fact 5))
   eval: "120"
 references:
   - reference/macros/compile-labels.md
@@ -930,7 +944,7 @@ id: function-decorate-let-private-state-001
 feature: layout/decorate
 source: |-
   @let [[count 0]]
-  define tick []:
+  def tick []:
     incr! count
     count
   
@@ -939,7 +953,7 @@ source: |-
   (tick)
   
 verify:
-  read: (begin (decorate ((let [[count 0]])) (define tick [] (incr! count) count)) (tick) (tick) (tick))
+  read: (begin (decorate ((let [[count 0]])) (def tick [] (incr! count) count)) (tick) (tick) (tick))
   eval: "3"
 references:
   - guide/decorators.md
@@ -955,7 +969,7 @@ tags:
   - closure
   - mutate
   - idiom
-notes: "graft arm: a body-less @let over a define completes the let with the definition as its body, so count is bound once at definition time, private to tick, and persists across calls. This is the idiom for private persistent state (caches, counters). Requires reader/decorators (baseline on)."
+notes: "graft arm: a body-less @let over a def completes the let with the definition as its body, so count is bound once at definition time, private to tick, and persists across calls. This is the idiom for private persistent state (caches, counters). Requires reader/decorators (baseline on)."
 ---
 id: function-decorate-subject-let-graft-001
 feature: macro/compile/decorate-subject
@@ -999,10 +1013,10 @@ notes: "default arm: a decorator expression with no registered shape evaluates a
 id: function-decorate-define-hoist-001
 feature: macro/compile/decorate
 source: |-
-  (decorate (demand) (define foo [x] x))
+  (decorate (demand) (def foo [x] x))
   
 verify:
-  expand: (define foo (decorate [demand] (function foo [x] x)))
+  expand: (var foo (decorate [demand] (function foo [x] x)))
 references:
   - reference/macros/compile-decorate.md
   - guide/decorators.md
@@ -1012,7 +1026,7 @@ tags:
   - macro
   - decorate
   - name-resolution
-notes: compile/decorate hoists the name out of a define subject so the function value is what gets decorated and the finished result is what gets bound; define-class is hoisted the same way.
+notes: compile/decorate hoists the name out of a def subject so the function value is what gets decorated and the finished result is what gets bound; a class subject is hoisted the same way.
 ---
 id: function-decorate-call-parameterize-001
 feature: layout/decorate
@@ -1020,13 +1034,13 @@ source: |-
   define-parameter verbose False
   
   @call-parameterize [[verbose True]]
-  define loud? []:
+  def loud? []:
     verbose
   
   #[(loud?) verbose]
   
 verify:
-  read: "(begin (define-parameter verbose False) (decorate ((call-parameterize [[verbose True]])) (define loud? [] verbose)) (#list (loud?) verbose))"
+  read: "(begin (define-parameter verbose False) (decorate ((call-parameterize [[verbose True]])) (def loud? [] verbose)) (#list (loud?) verbose))"
   eval: "list:[true,false]"
 references:
   - guide/decorators.md
@@ -1049,7 +1063,7 @@ source: |-
   (begin
     (define-parameter p False)
     (decorate ((call-parameterize [[p True]]))
-      (define f [] p))
+      (def f [] p))
     (f))
   
 verify:
@@ -1094,7 +1108,7 @@ source: |-
   
   @let [[total 0]]
   @call-parameterize [[scale 100]]
-  define add [n]:
+  def add [n]:
     set! total (+ total (* n scale))
     total
   
@@ -1102,7 +1116,7 @@ source: |-
   (add 2)
   
 verify:
-  read: (begin (define-parameter scale 10) (decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (define add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
+  read: (begin (define-parameter scale 10) (decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (def add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
   eval: "300"
 references:
   - guide/decorators.md
@@ -1124,11 +1138,11 @@ notes: "stacked decorators peel outermost first: @let grafts a definition-time p
 id: function-define-pass-body-001
 feature: special/compile/define
 source: |-
-  define foo []:
+  define [foo]:
       pass
   (foo)
 verify:
-  read: "(begin (define foo [] pass) (foo))"
+  read: "(begin (define [foo] pass) (foo))"
   eval: "null"
 references:
   - reference/specials/compile-define.md
@@ -1176,12 +1190,12 @@ id: function-identity-keyword-default-001
 feature: builtin/identity
 source: |-
   (begin
-    (define apply-to [x f: identity] (f x))
+    (def apply-to [x f: identity] (f x))
     (#list (apply-to 7) (apply-to 7 f: str)))
 verify:
   eval: list:[7,"7"]
 references:
-  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
 stability: evolving
 tags:
   - function
@@ -1272,10 +1286,10 @@ notes: 'repr reports the captured value, constantly(5)'
 id: function-decorate-subject-entry-point-001
 feature: macro/compile/decorate-subject
 source: |-
-  (begin (decorate [entry-point] (define main [] 0)) (is __entry__ main))
+  (begin (decorate [entry-point] (def main [] 0)) (is __entry__ main))
   
 verify:
-  read: (begin (decorate [entry-point] (define main [] 0)) (is __entry__ main))
+  read: (begin (decorate [entry-point] (def main [] 0)) (is __entry__ main))
   eval: "true"
 references:
   - reference/macros/compile-decorate-subject.md
@@ -1288,4 +1302,332 @@ tags:
   - entry-point
   - module-global
   - idiom
-notes: the entry-point arm binds the subject as the module's __entry__ and delivers it unchanged, so main and __entry__ are the same function; when the module runs as a program the launcher calls __entry__ with no arguments after the load completes, and its return value is the exit status (None 0, int itself, anything else printed to stderr with 1). In layout source the decorator is the line @entry-point above define main
+notes: the entry-point arm binds the subject as the module's __entry__ and delivers it unchanged, so main and __entry__ are the same function; when the module runs as a program the launcher calls __entry__ with no arguments after the load completes, and its return value is the exit status (None 0, int itself, anything else printed to stderr with 1). In layout source the decorator is the line @entry-point above def main
+---
+id: function-def-plain-001
+feature: macro/compile/def
+source: (begin (def double [x] (* x 2)) (double 21))
+verify:
+  eval: "42"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: def binds the function to its name in the current scope
+---
+id: function-def-expand-002
+feature: macro/compile/def
+source: (def double [x] (* x 2))
+verify:
+  read: (def double [x] (* x 2))
+  expand: (var double (function double [x] (* x 2)))
+references:
+  - reference/macros/compile-def.md
+  - reference/specials/compile-var.md
+  - reference/specials/compile-function.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: def lowers to var over a named function
+---
+id: function-def-block-003
+feature: macro/compile/def
+source: |-
+  def fact [n]:
+    if (<= n 1):
+      1
+    else:
+      * n (fact (- n 1))
+  
+  fact 5
+verify:
+  read: "(begin (def fact [n] (cond [(<= n 1) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
+  eval: "120"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+  - recursion
+  - surface:block
+notes: a recursive def calls itself through the binding def made
+---
+id: function-def-typed-004
+feature: macro/compile/def
+source: "(def half :: float [x] (/ x 2))"
+verify:
+  expand: "(var half (function half :: float [x] (/ x 2)))"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: "a :: TYPE after the name passes through to function as the return type"
+---
+id: function-def-typed-005
+feature: macro/compile/def
+source: "(begin (def half :: float [x] (/ x 2)) half)"
+verify:
+  eval: "@annotations:return:float"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: the return type lands in the function's __annotations__
+---
+id: function-def-decorated-006
+feature: layout/decorate
+source: |-
+  def plus-one [f]:
+    lambda [x]:
+      + (f x) 1
+  
+  @plus-one
+  def square [x]:
+    * x x
+  
+  square 4
+verify:
+  read: (begin (def plus-one [f] (lambda [x] (+ (f x) 1))) (decorate (plus-one) (def square [x] (* x x))) (square 4))
+  eval: "17"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-def.md
+  - guide/decorators.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - def
+  - surface:block
+notes: the decorated function is what def binds
+---
+id: function-def-decorate-expand-007
+feature: macro/compile/decorate
+source: (decorate [plus-one] (def square [x] (* x x)))
+verify:
+  expand: (var square (decorate [plus-one] (function square [x] (* x x))))
+references:
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - def
+notes: decorate hoists the def name so the decorated value is bound
+---
+id: function-def-decorated-global-008
+feature: layout/decorate
+source: |-
+  def plus-one [f]:
+    lambda [x]:
+      + (f x) 1
+  
+  def setup []:
+    @plus-one
+    global def cube [x]:
+      * x x x
+  
+  (setup)
+  cube 2
+verify:
+  read: (begin (def plus-one [f] (lambda [x] (+ (f x) 1))) (def setup [] (decorate (plus-one) (global def cube [x] (* x x x)))) (setup) (cube 2))
+  eval: "9"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-global.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - def
+  - global
+  - module-global
+  - surface:block
+notes: a decorator above global def binds the decorated function at the module
+---
+id: function-decorate-var-009
+feature: macro/compile/decorate
+source: (begin (def plus-one [f] (lambda [x] (+ (f x) 1))) (decorate [plus-one] (var g abs)) (g -3))
+verify:
+  eval: "4"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - var
+notes: decorate over var NAME VALUE decorates the value and binds the result
+---
+id: function-decorate-demand-block-004
+feature: layout/decorate
+source: |-
+  @demand
+  def sync-id [x]:
+    x
+  
+  (sync-id 42)
+verify:
+  read: (begin (decorate (demand) (def sync-id [x] x)) (sync-id 42))
+  eval: "42"
+references:
+  - guide/decorators.md
+  - guide/demand-async-and-defer.md
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - demand
+  - surface:block
+  - pragma:reader/decorators
+  - await
+  - idiom
+notes: "@demand above def defines a function a synchronous Python caller can call directly for its value. Requires reader/decorators (baseline on)."
+---
+id: function-define-scheme-paren-001
+feature: special/compile/define
+source: (begin (define (square x) (* x x)) (square 7))
+verify:
+  read: (begin (define (square x) (* x x)) (square 7))
+  eval: "49"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - surface:sexpr
+notes: "Scheme shape: any pair in the name position, ( ) or [ ], is NAME followed by its formals. The idiomatic Koskari spelling is (def square [x] (* x x))."
+---
+id: function-define-scheme-block-001
+feature: special/compile/define
+source: |-
+  define [hyp a b]:
+    var sq (+ (* a a) (* b b))
+    (** sq 0.5)
+  (hyp 3 4)
+verify:
+  read: (begin (define [hyp a b] (var sq (+ (* a a) (* b b))) (** sq 0.5)) (hyp 3 4))
+  eval: "5.0"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - surface:block
+notes: "layout: define [NAME ARGS...]: then the body. The idiomatic Koskari spelling is def hyp [a b]:"
+---
+id: function-define-global-from-body-001
+feature: special/compile/define-global
+source: |-
+  (begin
+    (define [install]
+      (define-global [helper x] (* x 10))
+      None)
+    (install)
+    (helper 4))
+verify:
+  read: (begin (define [install] (define-global [helper x] (* x 10)) None) (install) (helper 4))
+  eval: "40"
+references:
+  - reference/specials/compile-define-global.md
+stability: evolving
+tags:
+  - function
+  - define-global
+  - module-global
+notes: define-global binds helper at the module even though it runs inside install's body; helper is visible at top level once install has been called
+---
+id: function-decorate-scheme-define-001
+feature: macro/compile/decorate
+source: (decorate [twice] (define [inc x] (+ x 1)))
+verify:
+  expand: (var inc (decorate [twice] (function inc [x] (+ x 1))))
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - define
+notes: decorate hoists the name out of a Scheme define subject, so the function value is decorated and the result bound to inc
+---
+id: function-decorate-scheme-define-block-001
+feature: layout/decorate
+source: |-
+  define [twice f]:
+    (lambda [x] (* 2 (f x)))
+  
+  @twice
+  define [inc x]:
+    (+ x 1)
+  
+  (inc 4)
+verify:
+  read: (begin (define [twice f] (lambda [x] (* 2 (f x)))) (decorate (twice) (define [inc x] (+ x 1))) (inc 4))
+  eval: "10"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-define.md
+  - guide/decorators.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - define
+  - surface:block
+  - pragma:reader/decorators
+notes: inc is bound to (twice <function inc>), so (inc 4) is 2 * 5. Requires reader/decorators (baseline on).
+---
+id: function-define-typed-head-001
+feature: special/compile/define
+source: |-
+  (begin (define [(f :: int) x] (* x 2)) f)
+  
+verify:
+  eval: "@annotations:return:int"
+references:
+  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - define
+  - annotate
+notes: "the return type bundles with the name as a typed formal does; the inline (define f :: int [x] ...) matches no rule"
+---
+id: function-define-typed-head-invoke-001
+feature: special/compile/define
+source: |-
+  (begin (define [(f type: int) x] (* x 2)) (f 5))
+  
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - annotate
+notes: "type: is the keyword twin of :: in the bundled head"

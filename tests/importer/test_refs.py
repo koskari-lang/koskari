@@ -73,7 +73,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         &(item xs 0) is a ref to a list slot; deref reads that element
         """
 
-        src = "(begin (define xs #[1 2 3 4]) (deref &(item xs 0)))"
+        src = "(begin (var xs #[1 2 3 4]) (deref &(item xs 0)))"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 1)
 
@@ -83,7 +83,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         the ref store method writes through to the named binding
         """
 
-        src = "(begin (define v 10) (define r &v) (r.store 20) v)"
+        src = "(begin (var v 10) (var r &v) (r.store 20) v)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 20)
 
@@ -94,7 +94,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         untouched
         """
 
-        src = "(begin (define v 10) (define r &v) (set! r 99) v)"
+        src = "(begin (var v 10) (var r &v) (set! r 99) v)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 10)
 
@@ -104,7 +104,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         set! on a deref place writes through; unlike set! on the ref holder
         """
 
-        src = "(begin (define v 10) (define r &v) (set! (deref r) 20) v)"
+        src = "(begin (var v 10) (var r &v) (set! (deref r) 20) v)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 20)
 
@@ -114,7 +114,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         compile/deref in the set! place expands like bare deref
         """
 
-        src = "(begin (define v 10) (define r &v) (set! (deref r) 30) v)"
+        src = "(begin (var v 10) (var r &v) (set! (deref r) 30) v)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 30)
 
@@ -145,7 +145,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         bind! installs a ref as a name's storage; plain set! writes through
         """
 
-        src = "(begin (define total 5) (bind! a &total) (set! a 42) total)"
+        src = "(begin (var total 5) (bind! a &total) (set! a 42) total)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 42)
 
@@ -167,7 +167,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         """
 
         src = ("(begin (define xs #[1 2 3 4])"
-               " (define bump [&n] (set! n (+ n 1)))"
+               " (def bump [&n] (set! n (+ n 1)))"
                " (bump &(item xs 2)) (item xs 2))")
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 4)
@@ -178,7 +178,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         the guardrail: a by-ref formal refuses a plain value, naming the formal
         """
 
-        src = ("(begin (define bump [&n] (set! n (+ n 1)))"
+        src = ("(begin (def bump [&n] (set! n (+ n 1)))"
                " (bump 5))")
         expr, mod = self.compile_expr(src)
         with self.assertRaisesRegex(

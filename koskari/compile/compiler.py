@@ -719,16 +719,31 @@ class Compiler:
 
     @contextmanager
     def macro_overlay(self, name, syntax):
+        depth = len(self._macro_overlay)
+        self.scope_overlay(name, syntax)
+        try:
+            yield
+        finally:
+            # a scope_overlay made inside the extent goes with it
+            del self._macro_overlay[depth:]
+
+
+    def scope_overlay(self, name, syntax):
+        """
+        Overlay the macro namespace with one definition until the
+        innermost open resolution scope, or the enclosing macro_overlay
+        extent, closes
+
+        :param name: the binding spelling, compile/NAME
+        :param syntax: the Compiled object to resolve it to
+        """
+
         if self._macro_overlay:
             dfns = dict(self._macro_overlay[-1])
             dfns[str(name)] = syntax
         else:
             dfns = {str(name): syntax}
         self._macro_overlay.append(dfns)
-        try:
-            yield
-        finally:
-            self._macro_overlay.pop()
 
 
     @contextmanager
@@ -738,13 +753,14 @@ class Compiler:
         definitions.
         """
 
+        depth = len(self._macro_overlay)
         if self._macro_overlay:
             dfns = dict(self._macro_overlay[-1], **dfns)
         self._macro_overlay.append(dfns)
         try:
             yield
         finally:
-            self._macro_overlay.pop()
+            del self._macro_overlay[depth:]
 
 
     @contextmanager
@@ -759,6 +775,7 @@ class Compiler:
             scope a Code is built from
         """
 
+        overlay_depth = len(self._macro_overlay)
         reso = self._resolution_instance
         if reso is not None:
             reso.enter_scope()
@@ -775,6 +792,8 @@ class Compiler:
             self.scope_depth -= 1
             if reso is not None:
                 reso.exit_scope()
+            # a syntax the body defined is scoped to the body
+            del self._macro_overlay[overlay_depth:]
 
 
     def _find_compiled(self, name):

@@ -6,75 +6,75 @@
 ;; then floats, then ints again.
 
 
-define count_up [n step]:
-    define total 0
-    define i 0
+def count_up [n step]:
+    var total 0
+    var i 0
     while (< i n):
         incr! total step
         incr! i
     total
 
 
-define count_down [n]:
-    define i n
-    define seen 0
+def count_down [n]:
+    var i n
+    var seen 0
     while (> i 0):
         decr! i
         incr! seen
     seen
 
 
-define closure_counter [n]:
-    define total 0
-    define bump [step]:
+def closure_counter [n]:
+    var total 0
+    def bump [step]:
         incr! total step
     for-each [i (range n)]:
         bump i
     total
 
 
-define item_accumulate [n]:
-    define cells #[0 0]
+def item_accumulate [n]:
+    var cells #[0 0]
     for-each [i (range n)]:
         incr! cells[0] i
         incr! cells[1] 2
     cells
 
 
-define mixed_site [values]:
-    define total 0
+def mixed_site [values]:
+    var total 0
     for-each [v values]:
         incr! total v
     total
 
 
-define unbound_after [flag]:
+def unbound_after [flag]:
     when flag:
-        define i 10
+        var i 10
     incr! i
     i
 
 
-define masked_accumulate [n]:
-    define acc 1
+def masked_accumulate [n]:
+    var acc 1
     for-each [i (range n)]:
         set! acc (& (* acc 3) 0xffffffff)
         incr! acc i
     acc
 
 
-define closure_float [n]:
-    define total 0.5
-    define bump [step]:
+def closure_float [n]:
+    var total 0.5
+    def bump [step]:
         incr! total step
     for-each [i (range n)]:
         bump (* i 0.25)
     total
 
 
-define closure_repeat [n]:
-    define total 1000
-    define bump []:
+def closure_repeat [n]:
+    var total 1000
+    def bump []:
         incr! total 1
         decr! total 3
     for-each [i (range n)]:
@@ -82,19 +82,19 @@ define closure_repeat [n]:
     total
 
 
-define constant_incr [seed step]:
+def constant_incr [seed step]:
     bind! k (constant (+ seed seed))
     incr! k step
     k
 
 
-define constant_incr_by_one [seed]:
+def constant_incr_by_one [seed]:
     bind! k (constant (+ seed seed))
     incr! k
     k
 
 
-define constant_value_survives [seed step]:
+def constant_value_survives [seed step]:
     bind! k (constant (+ seed seed))
     try:
         incr! k step

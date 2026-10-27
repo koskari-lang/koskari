@@ -35,7 +35,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define-syntax sr-guard:
+syntax sr-guard:
   syntax-rules []:
     sr-guard test body ...:
       if test:
@@ -43,7 +43,7 @@ define-syntax sr-guard:
       else:
         (begin body ...)
 
-define-syntax mr-guard:
+syntax mr-guard:
   macro-rules []:
     mr-guard test body ...:
       if test.datum:
@@ -51,26 +51,26 @@ define-syntax mr-guard:
       else:
         `(begin ,@body)
 
-define-syntax bare-guard:
+syntax bare-guard:
   bare-syntax me:
     if False:
       None
     else:
       "ran"
 
-define sr-false []:
+def sr-false []:
   (sr-guard False "ran")
 
-define sr-true []:
+def sr-true []:
   (sr-guard True "ran")
 
-define mr-false []:
+def mr-false []:
   (mr-guard False "ran")
 
-define mr-true []:
+def mr-true []:
   (mr-guard True "ran")
 
-define bare-false []:
+def bare-false []:
   bare-guard
 """
 

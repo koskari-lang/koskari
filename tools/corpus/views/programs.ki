@@ -32,19 +32,18 @@ applies to the ``content`` column here.
 
 import-from pathlib Path
 
-import-from tools.corpus.views._material:
-    ki_title_summary
-    markdown_title_summary
-    rewrite_markdown_links
+(import-from tools.corpus.views._material ki_title_summary
+  markdown_title_summary
+  rewrite_markdown_links)
 
 
-define VIEW_NAME "koskari-programs"
+var VIEW_NAME "koskari-programs"
 
-define _INCLUDE_SUFFIXES #(".ki")
-define _INCLUDE_NAMES #("README.md")
+var _INCLUDE_SUFFIXES #(".ki")
+var _INCLUDE_NAMES #("README.md")
 
 
-define _is_build_artifact [rel_parts]:
+def _is_build_artifact [rel_parts]:
     """
     Return True when a path passes through a build output directory
 
@@ -55,7 +54,7 @@ define _is_build_artifact [rel_parts]:
     return (in? "build" rel_parts)
 
 
-define _section [rel_parts]:
+def _section [rel_parts]:
     """
     Return the example group for a repo-relative path
 
@@ -68,7 +67,7 @@ define _section [rel_parts]:
     return rel_parts[0]
 
 
-define _included [path]:
+def _included [path]:
     """
     Return True when a file should be published as a program row
 
@@ -81,7 +80,7 @@ define _included [path]:
 
 
 @demand
-define generate [root provenance]:
+def generate [root provenance]:
     """
     Build koskari-programs rows from files under examples/
 
@@ -90,10 +89,10 @@ define generate [root provenance]:
     :return: list of row dicts sorted by path
     """
 
-    define root_path (Path root)
-    define examples_dir (root_path.joinpath "examples")
+    var root_path (Path root)
+    var examples_dir (root_path.joinpath "examples")
 
-    define rows #[]
+    var rows #[]
     unless (examples_dir.is_dir):
         return rows
 
@@ -103,22 +102,22 @@ define generate [root provenance]:
 
         ; Bound rather than written (.parts ...): parts is a property, and
         ; the leading-dot form would call the tuple it returns.
-        define relative (path.relative_to root_path)
-        define rel_parts relative.parts
+        var relative (path.relative_to root_path)
+        var rel_parts relative.parts
         when (_is_build_artifact rel_parts):
             (continue)
 
-        define text (path.read_text encoding: "utf-8")
-        define rel_path (relative.as_posix)
-        define title None
-        define summary None
+        var text (path.read_text encoding: "utf-8")
+        var rel_path (relative.as_posix)
+        var title None
+        var summary None
         if (== path.suffix ".ki"):
-            define-values [kt ks] (ki_title_summary text path.stem)
+            var [kt ks] (ki_title_summary text path.stem)
             set! title kt
             set! summary ks
         else:
             set! text (rewrite_markdown_links text rel_path)
-            define-values [mt ms] (markdown_title_summary text)
+            var [mt ms] (markdown_title_summary text)
             set! title (or mt path.stem)
             set! summary ms
 

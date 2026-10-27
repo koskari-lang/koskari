@@ -14,6 +14,7 @@
 import inspect
 import logging
 
+import-from dataclasses dataclass
 import-from fastapi HTTPException
 import-from hmac compare_digest
 
@@ -21,14 +22,15 @@ import-from hmac compare_digest
 (use .server get-server normalize-prefix ServerConfig)
 
 
-define logger (logging.getLogger "kosrunner.webhook")
+var logger (logging.getLogger "kosrunner.webhook")
 
 ;; The machine-door secret rides in a header, keeping it out of URLs and
 ;; access logs (the R1 choice among header / path / query).
-define TOKEN-HEADER "X-Kosrunner-Token"
+var TOKEN-HEADER "X-Kosrunner-Token"
 
 
-define-dataclass WebhookConfig [ServerConfig]:
+@dataclass
+class WebhookConfig [ServerConfig]:
     """
     Config for a webhook route's shared server (host, port, prefix). An
     optional `token` enables the machine-door guard: when set, a caller
@@ -42,11 +44,11 @@ define-dataclass WebhookConfig [ServerConfig]:
     run id the handle the admin/ui read surface polls.
     """
 
-    define [token :: str] None
-    define [wait :: bool] True
+    var token :: str None
+    var wait :: bool True
 
 
-define derive-input-spec [fn]:
+def derive-input-spec [fn]:
     """
     Read a handler's input spec off its own typed formals: each annotated
     parameter (`[ref :: str]`, `[force :: bool value: False]`) becomes a
@@ -55,8 +57,8 @@ define derive-input-spec [fn]:
     the raw payload as today.
     """
 
-    define spec #{}
-    define sig (inspect.signature fn)
+    var spec #{}
+    var sig (inspect.signature fn)
     for-each [[name param] (sig.parameters.items)]:
         unless (== param.annotation inspect.Parameter.empty):
             if (== param.default inspect.Parameter.empty):
@@ -67,7 +69,7 @@ define derive-input-spec [fn]:
     (or spec None)
 
 
-define coerce-input [spec payload]:
+def coerce-input [spec payload]:
     """
     Validate and coerce a POSTed JSON payload against an input spec,
     returning the named args for the handler. The spec maps name -> type
@@ -75,7 +77,7 @@ define coerce-input [spec payload]:
     required keys, and uncoercible values raise a 400.
     """
 
-    define bad [msg]:
+    def bad [msg]:
         (raise (HTTPException status_code: 400 detail: msg))
 
     unless (instance? payload dict):
@@ -85,13 +87,13 @@ define coerce-input [spec payload]:
         unless (in? key spec):
             (bad f"unknown input: {key}")
 
-    define kwargs #{}
+    var kwargs #{}
     for-each [[name typ] (spec.items)]:
-        define-values [t default required] (if (instance? typ tuple)
+        var [t default required] (if (instance? typ tuple)
             (values (item typ 0) (item typ 1) False)
             (values typ None True))
         if (in? name payload):
-            define val (item payload name)
+            var val (item payload name)
             if (instance? val t):
                 (set! (item kwargs name) val)
             else:
@@ -106,20 +108,20 @@ define coerce-input [spec payload]:
     kwargs
 
 
-define-class WebhookJob [Job]:
+class WebhookJob [Job]:
     """
     An inbound HTTP route; its name is the route path segment
     """
 
-    define config-class WebhookConfig
+    var config-class WebhookConfig
 
-    define __init__ [self route]:
+    def __init__ [self route]:
         (Job.__init__ self)
         set! self.route route
         set! self.input_spec None
 
 
-    define handler [self fn]:
+    def handler [self fn]:
         """
         The inherited code sub-item, plus the webhook's input contract:
         the handler's own typed formals ARE the input spec. Setting the
@@ -132,14 +134,14 @@ define-class WebhookJob [Job]:
         self
 
 
-    define trigger-spec [self]:
+    def trigger-spec [self]:
         ;; the typed formals ARE the manual-trigger fields; an untyped
         ;; webhook is not manually triggerable (the UI cannot invent its
         ;; payload -- replay a past run instead)
         self.input_spec
 
 
-    define check-token [self ctx]:
+    def check-token [self ctx]:
         """
         Enforce the per-webhook token when one is configured: the caller
         must present it in TOKEN-HEADER, compared in constant time. Raises
@@ -148,15 +150,15 @@ define-class WebhookJob [Job]:
         a rejected call leaves no run behind.
         """
 
-        define want self.config.token
+        var want self.config.token
         when want:
-            define got (ctx.header TOKEN-HEADER)
+            var got (ctx.header TOKEN-HEADER)
             unless (and got (compare_digest got want)):
                 raise (HTTPException status_code: 401
                     detail: "invalid or missing webhook token")
 
 
-    define dispatch [self payload ctx]:
+    def dispatch [self payload ctx]:
         """
         The route-boundary entry mounted by `start`: guard the door,
         coerce the payload when an input spec is declared, then fire the
@@ -168,11 +170,11 @@ define-class WebhookJob [Job]:
         if (None? self.input_spec):
             (self.run payload cause: "webhook" wait: self.config.wait)
         else:
-            define kwargs (coerce-input self.input_spec payload)
+            var kwargs (coerce-input self.input_spec payload)
             (self.run **: kwargs cause: "webhook" wait: self.config.wait)
 
 
-    define read-run [self runid ctx]:
+    def read-run [self runid ctx]:
         """
         The `GET {prefix}/{route}/{runid}` read-back -- the other half of an
         async webhook's `{run_id, status}` receipt. It is mounted on the
@@ -188,17 +190,17 @@ define-class WebhookJob [Job]:
 
         (self.check-token ctx)
 
-        define store (if self.jobset self.jobset.store None)
-        define detail (if store (store.run-detail runid) None)
+        var store (if self.jobset self.jobset.store None)
+        var detail (if store (store.run-detail runid) None)
         unless (and detail (== (item detail "job") self.name)):
             raise (HTTPException status_code: 404 detail: "no such run")
         detail
 
 
-    define start [self]:
+    def start [self]:
         set! self.running True
-        define server (get-server self.config)
-        define prefix (normalize-prefix self.config.prefix)
+        var server (get-server self.config)
+        var prefix (normalize-prefix self.config.prefix)
         ;; dispatch guards the token at the boundary, then routes through
         ;; Job.run so each accepted request is a tracked run whose return
         ;; value flows back as the HTTP response
@@ -209,31 +211,31 @@ define-class WebhookJob [Job]:
         (server.start)
 
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
 
 
-define-syntax config/webhook:
+syntax config/webhook:
     syntax-rules []:
         case (config/webhook () setting ...):
             (begin
-                (define -'default/webhook)
+                (var -'default/webhook)
                 (unless &-'default/webhook
                     (set! -'default/webhook (WebhookConfig setting ...))))
         case (config/webhook nm setting ...):
             (begin
-                (define nm (WebhookConfig setting ...))
-                (define -'default/webhook)
+                (var nm (WebhookConfig setting ...))
+                (var -'default/webhook)
                 (unless &-'default/webhook (set! -'default/webhook nm)))
 
 
 ;; `job webhook <name>:` -- no trigger key; the name is the route.
-define-syntax job/webhook:
+syntax job/webhook:
     syntax-rules []:
         case (job/webhook name (subhead subrest ...) ...):
             (begin
-                (define name (WebhookJob 'name))
-                (define -'default/webhook)
+                (var name (WebhookJob 'name))
+                (var -'default/webhook)
                 (if &-'default/webhook
                     (.configure name via: -'default/webhook)
                     (.configure name))

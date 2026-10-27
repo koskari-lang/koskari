@@ -12,40 +12,40 @@
 (import-from koskari.lib defer demand)
 
 
-(define step [n]
+(def step [n]
   (if (> n 0)
       (+ 1 ((partial step) (- n 1)))
       0))
 
 
-(define via_partial [n]
+(def via_partial [n]
   (step n))
 
 
-(define defer-step [n]
+(def defer-step [n]
   (if (> n 0)
       (+ 1 (await (defer defer-step (- n 1))))
       0))
 
 
-(define via_defer [n]
+(def via_defer [n]
   (defer-step n))
 
 
-(define add [a b]
+(def add [a b]
   (+ a b))
 
 
-(define await_object [c]
+(def await_object [c]
   (await c))
 
 
-(define sleeper []
+(def sleeper []
   (sleep 0)
   "woke")
 
 
-(define demand_over_partial []
+(def demand_over_partial []
   ((demand sleeper_partial)))
 
 

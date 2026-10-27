@@ -36,11 +36,11 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define probe [m subject]:
+def probe [m subject]:
   (m subject)
 
-define hit (probe matcher #(7))
-define miss (probe matcher #("s"))
+var hit (probe matcher #(7))
+var miss (probe matcher #("s"))
 """
 
 

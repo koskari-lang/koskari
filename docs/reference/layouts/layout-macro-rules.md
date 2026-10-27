@@ -2,7 +2,7 @@
 **Symbol:** `layout/macro-rules`
 
 **Use-case:** Block syntax for the `macro-rules` transformer within a
-`define-syntax` block. Same surface as `layout/syntax-rules` (literals list and
+`syntax` block. Same surface as `layout/syntax-rules` (literals list and
 indented rules); lowers to
 `(macro-rules [NAME] (LIT ...) (PATTERN BODY) ...)`. The rule body is a
 procedural macro body rather than a template, and nested layout blocks
@@ -21,9 +21,9 @@ header that is a lone parenthesized form, `(complex pat):`, raises
 
 **Named header:** `macro-rules NAME [LIT ...]:` puts NAME in the emitted
 form, which is where the transformer takes its identity for help text and
-match errors. `define-syntax` and `extend-syntax` supply that name
+match errors. `syntax` and `extend-syntax` supply that name
 themselves, so the named header belongs to a transformer bound directly,
-as `define compile/NAME:`.
+as `var compile/NAME:`.
 
 **Syntax:**
 
@@ -50,7 +50,7 @@ macro-rules [x]:
 ```
 
 ```koskari
-define compile/twice:
+var compile/twice:
   macro-rules twice []:
     case (twice x):
       `(begin ,x ,x)

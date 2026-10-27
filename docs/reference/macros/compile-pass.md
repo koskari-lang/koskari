@@ -17,7 +17,7 @@ None
 ```
 
 ```koskari
->>> define try-it []:
+>>> def try-it []:
 ...   try:
 ...     (raise (ValueError "x"))
 ...   except [ValueError]:

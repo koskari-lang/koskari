@@ -109,8 +109,8 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define add-a [a &result] (set! result (+ a 1)))
-          (define value 100)
+          (def add-a [a &result] (set! result (+ a 1)))
+          (var value 100)
           (add-a value &value)
           value)
         """
@@ -148,8 +148,8 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define fill [&out: 99] out)
-          (define mine)
+          (def fill [&out: 99] out)
+          (var mine)
           (fill out: &mine)
           mine)
         """
@@ -164,7 +164,7 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define fill [[out byref: True value: 99]] out)
+          (def fill [[out byref: True value: 99]] out)
           (fill))
         """
         expr, mod = self.compile_expr(src)
@@ -178,8 +178,8 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define fill [[out byref: True value: 99]] out)
-          (define mine)
+          (def fill [[out byref: True value: 99]] out)
+          (var mine)
           (fill &mine)
           mine)
         """
@@ -195,7 +195,7 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define add-a [a &result] (set! result (+ a 1)))
+          (def add-a [a &result] (set! result (+ a 1)))
           (add-a 1 2))
         """
         expr, mod = self.compile_expr(src)
@@ -212,7 +212,7 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define fill [&out: 99] out)
+          (def fill [&out: 99] out)
           (fill out: 7))
         """
         expr, mod = self.compile_expr(src)

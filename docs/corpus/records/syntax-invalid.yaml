@@ -44,7 +44,7 @@ notes: "corrective: define the macro in its own module or an earlier top-level u
 id: layout-split-value-next-line-invalid-001
 feature: reader/layout
 source: |-
-  define-values [a b]
+  var [a b]
       (values 1 2)
   
 verify:
@@ -60,16 +60,16 @@ tags:
   - "surface:block"
   - invalid
   - pitfall
-notes: "in layout, a line without a trailing colon is complete, so an indented line beneath it continues nothing; a top-level line must start at column 0, and the deeper `(values 1 2)` is a reader error under the default reader/indent pragma. corrective (either): `define-values [a b] (values` + newline + indented `1 2)`, since an open paren continues across lines; or `define-values [a b]:` + newline + indented `values 1 2`. Sibling of layout-bare-multiline-define-invalid-001."
+notes: "in layout, a line without a trailing colon is complete, so an indented line beneath it continues nothing; a top-level line must start at column 0, and the deeper `(values 1 2)` is a reader error under the default reader/indent pragma. corrective (either): `var [a b] (values` + newline + indented `1 2)`, since an open paren continues across lines; or `var [a b]:` + newline + indented `values 1 2`. Sibling of layout-bare-multiline-define-invalid-001."
 ---
 id: reader-dot-attr-python-call-parens-invalid-001
 feature: reader/dot-attr
 source: |-
-  (define d (dict a: 1))
+  (var d (dict a: 1))
   (d.keys())
   
 verify:
-  read: "(begin (define d (dict a: 1)) ((attr d keys) ()))"
+  read: "(begin (var d (dict a: 1)) ((attr d keys) ()))"
   invalid: "python call syntax does not carry over. the dot reads the attribute and the ENCLOSING parens are the call, so d.keys() is not a no-argument call -- the trailing () is a second, empty list passed as an argument, giving ((attr d keys) ()) and TypeError: dict.keys() takes no arguments (1 given). the same mistake is silent when the method tolerates an argument."
 references:
   - reference/specials/compile-call-attr.md
@@ -217,10 +217,10 @@ notes: "corrective: indent the continuation, any amount will do -- even less tha
 id: reader-dot-attr-chained-call-invalid-001
 feature: reader/dot-attr
 source: |-
-  (begin (define x "  AB  ") (x.strip.lower))
+  (begin (var x "  AB  ") (x.strip.lower))
   
 verify:
-  read: (begin (define x "  AB  ") ((attr (attr x strip) lower)))
+  read: (begin (var x "  AB  ") ((attr (attr x strip) lower)))
   invalid: "a dot with no enclosing parens is an attribute read, never a call; x.strip.lower reads as (attr (attr x strip) lower), an attribute lookup for 'lower' on the unbound strip method object, and fails at runtime with AttributeError: 'builtin_function_or_method' object has no attribute 'lower'"
 references:
   - reference/grammar.md
@@ -232,7 +232,7 @@ tags:
   - python-interop
   - invalid
   - pitfall
-notes: "corrective: (begin (define x \"  AB  \") ((x.strip).lower))"
+notes: "corrective: (begin (var x \"  AB  \") ((x.strip).lower))"
 ---
 id: reader-f-string-combined-prefix-invalid-006
 feature: reader/f-string
@@ -315,7 +315,7 @@ tags:
   - invalid
   - surprising
   - pitfall
-notes: "corrective: bind a spec string and use the two-expression slot, (begin (define rules \"04d\") f\"{42 rules}\"). see reader-f-string-legacy-dynamic-spec-011"
+notes: "corrective: bind a spec string and use the two-expression slot, (begin (var rules \"04d\") f\"{42 rules}\"). see reader-f-string-legacy-dynamic-spec-011"
 ---
 id: reader-f-string-single-quote-invalid-007
 feature: reader/f-string
@@ -371,3 +371,20 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: a:: on its own line, then the if block indented beneath it, which reads as a: (begin (cond ...)). Peers such as else pair only with a block head that starts its line, so a peer-gathering head cannot follow a keyword on the same header line."
+---
+id: syntax-syntax-body-scope-invalid-001
+feature: macro/compile/syntax
+source: (begin (def f [n] (syntax twice (syntax-rules [] [(twice x) (* 2 x)])) n) (twice 5))
+verify:
+  read: (begin (def f [n] (syntax twice (syntax-rules [] [(twice x) (* 2 x)])) n) (twice 5))
+  invalid: "a syntax inside a function body applies to the rest of that body only; after the body closes twice is not defined, so (twice 5) compiles as a call to an unbound name and fails at eval with NameError: No such reference: twice"
+references:
+  - reference/macros/compile-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - invalid
+  - surprising
+  - metaprogramming
+  - pitfall
+notes: "corrective: put the syntax at module top level, or write global syntax twice inside the body and call f before twice is used"

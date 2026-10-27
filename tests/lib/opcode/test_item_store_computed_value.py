@@ -34,15 +34,15 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define store_into_list (lambda [obj lst]
+(define [store_into_list obj lst]
   (bind! v (attr obj fresh))
   (set! (item lst 0) v)
-  lst))
+  lst)
 
-(define store_into_dict (lambda [obj d]
+(define [store_into_dict obj d]
   (bind! v (attr obj fresh))
   (set! (item d "k") v)
-  d))
+  d)
 """
 
 

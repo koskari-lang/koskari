@@ -51,7 +51,7 @@ notes: "agent mistake: [x 1] is one binding pair (x . 1) not a list of pairs; co
 id: functions-bare-multiline-call-kwarg-invalid-001
 feature: reader/layout
 source: |-
-  define run []:
+  def run []:
     compile_file src dest
       source_filename: name
     return 0
@@ -97,7 +97,7 @@ notes: "flet initializers evaluate in the enclosing scope, so a's body cannot se
 id: layout-bare-multiline-define-invalid-001
 feature: reader/layout
 source: |-
-  define x
+  var x
       (+ 1 2)
 verify:
   error: "ReaderSyntaxError: unexpected indent"
@@ -113,7 +113,7 @@ tags:
   - "surface:block"
   - invalid
   - pitfall
-notes: "a bare (unparenthesized) define or set! does NOT continue onto a more-indented next line: `define x` is complete as (define x), and a top-level line must start at column 0, so the indented `(+ 1 2)` is a reader error under the default reader/indent pragma. corrective: parenthesize the whole form -- (define x (+ 1 2)) -- or end the header with a colon, `define x:` with `+ 1 2` indented beneath it."
+notes: "a bare (unparenthesized) var or set! does NOT continue onto a more-indented next line: `var x` is complete as (var x), and a top-level line must start at column 0, so the indented `(+ 1 2)` is a reader error under the default reader/indent pragma. corrective: parenthesize the whole form -- (var x (+ 1 2)) -- or end the header with a colon, `var x:` with `+ 1 2` indented beneath it."
 ---
 id: function-decorate-parameterize-timing-001
 feature: layout/decorate
@@ -121,14 +121,14 @@ source: |-
   define-parameter verbose False
   
   @parameterize [[verbose True]]
-  define loud? []:
+  def loud? []:
     verbose
   
   (loud?)
   
 verify:
-  read: (begin (define-parameter verbose False) (decorate ((parameterize [[verbose True]])) (define loud? [] verbose)) (loud?))
-  invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the define itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
+  read: (begin (define-parameter verbose False) (decorate ((parameterize [[verbose True]])) (def loud? [] verbose)) (loud?))
+  invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the def itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
 references:
   - guide/decorators.md
   - reference/macros/compile-decorate-subject.md
@@ -143,12 +143,12 @@ tags:
   - invalid
   - surprising
   - pitfall
-notes: "corrective: @call-parameterize [[verbose True]] enters the extent per invocation, which is almost always what a grafted with/parameterize over a define was trying to say. Requires reader/decorators (baseline on)."
+notes: "corrective: @call-parameterize [[verbose True]] enters the extent per invocation, which is almost always what a grafted with/parameterize over a def was trying to say. Requires reader/decorators (baseline on)."
 ---
 id: function-define-percall-state-001
 feature: special/compile/define
 source: |-
-  define tick []:
+  define [tick]:
     define count 0
     incr! count
     count
@@ -156,7 +156,7 @@ source: |-
   #[(tick) (tick)]
   
 verify:
-  read: "(begin (define tick [] (define count 0) (incr! count) count) (#list (tick) (tick)))"
+  read: "(begin (define [tick] (define count 0) (incr! count) count) (#list (tick) (tick)))"
   invalid: "count is re-defined inside the body on every call, so the state never persists -- both calls return 1, giving list:[1,1] instead of list:[1,2]"
 references:
   - reference/specials/compile-define.md
@@ -219,10 +219,10 @@ notes: 'corrective: (constantly 5)'
 id: function-decorate-subject-entry-point-not-callable-invalid-001
 feature: macro/compile/decorate-subject
 source: |-
-  (define __entry__ 5)
+  (var __entry__ 5)
   
 verify:
-  read: (define __entry__ 5)
+  read: (var __entry__ 5)
   invalid: "the module loads, but __entry__ is the slot the launcher calls with no arguments once a program's load completes, and it must hold the function itself; run as a program this fails with TypeError: 'int' object is not callable"
 references:
   - reference/macros/compile-decorate-subject.md
@@ -234,4 +234,95 @@ tags:
   - entry-point
   - invalid
   - pitfall
-notes: "corrective: (decorate [entry-point] (define main [] 5)), or in layout source @entry-point above define main"
+notes: "corrective: (decorate [entry-point] (def main [] 5)), or in layout source @entry-point above def main"
+---
+id: function-def-value-invalid-001
+feature: macro/compile/def
+source: (def x 1)
+verify:
+  expand: (var x (function x 1))
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/macros/compile-def.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - function
+  - def
+  - invalid
+  - pitfall
+notes: "agent mistake from Clojure habit: def takes a name, formals and a body, never a plain value; 1 is not a formals list, so the function form matches no rule. corrective: (var x 1)"
+---
+id: function-define-demanding-unbound-001
+feature: builtin/demand
+source: (define-demanding sync-id [x] x)
+verify:
+  read: (define-demanding sync-id [x] x)
+  invalid: "define-demanding is not bound, so the form compiles as an ordinary call whose arguments evaluate first: it raises NameError: No such reference: sync-id, naming the function being defined rather than define-demanding"
+references:
+  - guide/decorators.md
+  - guide/demand-async-and-defer.md
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - demand
+  - decorate
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: (decorate [demand] (def sync-id [x] x)), written in block form as @demand above def sync-id [x]:. define-coroutine is gone the same way; use @coroutine-fn above def."
+---
+id: function-define-old-shorthand-invalid-001
+feature: special/compile/define
+source: (define f [x] x)
+verify:
+  read: (define f [x] x)
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - define
+  - invalid
+  - pitfall
+notes: "define takes Scheme's shape: the function name goes inside the pair with its formals. A symbol name followed by a formals list and a body matches no rule. corrective: (define [f x] x), or idiomatically (def f [x] x)"
+---
+id: function-define-typed-shorthand-invalid-001
+feature: special/compile/define
+source: "(define f :: int [x] (* x 2))"
+verify:
+  read: "(define f :: int [x] (* x 2))"
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - define
+  - invalid
+  - pitfall
+notes: "the return type bundles with the name inside the formals pair. corrective: (define [(f :: int) x] (* x 2)), or (def f :: int [x] (* x 2))"
+---
+id: function-define-pair-not-unpack-001
+feature: special/compile/define
+source: "(begin (define [a b] #(1 2)) (a \"ignored\"))"
+verify:
+  read: (begin (define [a b] (#tuple 1 2)) (a "ignored"))
+  eval: tuple:(1,2)
+  invalid: "(define [a b] x) is not an unpacking: it defines a function named a with one formal b whose body is x. b is never bound outside a, and a is a function, so calling it with one argument returns the tuple"
+references:
+  - reference/specials/compile-define.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - function
+  - define
+  - invalid
+  - surprising
+  - pitfall
+  - destructure
+notes: "corrective: (var [a b] #(1 2)) or (define-values [a b] #(1 2)) to unpack into a and b"

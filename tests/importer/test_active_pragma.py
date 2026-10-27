@@ -42,7 +42,7 @@ pytestmark = pytest.mark.phase_importer
 
 
 PROVIDER = """
-(define-syntax tco-setting
+(syntax tco-setting
   (macro-rules []
     [(tco-setting) (datum (active-pragma compiler/tco-enable))]))
 """
@@ -87,7 +87,7 @@ class TestActivePragma(ActivePragmaCase):
         self.write_ki('ki_ap_provider', PROVIDER)
         self.write_ki('ki_ap_default', """
         (import-from ki_ap_provider compile/tco-setting)
-        (define result (tco-setting))
+        (var result (tco-setting))
         """)
 
         mod = importlib.import_module('ki_ap_default')
@@ -99,7 +99,7 @@ class TestActivePragma(ActivePragmaCase):
         self.write_ki('ki_ap_altered', """
         (import-from ki_ap_provider2 compile/tco-setting)
         (pragma [compiler/tco-enable False])
-        (define result (tco-setting))
+        (var result (tco-setting))
         """)
 
         mod = importlib.import_module('ki_ap_altered')
@@ -112,11 +112,11 @@ class TestActivePragma(ActivePragmaCase):
         # module being compiled
         self.write_ki('ki_ap_quiet', """
         (pragma [compiler/enable-asserts False])
-        (define quiet-check (lambda quiet-check [] (begin (assert False) 1)))
+        (def quiet-check [] (begin (assert False) 1))
         """)
         self.write_ki('ki_ap_loud', """
         (import-from ki_ap_quiet quiet-check)
-        (define loud-check (lambda loud-check [] (begin (assert False) 1)))
+        (def loud-check [] (begin (assert False) 1))
         """)
 
         mod = importlib.import_module('ki_ap_loud')
@@ -136,7 +136,7 @@ class TestActivePragma(ActivePragmaCase):
     async def test_bare_control_word_error_mode(self):
         self.write_ki('ki_ap_strict', """
         (pragma [compiler/bare-control-words 'error])
-        (define f (lambda f [x] (begin (when x return) 99)))
+        (def f [x] (begin (when x return) 99))
         """)
 
         from koskari.exceptions import CompilerError
@@ -148,7 +148,7 @@ class TestActivePragma(ActivePragmaCase):
         import warnings
         self.write_ki('ki_ap_warned', """
         (pragma [compiler/bare-control-words 'warn])
-        (define f (lambda f [x] (begin (when x return) 99)))
+        (def f [x] (begin (when x return) 99))
         """)
 
         with warnings.catch_warnings(record=True) as caught:
@@ -176,7 +176,7 @@ class TestActivePragma(ActivePragmaCase):
         # the primary block's
         import warnings
         self.write_ki('ki_ap_peer', """(pragma [compiler/bare-control-words 'warn])
-define foobar [x]:
+def foobar [x]:
     if x:
         1
     elif (== x 0):
@@ -202,7 +202,7 @@ define foobar [x]:
         # line
         import warnings
         self.write_ki('ki_ap_handler', """(pragma [compiler/bare-control-words 'warn])
-define f []:
+def f []:
     try:
         (ValueError "boom")
     except [e ValueError]:
@@ -224,13 +224,13 @@ define f []:
     async def test_provider_pragma_does_not_leak(self):
         self.write_ki('ki_ap_provider3', """
         (pragma [compiler/tco-enable False])
-        (define-syntax tco-setting
+        (syntax tco-setting
           (macro-rules []
             [(tco-setting) (datum (active-pragma compiler/tco-enable))]))
         """)
         self.write_ki('ki_ap_clean', """
         (import-from ki_ap_provider3 compile/tco-setting)
-        (define result (tco-setting))
+        (var result (tco-setting))
         """)
 
         mod = importlib.import_module('ki_ap_clean')

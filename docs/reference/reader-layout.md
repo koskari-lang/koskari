@@ -25,14 +25,14 @@ parentheses, brackets, or braces follow the base reader: atoms, lists, keywords
 as in s-expression mode, and no indent-sensitive block detection.
 
 ```koskari
-define sign [n]:
+def sign [n]:
   if (< n 0):
     "negative"
   else:
     "positive"
 ```
 
-The outer `define` block uses layout mode. The condition `(< n 0)` inside the
+The outer `def` block uses layout mode. The condition `(< n 0)` inside the
 `if` header uses s-expression mode within the header argument.
 
 Layout-block detection is suppressed inside delimiters regardless of
@@ -294,7 +294,7 @@ foobar [x y z]:
 ```
 
 For an explicit `compile/begin` wrapper, bind
-`define layout/<head> layout/block-begin` in a `.ki` module. See
+`var layout/<head> layout/block-begin` in a `.ki` module. See
 [layout/block-begin](layouts/layout-block-begin.md).
 
 See [Layout handler reference](layouts/index.md) for the per-head catalogue.

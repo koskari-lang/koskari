@@ -78,8 +78,8 @@ returned:
 (import sys)
 (import-from argparse ArgumentParser)
 
-define main []:
-  (define-values [prog *: args] sys.argv)
+def main []:
+  (var [prog *: args] sys.argv)
   ;; parse args, run the program, return an exit code
   0
 ```

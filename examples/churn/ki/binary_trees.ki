@@ -2,26 +2,26 @@
 ;; fresh tuple, so this exercises allocation churn together with recursion
 ;; (frame setup/teardown), the way the benchmarks-game binary-trees does.
 
-define make-tree [d]:
+def make-tree [d]:
     unless (<= d 0):
         #((make-tree (- d 1)) (make-tree (- d 1)))
 
 
-define check-tree [node]:
+def check-tree [node]:
     if (None? node):
         1
     else:
-        define-values [left right] node
+        var [left right] node
         (+ 1 (check-tree left) (check-tree right))
 
 
-define binary_trees [min-depth max-depth]:
-    define total 0
-    define d min-depth
+def binary_trees [min-depth max-depth]:
+    var total 0
+    var d min-depth
     while (<= d max-depth):
-        define count (<< 1 (+ (- max-depth d) min-depth))
-        define subtotal 0
-        define i 0
+        var count (<< 1 (+ (- max-depth d) min-depth))
+        var subtotal 0
+        var i 0
         while (< i count):
             incr! subtotal (check-tree (make-tree d))
             incr! i 1

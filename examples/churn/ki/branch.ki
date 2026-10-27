@@ -1,12 +1,12 @@
 ;; churn_branch -- a four-arm if/elif/else per iteration with deliberately
 ;; light arithmetic, so branch/compare/jump dispatch dominates.
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define churn_branch [n x: 1]:
-    define acc 0
-    define v (& x MASK32)
+def churn_branch [n x: 1]:
+    var acc 0
+    var v (& x MASK32)
     for-each [i (range n)]:
         set! v (& (+ v i) MASK32)
         if (== 0 (% v 3)):

@@ -45,22 +45,22 @@ pytestmark = pytest.mark.phase_reproducers
 # The generator reports its own view of `g` at each step; the driver
 # reads its own view while the generator is suspended mid-extent.
 REPORTER_SRC = """
-(define reporter (lambda []
+(def reporter []
   (parameterize [[g "gen-binding"]]
     (yield (parameterq g "unset-1"))
     (yield (parameterq g "unset-2")))
-  (yield (parameterq g "after-extent"))))
+  (yield (parameterq g "after-extent")))
 
-(define probe (lambda []
-  (define out #{})
-  (define gen (reporter))
+(def probe []
+  (var out #{})
+  (var gen (reporter))
   (set! (item out "first") (gen.__anext__))
   (set! (item out "driver-between") (parameterq g "outer"))
   (set! (item out "second") (gen.__anext__))
   (set! (item out "third") (gen.__anext__))
-  out))
+  out)
 
-(define results (probe))
+(var results (probe))
 """
 
 
@@ -69,29 +69,29 @@ REPORTER_SRC = """
 LIFECYCLE_SRC = """
 (import-from gc collect)
 
-(define counter (lambda []
+(def counter []
   (parameterize [[g "gen-binding"]]
     (yield 1)
-    (yield 2))))
+    (yield 2)))
 
-(define probe (lambda []
-  (define out #{})
+(def probe []
+  (var out #{})
 
-  (define gen1 (counter))
+  (var gen1 (counter))
   (gen1.__anext__)
   (set! (item out "between") (parameterq g "outer"))
   (for-each [x gen1] None)
   (set! (item out "exhausted") (parameterq g "outer"))
 
-  (define gen2 (counter))
+  (var gen2 (counter))
   (gen2.__anext__)
   (set! gen2 None)
   (collect)
   (set! (item out "abandoned") (parameterq g "outer"))
 
-  out))
+  out)
 
-(define results (probe))
+(var results (probe))
 """
 
 
@@ -102,15 +102,15 @@ LIFECYCLE_SRC = """
 # reads see it across suspensions, and the block exit restores what the
 # consumer had at the latest resume, not at the first.
 FLATTENED_SRC = """
-(define reporter (lambda []
+(def reporter []
   (parameterize [[g "gen"]]
     (yield (parameterq g "unset"))
     (yield (parameterq g "unset")))
-  (yield (parameterq g "unset"))))
+  (yield (parameterq g "unset")))
 
-(define stepped (lambda []
-  (define out #[])
-  (define it (reporter))
+(def stepped []
+  (var out #[])
+  (var it (reporter))
   (parameterize [[g "c"]]
     (out.append (next it))
     (out.append (+ "in-c:" (parameterq g "unset"))))
@@ -119,17 +119,17 @@ FLATTENED_SRC = """
   (out.append (+ "after-2:" (parameterq g "unset")))
   (out.append (next it))
   (out.append (+ "after-3:" (parameterq g "unset")))
-  out))
+  out)
 
-(define looped (lambda []
-  (define out #[])
+(def looped []
+  (var out #[])
   (for-each [x (reporter)]
     (out.append (+ x ":" (parameterq g "unset"))))
   (out.append (+ "done:" (parameterq g "unset")))
-  out))
+  out)
 
-(define stepped-results (stepped))
-(define looped-results (looped))
+(var stepped-results (stepped))
+(var looped-results (looped))
 """
 
 

@@ -358,37 +358,36 @@ Inside `<list>`, a single `.` token separates the car side from the cdr:
 
 These are not separate reader forms: they use the same atoms, lists, and
 keywords as the base grammar. They are called out here because they affect how
-`compile/define`, `compile/define-global`, and `compile/lambda` are written and
-what metadata the compiler records. The compiler recognizes these shapes via the
-**DECL**, **FORMALS**, and related matcher composites; see
-[MATCHER.md](MATCHER.md).
+`compile/var`, `compile/global`, `compile/define`, `compile/define-global`, and
+`compile/lambda` are written and what metadata the compiler records. The
+compiler recognizes these shapes via the **DEFINE**, **FORMALS**, and related
+matcher composites; see [MATCHER.md](MATCHER.md).
 
-### DECL (alternative first argument to `compile/define` and `compile/define-global`)
+### Name position on `var`, `global`, `define`, and `define-global`
 
-The first subform may be a **declaration** — a name with no value — as a single
-list or symbol:
+The binding name is a **symbol**. Each form reads a pair in the name position
+differently:
 
-- A **symbol** (`x`), or
-- A **bracket (or parenthesis) list** with a name and optional **type**
-  attributes only: `[x]`, `[x :: T]`, `[x type: T]`, or the `(EXPR as: NAME)`
-  spelling for types.
+- `var` / `global`: an **unpacking pattern**, `(var [a [b c] *: d] x)`,
+  expanded by macro arms to one declaration per name plus `setq-values`.
+- `define` / `define-global`: Scheme's **function head**,
+  `(define (NAME FORMAL ...) BODY ...)`. `(define [a b] x)` is a function.
 
-**Not allowed** in a DECL: `value:`, or a two-element `(SYM EXPR)` default
-(same “no RHS” rules as valueful bindings). Full behaviour and examples:
-[SPECIALS.md](SPECIALS.md) (compile/define).
+A bracket DECL (`[x :: T]`) is not accepted as a name. Full behaviour and
+examples: [SPECIALS.md](SPECIALS.md) (compile/var, compile/define).
 
-### Inline return type on `compile/define` and `compile/define-global`
+### Inline type on `var`, `global`, `define`, and `define-global`
 
-Optional **return** type may appear **after the name** and **before** formals,
-the value expression, or nothing (declare-only), using the same keywords as
+Optional type may appear **after the name** and **before** the value
+expression, or alone (declare-only), using the same keywords as
 `compile/lambda`:
 
-- `NAME :: RET` or `NAME type: RET`
+- `NAME :: T` or `NAME type: T`
 
-`RET` is one expression. For function shorthand it becomes
-`__annotations__['return']` on the defined function. For declare-only or
-non-function bindings the compiler currently treats the type as parse-only
-(metadata); see [SPECIALS.md](SPECIALS.md) (compile/define).
+`T` is one expression, recorded as an annotation binding (a class body collects
+these into `__annotations__`); see [SPECIALS.md](SPECIALS.md) (compile/var).
+The return type of a function goes on the builder: `def NAME :: RET [args]:`
+passes it to `compile/function`.
 
 ### Return type on `compile/lambda`
 
@@ -423,10 +422,10 @@ storage** (rather than minting a fresh slot and copying the value in), so a
 sees a plain-valued local; it just shares storage with the caller.
 
 ```
-define add-a [a &result]:
+def add-a [a &result]:
     (set! result (+ a 1))
 
-define value 100
+var value 100
 (add-a value &value)    ; value is now 101
 ```
 
@@ -558,6 +557,7 @@ line is consumed as an additional peer block at the same nesting level.
 | Head symbol     | Peer heads allowed (in order)              |
 |---|---|
 | *(default)*     | none — any unknown head falls back to layout/block |
+| `build-class`   | none |
 | `class`         | none |
 | `define-syntax` | none |
 | `dyn-wind`      | `before`, `body`, `after` |

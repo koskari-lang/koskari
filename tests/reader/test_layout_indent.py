@@ -58,7 +58,7 @@ class TestIndentErrors(TestCase):
 
     def test_deeper_line_in_a_body_is_an_error(self):
         src = """
-        define run []:
+        def run []:
           compile_file src dest
               source_filename: name
         """
@@ -68,7 +68,7 @@ class TestIndentErrors(TestCase):
 
     def test_shallower_line_still_inside_the_body_is_an_error(self):
         src = """
-        define run []:
+        def run []:
             first
           second
         """

@@ -62,7 +62,7 @@ class TestImportModuleAsyncFailure(unittest.IsolatedAsyncioTestCase):
         KoskariPathFinder.invalidate_caches()
 
     async def test_failed_load_leaves_no_module_behind(self):
-        self.write('(define before 1)\n(raise (RuntimeError "body failed"))\n')
+        self.write('(var before 1)\n(raise (RuntimeError "body failed"))\n')
 
         with self.assertRaises(RuntimeError):
             await import_module_async('failing_body')
@@ -72,7 +72,7 @@ class TestImportModuleAsyncFailure(unittest.IsolatedAsyncioTestCase):
             await import_module_async('failing_body')
         self.assertNotIn('failing_body', sys.modules)
 
-        self.write('(define before 2)\n')
+        self.write('(var before 2)\n')
         module = await import_module_async('failing_body')
         self.assertEqual(module.before, 2)
         self.assertIs(sys.modules['failing_body'], module)

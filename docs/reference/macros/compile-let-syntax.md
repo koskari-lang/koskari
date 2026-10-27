@@ -6,7 +6,7 @@
 
 **Behaviour:** **`special-rules`** compile special (not a source rewrite macro).
 At expand time it builds the same **`(syntax-rules NAME literals rule ...)`** form
-**`define-syntax`** would compile, runs **`full_compile`** on that spec and
+**`syntax`** would compile, runs **`full_compile`** on that spec and
 evaluates the resulting expression to obtain a **`Syntax`** transformer. The body
 is compiled inside **`Compiler.macro_overlay`**, which pushes the transformer
 onto a stack consulted by **`find_compiled`** before the module namespace.

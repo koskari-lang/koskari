@@ -4,7 +4,7 @@
 **Use-case:** Block syntax for the bare arm of a transformer: the
 expansion that applies when the transformer's name is used as a lone atom
 rather than at the head of a call form. Normally the inner block of a
-`define-syntax` or
+`syntax` or
 [`extend-syntax`](../macros/compile-extend-syntax.md) block. A
 transformer has at most one bare arm.
 
@@ -19,9 +19,9 @@ symbol raises `bare-syntax requires a called-by symbol`, and an empty body
 raises `bare-syntax requires a template`.
 
 **Named header:** `bare-syntax NAME SLOT:` puts NAME in the emitted form,
-which is where the transformer takes its identity. `define-syntax` and
+which is where the transformer takes its identity. `syntax` and
 `extend-syntax` supply that name themselves, so the named header belongs
-to a transformer bound directly, as `define compile/NAME:`.
+to a transformer bound directly, as `var compile/NAME:`.
 
 **Syntax:**
 
@@ -36,7 +36,7 @@ bare-syntax NAME SLOT:
 **Examples:**
 
 ```koskari
-define-syntax marker:
+syntax marker:
   syntax-rules []:
     case (marker x):
       (print "called" x)
@@ -52,11 +52,11 @@ extend-syntax marker:
 ```
 
 ```koskari
-define compile/marker:
+var compile/marker:
   bare-syntax marker slot:
     "the marker"
 
 (print marker)
 ;; prints: the marker
-;; -> (define compile/marker (bare-syntax marker slot "the marker"))
+;; -> (var compile/marker (bare-syntax marker slot "the marker"))
 ```

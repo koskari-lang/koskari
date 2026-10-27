@@ -42,7 +42,7 @@ async def load(name, src):
 
 
 SPELL = """
-(define-syntax spell
+(syntax spell
   (macro-rules [] [(spell s) (str s.datum)]))
 """
 
@@ -55,18 +55,18 @@ class TestCallerPieces(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = SPELL + """
-(define-syntax pass-datum (macro-rules [] [(pass-datum e) e]))
-(define-syntax pass-rewrap
+(syntax pass-datum (macro-rules [] [(pass-datum e) e]))
+(syntax pass-rewrap
   (macro-rules [] [(pass-rewrap e) (datum e.datum)]))
-(define-syntax pass-rebuilt
+(syntax pass-rebuilt
   (macro-rules []
     [(pass-rebuilt e) (datum (cons (car e.datum) (cdr e.datum)))]))
-(define-syntax pass-bare (macro-rules [] [(pass-bare e) e.datum]))
+(syntax pass-bare (macro-rules [] [(pass-bare e) e.datum]))
 
-(define as-datum (pass-datum (spell foo)))
-(define rewrapped (pass-rewrap (spell foo)))
-(define rebuilt (pass-rebuilt (spell foo)))
-(define bare (pass-bare (spell foo)))
+(var as-datum (pass-datum (spell foo)))
+(var rewrapped (pass-rewrap (spell foo)))
+(var rebuilt (pass-rebuilt (spell foo)))
+(var bare (pass-bare (spell foo)))
 """
 
     async def test_capture_emitted_as_its_datum(self):
@@ -96,11 +96,11 @@ class TestDatumTail(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax rebuild
+(syntax rebuild
   (macro-rules []
     [(rebuild e) (cons (datum (car e.datum)) (datum (cdr e.datum)))]))
 
-(define total (rebuild (+ 1 2)))
+(var total (rebuild (+ 1 2)))
 """
 
     async def test_datum_tail(self):
@@ -116,17 +116,17 @@ class TestBuiltName(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax job/cron (syntax-rules [] [(job/cron x) x]))
-(define-syntax job
+(syntax job/cron (syntax-rules [] [(job/cron x) x]))
+(syntax job
   (macro-rules []
     [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum.base}")) ,@rest)]))
-(define-syntax pass-rewrap
+(syntax pass-rewrap
   (macro-rules [] [(pass-rewrap e) (datum e.datum)]))
-(define-syntax cron-job (syntax-rules [] [(cron-job x) (job cron x)]))
+(syntax cron-job (syntax-rules [] [(cron-job x) (job cron x)]))
 
-(define direct (job cron 1))
-(define passed (pass-rewrap (job cron 2)))
-(define templated (cron-job 3))
+(var direct (job cron 1))
+(var passed (pass-rewrap (job cron 2)))
+(var templated (cron-job 3))
 """
 
     async def test_tag_written_by_caller(self):
@@ -149,28 +149,28 @@ class TestPassThroughDispatch(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax sub
+(syntax sub
   (syntax-rules [] [(sub (tp name) v) (.append name v)]))
-(define-syntax with-subitems
+(syntax with-subitems
   (syntax-rules []
     [(with-subitems tag (subhead subrest ...) ...)
      (begin (subhead tag subrest ...) ...)]))
-(define-syntax job/kind
+(syntax job/kind
   (macro-rules []
     [(job/kind name sub ...)
-     `(begin (define ,name #[]) (with-subitems (kind ,name) ,@sub))]))
-(define-syntax job
+     `(begin (var ,name #[]) (with-subitems (kind ,name) ,@sub))]))
+(syntax job
   (macro-rules []
     [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum.base}")) ,@rest)]))
-(define-syntax jobset
+(syntax jobset
   (macro-rules []
     [(jobset jsname entry ...)
-     (define jobforms #[])
-     (define regs #[])
+     (var jobforms #[])
+     (var regs #[])
      (for-each [e entry]
        (jobforms.append e)
        (regs.append `(.append ,jsname ,(datum (car (cdr (cdr e.datum)))))))
-     `(begin ,@jobforms (define ,jsname #[]) ,@regs)]))
+     `(begin ,@jobforms (var ,jsname #[]) ,@regs)]))
 
 (jobset js (job kind a (sub 1) (sub 2)) (job kind b (sub 3)))
 """
@@ -182,37 +182,6 @@ class TestPassThroughDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["b"], [3])
 
 
-class TestClassPredicateInTemplate(unittest.IsolatedAsyncioTestCase):
-    """
-    A class a template defines has a predicate named for the class
-    under the same marks: the template's own call reaches it, and the
-    caller's binding of the same name is not captured
-    """
-
-    SRC = """
-(define Widget? (lambda [v] "use-site"))
-
-(define-syntax make-widget
-  (syntax-rules []
-    [(make-widget out)
-     (begin
-       (define-class Widget [])
-       (define out (Widget? (Widget))))]))
-
-(make-widget checked)
-(define still (Widget? 1))
-"""
-
-    async def test_template_reaches_its_predicate(self):
-        ns = await load("phc_predicate", self.SRC)
-        self.assertIs(ns["checked"], True)
-
-
-    async def test_caller_predicate_not_captured(self):
-        ns = await load("phc_predicate_caller", self.SRC)
-        self.assertEqual(ns["still"], "use-site")
-
-
 class TestPragmaKeyInTemplate(unittest.IsolatedAsyncioTestCase):
     """
     A pragma key is a pure key: a template that writes one sets and
@@ -220,12 +189,12 @@ class TestPragmaKeyInTemplate(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-syntax set-and-read
+(syntax set-and-read
   (syntax-rules []
     [(set-and-read out)
      (begin
        (pragma [compiler/call-brackets 'warn])
-       (define out (pragma compiler/call-brackets)))]))
+       (var out (pragma compiler/call-brackets)))]))
 
 (set-and-read got)
 """

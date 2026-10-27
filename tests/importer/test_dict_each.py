@@ -68,9 +68,10 @@ class TestDictEach(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (import asyncio)
-          (define-coroutine f []
-            (dict-each [x #[1 2]]
-              key: x value: (await (asyncio.sleep 0 (* x 2)))))
+          (decorate [coroutine-fn]
+            (def f []
+              (dict-each [x #[1 2]]
+                key: x value: (await (asyncio.sleep 0 (* x 2))))))
           (await (f)))
         """
         self.assertEqual({1: 2, 2: 4}, await self._eval(src))
@@ -123,7 +124,7 @@ class TestDictEach(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define-class C []
+          (class C []
             (define names #["a" "b"])
             (define table (dict-each [n names] key: n value: (len n))))
           C.table)

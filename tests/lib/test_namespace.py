@@ -854,7 +854,7 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
             hasattr(mod, "x")
 
         await load_module_source_async(
-            mod, "(define reader (lambda [] x))", layout=False)
+            mod, "(def reader [] x)", layout=False)
         with self.assertRaises(ValueError):
             ns["reader"].closures
 

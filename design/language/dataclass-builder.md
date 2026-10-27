@@ -4,12 +4,15 @@ Status: proposed. Recorded 2026-10-02.
 
 ## Why
 
-`define-dataclass` expands to the stdlib decorator applied to a `class`
-form:
+A dataclass is the stdlib decorator applied to a `class`:
 
 ```koskari
-(define Point
-  (dataclass (class Point [] (define x :: int 0) (define y :: int 0))))
+import-from dataclasses dataclass
+
+@dataclass
+class Point []:
+  var x :: int 0
+  var y :: int 0
 ```
 
 `dataclasses.dataclass` generates `__init__`, `__repr__`, `__eq__` and
@@ -25,10 +28,10 @@ is already in hand at expansion time.
 ## Shape
 
 A `dataclass` builtin written in Koskari, in the bootstrap beside
-`define-class`, taking the class and the stdlib decorator's options
+the `class` macro, taking the class and the stdlib decorator's options
 (`init`, `repr`, `eq`, `order`, `unsafe_hash`, `frozen`, `match_args`,
-`kw_only`, `slots`). `define-dataclass` expands to it instead of the
-import.
+`kw_only`, `slots`). `@dataclass` over `class` resolves to it without
+the import.
 
 1. **Collect the fields.** Walk the class's `__annotations__` in order,
    as the stdlib does: each annotated name is a field; its class

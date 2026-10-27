@@ -62,7 +62,7 @@ class TestLambdaNamed(SpecialsTestCase):
         binding symbol only: the code is named by the plain name
         """
         src = """
-        (define mk
+        (var mk
           (syntax-rules mk []
             [(mk) (lambda each [] 1)]))
         """

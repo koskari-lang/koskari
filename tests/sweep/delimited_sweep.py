@@ -29,74 +29,74 @@ def case(cid, cat, desc, src, want):
 
 case("pos-lexical", "position",
      "shift lexically in reset body",
-     '(define r (reset (shift k (k 1))))\n(print "RESULT" r)',
+     '(var r (reset (shift k (k 1))))\n(print "RESULT" r)',
      "RESULT 1")
 
 case("pos-arith", "position",
      "shift lexical, one pending operand in region",
-     '(define r (reset (+ 1 (shift k (k 5)))))\n(print "RESULT" r)',
+     '(var r (reset (+ 1 (shift k (k 5)))))\n(print "RESULT" r)',
      "RESULT 6")
 
 case("pos-let", "position",
      "shift lexical, inside a let in the region",
-     '(define r (reset (let [[z 1]] (+ z (shift k (k 5))))))\n'
+     '(var r (reset (let [[z 1]] (+ z (shift k (k 5))))))\n'
      '(print "RESULT" r)',
      "RESULT 6")
 
 case("pos-nested-build", "position",
      "shift lexical, pending #list and + in region",
-     '(define r (reset (#list "x" (+ 1 (shift k (k 5))) "y")))\n'
+     '(var r (reset (#list "x" (+ 1 (shift k (k 5))) "y")))\n'
      '(print "RESULT" r)',
      "RESULT ['x', 6, 'y']")
 
 case("pos-iife", "position",
      "shift one frame deep via immediately-invoked lambda",
-     '(define r (reset ((lambda [] (shift k (k 1))))))\n(print "RESULT" r)',
+     '(var r (reset ((lambda [] (shift k (k 1))))))\n(print "RESULT" r)',
      "RESULT 1")
 
 case("pos-callee", "position",
      "shift one frame deep in a named function",
-     'define f []:\n  (shift k (k 1))\n'
-     '(define r (reset (f)))\n(print "RESULT" r)',
+     'def f []:\n  (shift k (k 1))\n'
+     '(var r (reset (f)))\n(print "RESULT" r)',
      "RESULT 1")
 
 case("pos-callee-arith", "position",
      "shift one frame deep, pending operand in caller region",
-     'define f []:\n  (shift k (k 5))\n'
-     '(define r (reset (+ 1 (f))))\n(print "RESULT" r)',
+     'def f []:\n  (shift k (k 5))\n'
+     '(var r (reset (+ 1 (f))))\n(print "RESULT" r)',
      "RESULT 6")
 
 case("pos-callee-own-arith", "position",
      "shift one frame deep, pending operand in callee frame",
-     'define f [n]:\n  (+ n (shift k (k 100)))\n'
-     '(define r (reset (+ 1 (f 2))))\n(print "RESULT" r)',
+     'def f [n]:\n  (+ n (shift k (k 100)))\n'
+     '(var r (reset (+ 1 (f 2))))\n(print "RESULT" r)',
      "RESULT 103")
 
 case("pos-callee2", "position",
      "shift two frames deep",
-     'define inner []:\n  (shift k (k 1))\n'
-     'define outer []:\n  (inner)\n'
-     '(define r (reset (outer)))\n(print "RESULT" r)',
+     'def inner []:\n  (shift k (k 1))\n'
+     'def outer []:\n  (inner)\n'
+     '(var r (reset (outer)))\n(print "RESULT" r)',
      "RESULT 1")
 
 
 case("xframe-abandon", "position",
      "cross-frame shift that never invokes k",
-     'define f []:\n  (shift k "abandoned")\n'
-     '(define r (reset (+ 1 (f))))\n(print "RESULT" r)',
+     'def f []:\n  (shift k "abandoned")\n'
+     '(var r (reset (+ 1 (f))))\n(print "RESULT" r)',
      "RESULT abandoned")
 
 case("xframe-in-let", "position",
      "cross-frame shift, reset nested in a let (NS below prompt)",
-     'define f []:\n  (shift k (k 5))\n'
-     '(define r (let [[z 9]] (reset (+ 1 (f)))))\n'
+     'def f []:\n  (shift k (k 5))\n'
+     '(var r (let [[z 9]] (reset (+ 1 (f)))))\n'
      '(print "RESULT" r)',
      "RESULT 6")
 
 case("xframe-in-wind", "position",
      "cross-frame shift, reset nested in a dyn-wind (WIND below prompt)",
-     'define f []:\n  (shift k (k 5))\n'
-     '(define log (#list))\n'
+     'def f []:\n  (shift k (k 5))\n'
+     '(var log (#list))\n'
      '(define r\n'
      '  (dyn-wind (log.append "in") (reset (+ 1 (f))) (log.append "out")))\n'
      '(print "RESULT" r log)',
@@ -127,7 +127,7 @@ case("remote-invoke-twice", "remote",
 
 case("remote-invoke-wound", "remote",
      "escaped k replays a dyn-wind around the graft on invoke",
-     '(define log (#list))\n'
+     '(var log (#list))\n'
      '(define r\n'
      '  (let [[captured None]]\n'
      '    (begin\n'
@@ -145,13 +145,13 @@ case("remote-invoke-wound", "remote",
 
 case("reentrant-two-shifts", "reentrant",
      "two shifts in one reset; the second fires inside the first's k",
-     '(define r (reset (+ (shift k (k 1)) (shift j (j 10)))))\n'
+     '(var r (reset (+ (shift k (k 1)) (shift j (j 10)))))\n'
      '(print "RESULT" r)',
      "RESULT 11")
 
 case("reentrant-multishot", "reentrant",
      "outer k invoked twice; its continuation contains a second shift",
-     '(define r (reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10)))))\n'
+     '(var r (reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10)))))\n'
      '(print "RESULT" r)',
      "RESULT 23")
 
@@ -164,19 +164,19 @@ case("nested-resets", "reentrant",
 
 case("reentrant-inner-abandon", "reentrant",
      "inner shift abandons inside invoked k; value lands at the invoke site",
-     '(define r (reset (+ (shift k (+ (k 1) (k 2))) (shift j 100))))\n'
+     '(var r (reset (+ (shift k (+ (k 1) (k 2))) (shift j 100))))\n'
      '(print "RESULT" r)',
      "RESULT 200")
 
 case("reentrant-k-of-k", "reentrant",
      "three-deep re-entrancy: k applied to its own result twice",
-     '(define r (reset (+ 1 (shift k (k (k (k 0)))))))\n'
+     '(var r (reset (+ 1 (shift k (k (k (k 0)))))))\n'
      '(print "RESULT" r)',
      "RESULT 3")
 
 case("reentrant-nested-same-k", "reentrant",
      "k re-invoked from an inner handler while a graft of k is still live",
-     '(define log (#list))\n'
+     '(var log (#list))\n'
      '(define r\n'
      '  (reset\n'
      '    (+ (shift k (+ (k 1) (k 2)))\n'
@@ -193,7 +193,7 @@ case("reentrant-nested-same-k", "reentrant",
 
 case("reentrant-amb-product", "reentrant",
      "function amb x amb: multi-shot inside a multi-shot invocation",
-     'define amb [choices]:\n'
+     'def amb [choices]:\n'
      '  shift k:\n'
      '    let [[out (#list)]]:\n'
      '      for-each [c choices]:\n'
@@ -230,7 +230,7 @@ case("bind-let-reread", "binding",
 
 case("bind-let-reread-fn", "binding",
      "same shape inside a function frame (crashes rather than raising)",
-     'define runner []:\n'
+     'def runner []:\n'
      '  let [[tag "T"]]:\n'
      '    (reset\n'
      '      (begin\n'
@@ -242,7 +242,7 @@ case("bind-let-reread-fn", "binding",
 
 case("bind-let-accumulate", "binding",
      "let-bound accumulator mutated once per invocation, both shifts multi-shot",
-     'define runner []:\n'
+     'def runner []:\n'
      '  let [[acc (#list)]]:\n'
      '    let [[r (reset\n'
      '              (begin\n'
@@ -289,7 +289,7 @@ case("encl-nonarith", "enclosing",
 
 case("encl-build-list", "enclosing",
      "reset inside a pending #list build",
-     '(define r (#list "E" (reset (+ 1 (shift k (k 5))))))\n'
+     '(var r (#list "E" (reset (+ 1 (shift k (k 5))))))\n'
      '(print "RESULT" r)',
      "RESULT ['E', 6]")
 
@@ -298,12 +298,12 @@ case("encl-build-list", "enclosing",
 
 case("k-abandon", "invoke",
      "k never invoked; shift body value wins",
-     '(define r (reset (+ 1 (shift k "abandoned"))))\n(print "RESULT" r)',
+     '(var r (reset (+ 1 (shift k "abandoned"))))\n(print "RESULT" r)',
      "RESULT abandoned")
 
 case("k-twice", "invoke",
      "k invoked twice (multi-shot)",
-     '(define r (reset (+ 1 (shift k (+ (k 10) (k 20))))))\n'
+     '(var r (reset (+ 1 (shift k (+ (k 10) (k 20))))))\n'
      '(print "RESULT" r)',
      "RESULT 32")
 
@@ -322,13 +322,13 @@ case("k-loop", "invoke",
 
 case("k-callee-loop", "invoke",
      "k invoked per element, shift one frame deep (the amb shape)",
-     'define collect [choices]:\n'
+     'def collect [choices]:\n'
      '  shift k:\n'
      '    let [[out (#list)]]:\n'
      '      for-each [c choices]:\n'
      '        (out.append (k c))\n'
      '      out\n'
-     '(define r (reset (+ 100 (collect (#list 1 2 3)))))\n'
+     '(var r (reset (+ 100 (collect (#list 1 2 3)))))\n'
      '(print "RESULT" r)',
      "RESULT [101, 102, 103]")
 
@@ -347,7 +347,7 @@ case("try-inside", "extent",
 
 case("try-outside", "extent",
      "reset inside a try block",
-     '(define r None)\n'
+     '(var r None)\n'
      'try:\n'
      '  (set! r (reset (+ 1 (shift k (k 5)))))\n'
      'except [Exception as: e]:\n'
@@ -357,7 +357,7 @@ case("try-outside", "extent",
 
 case("dynwind-around", "extent",
      "dyn-wind around the shift, k invoked once",
-     '(define log (#list))\n'
+     '(var log (#list))\n'
      '(define r\n'
      '  (reset\n'
      '    (dyn-wind\n'
@@ -369,7 +369,7 @@ case("dynwind-around", "extent",
 
 case("dynwind-multishot", "extent",
      "dyn-wind around the shift, k invoked twice",
-     '(define log (#list))\n'
+     '(var log (#list))\n'
      '(define r\n'
      '  (reset\n'
      '    (dyn-wind\n'
@@ -392,7 +392,7 @@ case("param-around", "extent",
 case("param-around-multishot", "extent",
      "parameterize spans the region; every invoke reads the bound value",
      '(define-parameter p 1)\n'
-     '(define seen (#list))\n'
+     '(var seen (#list))\n'
      '(define r\n'
      '  (reset\n'
      '    (parameterize [[p 9]]\n'
@@ -406,7 +406,7 @@ case("param-around-multishot", "extent",
 case("param-inside-multishot", "extent",
      "parameterize inside the resumed part; entered and restored per invoke",
      '(define-parameter p 1)\n'
-     '(define seen (#list))\n'
+     '(var seen (#list))\n'
      '(define r\n'
      '  (reset\n'
      '    (begin\n'
@@ -421,7 +421,7 @@ case("param-inside-multishot", "extent",
 case("param-ends-before-resume", "extent",
      "parameterize closes before the shift returns; resume sees the default",
      '(define-parameter p 1)\n'
-     '(define seen (#list))\n'
+     '(var seen (#list))\n'
      '(define r\n'
      '  (reset\n'
      '    (begin\n'

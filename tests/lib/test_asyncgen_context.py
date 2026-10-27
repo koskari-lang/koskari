@@ -40,27 +40,27 @@ pytestmark = pytest.mark.phase_lib
 SRC = """
 (define-parameter p 0)
 
-(define produce (lambda [n] (for-each [i (range n)] (yield i))))
+(define [produce n] (for-each [i (range n)] (yield i)))
 
-(define fold (lambda [g]
+(define [fold g]
   (define total 0)
   (for-each [x g] (incr! total x))
-  total))
+  total)
 
-(define relay (lambda [g] (yield-from g)))
+(define [relay g] (yield-from g))
 
-(define first_of (lambda [g] (for-each [x g] (return x))))
+(define [first_of g] (for-each [x g] (return x)))
 
-(define guarded (lambda [box]
+(define [guarded box]
   (try
     (begin (yield 1) (yield 2))
-    (finally: (box.append "f")))))
+    (finally: (box.append "f"))))
 
-(define read_p (lambda [] (yield p) (yield p)))
+(define [read_p] (yield p) (yield p))
 
-(define make_under (lambda [v] (parameterize [[p v]] (read_p))))
+(define [make_under v] (parameterize [[p v]] (read_p)))
 
-(define fold_under (lambda [g v] (parameterize [[p v]] (fold g))))
+(define [fold_under g v] (parameterize [[p v]] (fold g)))
 """
 
 

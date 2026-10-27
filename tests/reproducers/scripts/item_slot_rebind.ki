@@ -5,42 +5,42 @@
 ;; containers have no other owner, so the rebinding drops their last
 ;; reference outside the site.
 
-(define dl (dict))
-(define di (dict))
-(define ds (dict))
-(define first ds)
+(var dl (dict))
+(var di (dict))
+(var ds (dict))
+(var first ds)
 
-(define-class LoadKey []
-  (define __hash__ [self] (define-global dl (dict)) 1)
-  (define __eq__ [self other] False))
+(class LoadKey []
+  (def __hash__ [self] (global var dl (dict)) 1)
+  (def __eq__ [self other] False))
 
-(define-class IncrKey []
-  (define __hash__ [self] (define-global di (dict)) 1)
-  (define __eq__ [self other] False))
+(class IncrKey []
+  (def __hash__ [self] (global var di (dict)) 1)
+  (def __eq__ [self other] False))
 
-(define-class StoreKey []
-  (define __hash__ [self] (define-global ds (dict)) 1)
-  (define __eq__ [self other] False))
+(class StoreKey []
+  (def __hash__ [self] (global var ds (dict)) 1)
+  (def __eq__ [self other] False))
 
-(define dm (dict))
-(define armed False)
+(var dm (dict))
+(var armed False)
 
 ;; rebinds only once armed, so the cell can be primed first
-(define-class MissKey []
-  (define __hash__ [self] (if armed (define-global dm (dict)) None) 1)
-  (define __eq__ [self other] False))
+(class MissKey []
+  (def __hash__ [self] (if armed (global var dm (dict)) None) 1)
+  (def __eq__ [self other] False))
 
-(define kl (LoadKey))
-(define ki (IncrKey))
-(define ks (StoreKey))
-(define km (MissKey))
+(var kl (LoadKey))
+(var ki (IncrKey))
+(var ks (StoreKey))
+(var km (MissKey))
 
-(define load (lambda () dl[kl]))
-(define incr (lambda () (incr! di[ki]) di))
-(define store (lambda (v) (set! ds[ks] v) ds))
-(define prime (lambda (v)
-  (define-global armed False)
+(def load [] dl[kl])
+(def incr [] (incr! di[ki]) di)
+(def store [v] (set! ds[ks] v) ds)
+(def prime [v]
+  (global var armed False)
   (set! dm[km] v)
-  (define-global armed True)))
-(define miss (lambda () (incr! dm[km]) dm))
-(define current (lambda () #(dl di ds dm)))
+  (global var armed True))
+(def miss [] (incr! dm[km]) dm)
+(def current [] #(dl di ds dm))

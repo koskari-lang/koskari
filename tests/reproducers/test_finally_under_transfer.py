@@ -39,38 +39,38 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define-class Ctx []:
-    define __init__ [self log name]:
+class Ctx []:
+    def __init__ [self log name]:
         (setattr self "log" log)
         (setattr self "name" name)
-    define __enter__ [self]:
+    def __enter__ [self]:
         (self.log.append (+ "enter " self.name))
         self
-    define __exit__ [self *: args]:
+    def __exit__ [self *: args]:
         (self.log.append (+ "exit " self.name))
         False
 
-define escape_same_frame [log]:
-    define r (call/cc (lambda [k]
+def escape_same_frame [log]:
+    var r (call/cc (lambda [k]
         (try (k "escaped")
             [finally: (log.append "finally")])))
     (log.append r)
     log
 
-define leave_via [log k]:
+def leave_via [log k]:
     try:
         (log.append "body")
         (k "escaped")
     finally:
         (log.append "finally")
 
-define escape_across_frame [log]:
-    define r (call/cc (lambda [k] (leave_via log k)))
+def escape_across_frame [log]:
+    var r (call/cc (lambda [k] (leave_via log k)))
     (log.append r)
     log
 
-define escape_nested [log]:
-    define r (call/cc (lambda [k]
+def escape_nested [log]:
+    var r (call/cc (lambda [k]
         (try
             (with [c (Ctx log "c")]
                 (try (k "escaped")
@@ -79,16 +79,16 @@ define escape_nested [log]:
     (log.append r)
     log
 
-define shift_abandons_slice [log]:
-    define r (reset
+def shift_abandons_slice [log]:
+    var r (reset
         (try (begin (shift k (begin (log.append "handler") 10)) (log.append "resumed"))
             [finally: (log.append "finally")]))
     (log.append r)
     log
 
-define reenter [log]:
-    define saved None
-    define r (reset
+def reenter [log]:
+    var saved None
+    var r (reset
         (try (shift k (begin (set! saved k) "first"))
             [finally: (log.append "finally")]))
     (log.append r)
@@ -96,8 +96,8 @@ define reenter [log]:
     (log.append (saved "third"))
     log
 
-define escape_from_finally_body [log]:
-    define r (call/cc (lambda [k]
+def escape_from_finally_body [log]:
+    var r (call/cc (lambda [k]
         (try None
             [finally: (log.append "before") (k "escaped") (log.append "after")])))
     (log.append r)

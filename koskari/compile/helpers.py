@@ -29,15 +29,13 @@ from typing import List
 
 from ..exceptions import ParametersError, SpecialError
 from ..lib import (
-    DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons, demand,
+    DatumFrame, OpCode, bracket_nil, bracket_pair, cons,
     keyword, nil, pair, symbol)
 from ..matcher import (
-    BINDING, BINDING_MATCHERS, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
-    REST, SYMBOL, USING, USING_MATCHERS, USING_UNPACK, VALUE, first_match,
-    frame_formal_name, make_matcher)
+    BINDING, BINDING_MATCHERS, BINDINGS, FORMALS, USING, USING_MATCHERS,
+    USING_UNPACK, first_match, frame_formal_name)
 from ..types import (
-    is_const, is_keyword, is_nil, is_pair, is_proper, is_symbol,
-    strip_mark, unpack)
+    is_const, is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack)
 from .compiler import ByteCodeFragment
 
 
@@ -61,7 +59,6 @@ __all__ = (
     "helper_binding",
     "helper_elsebody",
     "helper_using",
-    "parse_decl",
     "pycons",
     "requote",
     "splat_call_form",
@@ -195,111 +192,6 @@ def convert_bindings(bindings_source, source=None):
         col.append(keyword(n))
         col.append(v)
     return cons(*col, nil) if col else nil
-
-
-def _formal_kw_tag_to_key(kw):
-    """
-    Map keyword atom to annotation key; empty keyword (``::`` sugar) is type
-    """
-
-    raw = str(kw)
-    if raw.endswith(":"):
-        raw = raw[:-1]
-    if raw == "":
-        return "type"
-    return raw
-
-
-def _parse_decl_tail(tail, source):
-    """
-    Parse REST after a declaration name: only keyword attributes, no value
-    """
-
-    if is_nil(tail):
-        return {}
-    head = car(tail)
-    if not is_keyword(head):
-        raise SpecialError(
-            "declaration cannot include a value",
-            source)
-
-    ann = {}
-    cur = tail
-    while not is_nil(cur):
-        kw = strip_mark(car(cur))
-        cur = cdr(cur)
-        if not is_keyword(kw):
-            raise SpecialError(
-                f"expected keyword in declaration attribute list, not {kw!r}",
-                source)
-        if is_nil(cur):
-            raise SpecialError(
-                f"missing value for declaration attribute {kw!r}",
-                source)
-        val = car(cur)
-        cur = cdr(cur)
-        key = _formal_kw_tag_to_key(kw)
-        if key == "value":
-            raise SpecialError(
-                "value: is not allowed in declaration",
-                source)
-        elif key == "type":
-            ann["type"] = val
-        else:
-            raise SpecialError(
-                f"unknown declaration attribute {kw!r}",
-                source)
-    return ann
-
-
-# the declaration forms parse_decl tells apart, each matcher built
-# once and run over a one-cell spine of the form
-_decl_with_value = demand(make_matcher(LIST(SYMBOL("name"), VALUE("expr"))))
-_decl_as_name = demand(make_matcher(
-    LIST(VALUE("type_expr"), LITERAL_KW("as"), SYMBOL("name"))))
-_decl_formal_head = demand(make_matcher(
-    LIST(MATCH(SYMBOL("name"), REST("tail")))))
-
-
-def parse_decl(form, source=None):
-    """
-    Parse a binding-shaped declaration with no value
-    """
-
-    if is_symbol(form):
-        return (form, None)
-    if not is_pair(form):
-        raise SpecialError(
-            f"declaration must be symbol or proper list, not {form!r}",
-            source)
-    if not is_proper(form):
-        raise SpecialError(
-            f"declaration list must be proper, not {form!r}",
-            source)
-
-    elems = tuple(unpack(form))
-    if len(elems) == 1 and is_symbol(elems[0]):
-        return (elems[0], None)
-
-    subject = cons(form, nil)
-    if _decl_with_value(subject) is not None:
-        raise SpecialError(
-            "declaration cannot include a value",
-            source)
-
-    m_as = _decl_as_name(subject)
-    if m_as is not None:
-        return (m_as["name"].datum, m_as["type_expr"].datum)
-
-    m = _decl_formal_head(subject)
-    if m is None:
-        raise SpecialError(f"invalid declaration form {form!r}", source)
-
-    name = m["name"].datum
-    tail = m["tail"].datum
-    ann = _parse_decl_tail(tail, source)
-    type_expr = ann.get("type")
-    return (name, type_expr)
 
 
 def gather_parameters(args, source=None):

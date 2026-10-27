@@ -37,17 +37,17 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define gen-plain []:
+def gen-plain []:
     yield 1
     yield 2
 
-define inc [x]:
+def inc [x]:
     (+ x 1)
 
-define boom [x]:
+def boom [x]:
     raise (ValueError "boom")
 
-define relay [it]:
+def relay [it]:
     yield-from it
 """
 

@@ -58,7 +58,7 @@ class TestNestedAsyncGenGcTraverseReproducer(SpecialsTestCase):
 
         src = """
         (lambda []
-          (define mk []
+          (define [mk]
             (yield 1)
             (yield 2)
             (yield 3))

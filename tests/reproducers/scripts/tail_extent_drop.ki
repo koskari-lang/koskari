@@ -15,11 +15,11 @@
 ;; promoted TAIL_CALL between PUSH_NS and a POP_NS the tail path never
 ;; reaches, so the frame handoff must uninstall the NS extent itself.
 
-(define quiet_loop [n]
+(def quiet_loop [n]
   (let [[m (- n 1)]]
     (if (== m 0) 0 (quiet_loop m))))
 
-(define raising_loop [n]
+(def raising_loop [n]
   (let [[m (- n 1)]]
     (if (== m 0)
       (raise (ValueError "bottom"))

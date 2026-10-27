@@ -5,7 +5,7 @@
 **Behaviour:** Expands to a call to the
 [`evaluate`](../runtime/evaluate.md) runtime function, which compiles
 `FORM` if it is not already compiled and runs it in the namespace,
-returning the value. With one argument the namespace is `(locals)`;
+returning the value. With one argument the namespace is `(vars)`;
 with two, the given namespace, which is a Koskari namespace or module
 rather than a plain dict. `FORM` is evaluated, so quote a literal form.
 
@@ -14,7 +14,7 @@ rather than a plain dict. `FORM` is evaluated, so quote a literal form.
 ```koskari
 >>> (evaluate '(+ 1 2))
 3
->>> (define x 4)
+>>> (var x 4)
 >>> (evaluate '(* 2 x) (globals))
 8
 ```

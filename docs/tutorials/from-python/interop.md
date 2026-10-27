@@ -54,20 +54,21 @@ mypkg.tools.CONSTANT
 +++
 ```koskari
 ;; mypkg/tools.ki
-define CONSTANT 42
+var CONSTANT 42
 
-define-demanding shout [word]:
+@demand
+def shout [word]:
   (+ (word.upper) "!")
 ```
 :::
 
 :::{dialogue}
-Why `define-demanding`?
+Why `@demand`?
 +++
-A plain `define` produces an ambiently async function. Called from
+A plain `def` produces an ambiently async function. Called from
 Koskari it returns a value; called from Python it returns a coroutine.
-`define-demanding` wraps the function so a Python caller with no event
-loop gets the value. Any function Python will call directly wants it;
+`@demand` above the `def` wraps the function so a Python caller with
+no event loop gets the value. Any function Python will call directly wants it;
 functions called only from Koskari do not.
 :::
 

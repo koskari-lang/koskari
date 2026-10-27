@@ -16,7 +16,6 @@ structural colon, and peer blocks are in
 | [any other head](layout-block-default.md) | | `(HEAD ARGS... BODY...)`, one argument per body line, keyword lines as keyword arguments |
 | [`block-begin`](layout-block-begin.md) | | `(HEAD ARGS... (begin BODY...))`; bind `layout/<head>` to it for a head that wants one body form |
 | [`inline-block`](layout-inline-block.md) | | `(HEAD ARGS... ELEMENT...)`, every element of every body line spliced and nothing folded; bind `layout/<head>` to it for a head whose block only breaks a long line |
-| [`import-from`](layout-import-from.md) | | `(import-from MODULE NAME...)`, the inlining lowering applied to a long import list |
 | [`if`](layout-if.md) | `elif`, `else` | `(cond [TEST BODY] ... [else: BODY])` |
 | [`while`](layout-while.md) | `else` | `(while TEST BODY... (else: BODY...))` |
 | [`for-each`](layout-for-each.md) | `else` | `(for-each [VAR SEQ] BODY... (else: BODY...))` |
@@ -24,9 +23,9 @@ structural colon, and peer blocks are in
 | [`dyn-wind`](layout-dyn-wind.md) | `before`, `after` | `(dyn-wind BEFORE (begin BODY...) AFTER)`, an absent peer emitting `()` |
 | [`switch`](layout-switch.md) | | `(switch SUBJECT [VALUE BODY...] ... [else: BODY...])` |
 | [`match`](layout-match.md) | | `(match SUBJECT [[PATTERN...] BODY...] ... [else: BODY...])` |
-| [`class`](layout-class.md) | | `(class NAME SUPERS (begin BODY...))`, a class expression |
-| [`define-class`](layout-define-class.md) | | `(define-class NAME SUPERS (begin BODY...))` |
-| [`define-dataclass`](layout-define-dataclass.md) | | `(define-dataclass NAME SUPERS (begin BODY...))` |
+| [`class`](layout-class.md) | | `(class NAME SUPERS (begin BODY...))`, a class bound to NAME |
+| [`build-class`](layout-build-class.md) | | `(build-class NAME SUPERS (begin BODY...))`, a class expression that binds nothing |
+| [`global`](layout-global.md) | | the block of the word after `global`, read through that word's layout, with `global` put back in front |
 | [`syntax-rules`](layout-syntax-rules.md) | | a `syntax-rules` transformer, one arm per rule block |
 | [`syntax-match`](layout-syntax-match.md) | | a `syntax-match` transformer |
 | [`macro-rules`](layout-macro-rules.md) | | a `macro-rules` transformer |
@@ -71,7 +70,7 @@ A block that only needs its body spliced after the header needs no handler;
 the default applies.
 
 A block whose body should be one `begin` form binds
-`define layout/<head> layout/block-begin` in the module that uses it. A block
+`var layout/<head> layout/block-begin` in the module that uses it. A block
 that only breaks a long line binds `layout/inline-block` the same way.
 
 Anything else is a `LayoutHandler` bound to `layout/<head>`. The handler wraps a
@@ -84,10 +83,10 @@ ignored.
 
 ```koskari
 >>> import-from koskari.reader.layouts LayoutHandler
->>> define report-read [reader source peers]:
+>>> def report-read [reader source peers]:
 ...   (cons (symbol "#list") (reader.fold_lines source.cdr))
->>> define layout/report (LayoutHandler (symbol "layout/report") (demand report-read))
->>> define vals:
+>>> var layout/report (LayoutHandler (symbol "layout/report") (demand report-read))
+>>> var vals:
 ...   report:
 ...     1
 ...     (+ 1 1)

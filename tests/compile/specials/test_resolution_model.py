@@ -78,7 +78,7 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
 
         src_str = """
         (lambda []
-          (define x 1)
+          (var x 1)
           (define-global x 2)
           x)
         """
@@ -95,7 +95,7 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         src_str = """
         (lambda []
           (define-global x 2)
-          (define x 1)
+          (var x 1)
           x)
         """
         with self.assertRaises(CompilerError) as caught:
@@ -109,8 +109,8 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         """
 
         for src_str in (
-                "(begin (define x 1) (define-global x 2) x)",
-                "(begin (define-global x 1) (define x 2) x)"):
+                "(begin (var x 1) (define-global x 2) x)",
+                "(begin (define-global x 1) (var x 2) x)"):
             expr, mod = self.compile_expr(src_str)
             self.assertEqual(2, await expr())
             self.assertEqual(vars(mod).deref('x'), 2)
@@ -152,9 +152,9 @@ class TestResolutionModelNestedWrite(SpecialsTestCase):
         """define x, inner define setter with setq x works (closure write)"""
         src_str = """
         ((lambda ()
-           (define x 101)
-           (define getter (lambda () x))
-           (define setter (lambda [v] (setq x v)))
+           (var x 101)
+           (define [getter] x)
+           (define [setter v] (setq x v))
            (call (lambda [g s]
              (call s 42)
              (call g))
@@ -184,9 +184,9 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         src_str = """
         ((lambda ()
            (define-global counter 0)
-           (define inc (lambda ()
+           (define [inc]
              (setq counter (call + counter 1))
-             counter))
+             counter)
            (call inc)
            (call inc)
            counter))
@@ -200,10 +200,10 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         """Outer define x; inner define-global x; inner setq does not touch outer"""
         src_str = """
         ((lambda ()
-           (define x 0)
-           (define inner (lambda ()
+           (var x 0)
+           (define [inner]
              (define-global x 99)
-             (setq x 1)))
+             (setq x 1))
            (call inner)
            x))
         """
@@ -265,8 +265,8 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         pragma = KoskariPragma()
         src_str = """
         ((lambda ()
-           (define x 101)
-           (define setter (lambda [v] (setq x v)))
+           (var x 101)
+           (define [setter v] (setq x v))
            (call setter 42)))
         """
         code = self.compile_to_code(
@@ -353,8 +353,8 @@ class TestResolutionLexicalAncestry(SpecialsTestCase):
     async def test_later_define_in_enclosing_body_still_satisfies(self):
         src_str = """
         ((lambda []
-           (define bump (lambda [] (setq x (+ x 1))))
-           (define x 10)
+           (define [bump] (setq x (+ x 1)))
+           (var x 10)
            (bump)
            x))
         """
@@ -384,11 +384,10 @@ class TestResolutionLexicalAncestry(SpecialsTestCase):
 
         src_str = """
         ((lambda []
-           (define bump
-             (lambda []
+           (define [bump]
                (let [[a 1]]
-                 (setq total (+ total a)))))
-           (define total 10)
+                 (setq total (+ total a))))
+           (var total 10)
            (bump)
            total))
         """

@@ -14,7 +14,7 @@
 """
 tests.reproducers.test_abc_shapes_repro
 
-Full-stack reproducer: a Koskari define-class hierarchy rooted at abc.ABC
+Full-stack reproducer: a Koskari class hierarchy rooted at abc.ABC
 with @abstractmethod methods.  Exercises abstract-property declaration,
 abstract-instantiation enforcement, and a concrete subclass that chains
 through (super) __init__.

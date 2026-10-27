@@ -21,12 +21,12 @@ Greet whoever is named on the command line
 import sys
 
 
-define greet [name]:
+def greet [name]:
   print "hello" name
 
 
 @entry-point
-define main []:
+def main []:
   for-each [name (item-slice sys.argv 1)]:
     (greet name)
 ```

@@ -37,20 +37,20 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define collect_each [it]:
-    define out (#list)
+def collect_each [it]:
+    var out (#list)
     for-each [x it]:
         (out.append x)
     out
 
-define take_next [it]:
+def take_next [it]:
     (next it)
 
-define relay [it]:
+def relay [it]:
     yield-from it
 
-define collect_gen [g]:
-    define out (#list)
+def collect_gen [g]:
+    var out (#list)
     for-each [x g]:
         (out.append x)
     out

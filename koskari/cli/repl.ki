@@ -28,15 +28,14 @@ rendering reuses the Python formatters in koskari.exceptions.
 
 import sys
 
-import-from .host:
-  _await_user_form _make_repl_prompter
+(import-from .host _await_user_form _make_repl_prompter
   REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES
-  startup_lines
+  startup_lines)
 ; maybe_print_logo startup_lines  -- logo emission disabled for now
-import-from ..exceptions:
+(import-from ..exceptions
   format_code_boundary_exception format_exception_with_koskari_trace
   apply_sys_last_exc CompilerError UncaughtCompilerError
-  ReaderEOF ReaderError
+  ReaderEOF ReaderError)
 import-from ..reader IndentAwareStream source_str READ_EOF
 import-from ..module init_module build_module_load_facets find_module_reader
 import-from ..lib kos_repr
@@ -48,7 +47,7 @@ import-from ..lib kos_repr
 ; === Continuation heuristics ===
 
 
-define block_body? [buffer]:
+def block_body? [buffer]:
   """
   True if buffer appears to be inside a layout block body (user may add
   more).  A block header (some line ends with a colon) is present and the
@@ -58,18 +57,18 @@ define block_body? [buffer]:
   unless (and buffer (in? ":" buffer)):
     return False
 
-  define lines (buffer.splitlines)
+  var lines (buffer.splitlines)
   unless (any? (each [ln lines] ((ln.rstrip).endswith ":"))):
     return False
 
-  define nonempty (list-each [ln lines] when: (ln.strip) ln)
+  var nonempty (list-each [ln lines] when: (ln.strip) ln)
   unless nonempty:
     return False
 
   (in? nonempty[-1][0] " \t")
 
 
-define continuation_indent [buffer]:
+def continuation_indent [buffer]:
   """
   Return the leading whitespace for the next continuation line.
 
@@ -81,19 +80,19 @@ define continuation_indent [buffer]:
   unless buffer:
     return ""
 
-  define lines (buffer.splitlines)
+  var lines (buffer.splitlines)
   unless lines:
     return ""
 
   when ((buffer.rstrip).endswith ":"):
-    define last lines[-1]
-    define indent_len (- (len last) (len (last.lstrip)))
+    var last lines[-1]
+    var indent_len (- (len last) (len (last.lstrip)))
     return (* " " (+ indent_len 4))
 
   when (block_body? buffer):
-    define nonempty (list (filter (lambda [ln] (ln.strip)) lines))
+    var nonempty (list (filter (lambda [ln] (ln.strip)) lines))
     when nonempty:
-      define ln nonempty[-1]
+      var ln nonempty[-1]
       return (* " " (- (len ln) (len (ln.lstrip))))
 
   return ""
@@ -102,16 +101,16 @@ define continuation_indent [buffer]:
 ; === Read step ===
 
 
-define _INCOMPLETE (object)
+var _INCOMPLETE (object)
 
 
-define-syntax incomplete?:
+syntax incomplete?:
   syntax-rules []:
     case (incomplete? result):
       (is? result _INCOMPLETE)
 
 
-define read_buffer [ns source]:
+def read_buffer [ns source]:
   """
   Read every form in a REPL buffer.
 
@@ -122,13 +121,13 @@ define read_buffer [ns source]:
 
   ;; the session's reader, rebuilt from its pragma when detached, so
   ;; the REPL reads with the same pragma-gated surfaces as a module
-  define reader (find_module_reader ns)
+  var reader (find_module_reader ns)
 
-  define stream (IndentAwareStream.from_source (source_str source "<stdin>"))
+  var stream (IndentAwareStream.from_source (source_str source "<stdin>"))
 
-  define forms #[]
+  var forms #[]
   while True:
-    define-values [source_expr position]:
+    var [source_expr position]:
       try:
         reader.read_and_position stream
       except [ReaderEOF]:
@@ -142,20 +141,20 @@ define read_buffer [ns source]:
   (if forms forms _INCOMPLETE)
 
 
-define eval_expression [compiler source_expr position ns]:
+def eval_expression [compiler source_expr position ns]:
   """
   Compile one REPL form into a zero-argument expression to be awaited
   via the boundary shim.  Compile-phase errors propagate to the caller.
   """
 
-  define fragment (compiler.compile_expression source_expr position)
+  var fragment (compiler.compile_expression source_expr position)
   (fragment.as_expression ns)
 
 
 ; === REPL loop ===
 
 
-define repl [
+def repl [
     mod
     prompter: None
     histfile: None
@@ -188,13 +187,13 @@ define repl [
   set! stdout (or stdout sys.stdout)
   set! stderr (or stderr sys.stderr)
 
-  define compiler (getattr mod "__compiler__" None)
+  var compiler (getattr mod "__compiler__" None)
   when (None? compiler):
     init_module mod "<stdin>"
-    define facets (build_module_load_facets mod filename: "<stdin>")
+    var facets (build_module_load_facets mod filename: "<stdin>")
     set! compiler facets[0]
 
-  define ns (vars mod)
+  var ns (vars mod)
   when (None? prompter):
     set! prompter (_make_repl_prompter histfile ns)
 
@@ -204,13 +203,13 @@ define repl [
       print line file: stdout
     print "" file: stdout
 
-  define buffer ""
-  define prompt ">>> "
+  var buffer ""
+  var prompt ">>> "
 
   while True:
     try:
-      define indent (if (equal? prompt "... ") (continuation_indent buffer) "")
-      define line (await (prompter prompt default: indent))
+      var indent (if (equal? prompt "... ") (continuation_indent buffer) "")
+      var line (await (prompter prompt default: indent))
 
     except [EOFError]:
       print "" file: stderr
@@ -241,7 +240,7 @@ define repl [
         continue
 
     try:
-      define forms (read_buffer ns buffer)
+      var forms (read_buffer ns buffer)
 
       if (incomplete? forms):
         set! prompt "... "
@@ -251,12 +250,12 @@ define repl [
       set! prompt ">>> "
 
       for-each [[source_expr position] forms]:
-        define expr (eval_expression compiler source_expr position ns)
+        var expr (eval_expression compiler source_expr position ns)
 
         ;; No explicit await here: the call boundary already auto-awaits
         ;; the shim coroutine, and an explicit await would collapse a
         ;; defer handle returned by the user form.
-        define result (_await_user_form expr)
+        var result (_await_user_form expr)
 
         set! ns["_"] result
         unless (None? result):
@@ -280,7 +279,7 @@ define repl [
       set! prompt ">>> "
 
     except [REPLCodeBoundary as: boundary]:
-      define res (format_code_boundary_exception boundary
+      var res (format_code_boundary_exception boundary
         nofold: full_trace
         infrastructure_modules: REPL_INFRASTRUCTURE_MODULES)
       apply_sys_last_exc res[1] res[2] res[3]
@@ -290,8 +289,8 @@ define repl [
       set! prompt ">>> "
 
     except [UncaughtCompilerError as: exc]:
-      define tb exc.__traceback__
-      define elines (format_exception_with_koskari_trace (type exc) exc tb)
+      var tb exc.__traceback__
+      var elines (format_exception_with_koskari_trace (type exc) exc tb)
       apply_sys_last_exc (type exc) exc tb
       print ("".join elines) end: "" file: stderr
       (stderr.flush)
@@ -306,8 +305,8 @@ define repl [
       set! prompt ">>> "
 
     except [Exception]:
-      define info (sys.exc_info)
-      define elines (format_exception_with_koskari_trace *: info)
+      var info (sys.exc_info)
+      var elines (format_exception_with_koskari_trace *: info)
       apply_sys_last_exc *: info
       print ("".join elines) end: "" file: stderr
       (stderr.flush)

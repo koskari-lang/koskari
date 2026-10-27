@@ -7,16 +7,16 @@
 
 import-from dataclasses dataclass
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
 @dataclass
-define-class Point []:
-    define x :: int 0
-    define y :: int 0
+class Point []:
+    var x :: int 0
+    var y :: int 0
 
 
-define SUBJECTS #(
+var SUBJECTS #(
     (Point 0 0)
     (Point 3 4)
     #(10 20 30 40)
@@ -28,12 +28,12 @@ define SUBJECTS #(
     #{"other": 1})
 
 
-define churn_match_case [n]:
-    define acc 0
-    define count (len SUBJECTS)
+def churn_match_case [n]:
+    var acc 0
+    var count (len SUBJECTS)
     for-each [i (range n)]:
-        define v (item SUBJECTS (% i count))
-        define r None
+        var v (item SUBJECTS (% i count))
+        var r None
         match v:
             case Point[x: 0 y: 0]:
                 set! r 1

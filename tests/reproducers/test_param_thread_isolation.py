@@ -47,7 +47,7 @@ pytestmark = pytest.mark.phase_reproducers
 # A defer created inside a parameterize extent on the loading thread;
 # driven later on a different OS thread, it reads its captured binding.
 CAPTURE_SRC = """
-(define probe
+(var probe
   (parameterize [[tp "captured"]]
     (defer (lambda [] (parameterq tp "unset")))))
 """
@@ -61,7 +61,7 @@ CAPTURE_SRC = """
 # thread. B1, B2, and RESULTS are pre-seeded into the module
 # namespace.
 SHARED_SRC = """
-(define worker (lambda [name]
+(def worker [name]
   (parameterize [[shared name]]
     (B1.wait 10)
     (set! (item RESULTS name) (parameterq shared "unset")))
@@ -70,9 +70,9 @@ SHARED_SRC = """
       (cell.store "cross")))
   (B2.wait 10)
   (when (== name "T2")
-    (set! (item RESULTS "after") (parameterq shared "unset")))))
+    (set! (item RESULTS "after") (parameterq shared "unset"))))
 
-(define probes #[(defer worker "T1") (defer worker "T2")])
+(var probes #[(defer worker "T1") (defer worker "T2")])
 """
 
 
@@ -80,7 +80,7 @@ SHARED_SRC = """
 # extent in the way and reads it back: run on another thread, the store
 # lands in that thread's root.
 STORE_SRC = """
-(define probe
+(var probe
   (defer (lambda []
     (let [[cell (ref (parameter own_root))]]
       (cell.store "worker"))
@@ -92,10 +92,10 @@ STORE_SRC = """
 # with no extent in the way: a `with Domain():` block opened in the
 # callout owns the root the nested call stores into.
 CALLOUT_SRC = """
-(define outer (lambda [cb] (cb)))
-(define inner (lambda []
+(def outer [cb] (cb))
+(def inner []
   (let [[cell (ref (parameter k))]] (cell.store "stored-inner"))
-  (parameterq k "unset")))
+  (parameterq k "unset"))
 """
 
 

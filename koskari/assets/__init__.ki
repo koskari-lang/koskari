@@ -31,10 +31,10 @@ import importlib.resources
 (declare-exports ICON_PNG_SIZES icon_path icon_png_bytes icon_svg_bytes icon_svg_text)
 
 
-define ICON_PNG_SIZES #(32 256)
+var ICON_PNG_SIZES #(32 256)
 
 
-define icon-filename [size]:
+def icon-filename [size]:
   """
   Resolve a PNG size to its packaged filename
 
@@ -49,19 +49,19 @@ define icon-filename [size]:
 
 
 @demand
-define icon_svg_bytes []:
+def icon_svg_bytes []:
   """
   The apple-mark logo as SVG source bytes
 
   :return: SVG document bytes
   """
 
-  define ref ((importlib.resources.files __package__).joinpath "koskari-icon.svg")
+  var ref ((importlib.resources.files __package__).joinpath "koskari-icon.svg")
   (ref.read_bytes)
 
 
 @demand
-define icon_svg_text []:
+def icon_svg_text []:
   """
   The apple-mark logo as SVG source text
 
@@ -72,7 +72,7 @@ define icon_svg_text []:
 
 
 @demand
-define icon_png_bytes [size: 32]:
+def icon_png_bytes [size: 32]:
   """
   The apple-mark logo as PNG bytes at one of the packaged sizes
 
@@ -81,12 +81,12 @@ define icon_png_bytes [size: 32]:
   :raises ValueError: if size is not a packaged PNG size
   """
 
-  define ref ((importlib.resources.files __package__).joinpath (icon-filename size))
+  var ref ((importlib.resources.files __package__).joinpath (icon-filename size))
   (ref.read_bytes)
 
 
 @demand
-define icon_path [size: None]:
+def icon_path [size: None]:
   """
   A real filesystem path to the icon, for callers that need a path
   rather than bytes (a GUI toolkit's window icon, a web framework's
@@ -102,8 +102,8 @@ define icon_path [size: None]:
   :raises ValueError: if size is not a packaged PNG size
   """
 
-  define name (if (None? size) "koskari-icon.svg" (icon-filename size))
-  define ref ((importlib.resources.files __package__).joinpath name)
+  var name (if (None? size) "koskari-icon.svg" (icon-filename size))
+  var ref ((importlib.resources.files __package__).joinpath name)
   (importlib.resources.as_file ref)
 
 

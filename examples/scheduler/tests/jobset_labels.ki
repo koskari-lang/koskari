@@ -7,20 +7,20 @@ import-from unittest TestCase
 import-all-from kosrunner
 
 
-define-syntax template-jobset:
+syntax template-jobset:
     syntax-rules []:
         case (template-jobset getter):
             (begin
                 (jobset ws (job fake j1))
-                (define getter [] ws))
+                (def getter [] ws))
 
 
-define-syntax template-group:
+syntax template-group:
     syntax-rules []:
         case (template-group getter):
             (begin
                 (group admins "root@example.com")
-                (define getter [] admins))
+                (def getter [] admins))
 
 
 (template-jobset get-ws)
@@ -31,21 +31,21 @@ define-syntax template-group:
     (job fake j2))
 
 
-define-class TestJobsetLabels [TestCase]:
+class TestJobsetLabels [TestCase]:
 
-    define test-template-job-registers-by-written-name [self]:
+    def test-template-job-registers-by-written-name [self]:
         (self.assertEqual (list (attr (get-ws) jobs)) #["j1"])
 
 
-    define test-template-jobset-is-named-as-written [self]:
+    def test-template-jobset-is-named-as-written [self]:
         (self.assertEqual (attr (get-ws) name) "ws")
 
 
-    define test-template-group-is-named-as-written [self]:
+    def test-template-group-is-named-as-written [self]:
         (self.assertEqual (attr (get-admins) name) "admins")
 
 
-    define test-empty-config-entry [self]:
+    def test-empty-config-entry [self]:
         (self.assertEqual (list bare-config-ws.jobs) #["j2"])
 
 

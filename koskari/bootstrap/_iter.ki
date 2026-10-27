@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax each:
+syntax each:
   """
   Generator comprehension over a sequence
   """
@@ -51,7 +51,7 @@ define-syntax each:
       (each [binding seq] (begin body ...))
 
 
-define-syntax list-each:
+syntax list-each:
   """
   List comprehension over a sequence.
 
@@ -104,7 +104,7 @@ define-syntax list-each:
       (list-each [binding seq] (begin body ...))
 
 
-define-syntax dict-each:
+syntax dict-each:
   """
   Dict comprehension over a sequence.
 
@@ -173,7 +173,7 @@ define-syntax dict-each:
       (dict-each [binding seq] (begin body ...))
 
 
-define-syntax has?:
+syntax has?:
   """
   True if the collection contains the element
   """
@@ -183,7 +183,7 @@ define-syntax has?:
       (in element collection)
 
 
-define build-slice [start: None stop: None step: None]:
+define [build-slice start: None stop: None step: None]:
   """
   Simple slice class constructor that accepts keyword arguments
   """
@@ -191,7 +191,7 @@ define build-slice [start: None stop: None step: None]:
   (slice start stop step)
 
 
-define-syntax slice:
+syntax slice:
   """
   Adapter to route slice invocations to the build-slice function to
   enable keyword argument passing
@@ -204,7 +204,7 @@ define-syntax slice:
       (call build-slice args ...)
 
 
-define-syntax item-slice:
+syntax item-slice:
   """
   Slice a sequence.
 
@@ -225,7 +225,7 @@ define-syntax item-slice:
 
 
 @let [[py-sorted sorted]]
-define-global sorted [iterable key: None reverse: False]:
+define-global [sorted iterable key: None reverse: False]:
   """
   Koskari wrapper for Python's sorted function. Automatically
   wraps the key argument as a demand.
@@ -247,10 +247,10 @@ define-global sorted [iterable key: None reverse: False]:
     reverse: reverse)
 
 
-@let [[UNDEFINED ((class Undefined []
-                   (define __repr__ [self]
+@let [[UNDEFINED ((build-class Undefined []
+                   (define [__repr__ self]
                      "<raise>")))]]
-define-global next [it default: UNDEFINED]:
+define-global [next it default: UNDEFINED]:
   """
   Get the next item from an iterator.
 
@@ -264,7 +264,7 @@ define-global next [it default: UNDEFINED]:
     next it default
 
 
-define-global iter [val]:
+define-global [iter val]:
   """
   Produce an iterator for an iterable value
   """

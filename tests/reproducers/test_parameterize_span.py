@@ -36,19 +36,19 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define call_within [probe]
+(def call_within [probe]
   (parameterize [[span_width 5]]
     (probe)))
 
-(define read_width []
+(def read_width []
   (parameterq span_width None))
 
-(define read_width_within [probe]
+(def read_width_within [probe]
   (parameterize [[span_width 5]]
     (probe)
     (parameterq span_width None)))
 
-(define call_async [f]
+(def call_async [f]
   (f))
 """
 

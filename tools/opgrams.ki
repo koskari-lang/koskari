@@ -54,9 +54,9 @@ import-from koskari.lib demand
 import-from koskari.syntax Syntax
 
 
-define TOPDIR (dirname (dirname (abspath __file__)))
+var TOPDIR (dirname (dirname (abspath __file__)))
 
-define MODULE_GROUPS #{
+var MODULE_GROUPS #{
     "bootstrap": #("koskari.builtins")
 
     "modules": #(
@@ -109,6 +109,7 @@ define MODULE_GROUPS #{
         "tools.corpus.views.full"
         "tools.corpus.views.programs"
         "tools.editor_tokens.regen"
+        "tools.lockup"
         "tools.matchbench"
         "tools.opgrams"
         "tools.opsizing"
@@ -120,7 +121,7 @@ define MODULE_GROUPS #{
 ; line here, so no sequence may continue past them. Ops that carry a
 ; label argument (jumps, checks, switches, iteration) are detected from
 ; opcode metadata instead of being listed.
-define TERMINAL_OPS #(
+var TERMINAL_OPS #(
     "RETURN" "RETURN_CONST" "RETURN_VAR" "RETURN_FAST"
     "RAISE" "BREAK" "CONTINUE"
     "YIELD" "YIELD_CONST" "YIELD_VAR" "YIELD_FAST" "YIELD_FROM" "AWAIT"
@@ -132,21 +133,21 @@ define TERMINAL_OPS #(
     "TAIL_CALL_FAST_ATTR" "TAIL_CALL_FAST_ATTR_NAMES" "TAIL_CALL_FAST_ATTR_STAR"
     "THEEND")
 
-define LOOP_PUSH_OPS (frozenset #("PUSH_LOOP" "PUSH_FOREACH"))
+var LOOP_PUSH_OPS (frozenset #("PUSH_LOOP" "PUSH_FOREACH"))
 
-define LOOP_POP_OPS (frozenset #("POP_LOOP" "POP_FOREACH"))
+var LOOP_POP_OPS (frozenset #("POP_LOOP" "POP_FOREACH"))
 
-define TRANSPARENT_OPS (frozenset #("POSITION" "NOOP"))
+var TRANSPARENT_OPS (frozenset #("POSITION" "NOOP"))
 
 ; Groups whose modules live outside the installed package join sys.path
 ; from these repository-relative directories.
-define GROUP_PATHS #{
+var GROUP_PATHS #{
     "churn": (join TOPDIR "examples" "churn")
     "life": (join TOPDIR "examples" "life")
     "tools": TOPDIR}
 
 
-define build_block_enders []:
+def build_block_enders []:
     """
     Compute the set of opcode names that end a straight-line run: any
     opcode with a LABEL field in its argument schema, plus the terminal
@@ -154,7 +155,7 @@ define build_block_enders []:
     picked up automatically.
     """
 
-    define enders:
+    var enders:
         list-each [op OpCode]:
             when (or (== op.style OpStyle.LABEL)
                      (has? op.extra OpStyle.LABEL)):
@@ -164,7 +165,7 @@ define build_block_enders []:
     frozenset enders
 
 
-define unwrap_code [obj]:
+def unwrap_code [obj]:
     """
     Return the Code behind a collectable object, or None. Accepts Code,
     Expression, Function, demand-wrapped Function, and BoundMethod.
@@ -188,7 +189,7 @@ define unwrap_code [obj]:
         None
 
 
-define closure_codes [fn]:
+def closure_codes [fn]:
     """
     Yield Code objects captured in a Python function's closure cells.
     Macro handlers arrive as Python lambdas closing over the compiled
@@ -197,17 +198,17 @@ define closure_codes [fn]:
 
     for-each [cell (or fn.__closure__ #())]:
         try:
-            define val cell.cell_contents
+            var val cell.cell_contents
 
         except [ValueError]:
             continue
 
-        define code (unwrap_code val)
+        var code (unwrap_code val)
         when code:
             yield code
 
 
-define syntax_codes [label syn]:
+def syntax_codes [label syn]:
     """
     Walk a Syntax object's transformers for code-bearing attributes.
     Macro-based syntax carries its body as a Function behind the
@@ -215,7 +216,7 @@ define syntax_codes [label syn]:
     contribute nothing.
     """
 
-    local members
+    var members
 
     for-each [[i transform] (enumerate syn.transforms)]:
         set! members (getattr transform "__dict__" None)
@@ -223,7 +224,7 @@ define syntax_codes [label syn]:
             continue
 
         for-each [[key val] (members.items)]:
-            define code (unwrap_code val)
+            var code (unwrap_code val)
             if code:
                 yield #(f"{label}[{i}].{key}" code)
 
@@ -232,7 +233,7 @@ define syntax_codes [label syn]:
                     yield #(f"{label}[{i}].{key}" inner)
 
 
-define collect_codes [modules]:
+def collect_codes [modules]:
     """
     Walk module namespaces for code-bearing objects, then recurse into
     each Code's constant pool for nested Code objects (closures, class
@@ -241,40 +242,40 @@ define collect_codes [modules]:
     identity.
     """
 
-    define seen (set)
-    define found #[]
-    define stack #[]
+    var seen (set)
+    var found #[]
+    var stack #[]
 
     for-each [mod modules]:
         for-each [[key val] (sorted ((vars mod).items))]:
             when (key.startswith "__"):
                 continue
 
-            define label f"{mod.__name__}.{key}"
+            var label f"{mod.__name__}.{key}"
             if (instance? val Syntax):
                 (stack.extend (syntax_codes label val))
             else:
-                define code (unwrap_code val)
+                var code (unwrap_code val)
                 when (not (None? code)):
                     (stack.append #(label code))
 
     while stack:
-        define-values [label code] (stack.pop 0)
+        var [label code] (stack.pop 0)
         when (in? (id code) seen):
             continue
         (seen.add (id code))
         (found.append #(label code))
 
         for-each [[i val] (enumerate code.constants_pool)]:
-            define nested (unwrap_code val)
+            var nested (unwrap_code val)
             when (and (instance? nested Code) (not-in? (id nested) seen)):
-                define nested_name (or nested.name f"c#{i}")
+                var nested_name (or nested.name f"c#{i}")
                 (stack.append #(f"{label}/{nested_name}" nested))
 
     return found
 
 
-define iter_blocks [code enders]:
+def iter_blocks [code enders]:
     """
     Soften code and yield straight-line runs as lists of (op_name,
     loop_depth) pairs. A run starts fresh at every LABEL and stops after
@@ -285,12 +286,12 @@ define iter_blocks [code enders]:
         :func:`build_block_enders`
     """
 
-    define depth 0
-    define block #[]
+    var depth 0
+    var block #[]
 
     for-each [[op_int _arg] (code.soften)]:
-        define op (OpCode op_int)
-        define name op.name
+        var op (OpCode op_int)
+        var name op.name
 
         if (== name "LABEL"):
             when block:
@@ -317,13 +318,13 @@ define iter_blocks [code enders]:
         yield block
 
 
-define-class GramTally []:
+class GramTally []:
     """
     Accumulates raw and depth-weighted n-gram counts, exemplar
     locations, and the bigram successor table.
     """
 
-    define __init__ [self sizes weight_base]:
+    def __init__ [self sizes weight_base]:
         set! self.sizes sizes
         set! self.weight_base weight_base
         set! self.raw (dict (list-each [n sizes] #(n (Counter))))
@@ -334,25 +335,25 @@ define-class GramTally []:
         set! self.code_count 0
         set! self.block_count 0
 
-    define feed [self label block]:
+    def feed [self label block]:
         incr! self.block_count
-        define names (list-each [entry block] entry[0])
+        var names (list-each [entry block] entry[0])
 
         for-each [name names]:
             incr! self.op_counts[name]
 
         for-each [[prev succ] (zip names (item-slice names 1))]:
-            define bucket self.successors[prev]
+            var bucket self.successors[prev]
             incr! bucket[succ]
 
         for-each [n self.sizes]:
-            define raw_counts self.raw[n]
-            define weighted_counts self.weighted[n]
+            var raw_counts self.raw[n]
+            var weighted_counts self.weighted[n]
             for-each [i (range (+ (- (len block) n) 1))]:
 
-                define gram (tuple (item-slice names i (+ i n)))
+                var gram (tuple (item-slice names i (+ i n)))
 
-                define weight (** self.weight_base block[i][1])
+                var weight (** self.weight_base block[i][1])
 
                 incr! raw_counts[gram]
                 incr! weighted_counts[gram] weight
@@ -360,12 +361,12 @@ define-class GramTally []:
                     set! self.exemplar[gram] label
 
 
-define analyze [codes sizes weight_base enders]:
+def analyze [codes sizes weight_base enders]:
     """
     Run the n-gram tally over every collected code object
     """
 
-    define tally (GramTally sizes weight_base)
+    var tally (GramTally sizes weight_base)
 
     for-each [[label code] codes]:
         incr! tally.code_count
@@ -375,28 +376,28 @@ define analyze [codes sizes weight_base enders]:
     return tally
 
 
-define print_gram_tables [tally top file]:
+def print_gram_tables [tally top file]:
     """
     Write the weighted n-gram tables for every configured size
     """
 
-    define pad12 (* " " 12)
-    define pad6 (* " " 6)
+    var pad12 (* " " 12)
+    var pad6 (* " " 6)
 
     for-each [n tally.sizes]:
-        define weighted tally.weighted[n]
+        var weighted tally.weighted[n]
         (file.write
             f"\n=== top {n}-grams (weighted, base {tally.weight_base}) ===\n")
 
         for-each [[gram wcount] (weighted.most_common top)]:
-            define raw tally.raw[n][gram]
-            define seq (" ".join gram)
-            define exemplar tally.exemplar[gram]
+            var raw tally.raw[n][gram]
+            var seq (" ".join gram)
+            var exemplar tally.exemplar[gram]
             file.write f"  {wcount:>12}  {raw:>6}  {seq}\n"
             file.write f"  {pad12}  {pad6}    e.g. {exemplar}\n"
 
 
-define print_markov [tally threshold file]:
+def print_markov [tally threshold file]:
     """
     Write the per-opcode successor distribution table
     """
@@ -409,21 +410,21 @@ define print_markov [tally threshold file]:
         when (< count threshold):
             break
 
-        define succs tally.successors[op]
-        define total (sum (succs.values))
+        var succs tally.successors[op]
+        var total (sum (succs.values))
         unless total:
             continue
 
-        define parts:
+        var parts:
             list-each [[succ scount] (succs.most_common 4)]:
-                define pct (/ (* 100.0 scount) total)
+                var pct (/ (* 100.0 scount) total)
                 f"{succ} {pct:.0f}%"
 
-        define joined (", ".join parts)
+        var joined (", ".join parts)
         file.write f"  {op:<24} x{count:<7} -> {joined}\n"
 
 
-define print_opcounts [tally file]:
+def print_opcounts [tally file]:
     """
     Write the full per-opcode emission count table: every emitted
     opcode with its count, then the never-emitted remainder of the
@@ -435,7 +436,7 @@ define print_opcounts [tally file]:
     for-each [[op count] (tally.op_counts.most_common)]:
         file.write f"  {op:<24} x{count}\n"
 
-    define missing #[]
+    var missing #[]
     for-each [op (list OpCode)]:
         unless (in? op.name tally.op_counts):
             (missing.append op.name)
@@ -445,12 +446,12 @@ define print_opcounts [tally file]:
         file.write f"    {name}\n"
 
 
-define tally_to_json [tally top]:
+def tally_to_json [tally top]:
     """
     Render the tally as a JSON-serializable mapping
     """
 
-    define grams #{}
+    var grams #{}
     for-each [n tally.sizes]:
         set! grams[(str n)]:
             list-each [[gram wcount] (tally.weighted[n].most_common top)]:
@@ -459,11 +460,11 @@ define tally_to_json [tally top]:
                   "raw": tally.raw[n][gram]
                   "exemplar": tally.exemplar[gram]}
 
-    define successors #{}
+    var successors #{}
     for-each [[op succs] (tally.successors.items)]:
         set! successors[op] (dict (succs.most_common))
 
-    define op_counts #{}
+    var op_counts #{}
     for-each [op (list OpCode)]:
         set! op_counts[op.name] (tally.op_counts.get op.name 0)
 
@@ -475,13 +476,13 @@ define tally_to_json [tally top]:
       "op_counts": op_counts}
 
 
-define load_group [group]:
+def load_group [group]:
     """
     Import and return the modules for a named group. Groups that live
     outside the installed package get their directory on sys.path first.
     """
 
-    define extra_path (GROUP_PATHS.get group)
+    var extra_path (GROUP_PATHS.get group)
     when (and extra_path (not-in? extra_path sys.path)):
         sys.path.insert 0 extra_path
 
@@ -489,7 +490,7 @@ define load_group [group]:
         (importlib.import_module name)
 
 
-define build_arguments [parser]:
+def build_arguments [parser]:
     """
     Register the opgrams options on a parser or subparser
     """
@@ -515,7 +516,7 @@ define build_arguments [parser]:
     return parser
 
 
-define run [options]:
+def run [options]:
     """
     Execute the analysis described by parsed options
 
@@ -523,16 +524,16 @@ define run [options]:
     :return: integer exit code
     """
 
-    define groups (if (== options.group "all")
+    var groups (if (== options.group "all")
         (list MODULE_GROUPS)
         #[options.group])
 
-    define modules #[]
+    var modules #[]
     for-each [group groups]:
         modules.extend (load_group group)
 
-    define enders (build_block_enders)
-    define codes (collect_codes modules)
+    var enders (build_block_enders)
+    var codes (collect_codes modules)
 
     when options.dis:
         import-from koskari.dis dis
@@ -541,14 +542,14 @@ define run [options]:
             (dis code)
         return 0
 
-    define tally (analyze codes #(2 3 4) options.weight_base enders)
+    var tally (analyze codes #(2 3 4) options.weight_base enders)
 
     when options.json:
         (json.dump (tally_to_json tally options.top) sys.stdout indent: 2)
         (print)
         return 0
 
-    define joined (", ".join groups)
+    var joined (", ".join groups)
     (print
         f"codes: {tally.code_count}"-
         f"   blocks: {tally.block_count}"-
@@ -560,7 +561,7 @@ define run [options]:
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Parse arguments and run the analysis
 
@@ -571,9 +572,9 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [name *: args] argv
+    var [name *: args] argv
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: (basename name)
         description: "Opcode n-gram frequency analysis over Koskari code")
 

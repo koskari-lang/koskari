@@ -10,7 +10,7 @@ syntax name appears as a lone atom instead of at the head of a call form.
 **Behaviour:** SLOT names the called-by capture, and is the only binding
 TEMPLATE may refer to; it holds the symbol as written at the use site. The form
 lowers to a `Syntax` carrying only that arm. Bind it with
-[`define-syntax`](../macros/compile-define-syntax.md) to make a syntax that has
+[`syntax`](../macros/compile-syntax.md) to make a syntax that has
 no call arms, or attach it to an existing syntax with
 [`extend-syntax`](../macros/compile-extend-syntax.md).
 
@@ -21,7 +21,7 @@ no call arms, or attach it to an existing syntax with
 **Examples:**
 
 ```koskari
->>> define-syntax greeting:
+>>> syntax greeting:
 ...   bare-syntax slot:
 ...     "hello"
 >>> greeting
@@ -31,7 +31,7 @@ no call arms, or attach it to an existing syntax with
 A bare arm added to an existing transformer:
 
 ```koskari
->>> define-syntax counter:
+>>> syntax counter:
 ...   syntax-rules []:
 ...     case (counter n):
 ...       (+ n 1)
@@ -47,7 +47,7 @@ A bare arm added to an existing transformer:
 The slot carries the name as written:
 
 ```koskari
->>> define-syntax whoami:
+>>> syntax whoami:
 ...   bare-syntax me:
 ...     (str (quote me))
 >>> whoami

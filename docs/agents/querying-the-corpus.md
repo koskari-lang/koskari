@@ -31,7 +31,7 @@ Corpus records are keyed by feature path. The families:
 
 - `special/compile/` -- special forms (`special/compile/cond`)
 - `macro/compile/` -- macros (`macro/compile/for-each`)
-- `layout/` -- layout block forms (`layout/if`, `layout/define-class`)
+- `layout/` -- layout block forms (`layout/if`, `layout/class`)
 - `reader/` -- reader syntax (`reader/#dict`, `reader/layout`)
 - `builtin/` -- builtins (`builtin/demand`)
 - `module/` -- library modules (`module/koskari.solve`)
@@ -61,7 +61,7 @@ Documentation and program rows match query tokens against `path`,
 `title`, and `content`. Corpus records match against `source`,
 `feature`, `corpus_id`, and `tags`. Tokens are lowercase runs of
 `[a-z0-9-]`; hyphens are kept, so hyphenated form names (`for-each`,
-`define-class`) tokenize whole and are excellent query terms. Ranking
+`build-class`) tokenize whole and are excellent query terms. Ranking
 counts how many distinct query tokens a row contains. When no token
 matches, a substring fallback runs, which is what lets short language
 keywords (`if`, `and`, `while`) find examples at all.

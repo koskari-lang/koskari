@@ -20,7 +20,7 @@
    KosProperty: subtype of the built-in property that auto-wraps KosCallable
    accessors in Demand at every registration point (constructor, .setter,
    .deleter). Authors can use ordinary @property syntax on Koskari functions
-   without a separate @demand or define-demanding step.
+   without a separate @demand step.
 
    The type is dynamically rooted to builtins.property at init time so that
    isinstance(obj, property) continues to work and .setter / .deleter return

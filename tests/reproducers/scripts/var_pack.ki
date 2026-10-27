@@ -4,86 +4,86 @@
 ;; keeps every check order-sensitive.
 
 
-define verify_fast2 []:
-    define a "a"
-    define b "b"
+def verify_fast2 []:
+    var a "a"
+    var b "b"
     equal? #(a b) #("a" "b")
 
 
-define verify_fast3 []:
-    define a "a"
-    define b "b"
-    define c "c"
+def verify_fast3 []:
+    var a "a"
+    var b "b"
+    var c "c"
     equal? (+ a b c) "abc"
 
 
-define verify_fast4_fast3 []:
-    define a "a"
-    define b "b"
-    define c "c"
-    define d "d"
-    define e "e"
-    define f "f"
-    define g "g"
+def verify_fast4_fast3 []:
+    var a "a"
+    var b "b"
+    var c "c"
+    var d "d"
+    var e "e"
+    var f "f"
+    var g "g"
     equal? (+ a b c d e f g) "abcdefg"
 
 
 ;; constant runs pack too; the arguments of a call keep the loads
 ;; apart from constant folding
 
-define cat3 [a b c]:
+def cat3 [a b c]:
     (+ a b c)
 
 
-define cat4 [a b c d]:
+def cat4 [a b c d]:
     (+ a b c d)
 
 
-define verify_const3 []:
+def verify_const3 []:
     equal? (cat3 "x" "y" "z") "xyz"
 
 
-define verify_const4 []:
+def verify_const4 []:
     equal? (cat4 "w" "x" "y" "z") "wxyz"
 
 
-define verify_fast4 []:
-    define a "a"
-    define b "b"
-    define c "c"
-    define d "d"
+def verify_fast4 []:
+    var a "a"
+    var b "b"
+    var c "c"
+    var d "d"
     equal? (+ a b c d) "abcd"
 
 
-define verify_fast4_fast2 []:
-    define a "a"
-    define b "b"
-    define c "c"
-    define d "d"
-    define e "e"
-    define f "f"
+def verify_fast4_fast2 []:
+    var a "a"
+    var b "b"
+    var c "c"
+    var d "d"
+    var e "e"
+    var f "f"
     equal? (+ a b c d e f) "abcdef"
 
 
-define verify_eight []:
-    define a "a"
-    define b "b"
-    define c "c"
-    define d "d"
-    define e "e"
-    define f "f"
-    define g "g"
-    define h "h"
+def verify_eight []:
+    var a "a"
+    var b "b"
+    var c "c"
+    var d "d"
+    var e "e"
+    var f "f"
+    var g "g"
+    var h "h"
     equal? (+ a b c d e f g h) "abcdefgh"
 
 
 ;; closure slots mix with locals in one packed row
 
-define make_adder [x y]:
+def make_adder [x y]:
     lambda [u v]:
         (+ x y u v)
 
 
-define verify_closure_mix []:
-    define add (make_adder 10 20)
+def verify_closure_mix []:
+    var add (make_adder 10 20)
     equal? (add 3 4) 37

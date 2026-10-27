@@ -38,12 +38,12 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define mk [g]:
+def mk [g]:
     (lambda [] g)
 
-define chain [count]:
-    define f None
-    define n 0
+def chain [count]:
+    var f None
+    var n 0
     while (< n count):
         set! f (mk f)
         set! n (+ n 1)

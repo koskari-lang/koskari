@@ -5,10 +5,10 @@
 ;; one at a time.
 
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define mix [a b]:
+def mix [a b]:
     (& (+ (* a 31) (^ b 0x5bd1e995)) MASK32)
 
 

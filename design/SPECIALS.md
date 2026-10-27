@@ -280,7 +280,7 @@ recursion in an immediately-invoked named `compile/let` or inline `(compile/lamb
 
 **See also:** `compile/function` — named function values **without** a closure
 self-binding at `BUILD_FUNCTION` time. Prefer `compile/function` for
-`compile/define` / `compile/define-global` function shorthand and decorator
+`def`, the Scheme `(define (NAME FORMALS ...) ...)` arm, and decorator
 wrappers; prefer named `compile/lambda` when the body must call the exact
 function object being created (e.g. named `compile/let`).
 
@@ -344,8 +344,8 @@ becomes `__doc__`.
 **Use-case:** Create a **named** function value whose body must **not** receive
 a closure self-binding for `NAME` at `BUILD_FUNCTION` time. The name in the
 body resolves via outer or module bindings instead — e.g. after decorators wrap
-the stored definition, or when `compile/define` / `compile/define-global`
-function shorthand stores the function and recursive calls use that binding.
+the stored definition, or when `def` or the Scheme `compile/define` / `compile/define-global`
+function arm stores the function and recursive calls use that binding.
 
 **Behaviour:** Same pipeline as `compile/lambda` via `helper_function` with
 `selfref=False`: `gather_formals`, `helper_begin`, `FunctionSpec`,
@@ -368,7 +368,7 @@ function fragment (contrast named `compile/lambda`).
 **Implementation:** `koskari/compile/specials/lambda_.py`
 
 **Tests:** `tests/compile/specials/test_lambda.py` (shared helper);
-`tests/compile/specials/test_define.py` (define / define-global shorthand)
+`tests/compile/specials/test_define.py` (define / define-global function arm)
 
 ## compile/let
 
@@ -970,27 +970,41 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 
 **Tests:** `tests/compile/specials/test_namespace_specials.py`
 
-## compile/locals
+## compile/vars (zero operands)
 
-**Symbol:** `compile/locals`
+**Symbol:** `compile/vars`
 
-**Syntax:** `(locals)`
+**Syntax:** `(vars)`
 
-**Use-case:** Obtain the current frame's namespace (locals), analogous to
-Python's `locals()`.
+**Use-case:** Obtain the current frame's namespace, analogous to Python's
+`locals()`. `(vars OBJ)` is the unary object form (see the unary object table
+below); the choice is made at compile time by arity.
 
 **Behaviour:** Emits `LOCALS` (argument 0). Pushes the current frame's namespace
-onto the stack. Any arguments are rejected with `SpecialError`.
+onto the stack. In value position `vars` is Python's builtin; the runtime
+replacement is `koskari-vars`, a `KosCallable` singleton (`koskari/lib/domain.c`)
+whose install runs while the caller's frame is current, so a zero-argument call
+returns the calling evaluation's namespace (tail position included). With an
+object it returns the object's `__dict__`.
+
+Namespace objects repr as one line naming the type, the scope name, the parent
+by name, and each own `name=value` (an unbound slot shows `<unbound>`, a Ref
+slot its value):
+
+```text
+<Namespace f1 in __main__: a=1 scale=2>
+```
 
 **Examples:**
 
 ```scheme
-(locals)
+(vars)
 ```
 
-**Implementation:** `koskari/compile/specials/variables.special_locals`
+**Implementation:** `koskari/compile/specials/object.special_vars`
 
-**Tests:** `tests/compile/specials/test_namespace_specials.py`
+**Tests:** `tests/compile/specials/test_namespace_specials.py`,
+`tests/importer/test_vars_and_repr.py`
 
 ## compile/gensym-partial
 
@@ -1621,131 +1635,148 @@ pushes CONST None.
 (bindq local 10)
 ```
 
-## compile/define
+## compile/var
 
-**Symbol:** `compile/define`
+**Symbol:** `compile/var`
 
-**Syntax:** The name and optional return type can be written in either of two
-ways:
+**Syntax:**
 
-**Inline type** (preferred; same `::` / `type:` placement as `compile/lambda`):
+- Declaration only: `(var NAME)`, `(var NAME :: TYPE)`, `(var NAME type: TYPE)`
+- Declare and store: `(var NAME EXPR)`, `(var NAME :: TYPE EXPR)` (or `type: TYPE`)
 
-- Declaration only: `(define NAME :: TYPE)` or `(define NAME type: TYPE)`
-- Declare and store: `(define NAME :: TYPE EXPR)` (or `type: TYPE`)
-- Function shorthand:
-`(define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
+`NAME` is a symbol. A pair in the name position is an unpacking pattern,
+handled by the `extend-syntax var` arm in `_define_syntax.ki` (see
+[MACROS.md](MACROS.md) § compile/var and compile/global), not by this special.
 
-**DECL** as the first argument (single binding-shaped form, no value):
+**Use-case:** Value binding in whatever namespace is live: function body,
+class body, or module top level. `def` and `class` lower to it.
 
-- Declaration only: `(define DECL)`
-- Declare and store: `(define DECL EXPR)`
-- Function shorthand: `(define DECL FORMALS BODY ...)`
-
-**DECL** may be:
-
-- A **symbol** (e.g. `x`), or
-- A **proper list** introducing a name with optional **type** attributes only:
-e.g. `[x]`, `[x :: int]`, `[x type: int]`, or `(TYPE as: NAME)` for the
-type-as-name spelling. **`value:`** and two-element **`(SYM EXPR)`** defaults
-are rejected (declarations do not carry a value).
-
-**Use-case:** Variable and function definition for module-level loading.
-Declaration-only leaves the ref in scope but empty (reading before assignment
-raises). Declare-and-store evaluates EXPR and stores the result in the slot
-(equivalent to compile/bindq). Function shorthand lowers to
-`compile/function`: if a return type is present (inline or in `DECL`), the
-expansion is `(compile/function NAME :: TYPE FORMALS BODY ...)` (using the `::`
-keyword); if not, `(compile/function NAME FORMALS BODY ...)`.
-
-For declaration-only or value binding with a type (e.g.
-`(compile/define [x :: int])` or `(compile/define x :: int 99)`), the type is
-accepted by the parser but is not stored on the variable binding in the current
-compiler (parse-only / metadata for tooling), except that function shorthand
-passes the type through to `compile/function` as the return annotation.
-
-Recursive calls in function shorthand (e.g. `fact` below) use the **module/local
-binding** after `VAR_STORE`, not an inner closure self-ref for the name.
-
-**Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
-**inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE` (see
-[MATCHER.md](MATCHER.md) — **DECL** composite). Declares
-the introduced name. For declaration-only: emits CONST None. For
-declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
-CONST None. For function shorthand: builds the `compile/function` form as above and
-compiles it, then emits `VAR_STORE`.
+**Behaviour:** Declares `NAME` in the current scope (`declare_var`, with the
+type expression when given). Declaration-only emits CONST None. Declare-and-store
+compiles EXPR, emits `VAR_STORE`, then CONST None. The type is recorded as an
+annotation binding; a class body collects these into `__annotations__`.
+The value is not checked against the type.
 
 **Examples:**
 
 ```scheme
-;; Declaration only; assign later with compile/setq
-(define x)
+;; Declaration only; assign later with setq
+(var x)
 (setq x 42)
 
-;; Typed declaration (parse-only on the binding; assign later as usual)
-(define x :: int)
-(define [x :: int])
+;; Typed
+(var x :: int)
+(var y :: int 99)
 
 ;; Declare and store
-(define y 99)
-
-;; Function shorthand
-(define double [x] (* x 2))
-(define f :: int [x] 5)
-(define [f :: int] [x] 5)
-(define fact [n]
-  (cond [(== n 0) 1]
-                [else: (* n (fact (- n 1)))]))
+(var y 99)
 ```
 
-**Tests:** `tests/compile/specials/test_define.py`
+**Implementation:** `koskari/compile/specials/variables.special_var`
 
-## compile/define-global
+**Tests:** `tests/compile/specials/test_var.py`
 
-**Symbol:** `compile/define-global`
+## compile/global
 
-**Syntax:** Same arities and spellings as `compile/define`: **inline type**
-(`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
+**Symbol:** `compile/global`
 
-- `(define-global NAME :: TYPE)` … (and `type:`), or `(define-global DECL)`
-- `(define-global NAME :: TYPE EXPR)` or `(define-global DECL EXPR)`
-- `(define-global NAME :: TYPE FORMALS BODY ...)` or
-`(define-global DECL FORMALS BODY ...)`
+**Syntax:** Same arms as `compile/var`: `(global NAME)`, `(global NAME EXPR)`,
+and the `::` / `type:` variants.
 
-See **compile/define** for the meaning of **DECL** and function-shorthand
-lowering to `compile/function` (including `NAME :: TYPE` when a return type is
-present). Same inner form as `compile/define`; additionally calls
-`request_global(name)` and stores via `VAR_STORE` into the module binding.
+**Use-case:** Explicit module binding for read and write from any depth. When
+using strict resolution (KoskariPragma), writes to undeclared names raise at
+compile time; `compile/global` opts a name into the module scope so that
+setq/delq target the module binding rather than requiring a local declaration.
+The `global def`, `global class` and `global syntax` prefix shapes and the
+pattern arm are macros over this special (see [MACROS.md](MACROS.md)).
 
-**Use-case:** Explicit module binding for read and write. When using strict
-resolution (KoskariPragma), writes to undeclared names raise at compile time;
-`compile/define-global` opts a name into the module scope so that setq/delq
-target the module binding rather than requiring a local declaration.
-Mirrors `compile/define` structure but pulls the ref from the module instead
-of the local or closure chain.
-
-**Behaviour:** Calls `request_global(name)` to record an explicit need from the
-module. For declaration-only: emits CONST None. For declare-and-store or
-function shorthand: compiles the value expression and emits VAR_STORE. Conflicts
-with local declaration; raises if the name is already in `declares` (e.g. from
-`compile/define`).
+**Behaviour:** Calls `request_global(name)`. Declaration-only emits CONST None;
+declare-and-store compiles EXPR and emits `VAR_STORE` into the module binding.
+A local declaration of the same name conflicts; the conflict is judged where the
+fragment merges into its body.
 
 **Examples:**
 
 ```scheme
 ;; Explicit global; setq writes to module
-(define-global x 1)
+(global x 1)
 (setq x 42)
 
 ;; Shared counter across nested closures
-((lambda ()
-   (define-global counter 0)
-   (define inc (lambda []
-     (setq counter (call + counter 1))
+((lambda []
+   (global counter 0)
+   (var inc (lambda []
+     (setq counter (+ counter 1))
      counter))
-   (call inc)))
+   (inc)))
 ```
 
-**Tests:** `tests/compile/specials/test_resolution_model.py`
+**Implementation:** `koskari/compile/specials/variables.special_global`
+
+**Tests:** `tests/compile/specials/test_var.py`,
+`tests/compile/specials/test_resolution_model.py`
+
+## compile/define
+
+**Symbol:** `compile/define`
+
+**Syntax** (Scheme's shape):
+
+- Function: `(define (NAME FORMAL ...) BODY ...)`
+- Value: `(define NAME EXPR)`, `(define NAME :: TYPE EXPR)` (or `type: TYPE`)
+- Declaration: `(define NAME)`, `(define NAME :: TYPE)` (or `type: TYPE`)
+
+A pair in the name position means a function; a symbol takes the
+`compile/var` arms. `(define [a b] x)` is therefore a function `a` of `b`
+returning `x`, not an unpacking binding -- use `define-values` or `var` for
+that. The pair must be headed by a symbol, or `SpecialError` is raised.
+
+**Use-case:** The Scheme layer's binding form. Kept as a special so it compiles
+without the bootstrap (specials test harness, `_define_syntax.ki` before any
+macro exists).
+
+**Behaviour:** For the function arm, declares `NAME`, compiles
+`(function NAME [FORMAL ...] BODY ...)`, emits `VAR_STORE`, then CONST None.
+Recursive calls use the binding after `VAR_STORE`, not an inner closure
+self-ref. The symbol arms behave as `compile/var`.
+
+**Examples:**
+
+```scheme
+(define x)
+(define y 99)
+(define z :: int 2)
+
+(define (double x) (* x 2))
+(define (fact n)
+  (cond [(== n 0) 1]
+        [else: (* n (fact (- n 1)))]))
+```
+
+**Tests:** `tests/compile/specials/test_define.py`
+
+**Implementation:** `koskari/compile/specials/variables.special_define`
+
+## compile/define-global
+
+**Symbol:** `compile/define-global`
+
+**Syntax:** Same arms as `compile/define`: `(define-global (NAME FORMAL ...) BODY ...)`,
+`(define-global NAME [EXPR])`, and the `::` / `type:` variants.
+
+**Behaviour:** As `compile/define`, binding at the module: the function arm
+calls `request_global(NAME)` and stores the `compile/function` value there; the
+symbol arms behave as `compile/global`.
+
+**Examples:**
+
+```scheme
+(define-global x 1)
+(define-global (inc n) (+ n 1))
+```
+
+**Tests:** `tests/compile/specials/test_define.py`,
+`tests/compile/specials/test_resolution_model.py`
 
 **Implementation:** `koskari/compile/specials/variables.special_define_global`
 
@@ -1754,7 +1785,7 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 **Not a compiler special.** User-facing **`(define-syntax NAME TRANSFORMER)`** is
 expanded by the **`compile/define-syntax`** **macro** in
 `koskari/bootstrap/_define_syntax.ki` (there is no registered `@special` for
-`compile/define-syntax`). The macro rewrites to **`(compile/define NAME …)`** with a
+`compile/define-syntax`). The macro rewrites to **`(global compile/NAME …)`** with a
 transformer whose head is **`syntax-rules`**, **`macro-rules`**, **`syntax-match`**,
 **`macro-match`**, **`special-rules`**, or **`special-match`**. Those specs are
 lowered by **`compile/syntax-rules`**, **`compile/macro-rules`**,
@@ -1762,8 +1793,10 @@ lowered by **`compile/syntax-rules`**, **`compile/macro-rules`**,
 and **`compile/special-match`** (below).
 
 **Typical surface form:** **`(define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`**
-— the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
-with **`NAME`** repeated as the first argument. Block syntax via the default
+— the macro expands that to **`(global compile/NAME (syntax-rules NAME …))`**,
+the spec carrying **`NAME`** as its first argument. **`syntax`** is the same at
+module top level and a body-scoped compiler overlay inside a body (see
+[MACROS.md](MACROS.md) § compile/syntax). Block syntax via the default
 block layout and `layout/syntax-rules` produces the same shape; see
 [LAYOUTS.md](LAYOUTS.md).
 
@@ -1915,29 +1948,32 @@ Emits **`build-special-rules`** with **`()`** for the serialized literals tuple.
 **Tests:** `tests/compile/specials/test_define_syntax.py`
 
 
-## compile/class
+## compile/build-class
 
-**Symbol:** `compile/class`
+**Symbol:** `compile/build-class`
 
-**Syntax:** `(class NAME (SUPERS) BODY ...)`
+**Syntax:** `(build-class NAME (SUPERS) BODY ...)`
 
 - **NAME**: symbol — used for the Python class `__name__` (and the BUILD_CLASS
   position tuple); **not** a compile-time binding target for this special
 - **SUPERS**: list of superclass expressions and optional `meta: Metaclass` keyword
 - **BODY**: forms compiled in sequence inside the CollectorNamespace (e.g.
-  `compile/define` for class attributes and methods)
+  `var` and `def` for class attributes and methods)
 
-**Use-case:** Create a Koskari class via PUSH_COLLECT/POP_COLLECT/BUILD_CLASS and
-run the body in a CollectorNamespace. The **value of the form** is the new class
-object (default metaclass is plain `type`; use `meta: MyMeta` in SUPERS for a custom
-metaclass). To **bind** the class to a name in the surrounding scope, wrap with
-`compile/define` (or use the **`define-class`** macro — see
-[MACROS.md](MACROS.md) § compile/define-class).
+**Use-case:** The class builder. Create a Koskari class via
+PUSH_COLLECT/POP_COLLECT/BUILD_CLASS and run the body in a CollectorNamespace.
+The **value of the form** is the new class object (default metaclass is plain
+`type`; use `meta: MyMeta` in SUPERS for a custom metaclass). The **`class`**
+binding macro, **`(class NAME SUPERS BODY ...)`**, expands to
+**`(var NAME (build-class NAME SUPERS BODY ...))`** (see
+[MACROS.md](MACROS.md) § compile/class). There is no `compile/class` special.
 
 **Behaviour:** Builds a position tuple `(name, bases)` or
 `(name, bases, metaclass)` with BUILD_ARGS, opens a collector namespace
 (PUSH_COLLECT / POP_COLLECT around the body), compiles **BODY** with
-`helper_begin`, then emits **BUILD_CLASS**. Unless the body already declares
+`helper_begin`, then emits **BUILD_CLASS**. The body scope declares
+**`__class__`**, which the builder fills once the class exists, so `(super)` in
+a method names the defining class. Unless the body already declares
 them, the compiler stores **`__qualname__`** as **NAME** (CPython-style,
 scope-only; nested `Outer.Inner` would need a future nesting stack) and
 **`__module__`** from the compiling **`Module.__name__`**, falling back to
@@ -1945,35 +1981,38 @@ scope-only; nested `Outer.Inner` would need a future nesting stack) and
 string is found. A
 leading string in **BODY** is stripped as the class
 `__doc__` when `__doc__` is not already declared (same pattern as functions).
+Typed **`var`** declarations in the body are collected into
+**`__annotations__`** unless the body declares it.
 The collect scope uses a stack block so body expression results (e.g. `None`
-from `compile/define`) do not reach **BUILD_CLASS**. The class object is left on
+from `var`) do not reach **BUILD_CLASS**. The class object is left on
 the stack as the expression result. This special does **not** emit `declare_var`
 or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
-`__qualname__` / `__module__` when applicable).
+`__qualname__` / `__module__` / `__annotations__` when applicable).
 
 **Examples:**
 
 ```scheme
-;; Expression value is the class (e.g. bind with compile/define)
-(define C (class C ()))
+;; Expression value is the class
+(var C (build-class C ()))
 
 ;; Class with attribute
-(define C
-  (class C ()
-    (define x 42)))
+(var C
+  (build-class C ()
+    (var x 42)))
 
 ;; Class with superclass (object is available from bootstrap)
-(define C
-  (class C (object)
-    (define x 1)))
+(build-class C (object)
+  (var x 1))
 
-;; Custom metaclass
-(define C
-  (class C (Base meta: MyMeta)
-    (define x 1)))
+;; Custom metaclass, bound through the class macro
+(class C (Base meta: MyMeta)
+  (var x 1))
 ```
 
-**Tests:** `tests/compile/specials/test_class.py`
+**Implementation:** `koskari/compile/specials/class_.special_build_class`
+
+**Tests:** `tests/compile/specials/test_class.py`,
+`tests/compile/specials/test_var.py`
 
 ## compile/delq
 
@@ -2772,6 +2811,8 @@ Each requires exactly one argument.
 | `(type OBJ)`         | `OBJECT_TYPE`                            | `type(OBJ)`                |
 | `(dir OBJ)`          | `OBJECT_DIR`                             | `dir(OBJ)`                 |
 | `(vars OBJ)`         | `OBJECT_VARS`                            | `vars(OBJ)`                |
+
+`(vars)` with no operand emits `LOCALS`; see **compile/vars (zero operands)**.
 
 
 Note: `compile/str` is variadic (COUNT) at the C level — it uses

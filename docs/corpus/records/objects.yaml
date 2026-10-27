@@ -452,107 +452,107 @@ tags:
   - object
   - unary
 ---
-id: object-class-slot-001
-feature: special/compile/class
-source: (begin (define Box (class Box () (define label "hi"))) (attr Box label))
+id: object-build-class-slot-001
+feature: special/compile/build-class
+source: (begin (var Box (build-class Box () (var label "hi"))) (attr Box label))
 verify:
   eval: '"hi"'
 references:
-  - reference/specials/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-attr.md
 stability: evolving
 tags:
   - object
-  - class
-notes: class with class-level slot; read via compile/attr on the type
+  - build-class
+notes: build-class with a class-level slot; read via compile/attr on the type
 ---
-id: object-class-type-001
-feature: special/compile/class
-source: (begin (define Box (class Box () (define label "hi"))) Box)
+id: object-build-class-type-001
+feature: special/compile/build-class
+source: (begin (var Box (build-class Box () (var label "hi"))) Box)
 verify:
   eval: "@kostype:Box"
 references:
-  - reference/specials/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - object
-  - class
+  - build-class
 ---
-id: object-define-class-expand-001
-feature: macro/compile/define-class
-source: (define-class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))
+id: object-class-expand-001
+feature: macro/compile/class
+source: (class Counter [] (var n 0) (def bump [self] (set-attr self n (+ (attr self n) 1))))
 verify:
-  expand: "(begin (define Counter (class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))) (create-instance-check Counter))"
+  expand: "(var Counter (build-class Counter [] (var n 0) (def bump [self] (set-attr self n (+ (attr self n) 1)))))"
 references:
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - object
   - macro
-  - define-class
+  - class
   - define-type
-notes: top-level macro form for expand stage; koskari/bootstrap/_class.ki
+notes: class expands to var over build-class, binding Counter in the current scope; koskari/bootstrap/_define_syntax.ki
 ---
-id: object-define-class-eval-001
-feature: macro/compile/define-class
+id: object-class-eval-001
+feature: macro/compile/class
 source: |-
   (begin
-    (define-class Counter [] (define n 0))
+    (class Counter [] (var n 0))
     (let [[c (Counter)]]
       (begin (set-attr c n 1) (attr c n))))
 verify:
   eval: "1"
 references:
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-attr.md
 stability: evolving
 tags:
   - object
   - macro
-  - define-class
+  - class
   - define-type
-notes: instance slot mutation via define-class and set-attr
+notes: instance slot mutation via class and set-attr
 ---
-id: object-define-class-type-001
-feature: macro/compile/define-class
-source: (begin (define-class Counter [] (define n 0)) Counter)
+id: object-class-bound-type-001
+feature: macro/compile/class
+source: (begin (class Counter [] (var n 0)) Counter)
 verify:
   eval: "@kostype:Counter"
 references:
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - object
   - macro
-  - define-class
+  - class
   - define-type
-notes: koskari/bootstrap/_class.ki; also defines Counter? predicate at expand
+notes: class binds the built class to its name; no Counter? predicate is defined
 ---
-id: object-define-class-layout-001
-feature: layout/define-class
+id: object-class-layout-001
+feature: layout/class
 source: |-
-  define-class Counter []:
-    define n 0
-    define bump [self]:
+  class Counter []:
+    var n 0
+    def bump [self]:
       (set-attr self n (+ (attr self n) 1))
 verify:
-  read: "(define-class Counter () (begin (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1)))))"
+  read: "(class Counter () (begin (var n 0) (def bump [self] (set-attr self n (+ (attr self n) 1)))))"
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - object
   - macro
-  - define-class
+  - class
   - layout
   - "surface:block"
   - define-type
-notes: layout counterpart of object-define-class-expand-001
+notes: layout counterpart of object-class-expand-001
 ---
 id: object-subtract-three-002
 feature: special/compile/-
@@ -1446,20 +1446,20 @@ tags:
   - predicate
 notes: 42 is an instance of int
 ---
-id: object-class-slot-int-003
-feature: special/compile/class
+id: object-build-class-slot-int-003
+feature: special/compile/build-class
 source: |-
-  (begin (define Counter (class Counter () (define count 0))) (attr Counter count))
+  (begin (var Counter (build-class Counter () (var count 0))) (attr Counter count))
   
 verify:
   eval: "0"
 references:
-  - reference/specials/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - object
-  - class
-notes: class with integer class-level slot; read via compile/attr; () reads as nil in read stage
+  - build-class
+notes: build-class with an integer class-level slot; read via compile/attr; () reads as nil in read stage
 ---
 id: object-subclass-str-object-003
 feature: special/compile/subclass?
@@ -1837,11 +1837,11 @@ id: object-layout-class-read-001
 feature: layout/class
 source: |-
   class MyClass (object):
-    define method [self]:
+    def method [self]:
       42
   
 verify:
-  read: (class MyClass (object) (begin (define method (self) 42)))
+  read: (class MyClass (object) (begin (def method (self) 42)))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1849,19 +1849,19 @@ tags:
   - object
   - class
   - "surface:block"
-notes: class layout desugars to compile/class; body becomes compile/begin block of method definitions
+notes: class layout lowers to (class NAME SUPERS (begin BODY)), which binds NAME; body becomes a compile/begin block of method definitions
 ---
 id: object-layout-class-methods-002
 feature: layout/class
 source: |-
   class Counter (object):
-    define __init__ [self n]:
+    def __init__ [self n]:
       (setattr self "_n" n)
-    define tick [self]:
+    def tick [self]:
       (incr! self._n)
   
 verify:
-  read: (class Counter (object) (begin (define __init__ (self n) (setattr self "_n" n)) (define tick (self) (incr! (attr self _n)))))
+  read: (class Counter (object) (begin (def __init__ (self n) (setattr self "_n" n)) (def tick (self) (incr! (attr self _n)))))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1875,13 +1875,13 @@ id: object-layout-class-attr-access-003
 feature: layout/class
 source: |-
   class Adder (object):
-    define __init__ [self base]:
+    def __init__ [self base]:
       (setattr self "base" base)
-    define add [self x]:
+    def add [self x]:
       (+ self.base x)
   
 verify:
-  read: (class Adder (object) (begin (define __init__ (self base) (setattr self "base" base)) (define add (self x) (+ (attr self base) x))))
+  read: (class Adder (object) (begin (def __init__ (self base) (setattr self "base" base)) (def add (self x) (+ (attr self base) x))))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1891,42 +1891,42 @@ tags:
   - "surface:block"
 notes: self.base inside method reads as (compile/attr self base)
 ---
-id: object-dataclass-decorated-define-class-001
-feature: layout/define-class
+id: object-dataclass-decorated-class-001
+feature: layout/class
 source: |-
   begin:
     import-from dataclasses dataclass
     @dataclass
-    define-class Pt []:
-      define x :: int 0
-      define y :: int 0
-    define p (Pt 3 5)
+    class Pt []:
+      var x :: int 0
+      var y :: int 0
+    var p (Pt 3 5)
     p.x
   
 verify:
   eval: "3"
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
 stability: evolving
 tags:
   - object
-  - define-class
+  - class
   - "surface:block"
   - define-type
-notes: "from examples/dataclass.ki; @dataclass decorator on define-class; define x :: int 0 is typed field with default"
+notes: "from examples/dataclass.ki; @dataclass decorator on class; var x :: int 0 is a typed field with default"
 ---
 id: object-set-attr-method-pattern-001
 feature: special/compile/set-attr
 source: |-
   begin:
-    define-class Point []:
-      define __init__ [self x]:
+    class Point []:
+      def __init__ [self x]:
         (self.set_x x)
-      define get_x [self]:
+      def get_x [self]:
         self.real_x
-      define set_x [self x]:
+      def set_x [self x]:
         (set-attr self real_x x)
-    define p (Point 42)
+    var p (Point 42)
     (p.get_x)
   
 verify:
@@ -1937,7 +1937,7 @@ stability: stable
 tags:
   - object
   - set-attr
-  - define-class
+  - class
   - "surface:block"
   - mutate
 notes: from examples/hello.ki FunTimes; set-attr with keyword-style attribute name; self.set_x is a method call via dot-attr
@@ -1947,13 +1947,13 @@ feature: special/compile/set-attr
 source: |-
   (begin
     (import-from types SimpleNamespace)
-    (define ns (SimpleNamespace))
+    (var ns (SimpleNamespace))
     (set-attr ns name "koskari")
     ns.name)
   
 verify:
-  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
-  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
+  read: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
+  expand: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
   eval: '"koskari"'
 references:
   - reference/specials/compile-set-attr.md
@@ -1969,14 +1969,14 @@ feature: special/compile/set-attr
 source: |-
   (begin
     (import-from types SimpleNamespace)
-    (define ns (SimpleNamespace))
+    (var ns (SimpleNamespace))
     (set-attr ns x 10)
     (set-attr ns y 20)
     (+ ns.x ns.y))
   
 verify:
-  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
-  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
+  read: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
+  expand: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
   eval: "30"
 references:
   - reference/specials/compile-set-attr.md
@@ -1987,39 +1987,39 @@ tags:
   - mutate
 notes: setting multiple attributes; dot-attr access reads as compile/attr for each
 ---
-id: object-define-class-eq-behavior-001
-feature: macro/compile/define-class
-source: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== self.x other.x) (== self.y other.y)))) (== (V2 1 2) (V2 1 2)))
+id: object-class-eq-behavior-001
+feature: macro/compile/class
+source: (begin (class V2 [] (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __eq__ [self other] (and (== self.x other.x) (== self.y other.y)))) (== (V2 1 2) (V2 1 2)))
 verify:
-  read: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
-  expand: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
+  read: (begin (class V2 [] (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
+  expand: (begin (class V2 [] (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
   eval: "true"
 references:
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - object
-  - define-class
+  - class
   - dunder
   - method
   - define-type
 notes: "behavior (not just shape) of a user __eq__: two distinct instances with equal fields compare equal via =="
 ---
-id: object-define-class-call-behavior-001
-feature: macro/compile/define-class
-source: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* self.f v))) (define dbl (Mult 2)) (dbl 21))
+id: object-class-call-behavior-001
+feature: macro/compile/class
+source: (begin (class Mult [] (def __init__ [self f] (set-attr self f f)) (def __call__ [self v] (* self.f v))) (var dbl (Mult 2)) (dbl 21))
 verify:
-  read: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (attr self f) v))) (define dbl (Mult 2)) (dbl 21))
-  expand: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (attr self f) v))) (define dbl (Mult 2)) (dbl 21))
+  read: (begin (class Mult [] (def __init__ [self f] (set-attr self f f)) (def __call__ [self v] (* (attr self f) v))) (var dbl (Mult 2)) (dbl 21))
+  expand: (begin (class Mult [] (def __init__ [self f] (set-attr self f f)) (def __call__ [self v] (* (attr self f) v))) (var dbl (Mult 2)) (dbl 21))
   eval: "42"
 references:
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
   - reference/specials/compile-call.md
 stability: evolving
 tags:
   - object
-  - define-class
+  - class
   - dunder
   - callable
   - define-type
@@ -2192,3 +2192,206 @@ tags:
   - mutate
   - evaluation-order
 notes: with a symbol object and a constant or symbol key, the VALUEs run before OBJ is resolved and its item read; a VALUE that rebinds OBJ updates the new binding
+---
+id: object-build-class-value-001
+feature: special/compile/build-class
+source: (begin (var B (build-class Box [] (var size 3))) B.size)
+verify:
+  eval: "3"
+references:
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+notes: build-class is a class value; var binds it
+---
+id: object-build-class-type-002
+feature: special/compile/build-class
+source: (begin (var B (build-class Box [] (var size 3))) B)
+verify:
+  eval: "@kostype:Box"
+references:
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+notes: NAME sets the class __name__ even though the binding is B
+---
+id: object-build-class-layout-003
+feature: layout/build-class
+source: |-
+  build-class Box:
+    var size 3
+verify:
+  read: (build-class Box () (begin (var size 3)))
+  eval: "@kostype:Box"
+references:
+  - reference/layouts/layout-build-class.md
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+  - surface:block
+notes: omitted supers read as nil; the block's value is the class
+---
+id: object-build-class-layout-004
+feature: layout/build-class
+source: |-
+  build-class Box (object):
+    var size 3
+verify:
+  read: (build-class Box (object) (begin (var size 3)))
+references:
+  - reference/layouts/layout-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+  - inheritance
+  - surface:block
+notes: a supers list after the name passes through as written
+---
+id: object-build-class-layout-005
+feature: layout/build-class
+source: |-
+  var Point:
+    build-class Point:
+      var x 0
+      var y 0
+  
+  Point.y
+verify:
+  read: (begin (var Point (build-class Point () (begin (var x 0) (var y 0)))) (attr Point y))
+  eval: "0"
+references:
+  - reference/layouts/layout-build-class.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - var
+  - define-type
+  - surface:block
+notes: var over a build-class block binds the class
+---
+id: object-class-binds-name-001
+feature: macro/compile/class
+source: |-
+  (begin (class Greeter [] (def hi [self] "hi")) (.hi (Greeter)))
+  
+verify:
+  read: (begin (class Greeter [] (def hi [self] "hi")) (.hi (Greeter)))
+  eval: '"hi"'
+references:
+  - reference/macros/compile-class.md
+stability: evolving
+tags:
+  - object
+  - class
+  - define-type
+  - local-binding
+notes: class binds Greeter in the scope the form appears in; no separate var is needed
+---
+id: object-class-decorated-layout-001
+feature: layout/decorate
+source: |-
+  def tag [cls]:
+    (set-attr cls tagged True)
+    cls
+  @tag
+  class Widget []:
+    var size 1
+  Widget.tagged
+  
+verify:
+  read: (begin (def tag [cls] (set-attr cls tagged True) cls) (decorate (tag) (class Widget [] (begin (var size 1)))) (attr Widget tagged))
+  eval: "true"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/layouts/layout-class.md
+stability: evolving
+tags:
+  - object
+  - class
+  - decorate
+  - surface:block
+  - define-type
+notes: a decorator above a class block receives the built class; Widget is bound to the decorator's result
+---
+id: object-class-dataclass-eq-layout-001
+feature: layout/decorate
+source: |-
+  import-from dataclasses dataclass
+  @dataclass
+  class Pair []:
+    var left :: int 0
+    var right :: int 0
+  (== (Pair 1 2) (Pair 1 2))
+  
+verify:
+  read: "(begin (import-from dataclasses dataclass) (decorate (dataclass) (class Pair [] (begin (var left :: int 0) (var right :: int 0)))) (== (Pair 1 2) (Pair 1 2)))"
+  eval: "true"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/layouts/layout-class.md
+stability: evolving
+tags:
+  - object
+  - class
+  - dataclass
+  - decorate
+  - surface:block
+  - define-type
+notes: "@dataclass over a class block generates __init__ and __eq__ from the annotated fields; import dataclass explicitly first"
+---
+id: object-class-local-in-function-001
+feature: macro/compile/class
+source: |-
+  (begin (def make [] (class Local [] (var n 7)) Local) (var K (make)) #[K.n (in? "Local" (globals))])
+  
+verify:
+  eval: list:[7,false]
+references:
+  - reference/macros/compile-class.md
+  - reference/macros/compile-global.md
+stability: evolving
+tags:
+  - object
+  - class
+  - local-binding
+  - define-type
+notes: class inside a function body binds Local as a local of make; the module never sees the name. Use global class to bind at the module
+---
+id: object-class-global-layout-001
+feature: layout/class
+source: |-
+  def setup []:
+    global class Registry []:
+      var size 0
+    None
+  (setup)
+  Registry.size
+  
+verify:
+  read: (begin (def setup [] (global class Registry [] (begin (var size 0))) None) (setup) (attr Registry size))
+  eval: "0"
+references:
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-global.md
+stability: evolving
+tags:
+  - object
+  - class
+  - global
+  - module-global
+  - surface:block
+  - define-type
+notes: the global prefix on a class block binds Registry at the module even from inside a function body

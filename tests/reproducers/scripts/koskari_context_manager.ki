@@ -10,49 +10,49 @@
 ;; === Synchronous managers === ;;
 
 
-define-class KosCM []:
+class KosCM []:
     """
     Koskari-defined synchronous context manager. Records entry, exit, and
     the exception type handed to __exit__.
     """
 
-    define __init__ [self value]:
+    def __init__ [self value]:
         set! self.value value
         set! self.entered False
         set! self.exited False
         set! self.exc_type None
 
     @demand
-    define __enter__ [self]:
+    def __enter__ [self]:
         set! self.entered True
         self.value
 
     @demand
-    define __exit__ [self typ val tb]:
+    def __exit__ [self typ val tb]:
         set! self.exited True
         set! self.exc_type typ
         False
 
 
-define-class KosSwallowCM [KosCM]:
+class KosSwallowCM [KosCM]:
     """
     Synchronous manager whose __exit__ swallows the body's exception.
     """
 
     @demand
-    define __exit__ [self typ val tb]:
+    def __exit__ [self typ val tb]:
         set! self.exited True
         set! self.exc_type typ
         True
 
 
-define-class KosExitBoomCM [KosCM]:
+class KosExitBoomCM [KosCM]:
     """
     Synchronous manager whose __exit__ itself raises.
     """
 
     @demand
-    define __exit__ [self typ val tb]:
+    def __exit__ [self typ val tb]:
         set! self.exited True
         set! self.exc_type typ
         raise (RuntimeError "exit boom")
@@ -61,34 +61,34 @@ define-class KosExitBoomCM [KosCM]:
 ;; === Asynchronous managers === ;;
 
 
-define-class KosAsyncCM []:
+class KosAsyncCM []:
     """
     Koskari-defined asynchronous context manager. The protocol methods are
     undecorated -- with awaits them.
     """
 
-    define __init__ [self value]:
+    def __init__ [self value]:
         set! self.value value
         set! self.entered False
         set! self.exited False
         set! self.exc_type None
 
-    define __aenter__ [self]:
+    def __aenter__ [self]:
         set! self.entered True
         self.value
 
-    define __aexit__ [self typ val tb]:
+    def __aexit__ [self typ val tb]:
         set! self.exited True
         set! self.exc_type typ
         False
 
 
-define-class KosAsyncSwallowCM [KosAsyncCM]:
+class KosAsyncSwallowCM [KosAsyncCM]:
     """
     Asynchronous manager whose __aexit__ swallows the body's exception.
     """
 
-    define __aexit__ [self typ val tb]:
+    def __aexit__ [self typ val tb]:
         set! self.exited True
         set! self.exc_type typ
         True
@@ -97,14 +97,14 @@ define-class KosAsyncSwallowCM [KosAsyncCM]:
 ;; === Helpers === ;;
 
 
-define boom []:
+def boom []:
     raise (ValueError "oops")
 
 
 ;; === Synchronous with exercises === ;;
 
 
-define sync_no_binding [mgr]:
+def sync_no_binding [mgr]:
     """
     with over a koskari manager, no binding; yields the body value.
     """
@@ -113,7 +113,7 @@ define sync_no_binding [mgr]:
         "body"
 
 
-define sync_binding [mgr]:
+def sync_binding [mgr]:
     """
     with binding form; the body sees the value returned by __enter__.
     """
@@ -122,7 +122,7 @@ define sync_binding [mgr]:
         x
 
 
-define sync_raises [mgr]:
+def sync_raises [mgr]:
     """
     Body raises; a non-swallowing __exit__ lets the exception through.
     """
@@ -131,7 +131,7 @@ define sync_raises [mgr]:
         (boom)
 
 
-define sync_swallowed [mgr]:
+def sync_swallowed [mgr]:
     """
     Body raises and __exit__ swallows it; execution resumes after the block.
     """
@@ -141,7 +141,7 @@ define sync_swallowed [mgr]:
     "after"
 
 
-define sync_nested [outer inner]:
+def sync_nested [outer inner]:
     """
     Nested with blocks over two koskari managers.
     """
@@ -151,7 +151,7 @@ define sync_nested [outer inner]:
             (#list a b)
 
 
-define sync_exit_raises [mgr]:
+def sync_exit_raises [mgr]:
     """
     __exit__ raises after a clean body; its exception propagates out of
     the with block.
@@ -161,7 +161,7 @@ define sync_exit_raises [mgr]:
         "body"
 
 
-define sync_exit_raises_during_unwind [mgr]:
+def sync_exit_raises_during_unwind [mgr]:
     """
     Body raises and __exit__ raises while handling it; the exit
     exception propagates instead of re-firing __exit__ forever.
@@ -174,7 +174,7 @@ define sync_exit_raises_during_unwind [mgr]:
 ;; === Asynchronous with exercises === ;;
 
 
-define async_no_binding [mgr]:
+def async_no_binding [mgr]:
     """
     with over a koskari async manager, no binding; yields the body value.
     """
@@ -183,7 +183,7 @@ define async_no_binding [mgr]:
         "body"
 
 
-define async_binding [mgr]:
+def async_binding [mgr]:
     """
     with binding form over an async manager; body sees the __aenter__ value.
     """
@@ -192,7 +192,7 @@ define async_binding [mgr]:
         x
 
 
-define async_raises [mgr]:
+def async_raises [mgr]:
     """
     Body raises; a non-swallowing __aexit__ lets the exception through.
     """
@@ -201,7 +201,7 @@ define async_raises [mgr]:
         (boom)
 
 
-define async_swallowed [mgr]:
+def async_swallowed [mgr]:
     """
     Body raises and __aexit__ swallows it; execution resumes after the block.
     """
@@ -211,7 +211,7 @@ define async_swallowed [mgr]:
     "after"
 
 
-define async_nested [outer inner]:
+def async_nested [outer inner]:
     """
     Nested with blocks over two koskari async managers.
     """
@@ -226,7 +226,7 @@ define async_nested [outer inner]:
 ;; Same managers, driven through the multi-shot dyn-with extent.
 
 
-define dyn_with_no_binding [mgr]:
+def dyn_with_no_binding [mgr]:
     """
     dyn-with over a koskari manager, no binding.
     """
@@ -234,7 +234,7 @@ define dyn_with_no_binding [mgr]:
     (dyn-with [mgr] "body")
 
 
-define dyn_with_binding [mgr]:
+def dyn_with_binding [mgr]:
     """
     dyn-with binding form; the body sees the __enter__ value.
     """
@@ -242,7 +242,7 @@ define dyn_with_binding [mgr]:
     (dyn-with [x mgr] x)
 
 
-define dyn_with_raises [mgr]:
+def dyn_with_raises [mgr]:
     """
     Body raises; a non-swallowing exit lets the exception through.
     """
@@ -250,7 +250,7 @@ define dyn_with_raises [mgr]:
     (dyn-with [x mgr] (boom))
 
 
-define dyn_with_swallowed [mgr]:
+def dyn_with_swallowed [mgr]:
     """
     Body raises and exit swallows it; execution resumes after the extent.
     """
@@ -259,7 +259,7 @@ define dyn_with_swallowed [mgr]:
     "after"
 
 
-define dyn_with_nested [outer inner]:
+def dyn_with_nested [outer inner]:
     """
     Nested dyn-with extents over two koskari managers.
     """
@@ -274,14 +274,14 @@ define dyn_with_nested [outer inner]:
 ;; frame rather than completing inline.
 
 
-define dyn_wind_normal [rec]:
+def dyn_wind_normal [rec]:
     """
     before, body, after all run, in that order; result is the body value.
     Each segment calls a koskari-defined function, so each one installs a
     frame rather than completing inline.
     """
 
-    define note [tag]:
+    def note [tag]:
         (rec.append tag)
 
     (dyn-wind
@@ -290,12 +290,12 @@ define dyn_wind_normal [rec]:
       (note "after"))
 
 
-define dyn_wind_raises [rec]:
+def dyn_wind_raises [rec]:
     """
     Body raises; the after segment still runs and the exception propagates.
     """
 
-    define note [tag]:
+    def note [tag]:
         (rec.append tag)
 
     (dyn-wind

@@ -36,8 +36,8 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define collect [it]:
-    define out #[]
+def collect [it]:
+    var out #[]
     for-each [x it]:
         out.append x
     out

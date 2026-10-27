@@ -22,7 +22,7 @@ let []:
   import-from koskari.pragma register
 
 
-  define pragma-enable-asserts [enabled: True]:
+  def pragma-enable-asserts [enabled: True]:
     """
     Whether assert forms expand to their check. Baseline enabled.
     """
@@ -33,7 +33,7 @@ let []:
   register "compiler/enable-asserts" (demand pragma-enable-asserts) True
 
 
-define-syntax assert:
+syntax assert:
   """
   Raise AssertionError when the expression is falsey if asserts are
   enabled. Evaluates as None otherwise.

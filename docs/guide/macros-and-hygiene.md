@@ -3,7 +3,7 @@
 A macro is a function from forms to forms that runs at compile time.
 The compiler hands it a use of its name, it returns the code that use
 stands for, and the compiler continues on the result. That is how
-`if`, `when`, `set!`, `define-class`, and the `-each` family exist: each
+`if`, `when`, `set!`, `class`, and the `-each` family exist: each
 lowers to a smaller core form.
 
 ## What a macro is for
@@ -18,11 +18,11 @@ and explain.
 
 ## Defining one
 
-`define-syntax` binds a name to a transformer. `syntax-rules` matches the
+`syntax` binds a name to a transformer. `syntax-rules` matches the
 use against patterns and fills a template:
 
 ```koskari
-define-syntax unless:
+syntax unless:
   syntax-rules []:
     unless test body ...:
       if test:
@@ -46,10 +46,10 @@ the output; this is Scheme's escape (R7RS `syntax-rules`), and it is how
 a macro writes a macro:
 
 ```koskari
-define-syntax def-lister:
+syntax def-lister:
   syntax-rules []:
     case (def-lister name):
-      (define-syntax name
+      (global syntax name
         (... (syntax-rules [] [(name args ...) (#list args ...)])))
 ```
 
@@ -72,7 +72,7 @@ Inside a procedural body you work with the matched forms directly:
 
 - `form.datum` unwraps a matched form to its pair; the elements inside
   are raw symbols, keywords, and values.
-- `define-values [head [tp rest]] form.datum` destructures it; `(car rest)`
+- `var [head [tp rest]] form.datum` destructures it; `(car rest)`
   takes the next element.
 - `(keyword? x)` and `(symbol? x)` classify a token.
 - Build the output with quasiquote, or with variadic `cons`, whose last
@@ -140,24 +140,24 @@ name lookup. When the compiler sees a form in call position it first
 checks whether the head is a macro or special; if so it expands, and only
 the expanded result is subject to name resolution. A macro always wins
 over a same-named value binding in call position -- a local `let`,
-`define`, `labels`, or `flet` binding, a module binding, or an import
-cannot displace it.
+`var`, `def`, `labels`, or `flet` binding, a module binding, or an
+import cannot displace it.
 
 ```koskari
 (let []
-  (define caddr (lambda [n] 999))
+  (def caddr [n] 999)
   (caddr (cons 1 2 3 4 nil)))
 ;; -> 3, not 999
 ```
 
 `caddr` is a macro that expands to nested `car` and `cdr`, so the call
-expands at compile time and the local `define` is never consulted in that
+expands at compile time and the local `def` is never consulted in that
 position. A name bound to a plain function has no such precedence and
 shadows normally:
 
 ```koskari
 (let []
-  (define first (lambda [n] (* n 100)))
+  (def first [n] (* n 100))
   (first 3))
 ;; -> 300; first is a runtime function, so the local binding wins
 ```
@@ -181,7 +181,7 @@ head goes through expansion.
 
 - [Hygiene](hygiene.md): marks, `quote-syntax`, `quasiquote-syntax`,
   and the `#'` and `` #` `` prefixes
-- [Macros](../reference/macros/index.md): `define-syntax`,
+- [Macros](../reference/macros/index.md): `syntax`,
   `extend-syntax`, and the rule forms
 - [compile/let-syntax](../reference/macros/compile-let-syntax.md):
   a local compile-time binding

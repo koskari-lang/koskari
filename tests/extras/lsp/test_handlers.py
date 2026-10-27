@@ -81,7 +81,7 @@ class TestCollectDiagnostics(IsolatedAsyncioTestCase):
 
     async def test_layout_error_emits_diagnostic(self):
         diags = collect_diagnostics(
-            'define foo []:\n  if:\n    x', 'file:///test.ki')
+            'def foo []:\n  if:\n    x', 'file:///test.ki')
         self.assertGreater(len(diags), 0)
 
 
@@ -93,8 +93,8 @@ class TestCollectDiagnostics(IsolatedAsyncioTestCase):
 
         src = (
             '(pragma [reader/layout False])\n'
-            '(define f (lambda (x)\n'
-            '  (+ x 1)))\n'
+            '(define [f x]\n'
+            '  (+ x 1))\n'
             '  (print "ok")\n')
         diags = collect_diagnostics(src, 'file:///test.ki')
         self.assertEqual(diags, [])

@@ -37,41 +37,41 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define store-sym [k]:
+def store-sym [k]:
     lambda [d]:
         (set-item d k 1)
         d
 
-define store-suffix-sym [k]:
+def store-suffix-sym [k]:
     lambda [d]:
         (set! d[k] 2)
         d
 
-define inplace-sym [k]:
+def inplace-sym [k]:
     lambda [d]:
         (inplace-item + d k 10)
         d
 
-define load-sym [k]:
+def load-sym [k]:
     lambda [d]:
         d[k]
 
-define store-expr [x]:
+def store-expr [x]:
     lambda [d]:
         (set-item d (+ x 5) 1)
         d
 
-define store-suffix-expr [x]:
+def store-suffix-expr [x]:
     lambda [d]:
         (set! d[(+ x 5)] 2)
         d
 
-define inplace-expr [x]:
+def inplace-expr [x]:
     lambda [d]:
         (inplace-item + d (+ x 5) 10)
         d
 
-define load-expr [x]:
+def load-expr [x]:
     lambda [d]:
         d[(+ x 5)]
 """

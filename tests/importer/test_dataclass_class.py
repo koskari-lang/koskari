@@ -3,22 +3,20 @@
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
 #
-# This library is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-
 """
-tests.importer.test_define_dataclass
+tests.importer.test_dataclass_class
 
-define-dataclass takes NAME SUPERS BODY ..., and only that: a subclass
-that adds no fields is (define-dataclass Child [Parent]), which inherits
-the parent's fields and predicate rather than reading its supers as a
-member form.
+The dataclass decorator applied to a class: a subclass that adds no
+fields is (class Child [Parent]) under the decorator, which inherits
+the parent's fields rather than reading its supers as a member form.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -35,26 +33,31 @@ pytestmark = pytest.mark.phase_basics
 
 
 SRC = """
-(define-dataclass Parent [] (define x :: int 1))
-(define-dataclass Child [Parent])
-(define-dataclass Grand [Child] (define y :: int 2))
+import-from dataclasses dataclass
+(decorate [dataclass] (class Parent [] (var x :: int 1)))
+(decorate [dataclass] (class Child [Parent]))
+(decorate [dataclass] (class Grand [Child] (var y :: int 2)))
 """
 
 LAYOUT_SRC = """
-define-dataclass Point:
-  define x :: int 0
-  define y :: int 0
+import-from dataclasses dataclass
 
-define-dataclass Point3 [Point]:
-  define z :: int 0
+@dataclass
+class Point:
+  var x :: int 0
+  var y :: int 0
+
+@dataclass
+class Point3 [Point]:
+  var z :: int 0
 """
 
 
-class TestDefineDataclass(unittest.IsolatedAsyncioTestCase):
+class TestDataclassClass(unittest.IsolatedAsyncioTestCase):
 
     async def load(self, src=SRC):
-        module = new_module("define_dataclass_subject")
-        vars(module)["__file__"] = "<define_dataclass_subject>"
+        module = new_module("dataclass_class_subject")
+        vars(module)["__file__"] = "<dataclass_class_subject>"
         await load_module_source_async(module, src)
         return vars(module)
 
@@ -64,8 +67,7 @@ class TestDefineDataclass(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(v["Child"].__dataclass_fields__), ["x"])
         child = v["Child"](5)
         self.assertEqual(child.x, 5)
-        self.assertTrue(await v["Child?"](child))
-        self.assertTrue(await v["Parent?"](child))
+        self.assertIsInstance(child, v["Parent"])
 
     async def test_subclass_with_members_adds_to_the_base(self):
         v = await self.load()

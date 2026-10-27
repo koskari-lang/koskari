@@ -156,7 +156,7 @@ def compile_top_level(compiler, reader, source_stream):
     reader macros) are live when the following form compiles.
 
     A leading string is the module docstring: it is rewritten to a
-    define of ``__doc__`` and yielded like any other form, which is also
+    var of ``__doc__`` and yielded like any other form, which is also
     the body a .kio carries for it
 
     :param compiler: Compiler facet for this load
@@ -176,7 +176,7 @@ def compile_top_level(compiler, reader, source_stream):
             docstr = isinstance(source_expr, str)
             if docstr:
                 source_expr = cons(
-                    symbol('define'), symbol('__doc__'), source_expr, nil)
+                    symbol('var'), symbol('__doc__'), source_expr, nil)
 
         # no local holds the fragment across the yield: its instructions
         # carry the form's function code, which must be free to die

@@ -37,15 +37,15 @@ pytestmark = pytest.mark.phase_infra
 
 class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
 
-    async def test_single_decorator_define_class(self):
+    async def test_single_decorator_class(self):
         src = """
         @foo
-        define-class Obj []:
+        class Obj []:
           x
         """
 
         inner = pycons(
-            (symbol('define-class'),
+            (symbol('class'),
              symbol('Obj'),
              (),
              (symbol('begin'), symbol('x'))))
@@ -63,12 +63,12 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         src = """
         @foo
         @bar 123
-        define-class Obj []:
+        class Obj []:
           x
         """
 
         inner = pycons(
-            (symbol('define-class'),
+            (symbol('class'),
              symbol('Obj'),
              (),
              (symbol('begin'), symbol('x'))))
@@ -86,12 +86,12 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         # @(…) must use the layout @ path, not matmul (@ as first token on line).
         src = """
         @(foo 123)
-        define-class Obj []:
+        class Obj []:
           x
         """
 
         inner = pycons(
-            (symbol('define-class'),
+            (symbol('class'),
              symbol('Obj'),
              (),
              (symbol('begin'), symbol('x'))))
@@ -150,7 +150,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
     async def test_empty_decorator_line_errors(self):
         src = """
         @
-        define-class Obj []:
+        class Obj []:
           x
         """
 
@@ -182,7 +182,7 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
 
         reader = LayoutReaderNoAt(builtins)
         stream = IndentAwareStream.from_source(
-            source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>'))
+            source_str('@foo\nclass Obj []:\n  x\n', '<unittest>'))
         result = reader.read(stream)
 
         self.assertTrue(str(result).startswith('@'))
@@ -194,7 +194,7 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
     raw reader, on at the pragma baseline, and declarable off per module.
     """
 
-    SRC = '@foo\ndefine-class Obj []:\n  x\n'
+    SRC = '@foo\nclass Obj []:\n  x\n'
 
 
     async def test_bare_reader_reads_at_as_atom(self):

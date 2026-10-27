@@ -2,17 +2,17 @@
 ;; a __slots__ member of one class installed as an attribute of an
 ;; unrelated class, read and written through cached attribute sites.
 
-define-class A [object]:
-    define __slots__ #("x" "y" "z" "w" "v")
+class A [object]:
+    var __slots__ #("x" "y" "z" "w" "v")
 
-define-class B [object]:
-    define __slots__ #()
+class B [object]:
+    var __slots__ #()
 
 setattr B "x" (getattr A "x")
 
-define read [o]:
+def read [o]:
     o.x
 
-define write [o v]:
+def write [o v]:
     set! o.x v
     None

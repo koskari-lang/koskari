@@ -2,6 +2,6 @@
 ;; whose argument window is dropped after the call returns, with an
 ;; argument whose finalizer runs during that drop.
 
-define run [noop make]:
+def run [noop make]:
     (noop (make) (object))
     None

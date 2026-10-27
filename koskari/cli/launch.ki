@@ -35,9 +35,8 @@ import-from os.path abspath basename dirname
 import-from .host version_line
 import-from ..importer import_module_async source_for_stale_kio
 import-from ..lib ParamRef
-import-from ..module:
-  new_module init_module
-  load_module_async load_module_kio_async load_module_source_async
+(import-from ..module new_module init_module
+  load_module_async load_module_kio_async load_module_source_async)
 
 
 (declare-exports run option_parser resolve_cli_target)
@@ -46,7 +45,7 @@ import-from ..module:
 ; === File execution ===
 
 
-define run_file [
+def run_file [
     mod
     filename
     execute_kio: False
@@ -75,7 +74,7 @@ define run_file [
     load_module_async mod detach: (not interactive)
 
 
-define run_command [
+def run_command [
     mod
     command
     filename: "<string>"
@@ -107,7 +106,7 @@ define run_command [
 ; === Program entry ===
 
 
-define entry_status [value]:
+def entry_status [value]:
   """
   The exit status an entry's return value maps to, as SystemExit maps
   its code: None is 0, an int is the status, and any other value is
@@ -126,7 +125,7 @@ define entry_status [value]:
     return 1
 
 
-define run_entry [mod]:
+def run_entry [mod]:
   """
   Call the entry function mod holds as __entry__, bound by the
   entry-point decorator or defined under that name, with no arguments
@@ -136,8 +135,8 @@ define run_entry [mod]:
   :return: the entry's exit status; 0 when mod has no entry
   """
 
-  define ns (vars mod)
-  define entry (ns.get "__entry__")
+  var ns (vars mod)
+  var entry (ns.get "__entry__")
   when (None? entry):
     return 0
 
@@ -147,7 +146,7 @@ define run_entry [mod]:
 ; === Module execution ===
 
 
-define find_spec_on_path [fullname path]:
+def find_spec_on_path [fullname path]:
   """
   The spec of a submodule, asked of each meta path finder in turn as
   the import system asks once the parent package is imported, without
@@ -159,15 +158,15 @@ define find_spec_on_path [fullname path]:
   """
 
   for-each [finder sys.meta_path]:
-    define find (getattr finder "find_spec" None)
+    var find (getattr finder "find_spec" None)
     unless (None? find):
-      define found (find fullname path)
+      var found (find fullname path)
       unless (None? found):
         return found
   return None
 
 
-define main_module_spec [name]:
+def main_module_spec [name]:
   """
   The spec of the module -m runs: the named module, or the __main__
   submodule when the name is a package, found through the import
@@ -183,12 +182,12 @@ define main_module_spec [name]:
       that is not Koskari source
   """
 
-  define spec (find_spec name)
+  var spec (find_spec name)
   when (None? spec):
     raise (ImportError f"No module named {name}")
 
   unless (None? spec.submodule_search_locations):
-    define main_spec (find_spec_on_path
+    var main_spec (find_spec_on_path
       f"{name}.__main__" spec.submodule_search_locations)
     unless (None? main_spec):
       set! spec main_spec
@@ -200,7 +199,7 @@ define main_module_spec [name]:
   return spec
 
 
-define main_module_file [spec]:
+def main_module_file [spec]:
   """
   The file a -m run executes: the spec's origin, unless that is a .kio
   that has fallen behind its sibling .ki
@@ -209,9 +208,9 @@ define main_module_file [spec]:
   :return: path to the .ki or .kio to run
   """
 
-  define filename spec.origin
+  var filename spec.origin
   when (filename.endswith ".kio"):
-    define source (source_for_stale_kio filename)
+    var source (source_for_stale_kio filename)
     unless (None? source):
       set! filename source
   return filename
@@ -220,7 +219,7 @@ define main_module_file [spec]:
 ; === Argument parsing ===
 
 
-define reject_option_like_rest [parser rest]:
+def reject_option_like_rest [parser rest]:
   """
   Error when pre-`--` REMAINDER tokens look like misplaced koskari options.
   """
@@ -235,7 +234,7 @@ define reject_option_like_rest [parser rest]:
       parser.error f"unrecognized arguments: {it}"
 
 
-define split_script_rest [parser rest]:
+def split_script_rest [parser rest]:
   """
   Split REMAINDER into (filename, script-args).
 
@@ -247,9 +246,9 @@ define split_script_rest [parser rest]:
     reject_option_like_rest parser rest
     return rest[0] (item-slice rest 1)
 
-  define idx (rest.index "--")
-  define pre (item-slice rest stop: idx)
-  define post (item-slice rest (+ idx 1))
+  var idx (rest.index "--")
+  var pre (item-slice rest stop: idx)
+  var post (item-slice rest (+ idx 1))
 
   unless pre:
     parser.error "expected script filename before --"
@@ -258,7 +257,7 @@ define split_script_rest [parser rest]:
   return pre[0] (+ (item-slice pre 1) post)
 
 
-define resolve_cli_target [parser options]:
+def resolve_cli_target [parser options]:
   """
   Flatten the exclusive run-target group into filename / args / execute_kio.
 
@@ -270,7 +269,7 @@ define resolve_cli_target [parser options]:
   when (and options.compile_kio_source_name (None? options.compile_kio)):
     parser.error "--compile-kio-source-name requires --compile-kio"
 
-  define rest (list options.rest)
+  var rest (list options.rest)
 
   when options.command:
     set! options.filename None
@@ -290,10 +289,10 @@ define resolve_cli_target [parser options]:
 
   when options.compile_kio:
     when rest:
-      define joined (" ".join rest)
+      var joined (" ".join rest)
       parser.error f"unexpected extra arguments: {joined}"
 
-    define-values [out_src src] options.compile_kio
+    var [out_src src] options.compile_kio
     set! options.compile_kio out_src
     set! options.filename src
     set! options.args #[]
@@ -302,7 +301,7 @@ define resolve_cli_target [parser options]:
 
   when options.execute_kio_file:
     when rest:
-      define joined (" ".join rest)
+      var joined (" ".join rest)
       parser.error f"unexpected extra arguments: {joined}"
 
     set! options.execute_kio True
@@ -311,7 +310,7 @@ define resolve_cli_target [parser options]:
     return options
 
   if rest:
-    define-values [fn args] (split_script_rest parser rest)
+    var [fn args] (split_script_rest parser rest)
     set! options.filename fn
     set! options.args args
   else:
@@ -322,12 +321,12 @@ define resolve_cli_target [parser options]:
   return options
 
 
-define option_parser [name]:
+def option_parser [name]:
   """
   Build and return the ArgumentParser for the koskari CLI.
   """
 
-  define parser (ArgumentParser prog: (basename name))
+  var parser (ArgumentParser prog: (basename name))
 
   (parser.add_argument "--version"
     dest: "show_version" action: "store_true" default: False
@@ -353,7 +352,7 @@ define option_parser [name]:
     dest: "interactive" action: "store_true" default: False
     help: "Enter interactive mode after executing the given script")
 
-  define target (parser.add_mutually_exclusive_group)
+  var target (parser.add_mutually_exclusive_group)
 
   (target.add_argument "-c" "--command"
     dest: "command" metavar: "CMD" default: None
@@ -386,7 +385,7 @@ define option_parser [name]:
 ; === Orchestration ===
 
 
-define run []:
+def run []:
   """
   Parse sys.argv and execute the requested koskari session.
 
@@ -398,10 +397,10 @@ define run []:
   :return: integer exit code
   """
 
-  define-values [name *: args] sys.argv
+  var [name *: args] sys.argv
 
-  define parser (option_parser name)
-  define options (parser.parse_args args)
+  var parser (option_parser name)
+  var options (parser.parse_args args)
 
   ; additional post-parsing validation
   set! options (resolve_cli_target parser options)
@@ -412,8 +411,8 @@ define run []:
     print f"Python {sys.version}"
     return 0
 
-  define filename options.filename
-  define command options.command
+  var filename options.filename
+  var command options.command
 
   when options.compile_kio:
     import-from koskari.serialize.incremental compile_ki_file_to_kio
@@ -432,7 +431,7 @@ define run []:
 
   ; -m names its file through the import machinery, so the path is
   ; settled first; the module runs as a script of that file
-  define spec None
+  var spec None
   when options.module:
     try:
       set! spec (main_module_spec options.module)
@@ -452,12 +451,12 @@ define run []:
       ; an interactive session reports an empty argv[0], as Python does
       set! sys.argv #["" *: options.args]
 
-  define interactive_param (ParamRef "*interactive*")
+  var interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
-  define package_entry (and spec (not (None? spec.submodule_search_locations)))
+  var package_entry (and spec (not (None? spec.submodule_search_locations)))
 
-  define mod None
+  var mod None
   if package_entry:
     ; a package with no __main__ runs its own entry point: imported
     ; under its real name, as any import would, so its relative imports
@@ -489,7 +488,7 @@ define run []:
   ; a program's declared entry runs once its module has loaded and
   ; sealed; an interactive session goes on to the REPL afterward
   when (or command filename):
-    define status (run_entry mod)
+    var status (run_entry mod)
     unless options.interactive:
       return status
 

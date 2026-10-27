@@ -6,15 +6,15 @@
 
 (import-from builtins map)
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define mix [a b]:
+def mix [a b]:
     (& (+ (* a 31) (^ b 0x5bd1e995)) MASK32)
 
 
-define churn_demand_call [n: 20000]:
-    define acc 0
+def churn_demand_call [n: 20000]:
+    var acc 0
     for-each [v (map (demand mix) (range 0 n) (range n 0 -1))]:
         set! acc (& (+ (* acc 33) v) MASK32)
     acc

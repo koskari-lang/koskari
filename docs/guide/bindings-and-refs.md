@@ -1,23 +1,68 @@
 # Bindings and refs
 
 A binding connects a name to a storage cell, and a namespace is the table
-of those cells. This page covers the surface first, `define`, `let`, and
-`set!`, then the model underneath, where every name resolves through a
+of those cells. This page covers the surface first, `var`, `def`, `let`,
+and `set!`, then the model underneath, where every name resolves through a
 ref.
 
 ## Defining names
 
-`define` introduces a name in the current namespace:
+`var` introduces a name in the current namespace:
 
 ```koskari
-define greeting "hello"
-define count 3
+var greeting "hello"
+var count 3
 print greeting count
 ```
 
 At the top of a file the namespace is the module's. Inside a function
-body it is the function's; a `define` there is local, as an assignment
+body it is the function's; a `var` there is local, as an assignment
 in a Python function is.
+
+`def` defines a function and binds it the same way:
+
+```koskari
+def area [width height]:
+  * width height
+
+area 6 7      ;; 42
+```
+
+## `var` and `define`
+
+`var`, `def`, `global` and `syntax` are the idiomatic binding forms.
+The Scheme spellings remain for code written in that style, and the two
+mix freely in one module:
+
+| Koskari | Scheme |
+|---|---|
+| `var NAME VALUE` | `define NAME VALUE` |
+| `def NAME [FORMALS]: BODY` | `define [NAME FORMALS]: BODY` |
+| `def NAME :: T [FORMALS]: BODY` | `define [(NAME :: T) FORMALS]: BODY` |
+| `var [a b] VALUE` | `define-values [a b] VALUE` |
+| `global var NAME VALUE` | `define-global NAME VALUE` |
+| `global def NAME [FORMALS]: BODY` | `define-global [NAME FORMALS]: BODY` |
+| `global syntax NAME TRANSFORMER` | `define-syntax NAME TRANSFORMER` |
+
+`syntax` inside a body scopes the transformer to the rest of that body;
+`global syntax` and `define-syntax` bind it at the module once the form
+has run.
+
+`define` takes Scheme's shape: a function's name goes inside the pair
+with its formals, as in Scheme's `(define (area w h) ...)`:
+
+```koskari
+define [area width height]:
+  * width height
+
+area 6 7      ;; 42
+```
+
+`def` takes formals and a body, never a plain value; `def x 1` fails to
+compile. `var` takes a value, never formals and a body. A pair after
+`define` is always a function head, never a pattern: `define [a b] x`
+defines a function `a` of one argument `b`, where `var [a b] x` unpacks
+`x` into `a` and `b`.
 
 ## Local names with `let`
 
@@ -37,22 +82,22 @@ names.
 `set!` stores a new value into a name that is already bound:
 
 ```koskari
-define counter 0
+var counter 0
 set! counter (+ counter 1)
 ```
 
 `incr!` and `decr!` are the same store for the two common updates. Inside
 a function, `set!` on a name with no binding in any enclosing scope is a
-compile error that names the fix: `define` for a local, `define-global`
-for a global. At module level the store creates the module name.
+compile error; declare the name first, with `var` for a local or
+`global var` for a module name. At module level the store creates the module name.
 
 An inner function stores into the outer name it finds, so Python's
 `nonlocal` has no counterpart:
 
 ```koskari
-define make-counter []:
-  define count 0
-  define tick []:
+def make-counter []:
+  var count 0
+  def tick []:
     incr! count
     count
   tick
@@ -64,7 +109,7 @@ A local binding can reuse an outer name, and the inner one wins inside
 its body:
 
 ```koskari
-define message "outer"
+var message "outer"
 let [[message "inner"]]:
   print message      ;; inner
 print message        ;; outer
@@ -95,7 +140,7 @@ holding that builtin and lives apart from the module's bindings: a
 function that reads `max` shares that ref, while `"max" in ns`,
 `ns.refs`, `ns.bound("max")`, `dir(module)` and a star import do not
 report it. The name becomes a module binding when the module binds it,
-by a `define`, a store, a `define-global` in one of its functions, or an
+by a `var` or `def`, a store, a `global` in one of its functions, or an
 attribute store on the module, and the same ref then carries the
 module's value to every holder. For any other missing name the new ref
 is empty and bound at once. A builtin's ref is the module's own:
@@ -168,10 +213,10 @@ passes instead of receiving a copy of the value, so writing through it
 with `set!` updates the caller:
 
 ```koskari
-define add-a [a &result]:
+def add-a [a &result]:
   set! result (+ a 1)
 
-define value 100
+var value 100
 (add-a value &value)
 value    ;; 101
 ```
@@ -201,7 +246,7 @@ bindings.
 - Store into existing names: [`compile/setq-values`](../reference/specials/compile-setq-values.md)
 
 ```koskari
-define-values [x y] #(1 2)
+var [x y] #(1 2)
 set! (values a b) point
 let-values [[u v] #(3 4)]:
   (+ u v)

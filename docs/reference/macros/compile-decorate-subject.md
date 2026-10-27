@@ -40,7 +40,7 @@ and are tried before the invocation arm.
 
 ```koskari
 @let [[count 0]]
-define tick []:
+def tick []:
   incr! count
   count
 ```

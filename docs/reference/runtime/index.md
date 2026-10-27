@@ -26,6 +26,7 @@ are imported as any Python module is.
 | [`getitem*`, `hasitem*`](getitemstar-and-hasitemstar.md) | Nested item access and membership along a key path |
 | [`getattr*`, `hasattr*`](getattrstar-and-hasattrstar.md) | Nested attribute access and presence along a dotted path |
 | [`build-slice`](build-slice.md) | Construct a slice object, the runtime behind `item-slice` |
+| [`koskari-vars`](koskari-vars.md) | The calling Koskari frame's namespace, or an object's `__dict__` |
 | [`on-demand?`](on-demand.md) | Whether the current context is on the demand path, where a bare `await` is not allowed |
 
 ## Modules

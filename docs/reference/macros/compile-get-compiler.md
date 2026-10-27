@@ -4,7 +4,7 @@
 
 **Behaviour:** Expands to a call to the
 [`get-compiler`](../runtime/get-compiler.md) runtime function. With no
-argument the namespace is `(locals)`; with one, the given namespace. The
+argument the namespace is `(vars)`; with one, the given namespace. The
 result is the `Compiler` that owns the namespace's module, for compiling
 further forms into it.
 

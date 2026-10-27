@@ -42,7 +42,7 @@ import-from starlette.responses HTMLResponse JSONResponse PlainTextResponse Resp
 import-from starlette.routing Route
 
 
-define logger (logging.getLogger "koskari.mcp")
+var logger (logging.getLogger "koskari.mcp")
 
 (logging.basicConfig
     stream: sys.stderr
@@ -51,36 +51,36 @@ define logger (logging.getLogger "koskari.mcp")
 
 ;; Baked dataset layout: one parquet per view under the data directory,
 ;; each written by tools/corpus/export.ki as <view>/train.parquet.
-define DATA_DIR (getenv "KOSKARI_CORPUS_DATA" "/srv/data")
-define CORPUS_VIEW "koskari-corpus"
-define DOCS_VIEW "koskari-docs"
-define PROGRAMS_VIEW "koskari-programs"
+var DATA_DIR (getenv "KOSKARI_CORPUS_DATA" "/srv/data")
+var CORPUS_VIEW "koskari-corpus"
+var DOCS_VIEW "koskari-docs"
+var PROGRAMS_VIEW "koskari-programs"
 
 
 ;; The landing page served at the service root over HTTP. It ships
 ;; beside this script, so the default is resolved from this file rather
 ;; than from the working directory.
-define PAGE_PATH (getenv "KOSKARI_CORPUS_PAGE"
+var PAGE_PATH (getenv "KOSKARI_CORPUS_PAGE"
     (join (dirname (abspath __file__)) "index.html"))
 
 ;; The project mark comes from the installed koskari.assets package by
 ;; default -- no local copy needed, since the image already installs
 ;; koskari itself. KOSKARI_CORPUS_ICON overrides with a path to a
 ;; different SVG file, for ops flexibility.
-define ICON_PATH_OVERRIDE (getenv "KOSKARI_CORPUS_ICON" None)
-define ICON_URL "https://corpus.koskari.org/koskari-icon.svg"
+var ICON_PATH_OVERRIDE (getenv "KOSKARI_CORPUS_ICON" None)
+var ICON_URL "https://corpus.koskari.org/koskari-icon.svg"
 
-define VERIFY_KEYS #(
+var VERIFY_KEYS #(
     "read" "expand" "eval" "error" "invalid")
 
-define META_KEYS #(
+var META_KEYS #(
     "corpus_id" "feature" "source" "references" "stability"
     "tags" "schema_version" "git_ref")
 
 
 ;; Closed intent-tag vocabulary; source of truth is docs/corpus/SCHEMA.md.
 ;; Used only to group list_tags output into goal-based vs structural facets.
-define INTENT_TAGS #(
+var INTENT_TAGS #(
     "error-handling" "catch" "cleanup" "re-raise" "guard"
     "loop" "iterate" "accumulate" "early-exit" "filter" "destructure"
     "mutate" "swap" "module-global" "local-binding" "name-resolution"
@@ -91,7 +91,7 @@ define INTENT_TAGS #(
     "metaprogramming" "hygiene" "idiom" "pitfall")
 
 
-define INSTRUCTIONS """
+var INSTRUCTIONS """
 This server is the authoritative and fastest source of truth for the
 Koskari language: its documentation, its reference for special forms,
 macros, layouts, and reader behavior, and a corpus of verified example
@@ -144,7 +144,7 @@ to correct Koskari syntax.
 """
 
 
-define mcp:
+var mcp:
     (MCPServer "koskari-corpus"
         instructions: INSTRUCTIONS
         icons: #[(Icon src: ICON_URL mime_type: "image/svg+xml" sizes: #["any"])])
@@ -155,7 +155,7 @@ define mcp:
 ;; source. Query functions take a table explicitly and stay pure; the
 ;; tool bodies read these globals. The dict is mutated in place by
 ;; load-tables! and load-page!, never rebound.
-define STATE #{
+var STATE #{
     "corpus": #[]
     "docs": #[]
     "programs": #[]
@@ -165,15 +165,15 @@ define STATE #{
 }
 
 
-define corpus-table [] STATE["corpus"]
-define docs-table [] STATE["docs"]
-define programs-table [] STATE["programs"]
+def corpus-table [] STATE["corpus"]
+def docs-table [] STATE["docs"]
+def programs-table [] STATE["programs"]
 
 
 ;; === Dataset loading ===
 
 
-define load-parquet [path]:
+def load-parquet [path]:
     """
     Read a parquet file into a list of row dicts
 
@@ -185,7 +185,7 @@ define load-parquet [path]:
     ((read_table path).to_pylist)
 
 
-define view-path [view]:
+def view-path [view]:
     """
     Absolute path to a view's train.parquet under the data directory
     """
@@ -193,7 +193,7 @@ define view-path [view]:
     (join DATA_DIR view "train.parquet")
 
 
-define snapshot-git-ref [rows]:
+def snapshot-git-ref [rows]:
     """
     Read the baked snapshot's git ref from the first row, or empty string
     """
@@ -204,7 +204,7 @@ define snapshot-git-ref [rows]:
         ""
 
 
-define load-tables! []:
+def load-tables! []:
     """
     Load every baked parquet view into STATE and log the snapshot
 
@@ -222,7 +222,7 @@ define load-tables! []:
         (len (corpus-table)) (len (docs-table)) (len (programs-table)))
 
 
-define load-page! []:
+def load-page! []:
     """
     Load the landing page and project icon into STATE, tolerating
     their absence
@@ -254,27 +254,27 @@ define load-page! []:
 ;; === Row shaping ===
 
 
-define compact-example [row]:
+def compact-example [row]:
     """
     Build a compact dict with corpus fields useful to agents
     """
 
-    define out #{}
+    var out #{}
 
     for-each [key META_KEYS]:
-        define value (row.get key)
+        var value (row.get key)
         unless (None? value):
             set! out[key] value
 
     for-each [key VERIFY_KEYS]:
-        define value (row.get key)
+        var value (row.get key)
         unless (None? value):
             set! out[key] value
 
     out
 
 
-define format-example [row]:
+def format-example [row]:
     """
     Serialize one corpus row for MCP tool output
     """
@@ -282,23 +282,23 @@ define format-example [row]:
     (json.dumps (compact-example row))
 
 
-define format-examples [rows]:
+def format-examples [rows]:
     """
     Serialize multiple corpus rows for MCP tool output
     """
 
-    define items (list-each [row rows] (compact-example row))
+    var items (list-each [row rows] (compact-example row))
     (json.dumps items)
 
 
-define pick-fields [row keys]:
+def pick-fields [row keys]:
     """
     Build a dict from the named row keys, skipping missing values
     """
 
-    define out #{}
+    var out #{}
     for-each [key keys]:
-        define value (row.get key)
+        var value (row.get key)
         unless (None? value):
             set! out[key] value
     out
@@ -307,13 +307,13 @@ define pick-fields [row keys]:
 ;; === Reference material (docs and programs) ===
 
 
-define REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
-define REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
-define DOC_SEARCH_COLUMNS #("path" "title" "content")
-define SEARCH_COLUMNS #("source" "feature" "corpus_id" "tags")
+var REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
+var REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
+var DOC_SEARCH_COLUMNS #("path" "title" "content")
+var SEARCH_COLUMNS #("source" "feature" "corpus_id" "tags")
 
 
-define table-for-path [path]:
+def table-for-path [path]:
     """
     Route a reference path to the table that holds it
 
@@ -327,7 +327,7 @@ define table-for-path [path]:
         (docs-table)
 
 
-define tables-for-kind [kind]:
+def tables-for-kind [kind]:
     """
     Return the tables a doc search should cover
 
@@ -353,7 +353,7 @@ define tables-for-kind [kind]:
 ;; keeps them unit-testable without a network or a real parquet file.
 
 
-define tokenize [text]:
+def tokenize [text]:
     """
     Lowercase and split text into content tokens
 
@@ -364,7 +364,7 @@ define tokenize [text]:
     (re.findall "[a-z0-9-]+" (.lower (str (or text ""))))
 
 
-define row-search-text [row columns]:
+def row-search-text [row columns]:
     """
     Concatenate a row's searchable columns into one string
     """
@@ -372,19 +372,19 @@ define row-search-text [row columns]:
     " ".join (list-each [column columns] (str (or (row.get column) "")))
 
 
-define token-score [query_tokens row_tokens]:
+def token-score [query_tokens row_tokens]:
     """
     Count how many query tokens appear as whole tokens in the row
     """
 
-    define score 0
+    var score 0
     for-each [token query_tokens]:
         when (in? token row_tokens):
             incr! score 1
     score
 
 
-define token-search [table query columns cap]:
+def token-search [table query columns cap]:
     """
     Rank rows by query-token overlap over the searchable columns
 
@@ -392,22 +392,22 @@ define token-search [table query columns cap]:
     Ties keep table order, since sorted is stable. Returns up to cap rows.
     """
 
-    define query_tokens (tokenize query)
+    var query_tokens (tokenize query)
     unless query_tokens:
         return #[]
 
-    define scored #[]
+    var scored #[]
     for-each [row table]:
-        define score (token-score query_tokens (tokenize (row-search-text row columns)))
+        var score (token-score query_tokens (tokenize (row-search-text row columns)))
         when (> score 0):
             (scored.append #(score row))
 
-    define ranked (sorted scored key: (itemgetter 0) reverse: True)
+    var ranked (sorted scored key: (itemgetter 0) reverse: True)
     list-each [pair (item-slice ranked 0 cap)]:
         pair[1]
 
 
-define substring-search [table query columns cap]:
+def substring-search [table query columns cap]:
     """
     Keep rows where the query is a substring of the searchable columns
 
@@ -416,28 +416,28 @@ define substring-search [table query columns cap]:
     for-each, if, and, or, not). Returns up to cap rows in table order.
     """
 
-    define needle (query.lower)
-    define out #[]
+    var needle (query.lower)
+    var out #[]
     for-each [row table]:
-        define hay (.lower (row-search-text row columns))
+        var hay (.lower (row-search-text row columns))
         when (in? needle hay):
             (out.append row)
     (item-slice out 0 cap)
 
 
-define feature-matches? [row feature]:
+def feature-matches? [row feature]:
     """
     Return True when row feature equals or starts with the filter
     """
 
-    define value (row.get "feature" "")
+    var value (row.get "feature" "")
     if (feature.endswith "/"):
         (value.startswith feature)
     else:
         (== value feature)
 
 
-define filter-rows-by-feature [rows feature]:
+def filter-rows-by-feature [rows feature]:
     """
     Keep rows whose feature column matches the filter
     """
@@ -447,7 +447,7 @@ define filter-rows-by-feature [rows feature]:
             row
 
 
-define feature-search [feature_path cap]:
+def feature-search [feature_path cap]:
     """
     Rows for a feature filter over the corpus table
     """
@@ -455,7 +455,7 @@ define feature-search [feature_path cap]:
     (item-slice (filter-rows-by-feature (corpus-table) feature_path) 0 cap)
 
 
-define references-for-feature [feature]:
+def references-for-feature [feature]:
     """
     Distinct reference paths across the corpus records of a feature
 
@@ -463,7 +463,7 @@ define references-for-feature [feature]:
     records cite leads the list.
     """
 
-    define out #[]
+    var out #[]
     for-each [row (corpus-table)]:
         when (feature-matches? row feature):
             for-each [ref (or (row.get "references") #[])]:
@@ -472,7 +472,7 @@ define references-for-feature [feature]:
     out
 
 
-define features-under [prefix]:
+def features-under [prefix]:
     """
     Distinct feature paths beginning with prefix as a path segment
 
@@ -480,17 +480,17 @@ define features-under [prefix]:
     trailing slash still finds its family.
     """
 
-    define stem (if (prefix.endswith "/") prefix f"{prefix}/")
-    define out #[]
+    var stem (if (prefix.endswith "/") prefix f"{prefix}/")
+    var out #[]
     for-each [row (corpus-table)]:
-        define feature (or (row.get "feature") "")
+        var feature (or (row.get "feature") "")
         when (feature.startswith stem):
             unless (in? feature out):
                 (out.append feature)
     out
 
 
-define searchable-table [feature_path]:
+def searchable-table [feature_path]:
     """
     The corpus rows a text search ranks: the whole table, or only the
     rows of a feature, so the feature narrows before the limit cuts
@@ -502,7 +502,7 @@ define searchable-table [feature_path]:
         (corpus-table)
 
 
-define fts-search [search_text feature_path cap]:
+def fts-search [search_text feature_path cap]:
     """
     Token-ranked corpus search over the code-bearing columns,
     optionally narrowed to a feature
@@ -511,7 +511,7 @@ define fts-search [search_text feature_path cap]:
     (token-search (searchable-table feature_path) search_text SEARCH_COLUMNS cap)
 
 
-define like-search [search_text feature_path cap]:
+def like-search [search_text feature_path cap]:
     """
     Substring corpus search, optionally narrowed to a feature
 
@@ -522,7 +522,7 @@ define like-search [search_text feature_path cap]:
     (substring-search (searchable-table feature_path) search_text SEARCH_COLUMNS cap)
 
 
-define search-docs-table [search_text cap table]:
+def search-docs-table [search_text cap table]:
     """
     Search one docs/programs table: token-ranked first, substring fallback
 
@@ -535,7 +535,7 @@ define search-docs-table [search_text cap table]:
         (substring-search table search_text DOC_SEARCH_COLUMNS cap)
 
 
-define first-by-field [table field value]:
+def first-by-field [table field value]:
     """
     Return the first row whose field equals value, or None
     """
@@ -546,7 +546,7 @@ define first-by-field [table field value]:
     None
 
 
-define resolve-references [refs]:
+def resolve-references [refs]:
     """
     Resolve corpus reference paths to their doc title and summary
     """
@@ -554,15 +554,15 @@ define resolve-references [refs]:
     unless refs:
         return #[]
 
-    define out #[]
+    var out #[]
     for-each [ref refs]:
-        define row (first-by-field (docs-table) "path" ref)
+        var row (first-by-field (docs-table) "path" ref)
         when row:
             (out.append (pick-fields row REFERENCE_HIT_KEYS))
     out
 
 
-define row-invalid? [row]:
+def row-invalid? [row]:
     """
     True when the record is tagged as wrong-usage (``invalid``)
     """
@@ -570,7 +570,7 @@ define row-invalid? [row]:
     (in? "invalid" (or (row.get "tags") #[]))
 
 
-define demote-invalid [rows]:
+def demote-invalid [rows]:
     """
     Sink wrong-usage records below canonical ones without dropping them
 
@@ -581,8 +581,8 @@ define demote-invalid [rows]:
     order within each group is the search ranking, preserved.
     """
 
-    define valid #[]
-    define wrong #[]
+    var valid #[]
+    var wrong #[]
     for-each [row rows]:
         if (row-invalid? row):
             (wrong.append row)
@@ -592,7 +592,7 @@ define demote-invalid [rows]:
     valid
 
 
-define filter-by-polarity [rows polarity]:
+def filter-by-polarity [rows polarity]:
     """
     Restrict rows by validity when polarity asks for it
 
@@ -612,7 +612,7 @@ define filter-by-polarity [rows polarity]:
             rows
 
 
-define reference-miss [path]:
+def reference-miss [path]:
     """
     Answer a reference lookup that matched no page
 
@@ -623,7 +623,7 @@ define reference-miss [path]:
     the trailing slash that selects them.
     """
 
-    define refs (references-for-feature path)
+    var refs (references-for-feature path)
     when refs:
         return (json.dumps #{
             "path": path
@@ -634,7 +634,7 @@ define reference-miss [path]:
                 f"with feature_path={(repr path)}."
             "references": refs})
 
-    define under (features-under path)
+    var under (features-under path)
     when under:
         return (json.dumps #{
             "path": path
@@ -656,7 +656,7 @@ define reference-miss [path]:
 
 @(mcp.tool)
 @coroutine-fn
-define search_examples [
+def search_examples [
         search_text
         [feature_path :: str value: None]
         [polarity :: str value: None]
@@ -680,8 +680,8 @@ define search_examples [
     fetched window.
     """
 
-    define cap (min (int limit) 100)
-    define rows #[]
+    var cap (min (int limit) 100)
+    var rows #[]
 
     if search_text:
         set! rows (fts-search search_text feature_path cap)
@@ -715,17 +715,17 @@ define search_examples [
 
 @(mcp.tool)
 @coroutine-fn
-define get_example [corpus_id]:
+def get_example [corpus_id]:
     """
     Fetch one corpus record by corpus_id
     """
 
-    define row (first-by-field (corpus-table) "corpus_id" corpus_id)
+    var row (first-by-field (corpus-table) "corpus_id" corpus_id)
     unless row:
         return f"No corpus example with corpus_id={(repr corpus_id)}."
 
-    define example (compact-example row)
-    define refs (example.get "references")
+    var example (compact-example row)
+    var refs (example.get "references")
     when refs:
         set! example["references_resolved"] (resolve-references refs)
 
@@ -734,7 +734,7 @@ define get_example [corpus_id]:
 
 @(mcp.tool)
 @coroutine-fn
-define get_reference [path]:
+def get_reference [path]:
     """
     Fetch one documentation page or example program by its path
 
@@ -748,7 +748,7 @@ define get_reference [path]:
     rather than with a miss.
     """
 
-    define row (first-by-field (table-for-path path) "path" path)
+    var row (first-by-field (table-for-path path) "path" path)
     unless row:
         return (reference-miss path)
 
@@ -757,7 +757,7 @@ define get_reference [path]:
 
 @(mcp.tool)
 @coroutine-fn
-define search_docs [
+def search_docs [
         search_text
         [kind :: str value: None]
         [limit :: int value: 10]]:
@@ -770,14 +770,14 @@ define search_docs [
     Documentation in the "agents" section is written for AI consumers.
     """
 
-    define cap (min (int limit) 100)
-    define hits #[]
+    var cap (min (int limit) 100)
+    var hits #[]
     for-each [table (tables-for-kind kind)]:
-        define rows (search-docs-table search_text cap table)
+        var rows (search-docs-table search_text cap table)
         for-each [row rows]:
             (hits.append (pick-fields row REFERENCE_HIT_KEYS))
 
-    define limited (item-slice hits 0 cap)
+    var limited (item-slice hits 0 cap)
     unless limited:
         return "No matching reference material. Try fewer or more "-
             "common words, drop kind to search both pages and programs, "-
@@ -789,35 +789,35 @@ define search_docs [
 
 @(mcp.tool)
 @coroutine-fn
-define list_features []:
+def list_features []:
     """
     List feature paths present in the corpus with occurrence counts
     """
 
-    define seen #{}
+    var seen #{}
     for-each [row (corpus-table)]:
-        define feature (row.get "feature" "")
+        var feature (row.get "feature" "")
         when feature:
-            define count (seen.get feature 0)
+            var count (seen.get feature 0)
             set! seen[feature] (+ count 1)
 
     unless seen:
         return "No features found."
 
-    define groups #{}
+    var groups #{}
     for-each [p (sorted (seen.items))]:
-        define top (p[0].split "/")[0]
+        var top (p[0].split "/")[0]
 
-        define bucket (groups.get top)
+        var bucket (groups.get top)
         unless bucket:
             set! bucket #[]
             set! groups[top] bucket
         bucket.append p
 
-    define lines #[]
+    var lines #[]
     for-each [top (sorted (groups.keys))]:
-        define bucket groups[top]
-        define subtotal 0
+        var bucket groups[top]
+        var subtotal 0
 
         for-each [p bucket]:
             incr! subtotal p[1]
@@ -840,7 +840,7 @@ define list_features []:
 
 @(mcp.tool)
 @coroutine-fn
-define list_tags []:
+def list_tags []:
     """
     List corpus tags with occurrence counts, grouped by facet
 
@@ -850,29 +850,29 @@ define list_tags []:
     names, categories, surface markers); each group is sorted by count.
     """
 
-    define seen #{}
+    var seen #{}
     for-each [row (corpus-table)]:
         for-each [tag (or (row.get "tags") #())]:
-            define count (seen.get tag 0)
+            var count (seen.get tag 0)
             set! seen[tag] (+ count 1)
 
     unless seen:
         return "No tags found."
 
-    define ranked:
+    var ranked:
         (sorted (seen.items)
             key: { #((- %1[1]) %1[0]) })
 
-    define intent #[]
-    define structural #[]
+    var intent #[]
+    var structural #[]
     for-each [[tag rank] ranked]:
-        define line f"  {tag}\t{rank}"
+        var line f"  {tag}\t{rank}"
         if (in? tag INTENT_TAGS):
             (intent.append line)
         else:
             (structural.append line)
 
-    define lines #[]
+    var lines #[]
     lines.append f"intent ({(len intent)}):"
     lines.extend intent
     lines.append f"structural ({(len structural)}):"
@@ -883,7 +883,7 @@ define list_tags []:
 
 @(mcp.tool)
 @coroutine-fn
-define corpus_version []:
+def corpus_version []:
     """
     Report the baked snapshot's git ref and per-view row counts
 
@@ -910,12 +910,12 @@ define corpus_version []:
 
 @(mcp.custom_route "/" methods: #["GET"])
 @coroutine-fn
-define landing_page [request]:
+def landing_page [request]:
     """
     Serve the landing page at the service root
     """
 
-    define page STATE["page"]
+    var page STATE["page"]
     unless page:
         return (PlainTextResponse
             "koskari-corpus MCP server. The endpoint is POST /mcp.\n")
@@ -932,12 +932,12 @@ define landing_page [request]:
 @(mcp.custom_route "/koskari-icon.svg" methods: #["GET"])
 @(mcp.custom_route "/favicon.ico" methods: #["GET"])
 @coroutine-fn
-define serve_icon [request]:
+def serve_icon [request]:
     """
     Serve the project mark
     """
 
-    define icon STATE["icon"]
+    var icon STATE["icon"]
     unless icon:
         return (PlainTextResponse "" status_code: 404)
 
@@ -963,7 +963,7 @@ define serve_icon [request]:
 ;; directly and splices this route in ahead of the catch-all.
 
 @coroutine-fn
-define serve_mcp_info [request]:
+def serve_mcp_info [request]:
     """
     Answer a plain GET /mcp with server identity
     """
@@ -977,7 +977,7 @@ define serve_mcp_info [request]:
     }
 
 
-define run_streamable_http_with_info [host port **: app_kwargs]:
+def run_streamable_http_with_info [host port **: app_kwargs]:
     """
     Run streamable HTTP, with GET /mcp answered directly
 
@@ -988,7 +988,7 @@ define run_streamable_http_with_info [host port **: app_kwargs]:
 
     import uvicorn
 
-    define app:
+    var app:
         (mcp.streamable_http_app
             host: host
             **: app_kwargs)
@@ -998,12 +998,12 @@ define run_streamable_http_with_info [host port **: app_kwargs]:
             endpoint: serve_mcp_info
             methods: #["GET"]))
 
-    define config:
+    var config:
         (uvicorn.Config app
             host: host port: port
             log_level: (mcp.settings.log_level.lower))
 
-    define server (uvicorn.Server config)
+    var server (uvicorn.Server config)
     (server.serve)
 
 
@@ -1011,7 +1011,7 @@ define run_streamable_http_with_info [host port **: app_kwargs]:
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Run the MCP server.
 
@@ -1027,10 +1027,10 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [name *: args] argv
+    var [name *: args] argv
 
-    define parser (ArgumentParser (basename name))
-    define mode (parser.add_mutually_exclusive_group)
+    var parser (ArgumentParser (basename name))
+    var mode (parser.add_mutually_exclusive_group)
     (mode.add_argument "--serve"
         action: "store_true" default: False
         help: "serve over streamable HTTP (default: stdio only)")
@@ -1046,7 +1046,7 @@ define main [argv: None]:
     (parser.add_argument "--allowed-hosts"
         action: "append" default: #[]
         help: "hostname protection for --serve (default: localhost only)")
-    define options (parser.parse_args args)
+    var options (parser.parse_args args)
 
     (load-tables!)
     (load-page!)
@@ -1056,7 +1056,7 @@ define main [argv: None]:
     ; consecutive requests from one client can land on different Lambda
     ; execution environments; host protection is enforced at the gateway.
     when options.lambda_mode:
-        define port (int (getenv "PORT" "8080"))
+        var port (int (getenv "PORT" "8080"))
         (logger.info "serving koskari-corpus for lambda on 127.0.0.1:%i" port)
         return (run_streamable_http_with_info
             host: "127.0.0.1"
@@ -1071,14 +1071,14 @@ define main [argv: None]:
         return (mcp.run_stdio_async)
 
     ; resplit, strip, and filter out empty strings
-    define allowed ((",".join options.allowed_hosts).split ",")
+    var allowed ((",".join options.allowed_hosts).split ",")
     set! allowed (list-each [h (map str.strip allowed)] when: h h)
 
     ; mcp by default filters by requested hostname, allowing only
     ; "localhost" and "127.0.0.1" by default. This needs to be overridden
     ; for the MCP to be accessible from other hosts (eg. proxied and made
     ; publicly accessible).
-    define security None
+    var security None
     when allowed:
         set! security:
             (TransportSecuritySettings

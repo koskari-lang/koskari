@@ -4,7 +4,7 @@
 **Syntax:** `(syntax-rules NAME LITERALS RULE ...)`
 
 **Use-case:** A **`syntax-rules`**-style transformer. The transformer is
-the **value** of the form; bind it with **`(define NAME ...)`**.
+the **value** of the form; bind it with **`(var NAME ...)`**.
 
 **Behaviour:** Each rule row is **`(PATTERN TEMPLATE)`**. A symbol in
 **`LITERALS`** matches itself; any other symbol in a pattern is a pattern
@@ -20,7 +20,7 @@ template **`...`** expands one level. Referencing such a variable under **fewer*
 ellipses than it was captured is a compile-time error.
 
 ```koskari
-(define regroup
+(var regroup
   (syntax-rules regroup []
     [(regroup (a b ...) ...)
      (result (a b ...) ...)]))

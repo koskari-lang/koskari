@@ -84,7 +84,7 @@ pipe runs the same source a file would:
 
 ```
 koskari - <<'EOF'
-define greet [who]:
+def greet [who]:
   print f"hi {who}"
 greet "stdin"
 EOF

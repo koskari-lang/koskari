@@ -40,33 +40,33 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define-syntax mk-kw:
+syntax mk-kw:
   syntax-rules []:
     mk-kw name:
-      define k 1
+      var k 1
 
-      define name [argv: None]:
+      def name [argv: None]:
         argv
 
-define-syntax mk-pos:
+syntax mk-pos:
   syntax-rules []:
     mk-pos name:
-      define k 1
+      var k 1
 
-      define name [argv]:
+      def name [argv]:
         argv
 
-define-syntax mk-cell:
+syntax mk-cell:
   syntax-rules []:
     mk-cell name:
-      define k 1
+      var k 1
 
-      define name [[argv: None]]:
+      def name [[argv: None]]:
         argv
 
-define kw-expansion (macroexpand-1 '(mk-kw fa))
-define pos-expansion (macroexpand-1 '(mk-pos fb))
-define cell-expansion (macroexpand-1 '(mk-cell fc))
+var kw-expansion (macroexpand-1 '(mk-kw fa))
+var pos-expansion (macroexpand-1 '(mk-pos fb))
+var cell-expansion (macroexpand-1 '(mk-cell fc))
 
 (mk-kw fa)
 (mk-pos fb)

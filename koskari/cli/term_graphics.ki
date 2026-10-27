@@ -37,15 +37,15 @@ import-from ..assets icon_png_bytes
 (declare-exports detect_protocol emit_icon render_iterm2_escape render_kitty_escape)
 
 
-define multiplexer-term-prefixes #("screen" "tmux")
+var multiplexer-term-prefixes #("screen" "tmux")
 
-define override-protocols #("kitty" "iterm2" "none")
+var override-protocols #("kitty" "iterm2" "none")
 
-define kitty-chunk-size 4096
+var kitty-chunk-size 4096
 
 
 @demand
-define detect_protocol [env: None isatty: None]:
+def detect_protocol [env: None isatty: None]:
   """
   Detect which terminal graphics protocol, if any, the current
   terminal is likely to support.
@@ -72,13 +72,13 @@ define detect_protocol [env: None isatty: None]:
   unless isatty:
     return None
 
-  define override (env.get "KOSKARI_TERM_GRAPHICS")
+  var override (env.get "KOSKARI_TERM_GRAPHICS")
   unless (None? override):
     set! override ((override.strip).lower)
     when (in override override-protocols):
       return (unless (== override "none") override)
 
-  define term (env.get "TERM" "")
+  var term (env.get "TERM" "")
   when (or (term.startswith multiplexer-term-prefixes) (env.get "TMUX")):
     return None
 
@@ -94,7 +94,7 @@ define detect_protocol [env: None isatty: None]:
 
 
 @demand
-define render_kitty_escape [png_bytes]:
+def render_kitty_escape [png_bytes]:
   """
   Encode PNG bytes as a Kitty graphics protocol transmit-and-display
   sequence, base64-chunked at 4096 bytes per chunk as the protocol
@@ -105,15 +105,15 @@ define render_kitty_escape [png_bytes]:
   :return: escape sequence text
   """
 
-  define payload ((base64.b64encode png_bytes).decode "ascii")
-  define total (len payload)
+  var payload ((base64.b64encode png_bytes).decode "ascii")
+  var total (len payload)
 
-  define parts:
+  var parts:
     list-each [start (range 0 total kitty-chunk-size)]:
-      define stop (+ start kitty-chunk-size)
-      define chunk (item-slice payload start: start stop: stop)
-      define more (if (>= stop total) 0 1)
-      define keys (if (== start 0)
+      var stop (+ start kitty-chunk-size)
+      var chunk (item-slice payload start: start stop: stop)
+      var more (if (>= stop total) 0 1)
+      var keys (if (== start 0)
         f"a=T,f=100,q=2,m={more}"
         f"m={more}")
       f"\x1b_G{keys};{chunk}\x1b\\"
@@ -122,7 +122,7 @@ define render_kitty_escape [png_bytes]:
 
 
 @demand
-define render_iterm2_escape [png_bytes name: "koskari-icon.png"]:
+def render_iterm2_escape [png_bytes name: "koskari-icon.png"]:
   """
   Encode PNG bytes as an iTerm2 inline image protocol sequence.
 
@@ -131,13 +131,14 @@ define render_iterm2_escape [png_bytes name: "koskari-icon.png"]:
   :return: escape sequence text
   """
 
-  define encoded_name ((base64.b64encode (name.encode "utf-8")).decode "ascii")
-  define payload ((base64.b64encode png_bytes).decode "ascii")
-  define png_len (len png_bytes)
+  var encoded_name ((base64.b64encode (name.encode "utf-8")).decode "ascii")
+  var payload ((base64.b64encode png_bytes).decode "ascii")
+  var png_len (len png_bytes)
   f"\x1b]1337;File=name={encoded_name};size={png_len};inline=1:{payload}\x07"
 
 
-define-demanding emit_icon [stream: None size: 32]:
+@demand
+def emit_icon [stream: None size: 32]:
   """
   Write the packaged icon to stream via whichever graphics protocol
   detect_protocol() finds, if any.
@@ -149,12 +150,12 @@ define-demanding emit_icon [stream: None size: 32]:
 
   set! stream (or stream sys.stdout)
 
-  define protocol (detect_protocol isatty: (stream.isatty))
+  var protocol (detect_protocol isatty: (stream.isatty))
   when (None? protocol):
     return False
 
-  define png_bytes (icon_png_bytes size)
-  define escape (if (== protocol "kitty")
+  var png_bytes (icon_png_bytes size)
+  var escape (if (== protocol "kitty")
     (render_kitty_escape png_bytes)
     (render_iterm2_escape png_bytes))
 

@@ -220,7 +220,7 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
 
     async def test_fence_in_layout_block_body(self):
         src = (
-            "define run []:\n"
+            "def run []:\n"
             "  process ```bash\n"
             "echo hi\n"
             "```\n")
@@ -229,14 +229,14 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
         self.assertEqual(len(forms), 1)
 
         expected = pycons((
-            symbol("define"), symbol("run"), (),
+            symbol("def"), symbol("run"), (),
             (symbol("process"),
              fence_form("bash", "echo hi\n", line=3))))
         self.assertEqual(forms[0], expected)
 
     async def test_fence_indented_closer_in_block(self):
         src = (
-            "define run []:\n"
+            "def run []:\n"
             "  process ```text\n"
             "  keep relative\n"
             "    indent\n"
@@ -246,7 +246,7 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
         self.assertEqual(len(forms), 1)
 
         expected = pycons((
-            symbol("define"), symbol("run"), (),
+            symbol("def"), symbol("run"), (),
             (symbol("process"),
              fence_form("text", "keep relative\n  indent\n",
                         line=3, col=2))))
@@ -254,12 +254,12 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
 
     async def test_layout_quasiquote_unaffected(self):
         src = (
-            "define get-name []:\n"
+            "def get-name []:\n"
             "  `hello\n")
 
         forms = parse_layout_all(src)
         expected = pycons((
-            symbol("define"), symbol("get-name"), (),
+            symbol("def"), symbol("get-name"), (),
             (symbol("quasiquote"), symbol("hello"))))
         self.assertEqual(forms[0], expected)
 

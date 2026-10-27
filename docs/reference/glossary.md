@@ -89,7 +89,7 @@ with examples, see [Guide](../guide/index.md).
   s-expressions. See [Reader and layout syntax](reader-layout.md).
 
 **macro**
-: A compile-time transformer defined with `define-syntax`. Expands to ordinary
+: A compile-time transformer defined with `syntax`. Expands to ordinary
   forms before compilation.
 
 **mark**
@@ -135,7 +135,7 @@ with examples, see [Guide](../guide/index.md).
 
 **parameter scope**
 : Dynamic configuration shared across calls in an evaluation **domain**, separate
-  from lexical `let` / `define` bindings. Names are declared with
+  from lexical `let` / `var` bindings. Names are declared with
   [`define-parameter`](macros/compile-define-parameter-and-compile-parameterq.md);
   [`parameterize`](specials/compile-parameterize.md) temporarily overrides values
   for a body (restored on exit). Consumers read the current value via
@@ -178,5 +178,5 @@ with examples, see [Guide](../guide/index.md).
 **unpack**
 : Assign several names from one value using a list pattern (including `*:` rest).
   See [Bindings and refs](../guide/bindings-and-refs.md),
-  [compile/define-values](specials/compile-define-values.md), and
+  [compile/var](specials/compile-var.md), and
   [compile/setq-values](specials/compile-setq-values.md).

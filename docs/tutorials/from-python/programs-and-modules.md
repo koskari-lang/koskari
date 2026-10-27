@@ -58,12 +58,12 @@ Process names from argv
 import sys
 
 
-define process [name]:
+def process [name]:
   print "hello" name
 
 
 @entry-point
-define main []:
+def main []:
   for-each [name (item-slice sys.argv 1)]:
     (process name)
 ```
@@ -90,7 +90,7 @@ squares = [x * x for x in range(6)]
 ```
 +++
 ```koskari
-define squares:
+var squares:
   list-each [x (range 6)]:
     (* x x)
 ```
@@ -102,7 +102,7 @@ evens = [x for x in xs if x % 2 == 0]
 ```
 +++
 ```koskari
-define evens:
+var evens:
   list-each [x xs] when: (== 0 (% x 2)):
     x
 ```
@@ -114,7 +114,7 @@ lengths = {w: len(w) for w in words}
 ```
 +++
 ```koskari
-define lengths:
+var lengths:
   dict-each [w words] key: w value: (len w)
 ```
 :::
@@ -125,7 +125,7 @@ gen = (x * x for x in xs)
 ```
 +++
 ```koskari
-define gen:
+var gen:
   each [x xs]:
     (* x x)
 ```
@@ -199,12 +199,12 @@ one trap, a `foo.py` beside a `foo.ki`, are in
 Save as `squares.ki`:
 
 ```koskari
-define squares [n]:
+def squares [n]:
   list-each [i (range n)]:
     (* i i)
 
 @entry-point
-define main []:
+def main []:
   print (squares 6)
 ```
 

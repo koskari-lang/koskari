@@ -4,13 +4,13 @@
 
 **Behaviour:** Expands to `(call compile (quote FORM) ...)`, so the form
 is written as surface syntax and compiled without running. With one
-argument the namespace is `(locals)`; with two, the given namespace.
+argument the namespace is `(vars)`; with two, the given namespace.
 The result is an `Expression`, callable to run it.
 
 **Examples:**
 
 ```koskari
->>> (define e (compileq (+ 1 2)))
+>>> (var e (compileq (+ 1 2)))
 >>> (type e)
 <class 'koskari.lib.Expression'>
 >>> (e)

@@ -21,7 +21,7 @@ Highlights (not an exhaustive list):
 
 | Area | Implemented as |
 | ---- | -------------- |
-| Core | `quote`, `quasiquote`, `quote-syntax`, `quasiquote-syntax`, `bare-syntax`, `unquote`, `unquote-splicing`, `begin`, `lambda`, `function`, `let`, `letrec`, `define`, `define-global`, `setq`, `delq`, `refq`, `bindq`, `takeq`, `cons`, `car`, `cdr`, `nil?`, `class` |
+| Core | `quote`, `quasiquote`, `quote-syntax`, `quasiquote-syntax`, `bare-syntax`, `unquote`, `unquote-splicing`, `begin`, `lambda`, `function`, `let`, `letrec`, `var`, `global`, `define`, `define-global`, `setq`, `delq`, `refq`, `bindq`, `takeq`, `cons`, `car`, `cdr`, `nil?`, `build-class` |
 | Control | `cond`, `switch`, `match`, `and`, `or`, `while`, `for-each`, `break`, `continue`, `return`, `try`, `raise`, internal exception helpers |
 | Context | `with`, `dyn-with`, `dyn-wind`, `parameter`, `parameterize` |
 | Generators / async | `yield`, `yield-from`, `await` |
@@ -31,11 +31,11 @@ Highlights (not an exhaustive list):
 | Import | `import`, `import-from`, `import-all-from`, `use` |
 | Continuations | `call/cc`, `let/cc`, `capture/cc`, `reset`, `shift` |
 | Macros (lowering) | `syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`, `special-rules`, `special-match` |
-| Operators | `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `divmod`, comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not-in`, `is`, `is-not`, aliased `equal?`, `not-equal?`, `lt?`, `le?`, `gt?`, `ge?`, `in?`, `not-in?`, `is?`, `is-not?`), **`instance?`**, **`subclass?`**, `not`, `repr`, `truth`, `iter`, `next`, `#str`, `format`, `len`, `type`, `dir`, `vars` |
+| Operators | `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `divmod`, comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not-in`, `is`, `is-not`, aliased `equal?`, `not-equal?`, `lt?`, `le?`, `gt?`, `ge?`, `in?`, `not-in?`, `is?`, `is-not?`), **`instance?`**, **`subclass?`**, `not`, `repr`, `truth`, `iter`, `next`, `#str`, `format`, `len`, `type`, `dir`, `vars` (zero operands: the frame namespace) |
 | Fences | `apply-fence` (see § Fenced foreign literals) |
-| Other | `bytecode`, `inplace`, `globals`, `locals`, `gensym-thunk` (`{…}` thunk syntax) |
+| Other | `bytecode`, `inplace`, `globals`, `gensym-thunk` (`{…}` thunk syntax) |
 
-**Not compiler specials** (use macros or runtime instead): `if`, `when`, `unless` (macros in `bootstrap/_conditionals.ki`); **`str`** (macro in `bootstrap/_functions.ki`; one argument lowers to the `#str` special); **`define-syntax`** / **`extend-syntax`** (macros in `bootstrap/_define_syntax.ki`); assignment sugar **`set!`**, **`ref`**, **`bind!`**, etc. ([MACROS.md](MACROS.md)).
+**Not compiler specials** (use macros or runtime instead): `if`, `when`, `unless` (macros in `bootstrap/_conditionals.ki`); **`str`** (macro in `bootstrap/_functions.ki`; one argument lowers to the `#str` special); **`define-syntax`** / **`extend-syntax`**, and the **`syntax`**, **`def`** and **`class`** binding macros (`bootstrap/_define_syntax.ki`); assignment sugar **`set!`**, **`ref`**, **`bind!`**, etc. ([MACROS.md](MACROS.md)).
 
 ### Operators and calls
 
@@ -103,7 +103,7 @@ gives the idiomatic direct form `(item-slice seq 1)` in place of
 Indentation-based blocks; heads via `layout/<name>` in the module namespace.
 Implemented handlers include:
 
-`layout/if`, `layout/switch`, `layout/match`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/define-class`, `layout/define-dataclass`, `layout/block`, `layout/block-begin`, `layout/inline-block`, `layout/import-from`, `layout/quote`, `layout/quasiquote`, `layout/quote-syntax`, `layout/quasiquote-syntax`, `layout/bare-syntax`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
+`layout/if`, `layout/switch`, `layout/match`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/build-class`, `layout/block`, `layout/block-begin`, `layout/inline-block`, `layout/import-from`, `layout/quote`, `layout/quasiquote`, `layout/quote-syntax`, `layout/quasiquote-syntax`, `layout/bare-syntax`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
 
 Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
 
@@ -126,8 +126,8 @@ fence was prototyped and dropped. See
 
 - **`lambda`** (named and anonymous; optional return type and docstring).
 - **`function`** (named only; no closure self-ref at creation — used by
-  `define` / `define-global` function shorthand).
-- **`define-class`**, **`define-dataclass`**, **`define-coroutine`** (`coroutine-fn`), **`define-demanding`** (`demand` wrapper) — macros in bootstrap.
+  `def` and the Scheme `(define (NAME FORMALS ...) BODY ...)` arm).
+- **`def`** (`(var NAME (function NAME ...))`) and **`class`** (`(var NAME (build-class NAME ...))`) — binding macros in bootstrap; **`global def`** / **`global class`** bind at the module. Coroutine and demanding functions use **`@coroutine-fn`** / **`@demand`** over **`def`**.
 - Formals: positionals, defaults, `*:`, `**:`, keyword-only (see `gather_formals`).
 - **By-ref formals**: a positional or keyword formal prefixed with `&` (e.g.
   `[a &result]`) aliases the caller-supplied `Ref` as the slot's storage, so
@@ -155,7 +155,7 @@ These appear in [language/special-forms.md](language/special-forms.md) or older 
 
 | Feature | Notes |
 | ------- | ----- |
-| **`declare-async`** | Use **`define-coroutine`** + **`coroutine-fn`** instead |
+| **`declare-async`** | Use **`@coroutine-fn`** over **`def`** instead |
 | **`await-for-each`** | No dedicated form; async iteration uses normal **`for-each`** under the async evaluator |
 | **`await-with`** | No separate form; **`with`** handles async managers |
 | **`method-call` / `!`** | Call-attr and dot-prefix sugar |

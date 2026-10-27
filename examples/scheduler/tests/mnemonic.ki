@@ -15,38 +15,38 @@ import-from kosrunner CronJob RunStore clean-mnemonic mnemonic
 import-from kosrunner.ui stamp
 
 
-define-class TestCleanMnemonic [SchedulerAsyncTestCase]:
+class TestCleanMnemonic [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define test-collapses-to-one-line [self]:
+    def test-collapses-to-one-line [self]:
         (self.assertEqual (clean-mnemonic "  DOC-1234 \n  reindexed\t ")
             "DOC-1234 reindexed")
 
 
     @coroutine-fn
-    define test-empty-is-no-mnemonic [self]:
+    def test-empty-is-no-mnemonic [self]:
         (self.assertIsNone (clean-mnemonic None))
         (self.assertIsNone (clean-mnemonic "   \n "))
 
 
     @coroutine-fn
-    define test-long-text-is-capped [self]:
-        define long (* "x" 500)
-        define got (clean-mnemonic long)
+    def test-long-text-is-capped [self]:
+        var long (* "x" 500)
+        var got (clean-mnemonic long)
         (self.assertEqual (len got) 200)
         (self.assertTrue (got.endswith "..."))
 
 
     @coroutine-fn
-    define test-outside-a-run-is-a-noop [self]:
+    def test-outside-a-run-is-a-noop [self]:
         ;; a handler stays callable directly, in a test or a REPL
         (self.assertEqual (mnemonic "loose") "loose")
 
 
-define-class TestRunMnemonic [SchedulerAsyncTestCase]:
+class TestRunMnemonic [SchedulerAsyncTestCase]:
 
-    define job-firing [self js handler]:
-        define job (CronJob "* * * * *")
+    def job-firing [self js handler]:
+        var job (CronJob "* * * * *")
         (job.configure)
         (job.handler handler)
         (js.register "labelled" job)
@@ -54,57 +54,57 @@ define-class TestRunMnemonic [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-handler-labels-its-own-run [self]:
-        define js (self.jobset-with-store)
-        define job (self.job-firing js (lambda [] (mnemonic "DOC-1234 reindexed")))
+    def test-handler-labels-its-own-run [self]:
+        var js (self.jobset-with-store)
+        var job (self.job-firing js (lambda [] (mnemonic "DOC-1234 reindexed")))
         (job.run cause: "schedule")
 
-        define row (item (js.store.list-runs job: "labelled") 0)
+        var row (item (js.store.list-runs job: "labelled") 0)
         (self.assertEqual (item row "mnemonic") "DOC-1234 reindexed")
 
 
     @coroutine-fn
-    define test-unlabelled-run-has-none [self]:
-        define js (self.jobset-with-store)
-        define job (self.job-firing js (lambda [] 1))
+    def test-unlabelled-run-has-none [self]:
+        var js (self.jobset-with-store)
+        var job (self.job-firing js (lambda [] 1))
         (job.run cause: "schedule")
 
-        define row (item (js.store.list-runs job: "labelled") 0)
+        var row (item (js.store.list-runs job: "labelled") 0)
         (self.assertIsNone (item row "mnemonic"))
 
 
     @coroutine-fn
-    define test-last-call-wins [self]:
-        define js (self.jobset-with-store)
-        define twice []:
+    def test-last-call-wins [self]:
+        var js (self.jobset-with-store)
+        def twice []:
             (mnemonic "provisional")
             (mnemonic "final")
-        define job (self.job-firing js twice)
+        var job (self.job-firing js twice)
         (job.run cause: "schedule")
 
-        define row (item (js.store.list-runs job: "labelled") 0)
+        var row (item (js.store.list-runs job: "labelled") 0)
         (self.assertEqual (item row "mnemonic") "final")
 
 
     @coroutine-fn
-    define test-failed-run-keeps-its-label [self]:
-        define js (self.jobset-with-store)
-        define boom []:
+    def test-failed-run-keeps-its-label [self]:
+        var js (self.jobset-with-store)
+        def boom []:
             (mnemonic "DOC-1234 reindexed")
             raise (RuntimeError "no")
-        define job (self.job-firing js boom)
+        var job (self.job-firing js boom)
         (job.run cause: "schedule")
 
         ;; the label is worth the most on the run that failed
-        define row (item (js.store.list-runs job: "labelled") 0)
+        var row (item (js.store.list-runs job: "labelled") 0)
         (self.assertEqual (item row "status") "failed")
         (self.assertEqual (item row "mnemonic") "DOC-1234 reindexed")
 
 
     @coroutine-fn
-    define test-concurrent-runs-keep-their-own [self]:
-        define js (self.jobset-with-store)
-        define job (CronJob "* * * * *")
+    def test-concurrent-runs-keep-their-own [self]:
+        var js (self.jobset-with-store)
+        var job (CronJob "* * * * *")
         (job.configure)
         (job.handler (lambda [tag] (mnemonic tag)))
         (js.register "labelled" job)
@@ -115,42 +115,42 @@ define-class TestRunMnemonic [SchedulerAsyncTestCase]:
         (job.run "second" cause: "schedule" wait: False)
         (await (asyncio.gather *: (list js._inflight) return_exceptions: True))
 
-        define got (set (list-each [r (js.store.list-runs job: "labelled")]
+        var got (set (list-each [r (js.store.list-runs job: "labelled")]
             (item r "mnemonic")))
         (self.assertEqual got (set #["first" "second"]))
 
 
     @coroutine-fn
-    define test-retrigger-does-not-inherit [self]:
-        define js (self.jobset-with-store)
-        define labels (iter #["original" "replay"])
-        define job (self.job-firing js (lambda [] (mnemonic (next labels))))
+    def test-retrigger-does-not-inherit [self]:
+        var js (self.jobset-with-store)
+        var labels (iter #["original" "replay"])
+        var job (self.job-firing js (lambda [] (mnemonic (next labels))))
         (job.run cause: "schedule")
 
-        define first (item (js.store.list-runs job: "labelled") 0)
+        var first (item (js.store.list-runs job: "labelled") 0)
         (js.retrigger (item first "run_id"))
 
         ;; the replay computes its own label rather than carrying the
         ;; original's over -- a mnemonic belongs to the run, not the trigger
-        define rows (js.store.list-runs job: "labelled")
+        var rows (js.store.list-runs job: "labelled")
         (self.assertEqual (len rows) 2)
         (self.assertEqual (item (item rows 0) "mnemonic") "replay")
         (self.assertEqual (item (item rows 1) "mnemonic") "original")
 
 
-define-class TestStoreMigration [SchedulerAsyncTestCase]:
+class TestStoreMigration [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define test-open-adds-the-column-to-an-older-store [self]:
-        define tmp (tempfile.TemporaryDirectory)
+    def test-open-adds-the-column-to-an-older-store [self]:
+        var tmp (tempfile.TemporaryDirectory)
         (self.addCleanup tmp.cleanup)
-        define root (Path tmp.name)
+        var root (Path tmp.name)
         (.mkdir (root.joinpath "runs") parents: True exist_ok: True)
 
         ;; a store as an earlier version left it: the runs table without
         ;; the column, carrying a row that has to survive the upgrade
-        define path (str (root.joinpath "index.db"))
-        define con (sqlite3.connect path)
+        var path (str (root.joinpath "index.db"))
+        var con (sqlite3.connect path)
         (con.execute (#str
             "CREATE TABLE runs (run_id TEXT PRIMARY KEY, job TEXT NOT NULL,"
             " job_dir TEXT NOT NULL, type TEXT NOT NULL, cause TEXT NOT NULL,"
@@ -163,25 +163,25 @@ define-class TestStoreMigration [SchedulerAsyncTestCase]:
         (con.commit)
         (con.close)
 
-        define store (RunStore (str root))
+        var store (RunStore (str root))
         (store.open)
         (self.addAsyncCleanup (coroutine-fn store.close))
 
-        define row (store.get-run "old-1")
+        var row (store.get-run "old-1")
         (self.assertIsNone (item row "mnemonic"))
         (self.assertEqual (item row "status") "success")
 
 
-define-class TestStamp [SchedulerAsyncTestCase]:
+class TestStamp [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define test-drops-fraction-and-offset [self]:
+    def test-drops-fraction-and-offset [self]:
         (self.assertEqual (stamp "2026-08-05T11:35:00.123456+00:00")
             "2026-08-05 11:35:00")
 
 
     @coroutine-fn
-    define test-missing-renders-empty [self]:
+    def test-missing-renders-empty [self]:
         (self.assertEqual (stamp None) "")
 
 

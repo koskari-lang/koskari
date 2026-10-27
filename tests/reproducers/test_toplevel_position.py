@@ -18,7 +18,7 @@ tests.reproducers.test_toplevel_position
 A runtime error raised by a top-level form reports that form's line
 in the Koskari traceback: a bare symbol, which carries no position of
 its own, a macro call whose expansion is built without one, and a
-define-class whose base is unbound.
+class whose base is unbound.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -54,7 +54,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_bare_symbol(self):
         err = await self.error_for(
-            "define x 6\n"
+            "var x 6\n"
             "\n"
             "nope\n", NameError)
         self.assertEqual([3], sorted(set(dynchain_lines(err))))
@@ -62,17 +62,17 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_macro_call(self):
         err = await self.error_for(
-            "define x 6\n"
+            "var x 6\n"
             "\n"
             "incr! x \"s\"\n", TypeError)
         self.assertEqual([3], sorted(set(dynchain_lines(err))))
 
 
-    async def test_define_class_unbound_base(self):
+    async def test_class_unbound_base(self):
         err = await self.error_for(
-            "define x 6\n"
+            "var x 6\n"
             "\n"
-            "define-class C (Base):\n"
+            "class C (Base):\n"
             "    pass\n", NameError)
         self.assertEqual([3], sorted(set(dynchain_lines(err))))
 

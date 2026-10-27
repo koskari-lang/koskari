@@ -6,85 +6,85 @@
 ;; opcode and through its runtime binding.
 
 
-define grow [n piece]:
-    define s ""
-    define i 0
+def grow [n piece]:
+    var s ""
+    var i 0
     while (< i n):
         incr! s piece
         incr! i
     s
 
 
-define grow_captured [n piece]:
-    define s ""
-    define i 0
-    define step [] (incr! s piece)
+def grow_captured [n piece]:
+    var s ""
+    var i 0
+    def step [] (incr! s piece)
     while (< i n):
         (step)
         incr! i
     s
 
 
-define-class DictBox []:
+class DictBox []:
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.s ""
 
 
-define-class SlotBox []:
+class SlotBox []:
 
-    define __slots__ #("s")
+    var __slots__ #("s")
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.s ""
 
 
-define grow_attr [box n piece]:
-    define i 0
+def grow_attr [box n piece]:
+    var i 0
     while (< i n):
         incr! box.s piece
         incr! i
     box.s
 
 
-define grow_dict [n piece]:
+def grow_dict [n piece]:
     grow_attr (DictBox) n piece
 
 
-define grow_slots [n piece]:
+def grow_slots [n piece]:
     grow_attr (SlotBox) n piece
 
 
-define join3 [a b c]:
+def join3 [a b c]:
     + a b c
 
 
-define join5 [a b c d e]:
+def join5 [a b c d e]:
     + a b c d e
 
 
-define nested [a b c]:
+def nested [a b c]:
     + (+ a b) c
 
 
-define build3 [a b c]:
+def build3 [a b c]:
     #str a b c
 
 
-define build_splat [a rest]:
+def build_splat [a rest]:
     #str a *: rest
 
 
-define build_apply [pieces]:
+def build_apply [pieces]:
     apply #str pieces
 
 
-define build_value []:
+def build_value []:
     #str
 
 
-define shared [seed piece]:
-    define s seed
+def shared [seed piece]:
+    var s seed
     incr! s piece
     incr! s piece
     #(seed s)

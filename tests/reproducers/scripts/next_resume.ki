@@ -5,43 +5,43 @@
 ;; the enclosing try catches.
 
 
-define gen [n]:
+def gen [n]:
     for-each [i (range n)]:
         yield i
 
 
-define bad []:
+def bad []:
     yield 1
     raise (ValueError "boom")
 
 
-define take_two [n]:
-    define g (gen n)
+def take_two [n]:
+    var g (gen n)
     #((next g) (next g))
 
 
-define next_in_loop [n]:
-    define out #[]
-    define g (gen 100)
+def next_in_loop [n]:
+    var out #[]
+    var g (gen 100)
     for-each [v (gen n)]:
         out.append #(v (next g))
     out
 
 
-define next_over_map [n]:
-    define m (map (lambda [x] (* x 10)) (gen n))
+def next_over_map [n]:
+    var m (map (lambda [x] (* x 10)) (gen n))
     #((next m) (next m) (next m None))
 
 
-define default_after_end [n]:
-    define g (gen n)
+def default_after_end [n]:
+    var g (gen n)
     for-each [_ (range n)]:
         (next g)
     (next g "done")
 
 
-define stop_after_end [n]:
-    define g (gen n)
+def stop_after_end [n]:
+    var g (gen n)
     for-each [_ (range n)]:
         (next g)
     try:
@@ -50,31 +50,31 @@ define stop_after_end [n]:
         "stopped"
 
 
-define error_in_producer []:
-    define g (bad)
-    define first (next g)
+def error_in_producer []:
+    var g (bad)
+    var first (next g)
     try:
         (next g)
     except [e ValueError]:
         #(first (str e))
 
 
-define error_with_default []:
+def error_with_default []:
     ;; the producer's error is not answered with the default
-    define g (bad)
-    define first (next g)
+    var g (bad)
+    var first (next g)
     try:
         (next g "dflt")
     except [e ValueError]:
         #(first (str e))
 
 
-define next_by_name [n]:
+def next_by_name [n]:
     ;; the iterator held in a local, the fused step forms
-    define g (gen n)
-    define a (next g)
-    define b (next g 99)
-    define c (next g 99)
+    var g (gen n)
+    var a (next g)
+    var b (next g 99)
+    var c (next g 99)
     #(a b c)
 
 

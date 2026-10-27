@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax set!:
+syntax set!:
   """
   Flexible assignment syntax
   """
@@ -92,7 +92,7 @@ extend-syntax inplace:
       (inplace-attr op obj name value)
 
 
-define-syntax unassigned?:
+syntax unassigned?:
   """
   True if a storage location currently has no value
   """
@@ -102,7 +102,7 @@ define-syntax unassigned?:
       (not (ref location))
 
 
-define-syntax default!:
+syntax default!:
   """
   Assigns value to a storage location if that location is not already
   assigned to a truthy value of its own.
@@ -114,7 +114,7 @@ define-syntax default!:
         set! location value
 
 
-define-syntax del!:
+syntax del!:
   """
   Clears a binding, or deletes an attribute, or item.
   """
@@ -129,7 +129,7 @@ define-syntax del!:
       (delq name)
 
 
-define-syntax take!:
+syntax take!:
   """
   Takes a value from a binding, attribute, or item, clearing it.
   """
@@ -144,7 +144,7 @@ define-syntax take!:
       (takeq name)
 
 
-define-syntax incr!:
+syntax incr!:
   """
   Increment a variable in-place. If `value` is not provided, increment by 1.
   """
@@ -156,7 +156,7 @@ define-syntax incr!:
       (inplace + location value)
 
 
-define-syntax decr!:
+syntax decr!:
   """
   Decrement a variable in-place. If `value` is not provided, decrement by 1.
   """
@@ -168,7 +168,7 @@ define-syntax decr!:
       (inplace - location value)
 
 
-define-syntax ref:
+syntax ref:
   """
   Obtain a reference to a storage location
   """
@@ -209,7 +209,7 @@ define-syntax ref:
       (refq name)
 
 
-define-syntax bind!:
+syntax bind!:
   """
   Bind a reference to a name in the current scope
   """
@@ -250,7 +250,7 @@ define-syntax bind!:
       (bindq name value)
 
 
-define environ-ref [key: None default: None]:
+define [environ-ref key: None default: None]:
   unless key:
     raise (ValueError "environ-ref requires a non-empty key")
 
@@ -267,47 +267,21 @@ define environ-ref [key: None default: None]:
       { (del! (item environ key)) })
 
 
-define-syntax global:
-  """
-  Declare a name as a global variable in a scope, and optionally
-  assign a value to it. Convenience wrapper for `define-global`
-  """
-
-  syntax-rules []:
-    case (global name):
-      (define-global name)
-    case (global name value):
-      (define-global name value)
-
-
-define-syntax local:
-  """
-  Declare a name as a local variable in a scope, and optionally
-  assign a value to it. Convenience wrapper for `define`
-  """
-
-  syntax-rules []:
-    case (local name):
-      (define name)
-    case (local name value):
-      (define name value)
-
-
-define-syntax define-parameter:
+syntax define-parameter:
   """
   Declare a name as a parameter in a scope, with an optional default value.
   """
 
   syntax-rules []:
     case (define-parameter name):
-      (define name)
+      (var name)
       (bindq name (ParamRef 'name))
     case (define-parameter name default):
-      (define name)
+      (var name)
       (bindq name (ParamRef 'name default))
 
 
-define-syntax parameterq:
+syntax parameterq:
   """
   Resolve a parameter by literal name. Lowers to the PARAM opcode
   family; `parameter` remains for names computed at runtime.
@@ -320,7 +294,7 @@ define-syntax parameterq:
       (parameter name default)
 
 
-define-syntax define-environ:
+syntax define-environ:
   """
   Declare a name as an environment variable in a scope, with an optional
   default value if the environment variable is not set.
@@ -328,14 +302,14 @@ define-syntax define-environ:
 
   syntax-rules []:
     case (define-environ name default):
-      (define name)
+      (var name)
       (bindq name (environ-ref 'name default))
     case (define-environ name):
-      (define name)
+      (var name)
       (bindq name (environ-ref 'name))
 
 
-define-syntax let-values:
+syntax let-values:
   """
   Evaluates body in a new scope with binding values defined from unpacking
   the sequence `value` according to `pattern`.
@@ -352,10 +326,10 @@ define-syntax let-values:
   syntax-rules []:
     case (let-values [pattern value] body ...):
       (let [[resolved value]]
-        (define-values pattern resolved) body ...)
+        (var pattern resolved) body ...)
 
 
-define-syntax let*:
+syntax let*:
   """
   Nested `let` bindings, where the bindings are evaluated in order
   from left to right.
@@ -370,7 +344,7 @@ define-syntax let*:
       (let [first] (let* [rest ...] body ...))
 
 
-define-syntax item*:
+syntax item*:
   """
   Nested item access, where the key is evaluated in order from left to right.
 
@@ -390,7 +364,7 @@ define-syntax item*:
       (item* (item obj key) rest ...)
 
 
-define-syntax attr*:
+syntax attr*:
   """
   Nested attribute access, where the name is evaluated in order from left to
   right.
@@ -411,7 +385,44 @@ define-syntax attr*:
       (attr* (attr obj name) rest ...)
 
 
-define-syntax declare-exports:
+syntax global:
+  """
+  A prefix over a binding form, binding it at the module rather than
+  in the scope the form appears in. global var takes the shapes of var
+  and lowers to define-global; global syntax lowers to define-syntax.
+  The def and class arms are added where those forms are defined.
+  """
+
+  macro-match:
+    case (global var (PAIR pattern) (BIND value)):
+      `(define-global-values ,pattern ,value)
+
+    case (global var (PAIR pattern)):
+      `(define-global-values ,pattern)
+
+    case (global var (SYMBOL name) (REST rest)):
+      `(define-global ,name ,@rest)
+
+    case (global syntax (SYMBOL name) (REST rest)):
+      `(define-syntax ,name ,@rest)
+
+
+extend-syntax var:
+  """
+  A pattern in the name position declares every name the pattern binds
+  and unpacks the value into them, through define-values. Without a
+  value the names are only declared.
+  """
+
+  macro-match:
+    case (var (PAIR pattern) (BIND value)):
+      `(define-values ,pattern ,value)
+
+    case (var (PAIR pattern)):
+      `(define-values ,pattern)
+
+
+syntax declare-exports:
   """
   Declare the module's exported features
 

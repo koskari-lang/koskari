@@ -104,14 +104,14 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
         return path
 
     async def test_hosted_run_invokes_main(self):
-        self._write_ki('ki_launcher_main', '(define main [] 42)')
+        self._write_ki('ki_launcher_main', '(def main [] 42)')
         code = await hosted_run('ki_launcher_main', 'main', 'ki-tool', [])
         self.assertEqual(code, 42)
 
     async def test_hosted_run_sets_sys_argv(self):
         self._write_ki(
             'ki_launcher_argv',
-            '(import sys)\n(define main [] (len sys.argv))')
+            '(import sys)\n(def main [] (len sys.argv))')
         code = await hosted_run(
             'ki_launcher_argv', 'main', 'ki-tool', ['--flag'])
         self.assertEqual(code, 2)
@@ -120,19 +120,19 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
         self._write_ki(
             'ki_launcher_coro',
             '(import asyncio)\n'
-            '(define-coroutine main [] (await (asyncio.sleep 0)) 9)')
+            '(decorate [coroutine-fn] (def main [] (await (asyncio.sleep 0)) 9))')
         code = await hosted_run('ki_launcher_coro', 'main', 'ki-tool', [])
         self.assertEqual(code, 9)
 
     async def test_hosted_run_bare_module_calls_its_entry_point(self):
         self._write_ki(
             'ki_launcher_slot',
-            '(decorate [entry-point] (define main [] 12))')
+            '(decorate [entry-point] (def main [] 12))')
         code = await hosted_run('ki_launcher_slot', None, 'ki-tool', [])
         self.assertEqual(code, 12)
 
     async def test_hosted_run_bare_module_without_entry_point_raises(self):
-        self._write_ki('ki_launcher_noslot', '(define main [] 12)')
+        self._write_ki('ki_launcher_noslot', '(def main [] 12)')
         with self.assertRaises(EntryTargetError) as caught:
             await hosted_run('ki_launcher_noslot', None, 'ki-tool', [])
         self.assertIn('ki_launcher_noslot', str(caught.exception))
@@ -140,17 +140,17 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
     def test_run_target_bare_module(self):
         self._write_ki(
             'ki_launcher_bare',
-            '(decorate [entry-point] (define main [] 13))')
+            '(decorate [entry-point] (def main [] 13))')
         code = run_target('ki_launcher_bare', argv=[])
         self.assertEqual(code, 13)
 
     def test_run_target_against_ki_module(self):
-        self._write_ki('ki_launcher_run', '(define main [] 7)')
+        self._write_ki('ki_launcher_run', '(def main [] 7)')
         code = run_target('ki_launcher_run:main', argv=[])
         self.assertEqual(code, 7)
 
     def test_run_resolved_script(self):
-        self._write_ki('ki_launcher_entry', '(define main [] 11)')
+        self._write_ki('ki_launcher_entry', '(def main [] 11)')
 
         class FakeEntry(object):
             name = 'ki-tool'

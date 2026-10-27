@@ -4,8 +4,8 @@ Koskari is a Lisp dialect for Python -- indent-based layout syntax, macros, and 
 custom bytecode evaluator that runs on CPython.
 
 ```koskari
-define greet [name]:
-  print (+ "Hello, " name "!")
+def greet [name]:
+  print f"Hello, {name}!"
 
 when-main:
   greet "world"

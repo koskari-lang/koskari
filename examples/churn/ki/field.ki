@@ -2,19 +2,19 @@
 ;; and the loop counter is itself an attribute, so attribute access on the
 ;; dict storage path dominates.
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define-class ChurnBox []:
+class ChurnBox []:
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.i 0
         set! self.a 0
         set! self.b 0
 
 
-define churn_field [n x: 1]:
-    define box (ChurnBox)
+def churn_field [n x: 1]:
+    var box (ChurnBox)
     set! box.i 0
     set! box.a (& x MASK32)
     set! box.b 1

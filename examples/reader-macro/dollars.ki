@@ -19,7 +19,7 @@ $100 in source becomes (dollars 100) before macro expansion or compilation.
 """
 
 
-define-syntax print-example:
+syntax print-example:
   """
   Print the source text of an expression, the word "is", then its value
   """
@@ -29,26 +29,26 @@ define-syntax print-example:
       print 'expression "is" expression
 
 
-define-class dollars [decimal]:
+class dollars [decimal]:
   """
   Simple wrapper for decimal which formats the value as dollars in str.
   Do not use floats for real currency; this is a teaching example only.
   """
 
-  define __str__ [self]:
+  def __str__ [self]:
     f"${(decimal self):.2f}"
 
-  define __repr__ [self]:
+  def __repr__ [self]:
     f"(dollars {(decimal self):.2f})"
 
 
 @demand
-define read-dollars [stream c]:
+def read-dollars [stream c]:
   """
   Reader macro handler for $. Reads the next atom and wraps it as dollars.
   """
 
-  define found (__reader__.read_atom stream)
+  var found (__reader__.read_atom stream)
   when (instance? found str):
     when (or (in "." found) (found.endswith "f")):
       (set! found
@@ -62,12 +62,12 @@ define read-dollars [stream c]:
 (__reader__.add_macro_character "$" read-dollars)
 
 
-define example []:
+def example []:
   """
   Demonstrate read-time expansion of $ literals inside this function body
   """
 
-  define X $100
+  var X $100
   (print-example (type X))
   (print-example (repr X))
   (print-example (str X))
@@ -78,7 +78,7 @@ define example []:
 
 
 @entry-point
-define main []:
+def main []:
   (example)
 
 

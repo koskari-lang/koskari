@@ -171,7 +171,7 @@ class TestReport(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             text = regen.report_env(tmp)
 
-        self.assertIn('KOSKARI_VERSION=0.1.0+ga', text)
+        self.assertIn('KOSKARI_VERSION=0.2.0+ga', text)
 
     def test_full_version(self):
         info = regen.assemble_version('0.1.0', {
@@ -203,7 +203,7 @@ class TestReport(unittest.TestCase):
 
         self.assertNotIn('+', tag)
         self.assertRegex(tag, r'^[a-zA-Z0-9_.-]+$')
-        self.assertTrue(tag.startswith('0.1.0'))
+        self.assertTrue(tag.startswith('0.2.0'))
 
     def test_image_tag_dev_shape(self):
         state = {

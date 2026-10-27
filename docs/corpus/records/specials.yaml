@@ -478,21 +478,21 @@ tags:
   - namespace
 notes: returns the module namespace; eval produces a ModuleNamespace object (not auto-encodable)
 ---
-id: special-locals-001
-feature: special/compile/locals
+id: special-vars-scope-001
+feature: special/compile/vars
 source: |-
-  (locals)
+  (vars)
   
 verify:
-  read: (locals)
-  expand: (locals)
+  read: (vars)
+  expand: (vars)
 references:
-  - reference/specials/compile-locals.md
+  - reference/specials/compile-vars.md
 stability: evolving
 tags:
   - special
   - namespace
-notes: returns the current frame namespace; eval produces a Namespace object (not auto-encodable)
+notes: with no operand vars returns the current scope's namespace; at module scope that is the ModuleNamespace (not auto-encodable)
 ---
 id: special-call-cc-invoke-002
 feature: special/compile/call/cc
@@ -632,39 +632,39 @@ tags:
   - namespace
 notes: compile/globals returns a ModuleNamespace; type/str confirms the runtime type
 ---
-id: special-locals-item-002
-feature: special/compile/locals
+id: special-vars-scope-item-002
+feature: special/compile/vars
 source: |-
-  (let [[x 5]] (item (locals) "x"))
+  (let [[x 5]] (item (vars) "x"))
   
 verify:
-  read: (let ((x 5)) (item (locals) "x"))
-  expand: (let ((x 5)) (item (locals) "x"))
+  read: (let ((x 5)) (item (vars) "x"))
+  expand: (let ((x 5)) (item (vars) "x"))
   eval: "5"
 references:
-  - reference/specials/compile-locals.md
+  - reference/specials/compile-vars.md
 stability: evolving
 tags:
   - special
   - namespace
 notes: item access on local namespace inside a let frame; reads back x=5
 ---
-id: special-locals-module-scope-003
-feature: special/compile/locals
+id: special-vars-module-scope-003
+feature: special/compile/vars
 source: |-
-  (item (locals) "z")
+  (item (vars) "z")
   
 verify:
-  read: (item (locals) "z")
-  expand: (item (locals) "z")
+  read: (item (vars) "z")
+  expand: (item (vars) "z")
   eval: "1"
 references:
-  - reference/specials/compile-locals.md
+  - reference/specials/compile-vars.md
 stability: evolving
 tags:
   - special
   - namespace
-notes: at module scope compile/locals is the module namespace; reads z=1 fixture
+notes: at module scope (vars) is the module namespace; reads z=1 fixture
 ---
 id: special-cdr-quoted-001
 feature: special/compile/cdr
@@ -1518,21 +1518,21 @@ notes: 0-arity (raise) inside a handler re-raises the active exception; an outer
 ---
 id: special-raise-custom-exception-001
 feature: special/compile/raise
-source: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+source: (begin (class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
 verify:
-  read: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
-  expand: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  read: (begin (class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  expand: (begin (class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
   eval: '"boom"'
 references:
   - reference/specials/compile-raise.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
   - reference/macros/compile-super.md
 stability: evolving
 tags:
   - special
   - raise
   - exception
-  - define-class
+  - class
   - error-handling
 notes: raise a user-defined Exception subclass; __init__ chains to super with the message
 ---
@@ -1583,18 +1583,18 @@ id: special-return-multiple-values-destructure-001
 feature: special/compile/return
 source: |-
   begin:
-    define minmax [a b]:
+    def minmax [a b]:
       if (< a b):
         return a b
       else:
         return b a
-    define-values [lo hi] (minmax 8 3)
+    var [lo hi] (minmax 8 3)
     #(lo hi)
 verify:
   eval: "tuple:(3,8)"
 references:
   - reference/specials/compile-return.md
-  - reference/specials/compile-define-values.md
+  - reference/specials/compile-var.md
 stability: evolving
 tags:
   - special
@@ -1603,13 +1603,13 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) return is consumed positionally with define-values; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) return is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
 ---
 id: special-return-keyword-values-001
 feature: special/compile/return
 source: |-
   begin:
-    define stats [xs]:
+    def stats [xs]:
       return count: (len xs) first: (item xs 0)
     (dict (stats #[10 20 30]))
 verify:
@@ -1647,15 +1647,15 @@ id: special-yield-multiple-values-destructure-001
 feature: special/compile/yield
 source: |-
   begin:
-    define gen []:
+    def gen []:
       yield 3 8
-    define-values [lo hi] (item (list (gen)) 0)
+    var [lo hi] (item (list (gen)) 0)
     #(lo hi)
 verify:
   eval: "tuple:(3,8)"
 references:
   - reference/specials/compile-yield.md
-  - reference/specials/compile-define-values.md
+  - reference/specials/compile-var.md
 stability: evolving
 tags:
   - special
@@ -1665,13 +1665,13 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) yield is consumed positionally with define-values; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) yield is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
 ---
 id: special-yield-keyword-values-001
 feature: special/compile/yield
 source: |-
   begin:
-    define stats [xs]:
+    def stats [xs]:
       yield count: (len xs) first: (item xs 0)
     (dict (item (list (stats #[10 20 30])) 0))
 verify:
@@ -1690,7 +1690,7 @@ notes: keyword arguments to yield produce a values object labelling each result;
 ---
 id: special-return-bare-word-001
 feature: special/compile/return
-source: "(begin (define f (lambda f [x] (begin (when x return) 99))) #[(f True) (f False)])"
+source: "(begin (def f [x] (begin (when x return) 99)) #[(f True) (f False)])"
 verify:
   eval: "list:[null,99]"
 references:
@@ -1881,14 +1881,14 @@ notes: "the long form spelled without the #` prefix; a comma is only active afte
 id: layout-quote-syntax-block-001
 feature: layout/quote-syntax
 source: |-
-  define b:
+  var b:
     #'foo:
       a
       b
   
 verify:
-  read: "(define b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
-  expand: "(define b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
+  read: "(var b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
+  expand: "(var b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -1903,19 +1903,19 @@ tags:
   - surface:block
   - metaprogramming
   - hygiene
-notes: "#' before a block head quotes the raw block: cons as data keeping hygiene marks, through layout/quote-syntax; define returns None"
+notes: "#' before a block head quotes the raw block: cons as data keeping hygiene marks, through layout/quote-syntax; var returns None"
 ---
 id: layout-quasiquote-syntax-block-001
 feature: layout/quasiquote-syntax
 source: |-
-  define b:
+  var b:
     #`foo:
       ,z
       b
   
 verify:
-  read: "(define b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
-  expand: "(define b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
+  read: "(var b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
+  expand: "(var b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -1931,7 +1931,7 @@ tags:
   - surface:block
   - metaprogramming
   - hygiene
-notes: "#` before a block head quasiquotes the raw block: cons keeping hygiene marks, through layout/quasiquote-syntax; a comma line is an unquote entry; define returns None"
+notes: "#` before a block head quasiquotes the raw block: cons keeping hygiene marks, through layout/quasiquote-syntax; a comma line is an unquote entry; var returns None"
 ---
 id: reader-datumq-shorthand-001
 feature: reader/datumq
@@ -1966,3 +1966,46 @@ tags:
   - metaprogramming
   - hygiene
 notes: "Repeating -' nests: a macro-generating template writes -'-'name, the outer expansion emits the raw (datumq name) into the inner template, and the inner expansion writes the raw name"
+---
+id: special-vars-function-scope-004
+feature: special/compile/vars
+source: (begin (def f1 [a] (var scale 2) (vars)) (item (f1 10) "scale"))
+verify:
+  eval: "2"
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - namespace
+  - local-binding
+  - name-resolution
+notes: inside a function body (vars) is that call's namespace, holding the parameter a and the var-declared scale
+---
+id: special-vars-instance-dict-005
+feature: special/compile/vars
+source: (begin (class Point [] (def __init__ [self x] (set-attr self x x))) (vars (Point 3)))
+verify:
+  eval: "{\"x\": 3}"
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - object
+  - namespace
+notes: with one operand vars is the object's __dict__; the instance carries only x
+---
+id: special-vars-namespace-repr-006
+feature: special/compile/vars
+source: (begin (def f1 [a] (var scale 2) (vars)) (repr (f1 1)))
+verify:
+  eval: '"<Namespace f1 in corpus.test: a=1 scale=2>"'
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - namespace
+  - local-binding
+notes: a namespace repr names the function, the enclosing module (corpus.test under the corpus harness), then name=value for each of the scope's own names

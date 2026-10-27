@@ -38,68 +38,68 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import-from asyncio sleep
 
-define g-plain []:
+def g-plain []:
     (yield 1)
     (yield 2)
 
-define g-echo []:
-    define got (yield 1)
+def g-echo []:
+    var got (yield 1)
     (yield got)
 
-define g-catches []:
+def g-catches []:
     try:
         (yield 1)
         (yield "unreached")
     except [ValueError]:
         (yield "caught")
 
-define g-catch-return []:
+def g-catch-return []:
     try:
         (yield 1)
         (yield "unreached")
     except [ValueError]:
         None
 
-define g-await-echo []:
+def g-await-echo []:
     (await (sleep 0.001))
-    define got (yield 1)
+    var got (yield 1)
     (yield got)
 
-define g-cleanup [col]:
+def g-cleanup [col]:
     try:
         (yield "ready")
     finally:
         (await (sleep 0.001))
         (col.append "cleaned")
 
-define g-ignores-exit []:
+def g-ignores-exit []:
     try:
         (yield 1)
     except [GeneratorExit]:
         (yield "ignored")
 
-define g-handler-await []:
+def g-handler-await []:
     try:
         (yield 1)
     except [ValueError]:
         (await (sleep 0.001))
         (yield "handled")
 
-define g-param-extent [col]:
+def g-param-extent [col]:
     try:
         (parameterize [[pval "inside"]]
             (yield (parameterq pval "no-extent")))
     finally:
         (col.append (parameterq pval "no-extent"))
 
-define g-fin-sync [col]:
+def g-fin-sync [col]:
     try:
         (yield 1)
         (yield 2)
     finally:
         (col.append "cleaned")
 
-define g-slow [col]:
+def g-slow [col]:
     try:
         (yield 1)
         (await (sleep 60))

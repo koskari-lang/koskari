@@ -24,15 +24,15 @@ import-from koskari.assets icon_svg_text
 import json
 
 
-define ids [result]:
+def ids [result]:
     (list-each [entry (json.loads result)] (item entry "corpus_id"))
 
 
-define paths [result]:
+def paths [result]:
     (list-each [entry (json.loads result)] (item entry "path"))
 
 
-define emit [tag value]:
+def emit [tag value]:
     (print f"[[{tag}]] {(json.dumps value)}")
 
 

@@ -121,7 +121,7 @@ class TestKioImporterParity(unittest.TestCase):
         pkg = self._package('kiopkg_pragma', {
             '__init__.ki': "(package-pragma [compiler/enable-asserts False])\n",
             'sub.ki': '(assert False "kept by the default pragma")\n'
-                      '(define x 1)\n',
+                      '(var x 1)\n',
         })
         compile_ki_file_to_kio(os.path.join(pkg, 'sub.ki'),
                                os.path.join(pkg, 'sub.kio'))
@@ -139,7 +139,7 @@ class TestKioImporterParity(unittest.TestCase):
             '__init__.ki': "(package-pragma [compiler/enable-asserts False])\n",
             'inner/__init__.ki':
                 '(assert False "kept by the default pragma")\n'
-                '(define x 1)\n',
+                '(var x 1)\n',
         })
         compile_ki_file_to_kio(os.path.join(pkg, 'inner', '__init__.ki'),
                                os.path.join(pkg, 'inner', '__init__.kio'))
@@ -155,8 +155,8 @@ class TestKioImporterParity(unittest.TestCase):
 
         pkg = self._package('kiopkg_rel', {
             '__init__.ki': "",
-            'helper.ki': "(define helper 41)\n",
-            'rel.ki': "(import-from .helper helper)\n(define y (+ helper 1))\n",
+            'helper.ki': "(var helper 41)\n",
+            'rel.ki': "(import-from .helper helper)\n(var y (+ helper 1))\n",
         })
         compile_ki_file_to_kio(os.path.join(pkg, 'rel.ki'),
                                os.path.join(pkg, 'rel.kio'))
@@ -179,9 +179,9 @@ class TestKioImporterParity(unittest.TestCase):
         os.mkdir(pkg)
         for fname, source in {
                 '__init__.ki': "",
-                'helper.ki': "(define helper 41)\n",
+                'helper.ki': "(var helper 41)\n",
                 'rel.ki': "(import-from .helper helper)\n"
-                          "(define y (+ helper 1))\n"}.items():
+                          "(var y (+ helper 1))\n"}.items():
             with open(os.path.join(pkg, fname), 'w', encoding='utf-8') as fh:
                 fh.write(source)
         self.assertNotIn(root, sys.path)
@@ -202,7 +202,7 @@ class TestKioImporterParity(unittest.TestCase):
         serialized under its plain code name, with no expansion mark:
         the name a traceback and __name__ show
         """
-        src = ("define h [words]:\n"
+        src = ("def h [words]:\n"
                "    (list (each [w words] (len w)))\n")
         ki, kio = self._both('plain_names', src)
         for mod in (ki, kio):
@@ -212,7 +212,7 @@ class TestKioImporterParity(unittest.TestCase):
 
 
     def test_docstring_via_kio_matches_ki(self):
-        ki, kio = self._both('doc', '"""the module doc"""\n(define x 1)\n')
+        ki, kio = self._both('doc', '"""the module doc"""\n(var x 1)\n')
         self.assertEqual(ki.__doc__, "the module doc")
         self.assertEqual(kio.__doc__, ki.__doc__)
         self.assertEqual(kio.x, 1)
@@ -229,8 +229,8 @@ class TestKioImporterParity(unittest.TestCase):
             "  [(twice x) `(+ ,x ,x)]))\n"
             "(define-syntax ident (special-rules []\n"
             "  [(c (ident x)) x.datum]))\n"
-            "(define a (twice 21))\n"
-            "(define b (ident 7))\n")
+            "(var a (twice 21))\n"
+            "(var b (ident 7))\n")
         ki, kio = self._both('rules', source)
         self.assertEqual(42, ki.a)
         self.assertEqual(7, ki.b)
@@ -245,12 +245,12 @@ class TestKioImporterParity(unittest.TestCase):
         """
 
         source = (
-            "(define match-subject int)\n"
+            "(var match-subject int)\n"
             "(define-syntax ext (syntax-match\n"
             "  [(ext (TYPE match-subject)) \"int-arm\"]\n"
             "  [(ext (VALUE y)) \"other-arm\"]))\n"
-            "(define a (ext 7))\n"
-            "(define b (ext \"s\"))\n")
+            "(var a (ext 7))\n"
+            "(var b (ext \"s\"))\n")
         ki, kio = self._both('ext', source)
         self.assertEqual("int-arm", ki.a)
         self.assertEqual("other-arm", ki.b)
@@ -272,18 +272,18 @@ class TestKioImporterParity(unittest.TestCase):
             "(define-syntax pick (syntax-match\n"
             "  [(pick (GROUP g (VALUE x) (VALUE y))) \"group\"]\n"
             "  [(pick (VALUE v)) \"one\"]))\n"
-            "(define classify [data]\n"
+            "(define [classify data]\n"
             "  (match data\n"
             "    [[#[a #[b c] *: rest]] #(a b c rest)]\n"
             "    [[(or #[x 1] #[5 y])] #(\"or\" x)]\n"
             "    [[#[k (OPTIONAL z)]] #(\"opt\" k)]\n"
             "    [else: \"none\"]))\n"
-            "(define r1 (classify #[1 #[2 3] 4 5]))\n"
-            "(define r2 (classify #[7 1]))\n"
-            "(define r3 (classify #[8]))\n"
-            "(define r4 (swap-pairs (1 2) (3 4)))\n"
-            "(define r5 (pick 1 2))\n"
-            "(define r6 (pick 1))\n")
+            "(var r1 (classify #[1 #[2 3] 4 5]))\n"
+            "(var r2 (classify #[7 1]))\n"
+            "(var r3 (classify #[8]))\n"
+            "(var r4 (swap-pairs (1 2) (3 4)))\n"
+            "(var r5 (pick 1 2))\n"
+            "(var r6 (pick 1))\n")
         ki, kio = self._both('matchers', source)
         self.assertEqual((1, 2, 3, (4, 5)), ki.r1)
         self.assertEqual(("or", 7), ki.r2)
@@ -313,12 +313,12 @@ class TestKioImporterParity(unittest.TestCase):
     GENERATING = (
         "(define-syntax mk-getter (syntax-rules []\n"
         "  [(mk-getter name val)\n"
-        "   (begin (define secret val)\n"
+        "   (begin (var secret val)\n"
         "          (define-syntax name (macro-rules []\n"
         "            [(name) #`secret])))]))\n"
-        "(define secret 100)\n"
+        "(var secret 100)\n"
         "(mk-getter get-secret 8)\n"
-        "(define got (get-secret))\n")
+        "(var got (get-secret))\n")
 
 
     def test_generated_macro_via_kio_matches_ki(self):
@@ -350,8 +350,8 @@ class TestKioImporterParity(unittest.TestCase):
         user_path = self._write(
             'gen_user.ki',
             "(import-from gen_lib compile/get-secret)\n"
-            "(define secret 555)\n"
-            "(define here (get-secret))\n")
+            "(var secret 555)\n"
+            "(var here (get-secret))\n")
         user = self._load('gen_user', user_path)
         self.assertEqual(555, user.here)
         self.assertEqual(555, user.secret)
@@ -394,8 +394,8 @@ class TestKioImporterParity(unittest.TestCase):
         self._write(
             'gen_use.ki',
             "(import-from gen_src compile/get-secret)\n"
-            "(define secret 555)\n"
-            "(define here (get-secret))\n")
+            "(var secret 555)\n"
+            "(var here (get-secret))\n")
         script = (
             "import sys\n"
             f"sys.path.insert(0, {self._tmpdir!r})\n"
@@ -414,7 +414,7 @@ class TestKioImporterParity(unittest.TestCase):
         A divmod call keeps its operand count through the .kio
         """
 
-        ki, kio = self._both('divmod', "(define d (divmod 7 2))\n")
+        ki, kio = self._both('divmod', "(var d (divmod 7 2))\n")
         self.assertEqual((3, 1), ki.d)
         self.assertEqual(ki.d, kio.d)
 
@@ -426,9 +426,9 @@ class TestKioImporterParity(unittest.TestCase):
         """
 
         source = (
-            "(define k (lambda [a b] #[a b (+ a b)]))\n"
-            "(define r (k 1 2))\n"
-            "(define r2 (k 3 4))\n")
+            "(def k [a b] #[a b (+ a b)])\n"
+            "(var r (k 1 2))\n"
+            "(var r2 (k 3 4))\n")
         ki, kio = self._both('fnbody', source)
         self.assertEqual([1, 2, 3], ki.r)
         self.assertEqual([3, 4, 7], ki.r2)
@@ -439,7 +439,7 @@ class TestKioImporterParity(unittest.TestCase):
     def test_pragma_via_kio_matches_ki(self):
         source = (
             "(pragma [compiler/call-brackets 'warn])\n"
-            "(define setting (pragma compiler/call-brackets))\n")
+            "(var setting (pragma compiler/call-brackets))\n")
         ki, kio = self._both('pragma', source)
         self.assertEqual(kio.setting, ki.setting)
         self.assertIsNotNone(kio.__pragma__)
@@ -449,14 +449,14 @@ class TestKioImporterParity(unittest.TestCase):
 
 
     def test_exports_via_kio_matches_ki(self):
-        source = "(declare-exports alpha)\n(define alpha 1)\n(define beta 2)\n"
+        source = "(declare-exports alpha)\n(var alpha 1)\n(var beta 2)\n"
         ki, kio = self._both('exports', source)
         self.assertEqual(ki.__all__, ('alpha',))
         self.assertEqual(kio.__all__, ki.__all__)
 
 
     def test_ellipsis_const_via_kio(self):
-        _ki, kio = self._both('ellipsis', "(define e ...)\n")
+        _ki, kio = self._both('ellipsis', "(var e ...)\n")
         self.assertIs(kio.e, ...)
 
 
@@ -468,7 +468,7 @@ class TestKioImporterParity(unittest.TestCase):
 
         from koskari.serialize import load_kio
 
-        ki_path = self._write('settings_src.ki', "(define a 1)\n(define b 2)\n")
+        ki_path = self._write('settings_src.ki', "(var a 1)\n(var b 2)\n")
         kio_path = os.path.join(self._tmpdir, 'settings_out.kio')
         compile_ki_file_to_kio(ki_path, kio_path)
         codes = load_kio(kio_path).codes
@@ -484,7 +484,7 @@ class TestKioImporterParity(unittest.TestCase):
         it does under a source load
         """
 
-        ki, kio = self._both('placed', "(define f (lambda [] 1))\n")
+        ki, kio = self._both('placed', "(def f [] 1)\n")
         self.assertTrue(ki.f.code.arena.sealed)
         self.assertIsNotNone(kio.f.code.arena)
         self.assertTrue(kio.f.code.arena.sealed)
@@ -499,8 +499,8 @@ class TestKioImporterParity(unittest.TestCase):
 
         ki, kio = self._both(
             'early',
-            "(define f (lambda [] 1))\n"
-            "(define during f.code.arena.sealed)\n")
+            "(def f [] 1)\n"
+            "(var during f.code.arena.sealed)\n")
         self.assertIs(ki.during, False)
         self.assertIs(kio.during, True)
 
@@ -510,7 +510,7 @@ class TestKioImporterParity(unittest.TestCase):
         _ki, kio = self._both(
             'unplaced',
             "(pragma [compiler/pack-module False])\n"
-            "(define f (lambda [] 1))\n")
+            "(def f [] 1)\n")
         self.assertIsNone(kio.f.code.arena)
 
 
@@ -522,9 +522,9 @@ class TestKioImporterParity(unittest.TestCase):
 
         ki, kio = self._both(
             'toggled',
-            "(define before (lambda [] 1))\n"
+            "(def before [] 1)\n"
             "(pragma [compiler/pack-module False])\n"
-            "(define after (lambda [] 2))\n")
+            "(def after [] 2)\n")
         for mod in (ki, kio):
             self.assertIsNotNone(mod.before.code.arena)
             self.assertTrue(mod.before.code.arena.sealed)
@@ -542,7 +542,7 @@ class TestKioImporterParity(unittest.TestCase):
 
     def test_fresh_kio_beside_source_is_loaded(self):
         """a .kio whose stamp matches its sibling .ki is the one imported"""
-        ki_path = self._write('fresh_pick.ki', "(define who 1)\n")
+        ki_path = self._write('fresh_pick.ki', "(var who 1)\n")
         compile_ki_file_to_kio(
             ki_path, os.path.join(self._tmpdir, 'fresh_pick.kio'))
         module = self._import('fresh_pick')
@@ -552,7 +552,7 @@ class TestKioImporterParity(unittest.TestCase):
 
     def test_truncated_kio_yields_to_source(self):
         """an unreadable .kio beside its .ki is passed over for the source"""
-        ki_path = self._write('cut_pick.ki', "(define who 1)\n")
+        ki_path = self._write('cut_pick.ki', "(var who 1)\n")
         kio_path = os.path.join(self._tmpdir, 'cut_pick.kio')
         compile_ki_file_to_kio(ki_path, kio_path)
         with open(kio_path, 'rb') as fh:
@@ -566,10 +566,10 @@ class TestKioImporterParity(unittest.TestCase):
 
     def test_stale_kio_yields_to_source(self):
         """a .ki edited after its .kio was compiled is the one imported"""
-        ki_path = self._write('stale_pick.ki', "(define who 1)\n")
+        ki_path = self._write('stale_pick.ki', "(var who 1)\n")
         compile_ki_file_to_kio(
             ki_path, os.path.join(self._tmpdir, 'stale_pick.kio'))
-        self._write('stale_pick.ki', "(define who 2)\n")
+        self._write('stale_pick.ki', "(var who 2)\n")
         later = os.stat(ki_path).st_mtime + 10
         os.utime(ki_path, (later, later))
         module = self._import('stale_pick')
@@ -581,9 +581,9 @@ class TestKioImporterParity(unittest.TestCase):
         """a .kio with no source stamp never shadows a sibling .ki"""
         from koskari.serialize import compile_ki_source_to_kio
 
-        self._write('unstamped_pick.ki', "(define who 2)\n")
+        self._write('unstamped_pick.ki', "(var who 2)\n")
         compile_ki_source_to_kio(
-            "(define who 1)\n",
+            "(var who 1)\n",
             os.path.join(self._tmpdir, 'unstamped_pick.kio'))
         module = self._import('unstamped_pick')
         self.assertEqual(module.who, 2)
@@ -591,7 +591,7 @@ class TestKioImporterParity(unittest.TestCase):
 
     def test_lone_kio_loads_without_source(self):
         """a .kio with no sibling .ki loads as it is"""
-        ki_path = self._write('lone_src.ki', "(define who 1)\n")
+        ki_path = self._write('lone_src.ki', "(var who 1)\n")
         compile_ki_file_to_kio(
             ki_path, os.path.join(self._tmpdir, 'lone_pick.kio'))
         module = self._import('lone_pick')
@@ -601,7 +601,7 @@ class TestKioImporterParity(unittest.TestCase):
     def test_define_via_kio_matches_ki(self):
         ki_path = os.path.join(self._tmpdir, 'parity_src.ki')
         with open(ki_path, 'w', encoding='utf-8') as fh:
-            fh.write('(define parity_answer 42)\n')
+            fh.write('(var parity_answer 42)\n')
 
         kio_path = os.path.join(self._tmpdir, 'parity_out.kio')
         compile_ki_file_to_kio(ki_path, kio_path)

@@ -22,18 +22,18 @@ rebuilt from its **`__pragma__`** after the load-time facets were detached.
 
 **Relation to the macro:** **`(evaluate form)`** and **`(evaluate form ns)`**
 are handled by the **`compile/evaluate`** macro, which expands to **`(call
-evaluate ...)`** with **`(locals)`** when the namespace argument is omitted. See
+evaluate ...)`** with **`(vars)`** when the namespace argument is omitted. See
 [compile/evaluate](../macros/compile-evaluate.md).
 
 **Examples:**
 
 ```koskari
-;; One-argument form uses (locals) via the compile/evaluate macro
+;; One-argument form uses (vars) via the compile/evaluate macro
 (evaluate (+ 1 2))
 
 ;; Explicit namespace
 (evaluate (+ x y) my-ns)
 
 ;; Direct call when the namespace is already in hand
-(call evaluate '(+ 1 2) (locals))
+(call evaluate '(+ 1 2) (vars))
 ```

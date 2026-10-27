@@ -4,23 +4,23 @@
 ;; generator itself. A non-generator __iter__ stays a Demand.
 
 
-(define-class Counter []
-  (define __iter__ [self]
+(class Counter []
+  (def __iter__ [self]
     (yield 1)
     (yield 2)))
 
 
-(define-class Plain []
-  (define __iter__ [self]
+(class Plain []
+  (def __iter__ [self]
     (iter #[1 2])))
 
 
-(define koskari-iter-call []
+(def koskari-iter-call []
   (.__iter__ (Counter)))
 
 
-(define koskari-for-each []
-  (define out #[])
+(def koskari-for-each []
+  (var out #[])
   (for-each [x (Counter)]
     (out.append x))
   out)

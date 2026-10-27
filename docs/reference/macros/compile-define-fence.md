@@ -4,7 +4,7 @@
 
 **Behaviour:** Defines a fence handler. NAME is the binding the fence dispatch
 looks up, normally `fence/<format>`; RAW and META name the handler's two
-parameters. The macro expands to a `define` of NAME bound to a `FenceHandler`
+parameters. The macro expands to a `var` of NAME bound to a `FenceHandler`
 wrapping the body as a demanding function, so the handler runs at compile time.
 
 RAW is the fence body text, verbatim. META is a dict carrying `name`,
@@ -25,7 +25,7 @@ not accept. Handlers must not suspend.
 Used as a triple-backtick fence:
 
 ````koskari
-define loud ```shout
+var loud ```shout
 hello there
 ```
 ````
@@ -39,14 +39,14 @@ A handler that rejects unknown options and builds a list:
 
 ```koskari
 >>> define-fence fence/lines [raw meta]:
-...   define options (meta.get "options")
+...   var options (meta.get "options")
 ...   when options:
 ...     raise (FenceError f"fence/lines got unknown options: {(sorted options)}")
 ...   `(#list ,@(map str (.splitlines (raw.strip))))
 ```
 
 ````koskari
-define ls ```lines
+var ls ```lines
 a
 b
 ```

@@ -62,9 +62,9 @@ class TestNestedMacroBinder(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(each-double seq) (list-each [x seq] (* x 2))]))
 
-(define x 100)
-(define captured (each-body #[1 2 3] x))
-(define doubled (each-double #[1 2 3]))
+(var x 100)
+(var captured (each-body #[1 2 3] x))
+(var doubled (each-double #[1 2 3]))
 """
 
     async def test_use_site_name_is_not_captured(self):
@@ -84,7 +84,7 @@ class TestQuoteStripsMarks(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(quoted-binder) (let [[t 1]] (cons t (quote (t)) nil))]))
 
-(define result (quoted-binder))
+(var result (quoted-binder))
 """
 
     async def test_quoted_symbol_is_bare(self):
@@ -108,7 +108,7 @@ class TestQuasiquoteStripsMarks(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(tagged v) `(tag ,v)]))
 
-(define result (tagged 5))
+(var result (tagged 5))
 """
 
     async def test_quasiquoted_symbol_is_bare(self):
@@ -128,12 +128,12 @@ class TestByRefKeywordFormalInTemplate(unittest.IsolatedAsyncioTestCase):
     SRC = """
 (define-syntax mk-fill
   (syntax-rules []
-    [(mk-fill name) (define name [&out: 99] out)]))
+    [(mk-fill name) (define [name &out: 99] out)]))
 
 (mk-fill fill)
-(define mine)
+(var mine)
 (fill out: &mine)
-(define filled mine)
+(var filled mine)
 """
 
     async def test_caller_name_is_bare(self):
@@ -155,11 +155,11 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-pair)
      (begin
-       (define helper (lambda [] 42))
-       (define main (lambda [] (helper)))
+       (def helper [] 42)
+       (def main [] (helper))
        (main))]))
 
-(define answer (mk-pair))
+(var answer (mk-pair))
 """
 
     FORWARD = """
@@ -167,11 +167,11 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-pair)
      (begin
-       (define main (lambda [] (helper)))
-       (define helper (lambda [] 42))
+       (def main [] (helper))
+       (def helper [] 42)
        (main))]))
 
-(define answer (mk-pair))
+(var answer (mk-pair))
 """
 
     async def test_definition_before_closure(self):
@@ -182,6 +182,40 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
     async def test_definition_after_closure(self):
         ns = await load("mh_sibling_forward", self.FORWARD)
         self.assertEqual(ns["answer"], 42)
+
+
+class TestClassInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A class a template defines is bound under the template's own mark,
+    so the caller's binding of the same name is not captured, and is
+    named by the plain name, as a template-defined function is
+    """
+
+    SRC = """
+(var Widget "use-site")
+
+(syntax make-widget
+  (syntax-rules []
+    [(make-widget out)
+     (begin
+       (class Widget []
+         (var size 3))
+       (var out (Widget)))]))
+
+(make-widget made)
+"""
+
+    async def test_class_named_by_the_plain_name(self):
+        ns = await load("mh_template_class_name", self.SRC)
+        cls = type(ns["made"])
+        self.assertEqual("Widget", cls.__name__)
+        self.assertEqual("Widget", cls.__qualname__)
+        self.assertEqual(3, ns["made"].size)
+
+
+    async def test_caller_binding_not_captured(self):
+        ns = await load("mh_template_class_caller", self.SRC)
+        self.assertEqual("use-site", ns["Widget"])
 
 
 class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
@@ -196,11 +230,11 @@ class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(d2 getter)
      (begin
-       (define secret 11)
-       (define getter [] (lambda [] secret)))]))
+       (var secret 11)
+       (define [getter] (lambda [] secret)))]))
 
 (d2 gg)
-(define answer ((gg)))
+(var answer ((gg)))
 """
 
     MIXED = """
@@ -208,11 +242,11 @@ class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(d2 getter)
      (begin
-       (define secret 11)
-       (define getter [] (+ secret ((lambda [] secret)))))]))
+       (var secret 11)
+       (define [getter] (+ secret ((lambda [] secret)))))]))
 
 (d2 gg)
-(define answer (gg))
+(var answer (gg))
 """
 
     async def test_depth_two_reference(self):
@@ -246,10 +280,10 @@ class TestMutualRecursionInTemplate(unittest.IsolatedAsyncioTestCase):
               [od (lambda [k] (if (== k 0) False (ev (- k 1))))]]
        (ev n))]))
 
-(define four (parity 4))
-(define five (parity 5))
-(define four-rec (parity-rec 4))
-(define five-rec (parity-rec 5))
+(var four (parity 4))
+(var five (parity 5))
+(var four-rec (parity-rec 4))
+(var five-rec (parity-rec 5))
 """
 
     async def test_labels_in_template(self):
@@ -271,7 +305,7 @@ class TestFreeReferenceBesideSiblingScope(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define tmp 100)
+(var tmp 100)
 
 (define-syntax peek
   (syntax-rules []
@@ -281,8 +315,8 @@ class TestFreeReferenceBesideSiblingScope(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(peek-lambda) (begin ((lambda [] (let [[tmp 1]] tmp))) ((lambda [] tmp)))]))
 
-(define after-let (peek))
-(define after-lambda (peek-lambda))
+(var after-let (peek))
+(var after-lambda (peek-lambda))
 """
 
     async def test_reference_after_sibling_let(self):
@@ -302,12 +336,12 @@ class TestMacroGeneratingMacro(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-getter name val)
      (begin
-       (define y val)
+       (var y val)
        (define-syntax name (syntax-rules [] [(name) y])))]))
 
-(define y 100)
+(var y 100)
 (mk-getter get-y 7)
-(define got (get-y))
+(var got (get-y))
 """
 
     async def test_inner_template_reaches_outer_binder(self):
@@ -333,8 +367,8 @@ class TestGeneratedLiteral(unittest.IsolatedAsyncioTestCase):
          [(mname a b) (* a b)]))]))
 
 (defmac m to)
-(define with-literal (m 2 to 3))
-(define without-literal (m 2 9))
+(var with-literal (m 2 to 3))
+(var without-literal (m 2 9))
 """
 
     MISS = """
@@ -347,7 +381,7 @@ class TestGeneratedLiteral(unittest.IsolatedAsyncioTestCase):
          [(mname a b) (* a b)]))]))
 
 (defmac m to)
-(define answer (m 2 9 3))
+(var answer (m 2 9 3))
 """
 
     async def test_literal_arm_matches_the_literal(self):
@@ -375,12 +409,12 @@ class TestProceduralInnerMacro(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-getter name val)
      (begin
-       (define secret val)
+       (var secret val)
        (define-syntax name (macro-rules [] [(name) #`secret])))]))
 
-(define secret 100)
+(var secret 100)
 (mk-getter get-secret 8)
-(define got (get-secret))
+(var got (get-secret))
 """
 
     PLAIN = """
@@ -388,12 +422,12 @@ class TestProceduralInnerMacro(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-getter name val)
      (begin
-       (define secret val)
+       (var secret val)
        (define-syntax name (macro-rules [] [(name) `secret])))]))
 
-(define secret 100)
+(var secret 100)
 (mk-getter get-secret 8)
-(define got (get-secret))
+(var got (get-secret))
 """
 
     async def test_inner_procedural_reaches_outer_binder(self):
@@ -419,16 +453,16 @@ define-syntax mk-getter:
   syntax-rules []:
     case (mk-getter name val):
       begin:
-        define secret val
+        var secret val
         define-syntax name:
           macro-rules []:
             case (name):
               #`begin:
                 secret
 
-define secret 100
+var secret 100
 mk-getter get-secret 8
-define got (get-secret)
+var got (get-secret)
 """
 
     QUOTE = """
@@ -442,7 +476,7 @@ define-syntax mk-form:
               (+ 1 2)
 
 mk-form three
-define got (three)
+var got (three)
 """
 
     async def test_quasiquote_syntax_block(self):
@@ -471,7 +505,7 @@ class TestScopedCaptureUnderQuote(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(outer) (let [[tmp 1]] (as-data tmp))]))
 
-(define result (outer))
+(var result (outer))
 """
 
     async def test_captured_scoped_symbol_is_plain_under_quote(self):
@@ -488,8 +522,8 @@ class TestProceduralArm(unittest.IsolatedAsyncioTestCase):
   (macro-rules []
     [(with-tmp expr) `(let [[tmp 1]] (+ tmp ,expr))]))
 
-(define tmp 100)
-(define total (with-tmp tmp))
+(var tmp 100)
+(var total (with-tmp tmp))
 """
 
     async def test_spliced_capture_keeps_use_site_binding(self):
@@ -510,7 +544,7 @@ class TestSharedSubformInProceduralArm(unittest.IsolatedAsyncioTestCase):
      (let [[sub `(+ ,a 1)]]
        `(+ ,sub ,sub))]))
 
-(define answer (twice 2))
+(var answer (twice 2))
 """
 
     SIBLINGS = """
@@ -520,7 +554,7 @@ class TestSharedSubformInProceduralArm(unittest.IsolatedAsyncioTestCase):
      (let [[sub `(* ,a 2)]]
        `(#list ,sub ,sub))]))
 
-(define answer (pair-up 3))
+(var answer (pair-up 3))
 """
 
     async def test_shared_operand(self):
@@ -540,7 +574,7 @@ class TestSetqFreeName(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(bump) (setq counter (+ counter 1))]))
 
-(define counter 0)
+(var counter 0)
 (bump)
 (bump)
 """
@@ -562,24 +596,24 @@ class TestSetqInInlineScope(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(inc-i) (setq i (+ i 1))]))
 
-(define in-let []
-  (define i 10)
+(define [in-let]
+  (var i 10)
   (let [[j 1]] (inc-i))
   i)
 
-(define in-nested-let []
-  (define i 10)
+(define [in-nested-let]
+  (var i 10)
   (let [[j 1]] (let [[k 2]] (inc-i)))
   i)
 
-(define in-class []
-  (define i 10)
-  (define-class C [] (inc-i))
+(define [in-class]
+  (var i 10)
+  (class C [] (inc-i))
   i)
 
-(define from-let (in-let))
-(define from-nested-let (in-nested-let))
-(define from-class (in-class))
+(var from-let (in-let))
+(var from-nested-let (in-nested-let))
+(var from-class (in-class))
 """
 
     async def test_write_in_let(self):
@@ -608,8 +642,8 @@ class TestResolvedRequestMatchesHandWritten(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(inc-i) (setq i (+ i 1))]))
 
-(define f [] (define i 10) (inc-i) i)
-(define g [] (define i 10) (setq i (+ i 1)) i)
+(define [f] (var i 10) (inc-i) i)
+(define [g] (var i 10) (setq i (+ i 1)) i)
 """
 
     async def test_namespace_spec_matches(self):
@@ -636,13 +670,13 @@ class TestTemplateParameterLabels(unittest.IsolatedAsyncioTestCase):
 
 (define-syntax make-pair-fn
   (syntax-rules []
-    [(make-pair-fn name) (define name [-'x -'y] #(x y))]))
+    [(make-pair-fn name) (define [name -'x -'y] #(x y))]))
 
-(define x "outer")
-(define wrapped ((wrap x) "param"))
+(var x "outer")
+(var wrapped ((wrap x) "param"))
 
 (make-pair-fn pair-of)
-(define by-keyword (pair-of y: 2 x: 1))
+(var by-keyword (pair-of y: 2 x: 1))
 """
 
     async def test_template_parameter_does_not_capture(self):
@@ -663,15 +697,15 @@ class TestDynWindThunksInTemplate(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define out #[])
-(define hlp [x] (out.append (* 100 x)))
+(var out #[])
+(define [hlp x] (out.append (* 100 x)))
 
 (define-syntax make-go
   (syntax-rules []
     [(make-go go)
      (begin
-       (define go [] (dyn-wind (hlp 1) (hlp 2) (hlp 3)))
-       (define hlp [x] (out.append x)))]))
+       (define [go] (dyn-wind (hlp 1) (hlp 2) (hlp 3)))
+       (define [hlp x] (out.append x)))]))
 
 (make-go go)
 (go)
@@ -697,9 +731,9 @@ class TestDottedTemplate(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(e a b) (quote (a . b))]))
 
-(define dotted (d 1))
-(define spliced (e 1 (2 3)))
-(define bound-tail (e 1 z))
+(var dotted (d 1))
+(var spliced (e 1 (2 3)))
+(var bound-tail (e 1 z))
 """
 
     async def test_dotted_tail_survives(self):
@@ -728,9 +762,9 @@ class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
     [(my-or e) e]
     [(my-or e rest ...) (let [[t e]] (if t t (my-or rest ...)))]))
 
-(define t 5)
-(define picked (my-or False t))
-(define first-wins (my-or 3 t))
+(var t 5)
+(var picked (my-or False t))
+(var first-wins (my-or 3 t))
 """
 
     async def test_use_site_name_survives_recursion(self):
@@ -753,8 +787,8 @@ class TestParameterNameInTemplate(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(rd) (parameterq depth 9)]))
 
-(define outer (rd))
-(define inner (parameterize [[depth 4]] (rd)))
+(var outer (rd))
+(var inner (parameterize [[depth 4]] (rd)))
 """
 
     OWNS_PARAMETER = """
@@ -765,7 +799,7 @@ class TestParameterNameInTemplate(unittest.IsolatedAsyncioTestCase):
        (define-parameter p 1)
        (parameterize [[p 5]] body))]))
 
-(define answer (scoped (parameterq p)))
+(var answer (scoped (parameterq p)))
 """
 
     async def test_template_reads_module_parameter(self):
@@ -791,8 +825,8 @@ class TestTryInTemplate(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(guarded body) (try body (except: ZeroDivisionError "caught"))]))
 
-(define outcome (guarded (/ 1 0)))
-(define passthru (guarded 7))
+(var outcome (guarded (/ 1 0)))
+(var passthru (guarded 7))
 """
 
     async def test_marked_exception_type_compiles(self):
@@ -811,24 +845,24 @@ class TestDefineGlobalInTemplate(unittest.IsolatedAsyncioTestCase):
     SRC = """
 (define-syntax top
   (syntax-rules []
-    [(top) (begin (define-global ga 5) ga)]))
+    [(top) (begin (global var ga 5) ga)]))
 
 (define-syntax scoped
   (syntax-rules []
-    [(scoped) (let [] (define-global gb 6) gb)]))
+    [(scoped) (let [] (global var gb 6) gb)]))
 
 (define-syntax closed
   (syntax-rules []
-    [(closed) (begin (define-global gc 7) ((lambda [] gc)))]))
+    [(closed) (begin (global var gc 7) ((lambda [] gc)))]))
 
 (define-syntax scoped-closed
   (syntax-rules []
-    [(scoped-closed) (let [] (define-global gd 8) ((lambda [] gd)))]))
+    [(scoped-closed) (let [] (global var gd 8) ((lambda [] gd)))]))
 
-(define a (top))
-(define b (scoped))
-(define c (closed))
-(define d (scoped-closed))
+(var a (top))
+(var b (scoped))
+(var c (closed))
+(var d (scoped-closed))
 """
 
     async def test_global_visible_to_template_references(self):
@@ -858,8 +892,8 @@ class TestGeneratedMatchPatterns(unittest.IsolatedAsyncioTestCase):
 
 (mk-double twice)
 (mk-triple thrice)
-(define doubled (twice 21))
-(define tripled (thrice 5))
+(var doubled (twice 21))
+(var tripled (thrice 5))
 """
 
     async def test_generated_syntax_match(self):
@@ -895,11 +929,11 @@ class TestPatternTagsInTemplate(unittest.IsolatedAsyncioTestCase):
      (define-syntax name (syntax-match [(name (REST r min: 1)) (quote r)]))]))
 
 (at-least-one some)
-(define big (classify 42))
-(define small (classify 3))
-(define go (classify 'go))
-(define other (classify "x"))
-(define gathered (some 1 2))
+(var big (classify 42))
+(var small (classify 3))
+(var go (classify 'go))
+(var other (classify "x"))
+(var gathered (some 1 2))
 """
 
     async def test_annotated_case_pattern(self):
@@ -922,9 +956,9 @@ class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-class Point []
-  (define __match_args__ #("x" "y"))
-  (define __init__ [self x y]
+(class Point []
+  (var __match_args__ #("x" "y"))
+  (define [__init__ self x y]
     (set-attr self x x)
     (set-attr self y y)))
 
@@ -949,10 +983,10 @@ class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
        [[Point[x: 1 y]] y]
        [else: "no"])]))
 
-(define summed (sum-point (Point 1 2)))
-(define missed (sum-point 3))
-(define keyed (y-of (Point 1 2)))
-(define selfed (self-y (Point 1 5)))
+(var summed (sum-point (Point 1 2)))
+(var missed (sum-point 3))
+(var keyed (y-of (Point 1 2)))
+(var selfed (self-y (Point 1 5)))
 """
 
     async def test_positional_fields(self):
@@ -974,16 +1008,16 @@ class TestTemplateBoundPatternType(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-class A []
-  (define __match_args__ #("x"))
-  (define __init__ [self x] (set-attr self x x)))
+(class A []
+  (var __match_args__ #("x"))
+  (define [__init__ self x] (set-attr self x x)))
 
-(define-class B []
-  (define __match_args__ #("x"))
-  (define __init__ [self x] (set-attr self x x)))
+(class B []
+  (var __match_args__ #("x"))
+  (define [__init__ self x] (set-attr self x x)))
 
-(define Kind str)
-(define Shape A)
+(var Kind str)
+(var Shape A)
 
 (define-syntax typed
   (syntax-rules []
@@ -1001,10 +1035,10 @@ class TestTemplateBoundPatternType(unittest.IsolatedAsyncioTestCase):
          [[Shape[x]] x]
          [else: "other"]))]))
 
-(define typed-int (typed 3))
-(define typed-str (typed "s"))
-(define shaped-b (shaped (B 7)))
-(define shaped-a (shaped (A 8)))
+(var typed-int (typed 3))
+(var typed-str (typed "s"))
+(var shaped-b (shaped (B 7)))
+(var shaped-a (shaped (A 8)))
 """
 
     async def test_typed_capture(self):
@@ -1032,7 +1066,7 @@ class TestGeneratedKeywordLiteral(unittest.IsolatedAsyncioTestCase):
      (define-syntax name (syntax-rules [] [(name a then: b) b]))]))
 
 (mk-pick pick)
-(define picked (pick 1 then: 2))
+(var picked (pick 1 then: 2))
 """
 
     async def test_keyword_literal_matches(self):
@@ -1057,7 +1091,7 @@ define-syntax guard-form:
         else:
           b
 
-define form (guard-form True 1 2)
+var form (guard-form True 1 2)
 """
 
     async def test_else_peer_is_gathered(self):
@@ -1079,9 +1113,9 @@ class TestImportInTemplate(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define environ "mine")
-(define os "mine too")
-(define p "and me")
+(var environ "mine")
+(var os "mine too")
+(var p "and me")
 
 (define-syntax os-environ
   (syntax-rules []
@@ -1095,9 +1129,9 @@ class TestImportInTemplate(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(path-sep) (begin (import [os.path as: p]) p.sep)]))
 
-(define imported-environ (os-environ))
-(define imported-sep (os-sep))
-(define renamed-sep (path-sep))
+(var imported-environ (os-environ))
+(var imported-sep (os-sep))
+(var renamed-sep (path-sep))
 """
 
     async def test_import_from_member(self):
@@ -1124,13 +1158,13 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
 (define-syntax mk-greeter
   (syntax-rules []
     [(mk-greeter name)
-     (define-class name []
-       (define greeting "hi")
-       (define greet [self] (#str self.greeting " there")))]))
+     (class name []
+       (var greeting "hi")
+       (define [greet self] (#str self.greeting " there")))]))
 
 (mk-greeter Greeter)
-(define greeter (Greeter))
-(define said (greeter.greet))
+(var greeter (Greeter))
+(var said (greeter.greet))
 """
 
     async def test_member_names_are_bare(self):
@@ -1146,14 +1180,14 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
 (define-syntax mk-binders
   (syntax-rules []
     [(mk-binders name)
-     (define-class name []
+     (class name []
        (import-from math pi)
        (import math)
        (with [cm (nullcontext 5)] None)
-       (define get-pi [self] self.pi))]))
+       (define [get-pi self] self.pi))]))
 
 (mk-binders Binders)
-(define got-pi ((Binders).get-pi))
+(var got-pi ((Binders).get-pi))
 """
 
     async def test_other_binders_are_bare(self):
@@ -1175,15 +1209,15 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define plain (lambda [n] (lambda [] n)))
+(def plain [n] (lambda [] n))
 
 (define-syntax make-counter
   (syntax-rules []
     [(make-counter) (let [[count 0]] (lambda [] count))]))
 
-(define counter (make-counter))
-(define from-plain ((plain 3)))
-(define from-counter (counter))
+(var counter (make-counter))
+(var from-plain ((plain 3)))
+(var from-counter (counter))
 """
 
     async def test_only_marked_bodies_defer(self):
@@ -1211,8 +1245,8 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
 
 
     SELF_BOUND_SRC = """
-(define f [] (define g (gensym-thunk (+ %1 1))) (g 2))
-(define result (f))
+(define [f] (var g (gensym-thunk (+ %1 1))) (g 2))
+(var result (f))
 """
 
     async def test_self_bound_marks_complete_now(self):
@@ -1238,10 +1272,10 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
     OWN_GLOBAL_SRC = """
 (define-syntax top
   (syntax-rules []
-    [(top) (begin (define-global ga 5) ga)]))
+    [(top) (begin (global var ga 5) ga)]))
 
-(define f [] (top))
-(define result (f))
+(define [f] (top))
+(var result (f))
 """
 
     async def test_own_global_completes_now(self):

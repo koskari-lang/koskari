@@ -3,22 +3,22 @@
 ;; rather than re-entering the evaluator via tp_call.
 
 
-define-class Adder []:
+class Adder []:
 
-    define __init__ [self base]:
+    def __init__ [self base]:
         set! self.base base
 
-    define __call__ [self x]:
+    def __call__ [self x]:
         (+ self.base x)
 
 
-define verify_call_inlines []:
-    define a (Adder 10)
+def verify_call_inlines []:
+    var a (Adder 10)
     equal? (a 5) 15
 
 
-define verify_call_multiple []:
-    define a (Adder 100)
+def verify_call_multiple []:
+    var a (Adder 100)
     and:
         equal? (a 1) 101
         equal? (a 2) 102
@@ -26,17 +26,17 @@ define verify_call_multiple []:
 
 ;; __call__ keyword and default-argument handling
 
-define-class Greeter []:
+class Greeter []:
 
-    define __init__ [self greeting]:
+    def __init__ [self greeting]:
         set! self.greeting greeting
 
-    define __call__ [self name [punct "!"]]:
+    def __call__ [self name [punct "!"]]:
         (+ self.greeting (+ name punct))
 
 
-define verify_call_keywords []:
-    define g (Greeter "hi ")
+def verify_call_keywords []:
+    var g (Greeter "hi ")
     and:
         equal? (g "bob") "hi bob!"
         equal? (g "bob" punct: "?") "hi bob?"
@@ -45,21 +45,21 @@ define verify_call_keywords []:
 ;; Nested instance call: __call__ invokes another callable, which itself
 ;; dispatches through the evaluator.
 
-define inc [n]:
+def inc [n]:
     (+ n 1)
 
 
-define-class Twice []:
+class Twice []:
 
-    define __init__ [self fn]:
+    def __init__ [self fn]:
         set! self.fn fn
 
-    define __call__ [self x]:
+    def __call__ [self x]:
         (self.fn (self.fn x))
 
 
-define verify_nested_call []:
-    define t (Twice inc)
+def verify_nested_call []:
+    var t (Twice inc)
     equal? (t 5) 7
 
 

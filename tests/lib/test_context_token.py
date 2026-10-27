@@ -37,14 +37,14 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define run (lambda [box aw]
+(define [run box aw]
   (call/cc (lambda [k]
     (set! (item box 0) k)
     (await aw)
     (k "resumed")
-    "not reached"))))
+    "not reached")))
 
-(define plain (lambda [a b] (+ a b)))
+(define [plain a b] (+ a b))
 """
 
 

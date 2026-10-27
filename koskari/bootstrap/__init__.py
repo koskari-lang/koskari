@@ -279,6 +279,7 @@ def make_bootstrap():
     _ty('py-zip', zip)
 
     import koskari.lib as kl
+    _bind('koskari-vars', kl.koskari_vars)
     for name in ('*', '+', '-', '/', '//', '@', '**', '&', '|', '^'):
         _bind(name, getattr(kl, name))
     for (name, alias) in (('==', 'equal?'), ('!=', 'not-equal?'),

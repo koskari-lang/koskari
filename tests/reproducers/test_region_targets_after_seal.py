@@ -34,39 +34,39 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define looped (lambda [n]
-  (define i 0)
-  (define acc 0)
+(def looped [n]
+  (var i 0)
+  (var acc 0)
   (while (< i n)
     (incr! i)
     (when (== i 2) (continue))
     (incr! acc i))
-  acc))
+  acc)
 
-(define summed (lambda [xs]
-  (define acc 0)
+(def summed [xs]
+  (var acc 0)
   (for-each [x xs]
     (when (> x 3) (break))
     (incr! acc x))
-  acc))
+  acc)
 
-(define managed (lambda [mgr]
-  (with [v mgr] (+ v 1))))
+(def managed [mgr]
+  (with [v mgr] (+ v 1)))
 
-(define escaped (lambda [x]
-  (call/cc (lambda [k] (when x (call k "out")) "in"))))
+(def escaped [x]
+  (call/cc (lambda [k] (when x (call k "out")) "in")))
 
-(define shifted (lambda [x]
-  (reset (+ 1 (shift k (call k x))))))
+(def shifted [x]
+  (reset (+ 1 (shift k (call k x)))))
 
-(define produce (lambda [n] (for-each [i (range n)] (yield i))))
+(def produce [n] (for-each [i (range n)] (yield i)))
 
 ;; run every site once during load, before the seal
-(define at_load (#list (looped 4) (summed #[1 2 3 4 5]) (escaped True)
+(var at_load (#list (looped 4) (summed #[1 2 3 4 5]) (escaped True)
                        (shifted 5)))
 
 ;; a generator suspended inside its for-each across the seal
-(define suspended (produce 5))
+(var suspended (produce 5))
 (for-each [x suspended] (break))
 """
 

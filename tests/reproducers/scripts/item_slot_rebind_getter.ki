@@ -6,18 +6,18 @@
 ;; outside the site. Tracked and Rebinder are the Python types the
 ;; test passes in.
 
-(define load
+(var load
   (lambda [Tracked Rebinder]
-    (define lst (Tracked #["a" "b" "c"]))
-    (define box (Rebinder &lst))
+    (var lst (Tracked #["a" "b" "c"]))
+    (var box (Rebinder &lst))
     (bind! kk (attr box k))
     (item lst kk)))
 
-(define store
+(var store
   (lambda [Tracked Rebinder]
-    (define lst (Tracked #["a" "b" "c"]))
-    (define box (Rebinder &lst))
+    (var lst (Tracked #["a" "b" "c"]))
+    (var box (Rebinder &lst))
     (bind! kk (attr box k))
-    (define v "stored")
+    (var v "stored")
     (set-item lst kk v)
     lst))

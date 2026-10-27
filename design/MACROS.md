@@ -8,14 +8,14 @@ are then compiled as normal. For compiler special forms, see
 Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 `_BUILTINS_SOURCES`):
 
-1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax` / `let-syntax`
+1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax` / `let-syntax`; the `syntax`, `def` and `class` binding macros; the `var` / `global` pattern and prefix arms
 2. `_conditionals.ki` — `if`, `when`, `unless`, `?`, `bool`, `None?`, `nil?`
 3. `_iter.ki` — `each`, `list-each`, `dict-each`, `has?`, slice helpers
 4. `_variables.ki` — assignment, refs, bindings, comprehensions helpers
 5. `_help.ki` — help formatting helpers
 6. `_pairs.ki` — pair utilities
-7. `_functions.ki` — coroutine/demand defines, decorators, composition
-8. `_class.ki` — classes, dataclasses, `super`
+7. `_functions.ki` — composition, `flet`, `labels`
+8. `_class.ki` — `super`
 9. `_pragma.ki` — `pragma` set/read forms, `(help pragma)`
 10. `_assert.ki` — `assert`, gated by the `compiler/enable-asserts` pragma
 11. `_control.ki` — bare forms for the statement words, gated by
@@ -115,7 +115,7 @@ one of the seven kinds — `syntax-rules`, `syntax-match`, `macro-rules`,
 
 **Behaviour:** a **`macro-rules`** core (not templates: each arm computes the
 binding key). Every kind arm expands to
-**`(define-global compile/NAME (KIND NAME …))`** — the binding key carries the
+**`(global compile/NAME (KIND NAME …))`** — the binding key carries the
 `compile/` prefix (idempotently injected), while the *written* name is passed
 to the builder as the transformer's identity. `bare-syntax` takes a called-by
 slot and a template and produces a transformer whose lone-symbol form expands
@@ -168,6 +168,63 @@ stored in the module namespace.
 **Note:** Current bootstrap arm is **`syntax-rules`** only (unary binding).
 
 **Tests:** `tests/importer/test_let_syntax.py`
+
+
+### compile/syntax
+
+**Symbol:** `compile/syntax` (surface: `syntax`)
+
+**Syntax:** **`(syntax NAME [DOCSTR] TRANSFORMER)`**, the same transformer
+kinds as `define-syntax`.
+
+**Behaviour:** **`special-rules`** compile special. At module top level
+(`scope_depth` 0) it compiles **`(define-syntax NAME …)`**, binding
+**`compile/NAME`** at the module. Inside a body it builds the transformer as
+**`let-syntax`** does and installs it with **`Compiler.scope_overlay`**, which
+covers the rest of the enclosing body; nothing is bound in a namespace.
+
+
+### compile/def
+
+**Symbol:** `compile/def` (surface: `def`)
+
+**Syntax:** **`(def NAME [:: TYPE] FORMALS BODY …)`**
+
+**Behaviour:** **`(var NAME (function NAME FORMALS BODY …))`** -- binds the
+function in the scope the form appears in. The return type rides into
+**`function`**.
+
+
+### compile/class
+
+**Symbol:** `compile/class` (surface: `class`)
+
+**Syntax:** **`(class NAME SUPERS BODY …)`**
+
+**Behaviour:** **`(var NAME (build-class NAME SUPERS BODY …))`**. No **`NAME?`**
+predicate is created.
+
+
+### compile/var and compile/global (extend-syntax)
+
+**Syntax:** **`(var PATTERN [VALUE])`**, **`(global PATTERN [VALUE])`** where
+**`PATTERN`** is a pair; **`(global def NAME …)`**, **`(global class NAME SUPERS
+BODY …)`**, **`(global syntax NAME …)`**.
+
+**Behaviour:** **`macro-match`** arms over the **`compile/var`** and
+**`compile/global`** specials. A pattern declares each name it binds (nested
+pairs walked, **`*:`** / **`**:`** skipped, via **`unpack_lhs_bind_symbols`**),
+then unpacks the value with **`setq-values`**:
+
+```text
+(var [a [b c] *: d] x)
+  ⇒ (begin (var a) (var b) (var c) (var d) (setq-values [a [b c] *: d] x))
+```
+
+Without a value the names are only declared. The **`global`** prefix arms
+(**`syntax-rules`** with literals **`def`**, **`class`**, **`syntax`**) lower to
+**`(global NAME (function NAME …))`**, **`(global NAME (build-class NAME SUPERS
+BODY …))`**, and **`(define-syntax NAME …)`**.
 
 
 ### compile/datum
@@ -260,28 +317,12 @@ or tutorial uses `when-main` any more.
 
 ### on-demand?
 
-Not a macro: a **`define`** function in `_conditionals.ki` that probes whether the
+Not a macro: a **`def`** function in `_conditionals.ki` that probes whether the
 current evaluation path forbids **`await`** (catches **`KoskariSyncViolation`** from
 bare **`(await)`**).
 
 
 ## koskari/bootstrap/_functions.ki
-
-### compile/define-coroutine
-
-**Symbol:** `define-coroutine`
-
-**Syntax:** `(define-coroutine NAME ARGS BODY ...)`
-
-**Behaviour:** **`(define NAME (coroutine-fn (lambda NAME ARGS BODY ...)))`**.
-
-
-### compile/define-demanding
-
-**Syntax:** `(define-demanding NAME FORMALS BODY ...)`
-
-**Behaviour:** **`(define NAME (demand (lambda NAME FORMALS BODY ...)))`**.
-
 
 ### compile/function-compose
 
@@ -334,7 +375,7 @@ must call one another.
 **Syntax:** `(labels [[NAME FORMALS BODY ...] ...] FORM ...)`
 
 **Behaviour:** Like **`flet`**, but the bound names are visible to one another so
-the functions can be mutually recursive. Each declaration is **`define`**d inside
+the functions can be mutually recursive. Each declaration is bound with **`var`** inside
 a shared (empty) **`let`** scope, so sibling references resolve there before the
 body runs:
 
@@ -343,8 +384,8 @@ body runs:
          [odd? [n] (if (== n 0) False (even? (- n 1)))]]
   (even? 10))
   ⇒ (let []
-       (define even? (function even? [n] (if (== n 0) True (odd? (- n 1)))))
-       (define odd? (function odd? [n] (if (== n 0) False (even? (- n 1)))))
+       (var even? (function even? [n] (if (== n 0) True (odd? (- n 1)))))
+       (var odd? (function odd? [n] (if (== n 0) False (even? (- n 1)))))
        (even? 10))
 ```
 
@@ -365,12 +406,21 @@ specific to **`labels`**.
 **Syntax:**
 
 - `(decorate [] FN)`
-- `(decorate [DECORATOR ...] (define-class NAME SUPERS BODY ...))`
-- `(decorate [DECORATOR ...] (define NAME FORMALS BODY ...))`
-- `(decorate [DECORATOR ...] FN)` — **`((function-compose DECORATOR ...) FN)`**
+- `(decorate [DECORATOR ...] (def NAME REST ...))`
+- `(decorate [DECORATOR ...] (var NAME VALUE))`
+- `(decorate [DECORATOR ...] (class NAME SUPERS BODY ...))`
+- `(decorate [DECORATOR ...] (global def NAME REST ...))`
+- `(decorate [DECORATOR ...] (global class NAME SUPERS BODY ...))`
+- `(decorate [DECORATOR ...] (define (NAME FORMALS ...) BODY ...))`, `(define NAME VALUE)`,
+  and the same two shapes of `define-global`
+- `(decorate [DECORATOR ...] FN)` — each decorator applied through **`decorate-subject`**,
+  outermost first
 
-**Behaviour:** Wraps **`class`** / **`lambda`** inside **`define`** / **`define-class`**, or
-composes decorators for a bare callable.
+**Behaviour:** A binding form is taken apart so the decorators wrap the bound
+value: **`def`** / **`define (NAME …)`** wrap **`(function NAME …)`**, **`class`**
+wraps **`(build-class NAME …)`**, and the result is stored with **`var`**, or with
+**`global`** for the **`global`** prefix and **`define-global`** arms. Any other
+subject is decorated as a bare callable.
 
 
 ### compile/entry-point
@@ -468,24 +518,18 @@ augmented forms or direct **`(compile/inplace OP VAR VALUE)`**).
 **Behaviour:** **`compile/bindq`** with **`Ref`** types as appropriate.
 
 
-### compile/global and compile/local
-
-**Syntax:** **`(global name)`** → **`(compile/define-global name)`**;
-**`(local name)`** / **`(local name value)`** → **`compile/define`**.
-
-
 ### compile/define-parameter and compile/parameterq
 
 **Syntax:** **`(define-parameter NAME [DEFAULT])`**, **`(parameterq NAME [DEFAULT])`**.
 
-**Behaviour:** **`compile/define`** + **`ParamRef`** binding; **`parameterq`** → **`parameter`**.
+**Behaviour:** **`(var NAME)`** + **`bindq`** of a **`ParamRef`**; **`parameterq`** → **`parameter`**.
 
 
 ### compile/define-environ
 
 **Syntax:** **`(define-environ NAME [DEFAULT])`**.
 
-**Behaviour:** **`compile/define`** + **`environ-ref`** binding — declares **`NAME`** as a
+**Behaviour:** **`(var NAME)`** + **`bindq`** of an **`environ-ref`** — declares **`NAME`** as a
 local bound to the process environment variable named **`NAME`**. Without a
 **`DEFAULT`** the ref reads/writes **`os.environ[NAME]`** directly (a missing
 variable raises on deref); with a **`DEFAULT`** the ref returns it when the
@@ -507,7 +551,7 @@ deletes it. An empty **`KEY`** raises **`ValueError`**.
 
 **Syntax:** **`(let-values [PATTERN VALUE] body …)`**
 
-**Behaviour:** **`(let [[resolved VALUE]] (compile/define-values PATTERN resolved) body …)`**.
+**Behaviour:** **`(let [[resolved VALUE]] (var PATTERN resolved) body …)`**.
 
 
 ### compile/let*
@@ -528,7 +572,7 @@ deletes it. An empty **`KEY`** raises **`ValueError`**.
 
 **Syntax:** **`(declare-exports name …)`**
 
-**Behaviour:** **`macro-rules`** → **`(define-global __features__ #(…))`**
+**Behaviour:** **`macro-rules`** → **`(global __features__ #(…))`**
 with sorted, deduplicated string names. Each name is a **feature stem**: at
 end of load, every loader runs `koskari.module.materialize_exports`, which
 expands the stems against the settled namespace into `__all__` — the binding
@@ -538,22 +582,6 @@ name written with a facet prefix is a literal single-binding export. See
 
 
 ## koskari/bootstrap/_class.ki
-
-### compile/define-class
-
-**Syntax:** **`(define-class NAME SUPERS BODY …)`**
-
-**Behaviour:** **`(define NAME (class NAME SUPERS BODY …))`** plus **`create-instance-check`**
-(defines **`NAME?`** as **`lambda [value] (compile/instance? value NAME)`**).
-
-
-### compile/define-dataclass
-
-**Syntax:** **`(define-dataclass NAME (members …))`** or with **`SUPERS`**.
-
-**Behaviour:** Imports **`dataclass`** / **`field`**, emits **`@dataclass class`**, then
-**`create-instance-check`** for **`NAME?`**.
-
 
 ### compile/super
 
@@ -780,7 +808,7 @@ object only: **`(help 'obj (globals))`**; object and namespace passed through.
 
 ### Runtime macro expansion (not macros)
 
-**Symbols:** **`macroexpand-1`**, **`macroexpand`** (`define-global` in the same file).
+**Symbols:** **`macroexpand-1`**, **`macroexpand`** (`global def` in the same file).
 
 **Behaviour:** Look up **`__compiler__`** on the namespace, **`find_compiled`** on the form
 head, match a **`Syntax`** transformer, and run **`handle_expand`** once
@@ -820,7 +848,7 @@ result is a single-expression **`begin`** / **`compile/begin`**, that wrapper is
 
 ### Runtime compile and evaluate (not macros)
 
-**Symbols:** **`compile`**, **`evaluate`** (`define-global`).
+**Symbols:** **`compile`**, **`evaluate`** (`global def`).
 
 **Behaviour:** **`compile`** resolves **`__compiler__`** from **`ns`**, runs
 **`full_compile`**, returns an **`Expression`** (or passes through if already
@@ -832,14 +860,14 @@ result is a single-expression **`begin`** / **`compile/begin`**, that wrapper is
 
 **Syntax:** **`(evaluate form)`**, **`(evaluate form ns)`**
 
-**Behaviour:** **`(call evaluate form (locals))`** or **`(call evaluate form ns)`**.
+**Behaviour:** **`(call evaluate form (vars))`** or **`(call evaluate form ns)`**.
 
 
 ### compile/compileq
 
 **Syntax:** **`(compileq form)`**, **`(compileq form ns)`**
 
-**Behaviour:** **`(call compile (quote form) (locals))`** or **`(call compile (quote form) ns)`**.
+**Behaviour:** **`(call compile (quote form) (vars))`** or **`(call compile (quote form) ns)`**.
 
 
 ### compile/inline-macro

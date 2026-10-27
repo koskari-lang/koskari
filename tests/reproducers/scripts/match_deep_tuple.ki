@@ -4,20 +4,20 @@
 
 import-from koskari.lib Datum
 
-define build [depth]:
-    define stack #()
+def build [depth]:
+    var stack #()
     for-each [i (range depth)]:
         set! stack #(i stack)
     stack
 
-define peek [s]:
+def peek [s]:
     match s:
         case #[top rest]:
             top
         else:
             None
 
-define capture_pair [s]:
+def capture_pair [s]:
     match s:
         case #[first second]:
             second

@@ -35,27 +35,27 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define y 99
+var y 99
 
-define-syntax pos-capture:
+syntax pos-capture:
   syntax-rules ():
     ((_ body) (lambda [y] (begin body)))
 
-define-syntax kw-own-body:
+syntax kw-own-body:
   syntax-rules ():
     ((_) (lambda [y: 7] y))
 
-define-syntax kwonly-own-body:
+syntax kwonly-own-body:
   syntax-rules ():
     ((_) (lambda [*: () y: 8] y))
 
-define check-pos []:
+def check-pos []:
   ((pos-capture y) 3)
 
-define check-kw-own []:
+def check-kw-own []:
   ((kw-own-body))
 
-define check-kwonly-own []:
+def check-kwonly-own []:
   ((kwonly-own-body))
 """
 

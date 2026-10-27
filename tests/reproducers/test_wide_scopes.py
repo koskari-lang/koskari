@@ -61,7 +61,7 @@ class TestWideScopes(SpecialsTestCase):
     async def test_200_locals_and_closures_repeated(self):
         src = f"""
         (let [[a 1] [b 2] [c 3] [d 4] [e 5]]
-          (define f (lambda [] (let [{_lets(200)}] (+ a b c d e v199))))
+          (define [f] (let [{_lets(200)}] (+ a b c d e v199)))
           (for-each [i (range 500)] (f))
           (f))
         """

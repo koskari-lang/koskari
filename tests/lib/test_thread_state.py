@@ -37,10 +37,10 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define add (lambda [a b] (+ a b)))
+(define [add a b] (+ a b))
 
-(define counter (lambda [n]
-  (for-each [i (range n)] (yield i))))
+(define [counter n]
+  (for-each [i (range n)] (yield i)))
 """
 
 

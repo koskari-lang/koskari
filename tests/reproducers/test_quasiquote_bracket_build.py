@@ -36,14 +36,14 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define bracket-cons (lambda [*: a] "shadowed"))
-(define x 99)
-(define xs #[1 2])
-(define unquoted `[a ,x])
-(define spliced `[a ,@xs b])
-(define tailed `[a . ,x])
-(define direct (bracket-cons 1 2))
-(define called (call bracket-cons 1 2))
+(def bracket-cons [*: a] "shadowed")
+(var x 99)
+(var xs #[1 2])
+(var unquoted `[a ,x])
+(var spliced `[a ,@xs b])
+(var tailed `[a . ,x])
+(var direct (bracket-cons 1 2))
+(var called (call bracket-cons 1 2))
 """
 
 

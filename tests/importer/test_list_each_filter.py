@@ -89,7 +89,7 @@ class TestListEachFilter(unittest.IsolatedAsyncioTestCase):
         """
 
         result = await self._eval(
-            '(list-each [x (range 0 4)] (when (& x 1) (define y (* x 10)) y))')
+            '(list-each [x (range 0 4)] (when (& x 1) (var y (* x 10)) y))')
         self.assertEqual([10, 30], result)
 
 
@@ -111,7 +111,7 @@ class TestListEachFilter(unittest.IsolatedAsyncioTestCase):
         """
 
         result = await self._eval(
-            '(list-each [x (range 0 4)] (define y x) (when (& x 1) x))')
+            '(list-each [x (range 0 4)] (var y x) (when (& x 1) x))')
         self.assertEqual([None, 1, None, 3], result)
 
 
@@ -153,9 +153,9 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_class_body_keeps_its_col_attribute(self):
         src = """
         (begin
-          (define-class Table []
-            (define col "name")
-            (define widths (list-each [w #[3 5]] (* w 2))))
+          (class Table []
+            (var col "name")
+            (var widths (list-each [w #[3 5]] (* w 2))))
           #(Table.widths (getattr Table "col" "<deleted>")))
         """
         self.assertEqual(([6, 10], "name"), await self._eval(src))
@@ -164,8 +164,8 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_nested_in_class_body(self):
         src = """
         (begin
-          (define-class Grid []
-            (define cells (list-each [x #[1 2]]
+          (class Grid []
+            (var cells (list-each [x #[1 2]]
                             (list-each [y #[10 20]] (+ x y)))))
           Grid.cells)
         """
@@ -182,9 +182,9 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_filter_arms_in_class_body(self):
         src = """
         (begin
-          (define-class F []
-            (define odds (list-each [x (range 0 6)] (when (& x 1) x)))
-            (define evens (list-each [x (range 0 6)] (unless (& x 1) x))))
+          (class F []
+            (var odds (list-each [x (range 0 6)] (when (& x 1) x)))
+            (var evens (list-each [x (range 0 6)] (unless (& x 1) x))))
           #(F.odds F.evens))
         """
         self.assertEqual(([1, 3, 5], [0, 2, 4]), await self._eval(src))
@@ -193,7 +193,7 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_sequence_is_a_class_body_name(self):
         src = """
         (begin
-          (define-class C []
+          (class C []
             (define names #["a" "b"])
             (define upper (list-each [n names] (n.upper))))
           C.upper)

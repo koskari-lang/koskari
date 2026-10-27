@@ -2,7 +2,7 @@
 ;; arm compares the subject's length with the pattern's width before it
 ;; reads any element.
 
-define classify [v]:
+def classify [v]:
     match v:
         case #[a b]:
             return "two"
