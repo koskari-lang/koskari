@@ -293,6 +293,35 @@ static inline int kos_iter_check(PyObject *obj) {
   return KosIter_CheckSlots(obj, &slots);
 }
 
+
+/**
+   Classify iter for the fetch (kos_iter_fetch): KOS_IREQ_KIND_PROVIDER
+   with *islots its suite, else NULL in *islots and PY_ASYNC for a
+   type with am_anext (async wins over sync, as the probing order
+   always had it), PY_SYNC for one with tp_iternext, NONE for an
+   object that is no iterator. The one classifier: a site that binds
+   its iterator once keeps the answer in its request record and never
+   classifies again; a site without a record classifies on the way to
+   the same fetch.
+*/
+static inline uint8_t kos_iter_kind(PyObject *iter, KosIterSlots **islots) {
+
+  PyTypeObject *tp;
+
+  if (KosIter_CheckSlots(iter, islots))
+    return KOS_IREQ_KIND_PROVIDER;
+  *islots = NULL;
+  if (! iter)
+    return KOS_IREQ_KIND_NONE;
+
+  tp = Py_TYPE(iter);
+  if (tp->tp_as_async && tp->tp_as_async->am_anext)
+    return KOS_IREQ_KIND_PY_ASYNC;
+  if (PyIter_Check(iter))
+    return KOS_IREQ_KIND_PY_SYNC;
+  return KOS_IREQ_KIND_NONE;
+}
+
 #define KosIter_Check(obj) kos_iter_check(obj)
 
 

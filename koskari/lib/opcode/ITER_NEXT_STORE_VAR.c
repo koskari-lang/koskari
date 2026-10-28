@@ -16,7 +16,7 @@
 /**
   ITER_NEXT_STORE_VAR: arg = extra index. Schema VAR (name), LABEL (else
   pc). The for-each step with its element store: one request for the
-  next element of the FOREACH region's iterator (kos_iter_step), the
+  next element of the FOREACH region's iterator (KOS_ITER_STEP), the
   element stored under the name in the frame namespace by the step's
   resume, which runs at once when the element is in hand and when it
   arrives otherwise. Branch to the else pc at the end of the
@@ -26,9 +26,8 @@
 */
 KOS_OP_HANDLER(ITER_NEXT_STORE_VAR) {
   KOS_SYNC_PC(ctx, insn);
-  RESULT_ENTRY(ctx, kos_iter_step(ctx, (KosOp *) insn,
-                                  &kos_iter_next_store_var_resume_kind),
-               &kos_iter_next_store_var_resume_kind, insn);
+  KOS_ITER_STEP(ctx, insn, &kos_iter_next_store_var_resume_kind,
+                KosExtra_TARGET(KosOp_ROW((KosOp *) insn), 1));
 }
 
 

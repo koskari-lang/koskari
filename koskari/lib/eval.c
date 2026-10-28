@@ -113,8 +113,6 @@ static PyObject *str_rec_frame = NULL;
 */
 static PyObject *_import_fromlist = NULL;
 
-PyObject *KosIterEnd = NULL;
-
 
 /* === Static forward declarations === */
 
@@ -207,75 +205,6 @@ KosIterStepResult kos_iter_step_provider(
     return KOS_ITER_EXHAUSTED;
   }
   return KOS_ITER_ERROR;
-}
-
-
-KosIterRequestStatus KosIterRequest_Next(
-    KosContext *ctx,
-    KosIterRequest *req,
-    PyObject **fast_out) {
-
-  PyObject *iter = req->iter;
-  KosIterSlots *islots = req->islots;
-
-#if KOS_EVAL_SAFETYNET
-  {
-    KosIterSlots *fresh = NULL;
-    int is_provider = KosIter_CheckSlots(iter, &fresh);
-    if ((is_provider ? fresh : NULL) != islots) {
-      PyErr_SetString(PyExc_SystemError,
-                      "iteration request suite does not match its iterator");
-      return KOS_IREQ_ERROR;
-    }
-  }
-#endif
-
-  if (islots) {
-    PyObject *out = NULL;
-
-    switch (kos_iter_step_provider(ctx, iter, islots, NULL, &out)) {
-      case KOS_ITER_VALUE:
-        *fast_out = out;
-        return KOS_IREQ_DELIVERED;
-
-      case KOS_ITER_EXHAUSTED:
-        *fast_out = out;
-        return KOS_IREQ_EXHAUSTED;
-
-      case KOS_ITER_INSTALLED:
-      case KOS_ITER_INSTALLED_VALUE:
-        return KOS_IREQ_CONTINUES;
-
-      case KOS_ITER_ERROR:
-      default:
-        return KOS_IREQ_ERROR;
-    }
-  }
-
-  {
-    PyObject *value = NULL;
-    PyObject *_await = NULL;
-
-    switch (op_get_next_from_bound(ctx, req->kind, &_await, iter, &value)) {
-      case GET_NEXT_VALUE:
-        *fast_out = value;
-        return KOS_IREQ_DELIVERED;
-
-      case GET_NEXT_EXHAUSTED:
-        *fast_out = NULL;
-        return KOS_IREQ_EXHAUSTED;
-
-      case GET_NEXT_SUSPEND:
-        /* Suspended python async step: the awaited completion IS the
-           element, staged for the step resume at revive. */
-        *fast_out = _await;
-        return KOS_IREQ_EXIT;
-
-      case GET_NEXT_ERROR:
-      default:
-        return KOS_IREQ_ERROR;
-    }
-  }
 }
 
 
@@ -2148,62 +2077,23 @@ KosDynFrame *KosResumeFrame_Install(
 }
 
 
-/**
-   One next-element request against iter from inside a native frame
-   handler: a plain iterator answers through tp_iternext alone; a
-   provider steps through its suite, a python async iterator through
-   its __anext__, with no node. A step that defers (the provider's
-   frames installed, the async step awaiting) records nothing: the
-   caller's own record holds iter, and the resume that takes the
-   delivery finishes it. See eval.h for the per-status contract.
-*/
+/* iter classified into a request record on the caller's stack, for a
+   site without a record of its own. */
+static inline void kos_iter_request_local(KosIterRequest *req, PyObject *iter) {
+  req->iter = iter;
+  req->kind = kos_iter_kind(iter, &req->islots);
+}
+
+
 KosIterRequestStatus KosNativeFrame_RequestNext(
     KosContext *ctx,
     PyObject *iter,
     PyObject **out) {
 
-  KosIterRequestStatus status;
-  KosIterSlots *islots;
+  KosIterRequest req;
 
-  *out = NULL;
-
-  if (kos_iter_next_plain(iter, out, &status))
-    return status;
-
-  if (KosIter_CheckSlots(iter, &islots)) {
-    switch (kos_iter_step_provider(ctx, iter, islots, NULL, out)) {
-      case KOS_ITER_VALUE:
-        return KOS_IREQ_DELIVERED;
-      case KOS_ITER_EXHAUSTED:
-        Py_CLEAR(*out);
-        return KOS_IREQ_EXHAUSTED;
-      case KOS_ITER_INSTALLED:
-      case KOS_ITER_INSTALLED_VALUE:
-        return KOS_IREQ_CONTINUES;
-      case KOS_ITER_ERROR:
-      default:
-        return KOS_IREQ_ERROR;
-    }
-  }
-
-  {
-    PyObject *value = NULL;
-    PyObject *_await = NULL;
-
-    switch (op_get_next_from_iter(ctx, &_await, iter, &value)) {
-      case GET_NEXT_VALUE:
-        *out = value;
-        return KOS_IREQ_DELIVERED;
-      case GET_NEXT_EXHAUSTED:
-        return KOS_IREQ_EXHAUSTED;
-      case GET_NEXT_SUSPEND:
-        *out = _await;
-        return KOS_IREQ_EXIT;
-      case GET_NEXT_ERROR:
-      default:
-        return KOS_IREQ_ERROR;
-    }
-  }
+  kos_iter_request_local(&req, iter);
+  return kos_iter_fetch(ctx, &req, out);
 }
 
 
@@ -2213,10 +2103,23 @@ KosOpResult KosContext_NextResume(
     const KosResumeKind *resume,
     void *state) {
 
-  KosDynFrame *frame = KosContext_FRAME(ctx);
-  PyObject *out = NULL;
+  KosIterRequest req;
 
-  switch (KosNativeFrame_RequestNext(ctx, iter, &out)) {
+  kos_iter_request_local(&req, iter);
+  return KosContext_NextResumeBound(ctx, &req, resume, state);
+}
+
+
+KosOpResult KosContext_NextResumeBound(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    const KosResumeKind *resume,
+    void *state) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  PyObject *out;
+
+  switch (kos_iter_fetch(ctx, req, &out)) {
     case KOS_IREQ_DELIVERED:
       /* an element is data to a kind that takes its delivery as it
          is; a kind that takes a call's result settles it */
@@ -3930,14 +3833,6 @@ int koskari_eval_init(PyObject *mod) {
       return -1;
   }
 
-  /* The end-of-iteration delivery, a private object compared by
-     identity. */
-  if (! KosIterEnd) {
-    KosIterEnd = PyObject_CallNoArgs((PyObject *) &PyBaseObject_Type);
-    if (! KosIterEnd)
-      return -1;
-  }
-
   /* Initialize string constants (cleared in koskari_eval_clear). */
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
@@ -4011,7 +3906,6 @@ int koskari_eval_clear(PyObject *mod) {
 
   /* Clear import sentinel and string constants initialized in koskari_eval_init. */
   Py_CLEAR(_import_fromlist);
-  Py_CLEAR(KosIterEnd);
 
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);

@@ -314,11 +314,13 @@ The `*_ATTR*` members already hold a `KOS_CACHE_METHOD` slot. They request
 a run of two, and the elector's guard is on the resolved callable, not the
 receiver. The `*_STAR` members are cold and stay on the ladder.
 
-**OBJECT_NEXT, VAR_NEXT, FAST_NEXT**. `KosContext_NextResume` branches on
-`KosIter_CheckSlots` (provider step) versus
-`op_get_next_from_iter` (sync `tp_iternext`, async `__anext__`) per step.
-Electors: KosIter provider, exact sync iterator, Python async iterator.
-The region form (`ITER_NEXT`) is node-style below.
+**OBJECT_NEXT, VAR_NEXT, FAST_NEXT**. `KosContext_NextResume` classifies
+the iterator per step (`kos_iter_kind`: provider, sync `tp_iternext`,
+async `__anext__`) and fetches by that kind through
+`KosContext_NextResumeBound`. The kind-accepting entry exists; what an
+elector would add is classifying once per site instead of per step,
+and the ladder it replaces is four checks. Not built: measure before
+building. The region form (`ITER_NEXT`) is node-style below.
 
 **AWAIT**. `push_or_await_plain` is a type-level gate followed by a Defer
 probe, a future probe, and the eager step. Electors keyed on the awaited
@@ -431,15 +433,15 @@ node as state. The handler shrinks to: pop the subexpression, normalize,
 push the node, elect `drive`, tail-call it. The four drive bodies and the
 phase resumes are shared out-of-line functions.
 
-**FOREACH region and the next request**. Done as far as the resume
-goes: the request record's modes are gone, every delivery (element,
-end, failure) reaches the step resume the loop's frame carries, which
-finishes the region's request; the next instruction has no node, its
-iterator is its resume's owned state. What remains of the elector idea
-is `step`: `KosIterRequest_Next` still branches on `islots` versus
-`op_get_next_from_bound` (by the request's bound kind) on every
-`ITER_NEXT`, where a `step` elected at `kos_dyn_iter_request_bind_iter`
-would not.
+**FOREACH region and the next request**. Done. The request record's
+modes are gone, every delivery (element, failure) reaches the step
+resume the loop's frame carries, which finishes the region's request;
+an end in hand never reaches the resume, the step finishes the request
+and threads to the else target itself. The step (`KOS_ITER_STEP`)
+fetches through `kos_iter_fetch` by the kind
+`kos_dyn_iter_request_bind_iter` recorded once, with no cache slot:
+the bound kind is the election. The next instruction has no node, its
+iterator is its resume's owned state.
 
 **FRAME return**. `RETURN` classifies its parent on every execution:
 `kos_return_is_plain`, `kos_return_is_region`, `kos_return_is_resume`, each

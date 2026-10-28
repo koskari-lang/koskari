@@ -145,7 +145,7 @@ Eval and opcodes share the running **`KosContext *ctx`**; the eval-facing operat
 - **Transfer goals** -- **`kos_xfer_goal_push`**, **`kos_xfer_goal_abandon_all`**, **`kos_xfer_goal_drive`**, **`kos_xfer_goal_waits_on`** (`xfer_goal.h`); the active goal is **`KosContext_GOAL(ctx)`**.
 - **Settling a pending extent** -- **`kos_dyn_settle_top`** (a returning thunk, `__enter__`, or `__exit__` settles the WIND or WITH at dyn_top and unlinks it after a leave) and **`KosEval_ResumeReturn`** (resumes a return the unlink handed back).
 - **Opcode-visible flags** -- **`KosContext_MarkSuspendedNotRunning`**, **`MarkDeadAfterYield`**, **`MarkDeadAfterReturn`**.
-- **Globals / throw / iteration** -- **`KosContext_GlobalsNamespace`**, **`KosContext_ThrowIntoResume`** (a throw into a frame whose resume kind names a throw kind: that kind is set on the frame and the exception staged as its delivery), **`op_get_next_from_iter(ctx, …)`**, **`KosContext_EagerStepAwaitable`** (first eager **`__await__`/`send(None)`** step for awaitables; used from AWAIT plumbing and **`YIELD_FROM`**).
+- **Globals / throw / iteration** -- **`KosContext_GlobalsNamespace`**, **`KosContext_ThrowIntoResume`** (a throw into a frame whose resume kind names a throw kind: that kind is set on the frame and the exception staged as its delivery), **`kos_iter_fetch(ctx, req, &out)`** (the next element of a bound iterator by its kind: `tp_iternext`, the provider suite, or the eager `__anext__` step), **`KosContext_EagerStepAwaitable`** (first eager **`__await__`/`send(None)`** step for awaitables; used from AWAIT plumbing and **`YIELD_FROM`**).
 - **`eval.c`** (suspension / Python bridge) -- **`KosContext_SetSuspensionEvent`**, **`KosContext_ClearSuspensionEvent`**, **`KosContext_SuspensionEvent`**; **`KosContext_PythonAwaitSetIter` / `PythonAwaitClearIter` / `PythonAwaitIter`**; **`KosContext_PythonResumeSet` / `PythonResumeTake`**.
 
 ### 1.5 Live registers on `KosContext` (`frame`, `block`, `namespace`)
@@ -372,17 +372,24 @@ Three sites step:
 - `ITER_NEXT` and its fused twins step the innermost FOREACH region's
   **`KosIterRequest`** (`{iter, islots, kind}`, embedded only in the
   FOREACH node arm; the kind is bound once, at
-  `kos_dyn_iter_request_bind_iter`) through
-  **`KosIterRequest_Next(ctx, req, &out)`**, with the step resume set
-  on the loop's frame.
+  `kos_dyn_iter_request_bind_iter`, by **`kos_iter_kind`**) through
+  **`KOS_ITER_STEP`**, the threaded step the handler expands: the
+  fetch, then each outcome tail-called to its destination, an element
+  in hand hopping into the step resume, the end in hand finishing the
+  request and threading to the else target.
 - The next instructions (`OBJECT_NEXT`, `VAR_NEXT`, `FAST_NEXT`) call
   **`KosContext_NextResume(ctx, iter, kind, iter)`**: the resume set
   on the frame owns the iterator as its state, the arity picks the
-  kind, and a default stays on the operand stack under the halt.
+  kind, and a default stays on the operand stack under the halt. The
+  entry classifies the iterator into a stack record and continues as
+  **`KosContext_NextResumeBound(ctx, req, kind, state)`**, the form a
+  site with a bound kind calls directly.
 - `YIELD_FROM` steps its delegate from its `yf_drive_*` kind, the delegate
   being the resume's state (§8.2).
 
-The request's returned status:
+Every fetch is **`kos_iter_fetch(ctx, req, &out)`**, keyed by
+`req->kind`; a site without a record classifies with `kos_iter_kind`
+on the way in. Its status:
 
 - **DELIVERED** / **EXHAUSTED** -- the element (or the end of the
   iteration) is in hand and the opcode completes immediately.
@@ -1981,7 +1988,7 @@ To avoid recursive C calls and keep a single state machine:
 
 2. **RETURN (frame has parent, normal call return)**: When the callee's parent is a plain bytecode frame, a discardable extent over one, or a frame waiting on a resume, the RETURN opcode frees the callee, delivers (push onto the parent's stack, or hand the value to the resume), and threads on (§2.6). Otherwise `kos_return_deliver` runs **`eval_event_return`**, which runs the unwind walk if extents sit above the frame, pops it, and delivers through the consumer frame's resume or **`eval_parent_return_deliver`** (pending slot or parent stack, then **`kos_dyn_settle_top`** for WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the evaluator eventually stops for another reason.
 
-3. **NEXT/ITER_NEXT (KosIter providers)**: the NEXT opcodes (**`OBJECT_NEXT`**, **`VAR_NEXT`**, **`FAST_NEXT`**, through **`KosContext_NextResume`**) step the provider with a next resume set on the frame, owning the iterator as its state; **`ITER_NEXT`** and its fused twins step the innermost **`KOS_DYN_FOREACH`** region's iterator through **`KosIterRequest_Next(ctx, req, …)`** with the step resume set; both with the live **`KosContext *ctx`** from the opcode. A generator provider's `ki_step` splices its frozen chain via **`kos_dyn_gen_install(ctx, gen)`** so **`kos_dyn_resync_chain`** updates the same **`ctx`** the dispatch loop uses. The installed frames run until YIELD or RETURN, delivered to the consumer frame's resume via **`iter_deliver_to_resume`**, and the loop continues with the consumer as `frame`. No recursive `koskari_eval(agen->ctx, ...)`.
+3. **NEXT/ITER_NEXT (KosIter providers)**: the NEXT opcodes (**`OBJECT_NEXT`**, **`VAR_NEXT`**, **`FAST_NEXT`**, through **`KosContext_NextResume`**) step the provider with a next resume set on the frame, owning the iterator as its state; **`ITER_NEXT`** and its fused twins step the innermost **`KOS_DYN_FOREACH`** region's iterator through **`KOS_ITER_STEP`** (the fetch `kos_iter_fetch` by the request's bound kind) with the step resume set; both with the live **`KosContext *ctx`** from the opcode. A generator provider's `ki_step` splices its frozen chain via **`kos_dyn_gen_install(ctx, gen)`** so **`kos_dyn_resync_chain`** updates the same **`ctx`** the dispatch loop uses. The installed frames run until YIELD or RETURN, delivered to the consumer frame's resume via **`iter_deliver_to_resume`**, and the loop continues with the consumer as `frame`. No recursive `koskari_eval(agen->ctx, ...)`.
 
 4. **YIELD (top-level)**: A root GEN's YIELD tails into `kos_yield_deliver`, whose **`eval_event_yield`** freezes the GEN (`kos_dyn_find_gen`, `kos_dyn_gen_freeze`), tags suspension for the caller, and marks the result terminal. A flattened GEN's YIELD takes the same function: it freezes, delivers to the consumer frame's resume, and threads into the consumer (§9.6).
 

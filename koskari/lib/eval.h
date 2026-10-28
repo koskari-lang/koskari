@@ -173,17 +173,6 @@ typedef enum KosEvalMode {
 } KosEvalMode;
 
 
-/**
-  Result of op_get_next_from_iter and low-level iter helpers.
-*/
-typedef enum KosGetNextResult {
-  GET_NEXT_VALUE,
-  GET_NEXT_EXHAUSTED,
-  GET_NEXT_SUSPEND,
-  GET_NEXT_ERROR
-} KosGetNextResult;
-
-
 /* KosThreadFn, the one prototype every threaded step shares (a CPS
    resume, an opcode handler), is defined in bytecode.h beside KosOp,
    the instruction record that carries a handler pointer. */
@@ -643,16 +632,11 @@ KosDynFrame *KosResumeFrame_Install(
 
 
 /**
-   Request the next element of iter from inside a code-less frame,
-   with no node: a plain iterator answers through tp_iternext, a
-   provider steps through its suite, a python async iterator through
-   its __anext__. On DELIVERED *out is the element (new ref); on
-   EXHAUSTED and ERROR *out is NULL (no exception is set for
-   EXHAUSTED; ERROR leaves PyErr set). On CONTINUES the provider's
-   frames are installed and the element reaches the caller's resume
-   when they deliver; on EXIT *out is the awaitable to suspend on
-   (EVAL_AWAIT), the element arriving the same way. The caller's own
-   record holds iter and finishes it on delivery.
+   Fetch the next element of iter from inside a code-less frame, with
+   no node, for a caller that interprets the KosIterRequestStatus
+   itself (see the enum): iter is classified on the way in
+   (kos_iter_kind) and fetched by its kind. The caller's own record
+   holds iter and finishes it on delivery.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
     KosContext *ctx,
@@ -661,9 +645,11 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 
 
 /**
-   Request the next element of iter, delivering it (or the failure) to
-   resume instead of making the caller interpret KosIterRequestStatus
-   by hand. Like KosContext_Call, the entry reports what
+   Request the next element of the bound iterator req describes,
+   delivering it (or the failure) to resume instead of making the
+   caller interpret KosIterRequestStatus by hand. The fetch is keyed
+   by req->kind, so a site that bound its iterator once never
+   classifies it again. Like KosContext_Call, the entry reports what
    happened and the calling resume ends in RESULT_ENTRY: a delivered
    element that is settled reports RETURN with it, no resume set (the
    resume is tail-called with it); one that needs settling settles one
@@ -681,6 +667,17 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    must have a current frame, and resume is required: every outcome
    but a settled element in hand and a synchronous failure reaches
    the caller through it.
+*/
+KosOpResult KosContext_NextResumeBound(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    const KosResumeKind *resume,
+    void *state);
+
+
+/**
+   KosContext_NextResumeBound for an iterator with no record: iter is
+   classified on the way in (kos_iter_kind).
 */
 KosOpResult KosContext_NextResume(
     KosContext *ctx,
@@ -1030,6 +1027,26 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 
 
 /**
+   KOS_ITER_INSTALLED_THREAD(ctx): kos_iter_installed as the tails a
+   thread function makes once an iteration install has left its frame
+   live: into the frame's next instruction, into the relay's RESUME arm
+   for a frame halted on its own resume, into the prologue otherwise.
+   The calling function must have the KosThreadFn prototype.
+*/
+#define KOS_ITER_INSTALLED_THREAD(ctx)                                  \
+  do {                                                                  \
+    KosDynFrame *kos_iit_frame_ = KosContext_FRAME(ctx);                \
+    if (kos_frame_threads(kos_iit_frame_))                              \
+      KOS_THREAD_NEXT(ctx);                                             \
+    if (kos_iit_frame_ && KosDynFrame_CODE(kos_iit_frame_)              \
+        && KosDynFrame_RESUME_KIND(kos_iit_frame_))                     \
+      TAILCALL(kos_eval_relay, (ctx),                                   \
+               (void *) (uintptr_t) KOS_RES_RESUME, NULL);              \
+    RESULT_REPROLOGUE(ctx);                                             \
+  } while (0)
+
+
+/**
   Operand stack head block for logging; NULL when no stack.
 */
 #define KosContext_StackHead(ctx) \
@@ -1347,27 +1364,6 @@ PyObject *kos_iter_acquire(PyObject *iterable);
    :param iter: borrowed; NULL is a no-op
 */
 void kos_iter_close(PyObject *iter);
-
-
-/**
-   One iteration request against a FOREACH region's request on record,
-   which the caller holds: the single site API for stepping the
-   region's iterator over all three protocols. *fast_out new ref on
-   DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
-*/
-KosIterRequestStatus KosIterRequest_Next(
-    KosContext *ctx,
-    KosIterRequest *req,
-    PyObject **fast_out);
-
-
-/**
-   The end of a for-each step's iteration, handed in hand by
-   kos_iter_step to the step instruction's resume in place of an
-   element: a private object compared by identity, never seen by user
-   code. Passed as an owned reference like any delivery.
-*/
-extern PyObject *KosIterEnd;
 
 
 /**

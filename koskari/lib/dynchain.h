@@ -220,11 +220,17 @@ void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
 void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted);
 
 
+/**
+   The answer of one fetch of an iterator's next element
+   (kos_iter_fetch and the entries over it).
+*/
 typedef enum {
-  KOS_IREQ_DELIVERED = 0, /* *fast_out: the element (new ref) */
-  KOS_IREQ_EXHAUSTED,     /* *fast_out: end payload (new ref) or NULL */
-  KOS_IREQ_CONTINUES,     /* work installed in-eval; wake comes later */
-  KOS_IREQ_EXIT,          /* suspension: propagate the eval result */
+  KOS_IREQ_DELIVERED = 0, /* *out: the element (new ref) */
+  KOS_IREQ_EXHAUSTED,     /* *out NULL; no exception set */
+  KOS_IREQ_CONTINUES,     /* the producer's frames installed; the
+                             element reaches the frame's resume */
+  KOS_IREQ_EXIT,          /* *out: the awaitable to suspend on (new
+                             ref); the element arrives at revive */
   KOS_IREQ_ERROR,         /* PyErr set */
 } KosIterRequestStatus;
 

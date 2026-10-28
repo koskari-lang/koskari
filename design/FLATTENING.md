@@ -42,7 +42,7 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 - **Iteration and delegation over KosIter providers.** `for-each`,
   `ITER_NEXT`, and `yield-from` over an `AsyncGenerator` or a transform
   splice the provider's work into the running chain
-  (`kos_iter_acquire`, `KosIterRequest_Next`, `yield_from_classify`,
+  (`kos_iter_acquire`, `kos_iter_fetch`, `yield_from_classify`,
   `dynchain/dyn_gen.c`). The splice copies `KOS_FRAME_DEMAND` from the
   invoking frame.
 - **Iteration through a `KosPyIter`.** The CPython
