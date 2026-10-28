@@ -10,8 +10,8 @@ budget, is archived in
 
 ## Regeneration
 
-`make opsizing` builds the `perf-opcodes` tox env (`KOS_ALL_COLD=1`,
-every handler its own symbol) and the `churn-timing` tox env
+`make opsizing` builds the `perf-opcodes` tox env (an ordinary build;
+every handler is its own symbol) and the `churn-timing` tox env
 (`KOS_TRACE_TIMING=1`, nothing else traced), runs the churn kernels
 under the timing build, files the trace as
 `design/trace/trace-YYYYMMDD-HHMM.json`, and writes the table.

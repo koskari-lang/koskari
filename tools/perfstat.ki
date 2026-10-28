@@ -18,11 +18,10 @@ Follows the methodology in design/archive/dispatch-sizing.md. The stat mode
 runs perf stat per kernel with the bootstrap floor subtracted from the
 deterministic instruction count and appends one row per kernel to a
 TSV log. The opcodes mode runs perf record over all kernels and
-reports per-opcode cycle shares; it expects the running build to be a
-KOS_ALL_COLD build, where every handler is its own symbol -- the
-perf-opcodes tox env provides one. Both modes are fronted by the perf
-and perf-opcodes tox envs, each with its own venv and build, leaving
-the dev venv alone.
+reports per-opcode cycle shares: under threaded dispatch every handler
+is its own symbol, so the ordinary build serves. Both modes are
+fronted by the perf and perf-opcodes tox envs, each with its own venv
+and build, leaving the dev venv alone.
 
 Run from the repository root:
 
@@ -181,7 +180,7 @@ def run-opcodes [opts]:
     """
     Per-opcode cycle shares by sampling: perf record over every kernel
     in one process, reported by symbol and filtered to the op_ handler
-    symbols. Meaningful only on a KOS_ALL_COLD build
+    symbols, each handler being its own function under threaded dispatch
     """
 
     var names (or opts.names (kernel-names))
@@ -212,7 +211,7 @@ def run-opcodes [opts]:
     with [fh (open opts.out "w")]:
         (fh.write
             f"# per-opcode cycle shares, {((date.today).isoformat)}"-
-            f" at {(git-sha)} (KOS_ALL_COLD sampling build)\n")
+            f" at {(git-sha)} (sampled under perf record)\n")
         (fh.write (+ ("\n".join lines) "\n"))
 
     print f"\ntop opcode handlers by cycles ({opts.out}):"

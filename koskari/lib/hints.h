@@ -29,21 +29,13 @@
 
 
 /* KOS_OP_INLINE marks the small hot cores that must fold into their
-   callers (the operator cores, the chain-segment walk).
-
-   KOS_ALL_COLD=1 builds a measurement variant instead: every such
-   core is un-inlined so each is its own symbol. Never ship this. */
-#ifndef KOS_ALL_COLD
-# define KOS_ALL_COLD 0
-#endif
-
+   callers: the fetch and return cores, the frame pushes, the
+   ready-frame bind. A profile attributes their cost to the thread
+   function they fold into, which is its own symbol under threaded
+   dispatch; perf annotate on that symbol shows the core's share. */
 #if defined(__GNUC__) || defined(__clang__)
 # define KOS_NOINLINE __attribute__((noinline))
-# if KOS_ALL_COLD
-#  define KOS_OP_INLINE static KOS_NOINLINE
-# else
-#  define KOS_OP_INLINE static inline __attribute__((always_inline))
-# endif
+# define KOS_OP_INLINE static inline __attribute__((always_inline))
 # define likely(x)   __builtin_expect(!!(x), 1)
 # define unlikely(x) __builtin_expect(!!(x), 0)
 #else

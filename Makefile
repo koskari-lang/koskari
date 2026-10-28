@@ -337,7 +337,7 @@ perf:  ## Collect per-kernel perf counters over churn via tox; append to design/
 	@tox -qe perf -- $(PERF_ARGS)
 
 
-perf-opcodes:  ## Per-opcode cycle shares from a KOS_ALL_COLD tox build sampled under perf record
+perf-opcodes:  ## Per-opcode cycle shares from the churn kernels sampled under perf record
 	@$(call checkfor,perf)
 	@$(call checkfor,tox)
 	@tox -qe perf-opcodes -- $(PERF_ARGS)

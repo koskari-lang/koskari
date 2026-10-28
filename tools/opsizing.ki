@@ -14,9 +14,10 @@
 """
 opsizing -- per-handler code size joined with per-opcode timing.
 
-Two measurement builds feed one table. The perf-opcodes tox env builds
-the extension with KOS_ALL_COLD, where every handler is its own
-symbol, and nm --print-size gives each handler's bytes. The
+Two builds feed one table. The perf-opcodes tox env holds an ordinary
+build of the extension, where every handler is its own symbol under
+threaded dispatch, and nm --print-size gives each handler's bytes,
+the cores it folds in included. The
 churn-timing tox env builds with KOS_TRACE_TIMING, and a run of the
 churn kernels under it writes a trace JSON with per-opcode counts and
 average nanoseconds. The two are joined by opcode name into a
@@ -120,7 +121,7 @@ def handler_sizes [python]:
     """
     Per-handler sizes of the extension an interpreter imports
 
-    :param python: interpreter of a KOS_ALL_COLD build
+    :param python: interpreter of the build the sizes come from
     :return: tuple of the extension path and the size mapping
     """
 
@@ -334,7 +335,7 @@ def build_arguments [parser]:
         help: "interpreter of the KOS_TRACE_TIMING build for --sweep")
     (parser.add_argument "--cold-python"
         default: (join ".tox" "perf-opcodes" "bin" "python")
-        help: "interpreter of the KOS_ALL_COLD build the sizes come from")
+        help: "interpreter of the build the sizes come from")
     (parser.add_argument "--samples"
         type: int default: 1
         help: "measured batches per kernel for --sweep (default: 1)")

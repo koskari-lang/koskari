@@ -47,7 +47,6 @@ passenvs = (
     "KOS_STACK_TRACE",
     "KOS_DEBUG_PATCH_DYN_CACHES",
     "KOS_EVAL_SAFETYNET",
-    "KOS_ALL_COLD",
     "KOS_NOFREELIST",
     "VERBOSE_DEBUG",
 )
