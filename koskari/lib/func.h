@@ -190,6 +190,13 @@ typedef struct {
                                order); -1 otherwise. A call arm stores the
                                function there after binding the arguments,
                                see KosFunction_StoreSelf */
+  Py_ssize_t install_arity1; /* simple_arity1 when a call at that arity
+                                takes the simple install arms: the code
+                                is present, does not yield, and the
+                                self-bind is resolved; 0 otherwise, which
+                                no call's nargs + 1 matches. The one
+                                fact the call arms test; written where
+                                bind_self_state resolves */
   Py_ssize_t simple_arity1; /* exact positional arity PLUS ONE for the
                                simple-call fast path (plain positional
                                formals, no defaults/star/kwd/by-refs);
@@ -221,6 +228,7 @@ typedef struct {
 #define KOS_FRAME_CACHE_MAX 8
 
 #define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
+#define KosFunction_INSTALL_ARITY1(fn) (((KosFunction *) (fn))->install_arity1)
 
 /* Bind the function into its own frame when its body names it: a
    store into self_slot, a raw local, which cannot fail. A no-op for

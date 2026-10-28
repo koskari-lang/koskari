@@ -8,18 +8,6 @@ CALL handlers or the preserve-none trampolines with loop bodies;
 inlining all of the frame caching into `kos_return_deliver` costs the
 method kernel instructions per cycle at equal instruction counts.
 
-## Installable arity field
-
-The hit test reads type, `simple_arity1`, `bind_self_state`, `code`,
-then the code's flags for yields, repeated in
-`kos_call_simple_install`, `kos_call_invoke_impl`, the self path
-of `kos_call_invoke`, and `KosFunction_ReadyFrameVector`. One field,
-`install_arity1`, equal to `simple_arity1` when the code is present and
-does not yield and `bind_self_state` is resolved (1 or 2: the self
-store is the arm's, not a shape), recomputed where `bind_self_state`
-resolves. About 3-5 cycles per call. Belongs with the
-range test in [trailing-defaults.md](trailing-defaults.md).
-
 ## Frame push and pop bookkeeping
 
 `kos_dyn_push_ready_frame` loads the caller's depth, flags, and live

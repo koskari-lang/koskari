@@ -1204,6 +1204,7 @@ static int function_clear(PyObject *self) {
 
   func_drop_cached_frame((KosFunction *) self);
   func_drop_dead_coro((KosFunction *) self);
+  ((KosFunction *) self)->install_arity1 = 0;
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_CLEAR(KosFunction_DICT(self));
@@ -1222,6 +1223,7 @@ static void function_dealloc(PyObject *self) {
   Py_TRASHCAN_BEGIN(self, function_dealloc);
   func_drop_cached_frame((KosFunction *) self);
   func_drop_dead_coro((KosFunction *) self);
+  ((KosFunction *) self)->install_arity1 = 0;
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
@@ -1366,6 +1368,10 @@ static int kos_function_bind_self_if_local(
       fn->self_slot = slot;
     }
     fn->bind_self_state = bind ? 1 : 2;
+    /* resolved: a call at the simple arity may take the install arms,
+       unless the function is a generator */
+    if (fn->code && ! KosCode_YIELDS((KosCode *) fn->code))
+      fn->install_arity1 = fn->simple_arity1;
     if (! bind)
       return 0;
   }
@@ -1640,6 +1646,7 @@ static PyObject *function_construct(
   ((KosFunction *) self)->self_slot = -1;
   ((KosFunction *) self)->simple_arity1 =
       function_compute_simple_arity(code, formals) + 1;
+  ((KosFunction *) self)->install_arity1 = 0;  /* until the self-bind resolves */
   ((KosFunction *) self)->cached_frame = NULL;
   ((KosFunction *) self)->dead_coro = NULL;
 

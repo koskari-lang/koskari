@@ -39,12 +39,12 @@ slots, so `KosNamespace_ResetToTemplate` clears them when the frame is
 cached, like any other local. A call with keyword names, or outside the
 range, keeps the general path.
 
-The hit test today compares `simple_arity1`, `bind_self_state`, and the
-code's yield flag at several sites (`kos_call_simple_install`,
-`kos_call_invoke`, `KosFunction_ReadyFrameVector`). A range test replaces the
-equality; the "installable arity field" note in
-[call-path-followups.md](call-path-followups.md) folds those reads into
-one field and belongs with this change.
+The hit test compares `nargs + 1` against `install_arity1`, the one
+field that records the simple arity of a function whose code is
+present, does not yield and whose self-bind is resolved (0 otherwise),
+at `kos_call_simple_install`, the window arm of `kos_call_invoke_impl`,
+the self-receiver path of `kos_call_invoke` and the tail self arm. A
+range test replaces that equality.
 
 ## What the discussion has to settle
 

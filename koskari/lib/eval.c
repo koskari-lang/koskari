@@ -2216,10 +2216,11 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
 
   KosContext_ENTRY_CALL(ctx) = NULL;
 
+  /* an installable function of any arity: resolved self-bind, code
+     present and non-yielding, the three facts install_arity1 records
+     (any shape binds here, so the arity itself is not compared) */
   if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
-      && KosFunction_BIND_SELF_STATE(callable) != 0
-      && KosFunction_CODE(callable)
-      && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))) {
+      && KosFunction_INSTALL_ARITY1(callable) != 0) {
 
     /* The chain is empty, so the install inherits no demand bit; the
        recorded flags go onto the root frame it pushed. */
