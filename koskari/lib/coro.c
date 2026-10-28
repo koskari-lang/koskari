@@ -52,9 +52,10 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
   }
 
   /* An unstarted generator rests in the same slot a suspended one does;
-     started == 0 on the wrapper tells the first install to bootstrap
-     rather than resume. No context: the splice from Koskari never needs
-     one, and a drive from Python creates the wrapper's at that moment. */
+     the GEN's STARTED flag, clear until the bootstrap install, tells
+     the first drive to enter fresh code rather than resume. No context:
+     the splice from Koskari never needs one, and a drive from Python
+     creates the wrapper's at that moment. */
   KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
 
   PyObject *agen = KosPyAsyncGen_New(NULL, gen);

@@ -95,6 +95,9 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
+  KOS_DYNF_GEN_STARTED = 0x04,  /* GEN: the bootstrap install has entered the
+                                   frame once; a resting GEN resumes a yield
+                                   rather than entering fresh code */
   KOS_DYNF_INVOCATION  = 0x08,  /* PROMPT: instance created by a k-invocation
                                    (graft instantiation or in-place invoke);
                                    no POP_PROMPT instruction pairs with it, so

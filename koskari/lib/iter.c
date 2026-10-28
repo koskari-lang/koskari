@@ -193,7 +193,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
   }
 
   if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
-      && ! agen->started) {
+      && ! (KosDynNode_FLAGS(agen->gen) & KOS_DYNF_GEN_STARTED)) {
     /* never driven: nothing entered, nothing to unwind. The unstarted
        frame still carries the GEN's chain-membership reference (a
        freeze releases it; no freeze has happened), so the chain is
@@ -246,7 +246,8 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
-  if (gen && KosDynGen_ACTIVE(gen) && ! agen->started) {
+  if (gen && KosDynGen_ACTIVE(gen)
+      && ! (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_STARTED)) {
     /* never driven: the unstarted frame still carries the GEN's
        chain-membership reference, so the chain is freed through the
        GEN node, and the owner's reference after */
@@ -280,7 +281,10 @@ static void asyncgen_finalize(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen->in_progress || agen->closed || ! agen->started)
+  if (agen->in_progress || agen->closed)
+    return;
+  if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
+      && ! (KosDynNode_FLAGS(agen->gen) & KOS_DYNF_GEN_STARTED))
     return;
   if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx))
       && ! (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)))
@@ -463,53 +467,6 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen) {
 
 
 /**
-   Graft the generator onto the drive context. Frozen gens install from
-   GEN.ACTIVE; bootstrap gens move the chain from agen->ctx. When ctx IS
-   agen->ctx (the Python-adapter drive), a live un-frozen chain is
-   already on ctx -- nothing to install.
-*/
-static int agen_attach_gen_flatten(
-    KosContext *ctx,
-    KosPyAsyncGen *agen,
-    KosDynGen *gen) {
-
-  if (KosDynGen_ACTIVE(gen)) {
-    /* the wrapper's own context drops its stale chain pointers, unless
-       it is the drive context, whose chain the install extends */
-    if (agen->ctx && agen->ctx != ctx)
-      KosContext_ClearLiveRegs(agen->ctx);
-    if (! agen->started) {
-      /* never driven: the frame rests in the slot; the first install
-         enters fresh code rather than reviving a yield */
-      KosDynNode *head = (KosDynNode *) KosDynGen_ACTIVE(gen);
-      if (kos_dyn_gen_install_bootstrap(ctx, gen, head) < 0)
-        return -1;   /* refused (no frame room): the frame stays put */
-      KosDynGen_ACTIVE(gen) = NULL;
-      return 0;
-    }
-    return kos_dyn_gen_install(ctx, gen);
-  }
-
-  if (agen->ctx && ctx == agen->ctx) {
-    /* Own-ctx drive: the bootstrap (or mid-await) chain is already
-       live on ctx. */
-    if (KosContext_DYN_TOP(ctx))
-      return 0;
-
-  } else if (agen->ctx && KosContext_DYN_TOP(agen->ctx)) {
-    KosDynNode *head = KosContext_DYN_TOP(agen->ctx);
-    if (kos_dyn_gen_install_bootstrap(ctx, gen, head) < 0)
-      return -1;
-    KosContext_ClearLiveRegs(agen->ctx);
-    return 0;
-  }
-
-  PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
-  return -1;
-}
-
-
-/**
    The suite's ki_busy: 1 with the RuntimeError set while another site
    is driving the generator, else 0
 */
@@ -533,6 +490,12 @@ static int agen_iter_busy(PyObject *self) {
    throw ingress primed is delivered at resume. send_val, when given,
    replaces the install placeholder on TOS as the value of the
    suspended yield expression.
+
+   The GEN's slot holds the unstarted frame or a suspended chain, told
+   apart by the GEN's STARTED flag; an empty slot with a chain live on
+   the wrapper's context is a drive mid-await, grafted onto a consumer
+   context other than the wrapper's own. Nothing in either place is a
+   spent generator.
 */
 static KosIterStepResult agen_iter_drive(
     KosContext *ctx,
@@ -541,67 +504,85 @@ static KosIterStepResult agen_iter_drive(
     int throwing,
     PyObject **out) {
 
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+  KosDynNode *active;
+  int started;
+
   if (agen_iter_busy((PyObject *) agen))
     return KOS_ITER_ERROR;
 
-  if (agen->closed || ! agen->gen) {
+  if (agen->closed || ! gen) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
 
-  if (send_val && send_val != Py_None && ! agen->started) {
+  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  started = KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_STARTED;
+
+  if (send_val && send_val != Py_None && ! started) {
     PyErr_SetString(PyExc_TypeError,
                     "can't send non-None value to a just-started "
                     "async generator");
     return KOS_ITER_ERROR;
   }
 
-  {
-    KosDynGen *gen = (KosDynGen *) agen->gen;
-    /* the slot holds either the unstarted frame or a suspended chain;
-       only the latter is a frozen yield to revive */
-    int resting = (KosDynGen_ACTIVE(gen) != NULL);
-    int frozen = resting && agen->started;
-    int own_ctx = agen->ctx && (ctx == agen->ctx);
+  if (! active && ! (agen->ctx && KosContext_DYN_TOP(agen->ctx))) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
 
-    if (! resting && ! (agen->ctx && KosContext_DYN_TOP(agen->ctx))
-        && ! (own_ctx && KosContext_DYN_TOP(ctx))) {
-      /* No frozen chain and nothing live on the context: spent. */
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
+  agen->in_progress = 1;
+
+  if (! active) {
+    if (ctx != agen->ctx) {
+      if (kos_dyn_gen_install_bootstrap(
+              ctx, gen, KosContext_DYN_TOP(agen->ctx)) < 0)
+        goto drive_error;
+      KosContext_ClearLiveRegs(agen->ctx);
     }
+    return KOS_ITER_INSTALLED;
+  }
 
-    agen->in_progress = 1;
-    if (agen_attach_gen_flatten(ctx, agen, gen) < 0)
+  /* the wrapper's own context drops its stale chain pointers, unless
+     it is the drive context, whose chain the install extends */
+  if (agen->ctx && agen->ctx != ctx)
+    KosContext_ClearLiveRegs(agen->ctx);
+
+  if (! started) {
+    /* the first install enters fresh code with an empty stack: no
+       placeholder to swap, nothing to throw into. A refusal (no frame
+       room) leaves the frame in the slot. */
+    if (kos_dyn_gen_install_bootstrap(ctx, gen, active) < 0)
       goto drive_error;
+    KosDynGen_ACTIVE(gen) = NULL;
+    return KOS_ITER_INSTALLED;
+  }
 
-    agen->started = 1;
+  if (kos_dyn_gen_install(ctx, gen) < 0)
+    goto drive_error;
 
-    /* A throw ingress primed the exception: a frame waiting on a
-       resume takes it there and throws it into its delegate; any
-       other frame raises it at the resume point as before. */
-    if (frozen && throwing)
-      (void) KosContext_ThrowIntoResume(ctx);
+  /* A throw ingress primed the exception: a frame waiting on a
+     resume takes it there and throws it into its delegate; any
+     other frame raises it at the resume point as before. */
+  if (throwing)
+    (void) KosContext_ThrowIntoResume(ctx);
 
-    /* Resume-of-frozen-yield only: the frozen install pushed the
-       Py_None placeholder for the suspended yield expression; replace
-       it with the sent value. A bootstrap install enters fresh code
-       with an empty stack -- nothing to swap. The throw ingress sends
-       no value. */
-    if (frozen && send_val) {
-      KosDynFrame *frame = KosContext_FRAME(ctx);
-      if (frame && KosDynFrame_RESUME_KIND(frame)) {
-        /* waiting on a resume: the sent value is its delivery */
-        Py_INCREF(send_val);
-        KosContext_StageDelivery(ctx, send_val);
-      } else {
-        PyObject *popped = KosContext_StackPopRef(ctx);
-        if (! popped)
-          goto drive_error;
-        Py_DECREF(popped);
-        if (KosContext_StackPushRef(ctx, send_val) < 0)
-          goto drive_error;
-      }
+  /* The frozen install pushed the Py_None placeholder for the
+     suspended yield expression; replace it with the sent value. The
+     throw ingress sends no value. */
+  if (send_val) {
+    KosDynFrame *frame = KosContext_FRAME(ctx);
+    if (frame && KosDynFrame_RESUME_KIND(frame)) {
+      /* waiting on a resume: the sent value is its delivery */
+      Py_INCREF(send_val);
+      KosContext_StageDelivery(ctx, send_val);
+    } else {
+      PyObject *popped = KosContext_StackPopRef(ctx);
+      if (! popped)
+        goto drive_error;
+      Py_DECREF(popped);
+      if (KosContext_StackPushRef(ctx, send_val) < 0)
+        goto drive_error;
     }
   }
 
@@ -774,7 +755,6 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen) {
   agen->gen = (void *) gen;
   agen->code_name = NULL;
   agen->in_progress = 0;
-  agen->started = 0;
   agen->closed = 0;
 
   PyObject_GC_Track((PyObject *) agen);

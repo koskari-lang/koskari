@@ -428,6 +428,7 @@ int kos_dyn_gen_install_bootstrap(
      ctx; do NOT acquire a fresh one, or the reference the resting place
      held is orphaned and the GEN node leaks. */
   kos_dyn_commit_dyn_top(ctx, chain_head);
+  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_STARTED;
 
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);

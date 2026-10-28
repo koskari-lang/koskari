@@ -44,7 +44,6 @@ struct KosPyAsyncGen {
   void *gen;         /* KosDynGen * when set; agen holds ref when GEN released from chain */
   PyObject *code_name;  /* strong ref; KosCode name for repr (ctx may not expose frame) */
   int in_progress;   /* anext in progress */
-  int started;       /* first step has driven the evaluator */
   int closed;        /* generator closed */
 };
 
