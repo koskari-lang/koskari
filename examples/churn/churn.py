@@ -192,6 +192,10 @@ def run(opts):
     failures = []
     width = reporter.name_width(selected)
     print(reporter.format_header(width))
+
+    # discovery imported and compiled every kernel; the trace covers the
+    # selected kernels' runs alone
+    clear_trace_counters()
     for name in selected:
         result = run_benchmark(
             registry_map[name], opts.mode, opts.samples, opts.warmup)
@@ -227,7 +231,6 @@ def print_trace_report_if_enabled():
 
 if __name__ == "__main__":
     options = parse_args()
-    clear_trace_counters()
     failed = run(options)
     print_trace_report_if_enabled()
     if failed:
