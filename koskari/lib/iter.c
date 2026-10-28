@@ -681,8 +681,8 @@ static int agen_iter_close(PyObject *self) {
    exhaustion through the missing GEN.
 
    The chain frees the GEN's chain reference, and the release below
-   the wrapper's own, which frees the GEN and drops its keepalive on
-   the wrapper. A Koskari consumer's completion leaves no chain on the
+   the wrapper's own, which frees the GEN. A Koskari consumer's
+   completion leaves no chain on the
    wrapper's context: its finish releases the wrapper's reference
    alone, before the teardown releases the chain's or after it, and
    agen->gen is cleared first, so a repeated finish releases nothing.

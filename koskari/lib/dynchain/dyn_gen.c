@@ -74,18 +74,11 @@ static void kos_dyngen_dispose_active(KosDynGen *gen) {
 /**
    Clear owner/active; return node to freelist.
 */
-static void kos_dyngen_keepalive_release(KosDynGen *gen);
-
-
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
     return;
 
   kos_dyngen_dispose_active(gen);
-  /* a GEN freed with its frame abandoned on a chain (a close that
-     could not finish) still holds its keepalive; the frame is not
-     live once the GEN is gone, so the owner is released here */
-  kos_dyngen_keepalive_release(gen);
   KosDynGen_OWNER(gen) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
@@ -118,36 +111,14 @@ void kos_dyngen_release(KosDynGen *gen) {
 
 
 /**
-   GEN->KPAG keepalive: while a GEN's frame is live on a chain, the GEN holds
-   a counted reference on its owner (the KosPyAsyncGen) so the owner cannot be
-   deallocated mid-run.  Acquired when the GEN is installed/made active;
-   released when it freezes (yield) or dies (return/raise).  The KEEPALIVE
-   flag makes both idempotent so release fires only when an acquire happened
-   (the Python-driven first-run path may go active without an install).
+   The owner is borrowed at every moment of the GEN's life. The record
+   that steps the generator holds the owner for the installed span:
+   the for-each request, the next request's resume state, the native
+   frame's record, the yield-from delegate slot, or a Python adapter;
+   the span sits above that record in the chain and a GEN refuses
+   continuation capture, so the record cannot go while the span is
+   live.
 */
-static void kos_dyngen_keepalive_acquire(KosDynGen *gen) {
-  PyObject *owner = KosDynGen_OWNER(gen);
-  /* Never resurrect an owner that is mid-deallocation (refcount 0): the
-     teardown path re-installs the frozen gen to run its GeneratorExit
-     cleanup, and a keepalive incref there would resurrect the dying object
-     and trigger a re-entrant dealloc when the cleanup unwinds. */
-  if (owner && Py_REFCNT(owner) > 0
-      && ! (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_KEEPALIVE)) {
-    Py_INCREF(owner);
-    KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_KEEPALIVE;
-  }
-}
-
-
-static void kos_dyngen_keepalive_release(KosDynGen *gen) {
-  if (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_KEEPALIVE) {
-    PyObject *owner = KosDynGen_OWNER(gen);
-    KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_KEEPALIVE;
-    Py_XDECREF(owner);
-  }
-}
-
-
 void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -160,7 +131,6 @@ void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
   PyErr_Fetch(&typ, &val, &tb);
   kos_dyn_commit_dyn_top(ctx, consumer);
   KosDynNode_PARENT(gen) = NULL;
-  kos_dyngen_keepalive_release(gen);
   kos_dyngen_release(gen);
   PyErr_Restore(typ, val, tb);
 }
@@ -354,8 +324,6 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
     kos_dyn_commit_dyn_top(ctx, active);
   }
   KosDynGen_FROZEN(gen)->top = NULL;
-  /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
-  kos_dyngen_keepalive_acquire(gen);
 
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);
@@ -460,8 +428,6 @@ int kos_dyn_gen_install_bootstrap(
      ctx; do NOT acquire a fresh one, or the reference the resting place
      held is orphaned and the GEN node leaks. */
   kos_dyn_commit_dyn_top(ctx, chain_head);
-  /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
-  kos_dyngen_keepalive_acquire(gen);
 
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);
@@ -528,10 +494,6 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
   /* The dead GEN may outlive this drive on its owner; it holds no
      consumer link past the chain. */
   KosDynNode_PARENT(gen) = NULL;
-  /* GEN is dead: drop the keepalive on its owner (ctx is now consistent).
-     In the common case the consumer still holds the KPAG, so this is just a
-     decrement; if it was the last ref the owner deallocates here. */
-  kos_dyngen_keepalive_release(gen);
   kos_dyngen_release(gen);
   return 0;
 }
@@ -548,13 +510,9 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
    active down to this GEN node (exclusive) via kos_dynchain_traverse.
 */
 static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
-  /* OWNER is a borrowed back-pointer except while the keepalive holds a real
-     counted reference on it.  Reporting a borrowed pointer to the cyclic
-     collector makes it subtract a phantom reference and collect a live,
-     externally-referenced generator (held by a GC-invisible FOREACH
-     dynnode) as cyclic garbage.  Only visit when it is real. */
-  if (KosDynNode_FLAGS(node) & KOS_DYNF_GEN_KEEPALIVE)
-    Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
+  /* OWNER is a borrowed back-pointer and is not visited: reporting it
+     would make the collector subtract a phantom reference and collect
+     a live, externally-referenced generator as cyclic garbage. */
   if (KosDynGen_ACTIVE((KosDynGen *) node))
     return kos_dynchain_traverse(
         KosDynGen_ACTIVE((KosDynGen *) node),

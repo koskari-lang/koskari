@@ -140,11 +140,6 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
        (void *) KosContext_FRAME(ctx),
        (void *) owner,
        (void *) gen);
-
-  /* GEN is frozen back into the KPAG: drop the keepalive.  Done last, as it
-     may run the owner's deallocation if no one else holds it (an abandoned
-     generator cleans up here).  No reads of gen/owner follow. */
-  kos_dyngen_keepalive_release(gen);
   return 0;
 }
 
