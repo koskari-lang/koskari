@@ -408,6 +408,7 @@ static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
     while (KosDynNode_PARENT(bottom))
       bottom = KosDynNode_PARENT(bottom);
     KosDynNode_PARENT(bottom) = goal->seam;
+    kos_dynnode_note_parent(bottom);
     /* The clone's frames carry capture-time depths; the invoke checked
        that they fit above the seam before the push. */
     kos_dyn_renumber_frames(goal->target, goal->seam,

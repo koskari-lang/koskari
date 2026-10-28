@@ -1210,6 +1210,7 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosDynFrame *frame) {
 
   KosDynNode_PARENT(frame) = KosContext_DYN_TOP(ctx);
+  kos_dynframe_note_parent(frame);
   KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
 
   {

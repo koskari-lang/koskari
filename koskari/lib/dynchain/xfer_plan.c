@@ -247,6 +247,7 @@ static int kos_delimited_invoke_inplace(
     while (KosDynNode_PARENT(child) != prompt)
       child = KosDynNode_PARENT(child);
     KosDynNode_PARENT(child) = (KosDynNode *) invocation_prompt;
+    kos_dynnode_note_parent(child);
     /* The re-spliced slice span's back links likewise predate the new
      * shape. */
     kos_dyn_clear_unwind_caches(slice_top, (KosDynNode *) invocation_prompt);

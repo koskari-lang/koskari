@@ -1276,6 +1276,7 @@ KosDynNode *kos_dyn_clone_segment(
     }
     if (cloned_prev) {
       cloned_prev->parent = cloned;
+      kos_dynnode_note_parent(cloned_prev);
     } else {
       cloned_top = cloned;
     }
@@ -1287,6 +1288,7 @@ KosDynNode *kos_dyn_clone_segment(
   /* Set the bottom's parent to stop (or NULL if stop is NULL) */
   if (cloned_prev) {
     cloned_prev->parent = stop;
+    kos_dynnode_note_parent(cloned_prev);
   }
 
   kos_dyn_remap_delim_frames(cloned_top, stop);
@@ -2481,6 +2483,7 @@ static KosContinuation *kos_continuation_capture_segment(
       while (KosDynNode_PARENT(bottom))
         bottom = KosDynNode_PARENT(bottom);
       KosDynNode_PARENT(bottom) = (KosDynNode *) base;
+      kos_dynnode_note_parent(bottom);
     } else {
       captured_chain = (KosDynNode *) base;
     }
@@ -3228,6 +3231,7 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
     while (KosDynNode_PARENT(bottom))
       bottom = KosDynNode_PARENT(bottom);
     KosDynNode_PARENT(bottom) = base;
+    kos_dynnode_note_parent(bottom);
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
 
     /* The re-linked span's unwind-cache back links predate the stash;

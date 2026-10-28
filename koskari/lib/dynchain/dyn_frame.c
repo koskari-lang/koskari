@@ -85,6 +85,7 @@ KosDynFrame *kos_dynframe_new(
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
+  kos_dynframe_note_parent(frame);
   KosDynFrame_DEPTH(frame) = 1;  /* a root until an install says otherwise */
   KosDynFrame_CACHE_SLOT(frame) = NULL;
   KosDynFrame_RESUME_KIND(frame) = NULL;
@@ -479,7 +480,8 @@ void kos_dyn_swap_frame_for_tail(KosContext *ctx, KosDynFrame *ready) {
 
   KosDynNode_PARENT(ready_node) = KosDynNode_PARENT(live_node);
   KosDynNode_NODE_ID(ready_node) = 0;
-  KosDynFrame_FLAGS(ready) |= (KosDynFrame_FLAGS(live) & KOS_FRAME_DEMAND);
+  KosDynFrame_FLAGS(ready) |= (KosDynFrame_FLAGS(live)
+                               & (KOS_FRAME_DEMAND | KOS_FRAME_PARENT_IS_FRAME));
   KosDynFrame_DEPTH(ready) = KosDynFrame_DEPTH(live);
   KosDynFrame_BACK_FRAME(ready) = KosDynFrame_BACK_FRAME(live);
   KosSegment_BACK(KosDynNode_STACK(ready_node)) =

@@ -53,6 +53,7 @@ PyObject *KosAsyncGen_NewFromFrame(KosDynFrame *frame) {
      creates the wrapper's at that moment. The frame keeps its fn tag,
      so its release at exhaustion offers it to the function's cache. */
   KosDynNode_PARENT(frame) = (KosDynNode *) gen;
+  kos_dynframe_note_parent(frame);
   KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
 
   agen = KosPyAsyncGen_New(NULL, gen);

@@ -2087,12 +2087,43 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
                                                 (kos_dynframe_cache_inert).
                                                 Set only by
                                                 KosNativeFrame_CacheOnFree */
+#define KOS_FRAME_PARENT_IS_FRAME   (1u << 3)  /* the frame's parent is a
+                                                FRAME node: the fact the
+                                                return path tests, recorded
+                                                wherever a frame is linked
+                                                under a parent
+                                                (kos_dynframe_note_parent) */
 #define KosDynFrame_CACHE_SLOT(f) (((KosDynNode *)(f))->u.frame.cache_slot)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 
 #define KosDynFrame_RESUME_KIND(f)  (((KosDynNode *)(f))->u.frame.resume_kind)
 #define KosDynFrame_RESUME_STATE(f) (((KosDynNode *)(f))->u.frame.resume_state)
+
+
+/**
+   Record on frame whether the parent it is now linked under is a FRAME
+   node, for the return path's one test (kos_return_deliver). Every
+   site that sets a frame's parent calls this after: the pushes, the
+   tail swap, the generator's parenting, and the splices that re-link a
+   captured chain's bottom.
+*/
+static inline void kos_dynframe_note_parent(KosDynFrame *frame) {
+  KosDynNode *parent = KosDynNode_PARENT(frame);
+
+  if (parent && KosDynNode_IS_FRAME(parent))
+    KosDynFrame_FLAGS(frame) |= KOS_FRAME_PARENT_IS_FRAME;
+  else
+    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_PARENT_IS_FRAME;
+}
+
+
+/* The re-link of a chain's bottom under a new parent: a frame bottom
+   records the parent it now has. */
+static inline void kos_dynnode_note_parent(KosDynNode *node) {
+  if (KosDynNode_IS_FRAME(node))
+    kos_dynframe_note_parent((KosDynFrame *) node);
+}
 /* A resume is set when the kind is non-NULL; the name is a read-only
    view through the kind for messages and the snapshot. */
 #define KosDynFrame_RESUME_NAME(f)                                        \

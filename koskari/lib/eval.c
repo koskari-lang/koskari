@@ -1479,15 +1479,15 @@ static inline KosOpResult kos_eval_delivery_done(KosContext *ctx) {
 /* The return arms op_RETURN threads through directly (defined with the
    return machinery below; the trampoline's own fast arm uses the same
    functions for every other producer of a RETURN signal). */
-static inline int kos_return_is_plain(
-    KosContext *ctx,
-    KosDynNode **out_child,
-    KosDynNode **out_parent);
 KOS_OP_INLINE int kos_return_is_region(
     KosContext *ctx,
     KosDynNode **out_child,
     KosDynNode **out_parent,
     KosDynFrame **out_ft);
+KOS_OP_INLINE void eval_frame_return_retarget(
+    KosContext *ctx,
+    KosDynNode *child,
+    KosDynNode *parent);
 KOS_OP_INLINE KosOpResult eval_plain_return(
     KosContext *ctx,
     KosDynNode *child,
@@ -1509,15 +1509,6 @@ KOS_OP_INLINE int eval_region_resume_return(
     KosDynNode *child,
     KosDynNode *parent,
     KosDynFrame *ft,
-    PyObject *val,
-    const KosResumeKind **out_resume,
-    void **out_state);
-KOS_OP_INLINE int kos_return_is_resume(
-    KosContext *ctx,
-    KosDynNode **out_parent);
-static int kos_return_take_resume(
-    KosContext *ctx,
-    KosDynNode *parent,
     PyObject *val,
     const KosResumeKind **out_resume,
     void **out_state);
@@ -1681,14 +1672,59 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
 
   (void) insn;
 
-  if (likely(kos_return_is_plain(ctx, &child, &parent))) {
-    KOS_TRACE_POST_OP_WRAP(plain_return,
-        r = eval_plain_return(ctx, child, parent, val));
-    if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_CONTINUE(ctx);
-    if (r.kind == KOS_RES_REPROLOGUE)
-      TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
-    return r;
+  /* The frame-parent arms: the returning frame is dyn_top and its
+     parent is a frame, the fact recorded when the frame was linked
+     (KOS_FRAME_PARENT_IS_FRAME). A parent waiting on a resume takes a
+     settled value by tail call, the retarget done inline; a code frame
+     with no resume takes the value on its stack and threads on. A
+     code-less parent with no resume, and a value still to settle, are
+     the general path's. */
+  child = (KosDynNode *) KosContext_FRAME(ctx);
+  if (likely(child && KosContext_DYN_TOP(ctx) == child
+             && (KosDynFrame_FLAGS(child) & KOS_FRAME_PARENT_IS_FRAME))) {
+    const KosResumeKind *resume;
+
+    parent = KosDynNode_PARENT(child);
+#if KOS_EVAL_SAFETYNET
+    if (! parent || ! KosDynNode_IS_FRAME(parent)) {
+      Py_DECREF(val);
+      PyErr_SetString(PyExc_SystemError,
+                      "frame records a frame parent it does not have");
+      RESULT_RAISE();
+    }
+#endif
+    resume = KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
+    if (likely(! resume)) {
+      if (likely(KosDynFrame_CODE((KosDynFrame *) parent))) {
+        KOS_TRACE_POST_OP_WRAP(plain_return,
+            r = eval_plain_return(ctx, child, parent, val));
+        if (likely(r.kind == KOS_RES_DISPATCH))
+          RESULT_CONTINUE(ctx);
+        if (r.kind == KOS_RES_REPROLOGUE)
+          TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+        return r;
+      }
+    } else {
+      switch (KosEval_ResultIsValue(val)) {
+        case 1: {
+          /* the resume pair comes off the parent cleared, as the
+             delivery step clears it, and the hop is what that step
+             would have done after a stage and a bounce */
+          void *state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
+
+          KosDynFrame_RESUME_KIND((KosDynFrame *) parent) = NULL;
+          KosDynFrame_RESUME_STATE((KosDynFrame *) parent) = NULL;
+          KOS_TRACE_POST_OP_WRAP(plain_return,
+              eval_frame_return_retarget(ctx, child, parent));
+          RESUME_HOP(resume, ctx, state, val);
+        }
+        case 0:
+          break;  /* needs settling: the delivery step owns that */
+        default:
+          Py_DECREF(val);
+          RESULT_RAISE();
+      }
+    }
   }
 
   if (kos_return_is_region(ctx, &child, &parent, &ft)) {
@@ -1715,17 +1751,6 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
         took = eval_region_resume_return(
             ctx, child, parent, ft, val, &resume, &state));
     if (likely(took > 0))
-      RESUME_HOP(resume, ctx, state, val);
-    if (unlikely(took < 0))
-      RESULT_RAISE();
-  }
-
-  if (kos_return_is_resume(ctx, &parent)) {
-    const KosResumeKind *resume;
-    void *state;
-    int took = kos_return_take_resume(ctx, parent, val, &resume, &state);
-
-    if (took > 0)
       RESUME_HOP(resume, ctx, state, val);
     if (unlikely(took < 0))
       RESULT_RAISE();
@@ -2526,7 +2551,8 @@ static inline KosOpResult eval_event_return_unwind(
    Case-1 return predicate: parent is a plain Koskari frame, so the return
    is a straight frame-to-frame pop with no node deliveries.  Assumes
    DYN_TOP == FRAME is already established.  The single definition, shared
-   by eval_event_return_at_frame and kos_return_is_plain.
+   by eval_event_return_at_frame; kos_return_deliver tests the recorded
+   KOS_FRAME_PARENT_IS_FRAME and the parent's code and resume itself.
 
    eval_plain_return loads the live registers from the parent, pushes
    the value and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
@@ -2541,38 +2567,6 @@ static inline int kos_return_parent_is_plain(KosDynNode *parent) {
       && KosDynNode_IS_FRAME(parent)
       && KosDynFrame_CODE((KosDynFrame *) parent)
       && ! KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
-}
-
-
-/**
-   Whole plain-return predicate: no dynamic extent above the returning
-   frame, and its parent is another plain Koskari frame.  Sets out_child
-   and out_parent and returns 1 when it holds.
-
-   Used by the dispatch-loop fast arm to route a KOS_RES_RETURN straight
-   into eval_plain_return, skipping apply_kos_op_result and the guard
-   chain it would otherwise walk to reach the same place.  Stricter than
-   the chain it short-circuits only in requiring a non-NULL frame, so a
-   miss can never do more than fall through to the general path.
-*/
-static inline int kos_return_is_plain(
-    KosContext *ctx,
-    KosDynNode **out_child,
-    KosDynNode **out_parent) {
-
-  KosDynNode *child = (KosDynNode *) KosContext_FRAME(ctx);
-  KosDynNode *parent;
-
-  if (unlikely(! child || KosContext_DYN_TOP(ctx) != child))
-    return 0;
-
-  parent = KosDynNode_PARENT(child);
-  if (unlikely(! kos_return_parent_is_plain(parent)))
-    return 0;
-
-  *out_child = child;
-  *out_parent = parent;
-  return 1;
 }
 
 
@@ -2613,19 +2607,31 @@ KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
    Inline retarget from child (being freed) to parent.  Skips the chain
    walk and the flush (frame is freed).  val consumed.
 */
+/**
+   The frame-to-frame return's retarget: the parent, a known FRAME
+   node, becomes dyn_top and every live register is read straight from
+   it, no chain walk and no flush (child is freed), then child goes,
+   offered to its function's cache.
+*/
+KOS_OP_INLINE void eval_frame_return_retarget(
+    KosContext *ctx,
+    KosDynNode *child,
+    KosDynNode *parent) {
+
+  KosContext_DYN_TOP(ctx) = parent;
+  KosContext_LoadFrame(ctx, (KosDynFrame *) parent, &KosDynNode_STACK(parent),
+                       KosDynNode_NS(parent));
+  kos_dynframe_free_fast((KosDynFrame *) child);
+}
+
+
 KOS_OP_INLINE KosOpResult eval_plain_return(
     KosContext *ctx,
     KosDynNode *child,
     KosDynNode *parent,
     PyObject *val) {
 
-  /* Inline retarget: equivalent to commit_dyn_top + apply_live(flush=0),
-     but with no chain walk — parent is a known FRAME node, so every live
-     register is read directly from it. */
-  KosContext_DYN_TOP(ctx) = parent;
-  KosContext_LoadFrame(ctx, (KosDynFrame *) parent, &KosDynNode_STACK(parent),
-                       KosDynNode_NS(parent));
-  kos_dynframe_free_fast((KosDynFrame *) child);
+  eval_frame_return_retarget(ctx, child, parent);
 
   if (KosContext_StackPUSH(ctx, val) < 0)
     return EVAL_FATAL();
@@ -2810,73 +2816,6 @@ KOS_OP_INLINE int eval_region_resume_return(
   *out_state = KosDynFrame_RESUME_STATE(ft);
   KosDynFrame_RESUME_KIND(ft) = NULL;
   KosDynFrame_RESUME_STATE(ft) = NULL;
-  return 1;
-}
-
-
-/**
-   Resume-parent return predicate, for op_RETURN: the returning frame
-   is dyn_top, and its parent is a frame waiting on a resume. Sets
-   out_parent and returns 1 when it holds.
-*/
-KOS_OP_INLINE int kos_return_is_resume(
-    KosContext *ctx,
-    KosDynNode **out_parent) {
-
-  KosDynNode *child = (KosDynNode *) KosContext_FRAME(ctx);
-  KosDynNode *parent;
-
-  if (! child || KosContext_DYN_TOP(ctx) != child)
-    return 0;
-
-  parent = KosDynNode_PARENT(child);
-  if (! parent
-      || ! KosDynNode_IS_FRAME(parent)
-      || ! KosDynFrame_RESUME_KIND((KosDynFrame *) parent))
-    return 0;
-
-  *out_parent = parent;
-  return 1;
-}
-
-
-/**
-   Resume-parent return transition, once kos_return_is_resume holds:
-   with val already settled, pop the returning frame, take the resume
-   pair off the parent (cleared, as the delivery step clears it), and
-   return 1: the caller tail-calls the resume with val, which is
-   exactly what the prologue's delivery step would have done after a
-   stage-and-bounce. Returns 0 when val still needs settling and
-   nothing was touched, so the general return path applies; returns
-   -1 with PyErr set and val released when the classification itself
-   fails or the pop does.
-*/
-static int kos_return_take_resume(
-    KosContext *ctx,
-    KosDynNode *parent,
-    PyObject *val,
-    const KosResumeKind **out_resume,
-    void **out_state) {
-
-  switch (KosEval_ResultIsValue(val)) {
-    case 1:
-      break;
-    case 0:
-      return 0;  /* needs settling: the delivery step owns that */
-    default:
-      Py_DECREF(val);
-      return -1;
-  }
-
-  if (kos_dyn_pop_frame(ctx) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-
-  *out_resume = KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
-  *out_state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
-  KosDynFrame_RESUME_KIND((KosDynFrame *) parent) = NULL;
-  KosDynFrame_RESUME_STATE((KosDynFrame *) parent) = NULL;
   return 1;
 }
 

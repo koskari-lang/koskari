@@ -8,15 +8,6 @@ CALL handlers or the preserve-none trampolines with loop bodies;
 inlining all of the frame caching into `kos_return_deliver` costs the
 method kernel instructions per cycle at equal instruction counts.
 
-## Frame push and pop bookkeeping
-
-`kos_dyn_push_ready_frame` loads the caller's depth, flags, and live
-registers; `kos_eval_check_frame_room` reads the depth again;
-`kos_return_is_plain` re-derives "parent is a plain code frame" from
-five loads per return. Pass the depth once; a "plain parent" flag set
-at push and invalidated where a resume is set. 1-2%; moderate risk
-around continuations, which re-parent frames.
-
 ## Hot and cold split in handlers
 
 `op_FAST` keeps a `push %rax` / `pop %rax` pair on its hot path because
