@@ -226,14 +226,20 @@ static inline KosOpResult kos_settle_value(
     }
   }
   if (type == &KosCoroutineType) {
-    KosCode *code;
-    PyObject *ns;
+    KosDynFrame *frame;
 
-    if (KosCoroutine_TakeFresh(val, &code, &ns)) {
-      KosOpResult r = KosContext_InstallCallFrame(ctx, code, ns, 0);
-      Py_DECREF((PyObject *) code);
+    if (KosCoroutine_TakeFresh(val, &frame)) {
       Py_DECREF(val);
-      return r.kind == KOS_RES_RAISE ? r : EVAL_REPROLOGUE();
+      /* the prepared frame installs as a callee's does; refused for
+         room, it is released, which offers it back to its function's
+         cache */
+      if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx),
+                                             1) < 0)) {
+        kos_dynframe_free(frame);
+        return EVAL_RAISE();
+      }
+      kos_dyn_push_ready_frame(ctx, frame);
+      return EVAL_REPROLOGUE();
     }
   }
 

@@ -73,38 +73,58 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
 
 
 /**
-   The bound call: nothing runs and no context exists until Python
-   drives it, and a Koskari await takes the program without either.
-   code is borrowed, ns stolen, fn borrowed and held when given.
+   The bound call: a prepared root frame, held as it is until Python
+   drives it, when a context is built around it, or a Koskari await
+   takes it onto its own chain. frame is stolen (freed on failure); fn
+   borrowed, tagged on the frame when given so the frame returns to
+   fn's cache at completion.
 */
-static PyObject *coroutine_new_bound(
-    PyObject *fn,
-    KosCode *code,
-    PyObject *ns) {
+static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
 
-  KosCoroutine *coro;
+  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
 
-  if (KosCode_YIELDS(code))
-    return KosAsyncGen_NewFromCodeAndNs(code, ns);
-
-  coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
   if (! coro) {
-    Py_DECREF(ns);
+    kos_dynframe_free(frame);
     return NULL;
+  }
+
+  if (fn) {
+    Py_INCREF(fn);
+    KosDynFrame_FN(frame) = fn;
+#if KOS_TRACE_EVENTS
+    /* the root bit tells the frame's release that a coroutine root is
+       the one offered to the cache */
+    KosDynFrame_FLAGS(frame) |= KOS_FRAME_CORO_ROOT;
+#endif
   }
 
   coro->ctx = NULL;
   coro->state = KOS_CORO_NEW;
   coro->in_send = 0;
-  Py_INCREF(code);
-  coro->code = code;
-  coro->ns = ns;
+  coro->frame = frame;
   coro->param_refs = KosContext_Snapshot(kos_tls_current());
-  Py_XINCREF(fn);
-  coro->fn = fn;
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
+}
+
+
+/* A call bound into ns (stolen): yielding code is an async generator,
+   anything else a coroutine over a fresh root frame. */
+static PyObject *coroutine_new_from_call(
+    PyObject *fn,
+    KosCode *code,
+    PyObject *ns) {
+
+  KosDynFrame *frame;
+
+  if (KosCode_YIELDS(code))
+    return KosAsyncGen_NewFromCodeAndNs(code, ns);
+
+  frame = kos_dynframe_new(NULL, code, ns);  /* steals ns */
+  if (! frame)
+    return NULL;
+  return coroutine_new_bound(fn, frame);
 }
 
 
@@ -122,14 +142,19 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   }
 
   Py_INCREF(ns);
-  return coroutine_new_bound(NULL, (KosCode *) code, ns);
+  return coroutine_new_from_call(NULL, (KosCode *) code, ns);
 }
 
 
 /* A function's code is a KosCode by construction, so it is not tested
    again here. */
 PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns) {
-  return coroutine_new_bound(fn, (KosCode *) KosFunction_CODE(fn), ns);
+  return coroutine_new_from_call(fn, (KosCode *) KosFunction_CODE(fn), ns);
+}
+
+
+PyObject *KosCoroutine_NewFromFrame(PyObject *fn, KosDynFrame *frame) {
+  return coroutine_new_bound(fn, frame);
 }
 
 
@@ -137,70 +162,49 @@ static void coroutine_drop_record(KosCoroutine *coro);
 
 
 /**
-   Build the drive context from the bound call, for the first drive from
-   Python: the root frame over the program and its namespace, tagged
-   with the function that made the call so it is offered to that
-   function's frame cache at completion, and a context over that frame
-   starting from the creation-time snapshot. A no-op once built.
-   Returns -1 with an error set.
+   Build the drive context for the first drive from Python: a context
+   over the bound call's root frame, starting from the creation-time
+   snapshot. A no-op once built. Returns -1 with an error set.
 */
 static int coroutine_materialize(KosCoroutine *coro) {
 
-  KosDynFrame *frame;
+  KosDynFrame *frame = coro->frame;
   KosContext *ctx;
 
   if (coro->ctx)
     return 0;
-  if (! coro->code) {
+  if (! frame) {
     PyErr_SetString(PyExc_RuntimeError, "coroutine has no program");
     return -1;
   }
 
-  frame = kos_dynframe_new(NULL, coro->code, coro->ns);  /* steals ns */
-  coro->ns = NULL;
-  if (! frame)
-    goto fail;
-
-  /* the record's reference to the function moves to the frame; under
-     tracing the root bit tells the frame's release that a coroutine
-     root is the one offered to the cache */
-  if (coro->fn) {
-    KosDynFrame_FN(frame) = coro->fn;
-    coro->fn = NULL;
-#if KOS_TRACE_EVENTS
-    KosDynFrame_FLAGS(frame) |= KOS_FRAME_CORO_ROOT;
-#endif
-  }
-
+  coro->frame = NULL;
   ctx = KosContext_NewFromSnapshot(frame, coro->param_refs);
   coro->param_refs = NULL;
   if (! ctx) {
+    /* half a record is no program: the coroutine is finished */
     kos_dynframe_free(frame);
-    goto fail;
+    coro->state = KOS_CORO_DONE;
+    return -1;
   }
 
-  Py_CLEAR(coro->code);
   coro->ctx = ctx;
   return 0;
-
- fail:
-  /* half a record is no program: the coroutine is finished */
-  coroutine_drop_record(coro);
-  coro->state = KOS_CORO_DONE;
-  return -1;
 }
 
 
 /**
    Drop the bound call of a coroutine closed before any drive: nothing
-   has entered, so there is nothing to unwind.
+   has entered, so there is nothing to unwind. The frame's release
+   offers it to its function's cache.
 */
 static void coroutine_drop_record(KosCoroutine *coro) {
 
-  Py_CLEAR(coro->code);
-  Py_CLEAR(coro->ns);
+  KosDynFrame *frame = coro->frame;
+
+  coro->frame = NULL;
+  kos_dynframe_free(frame);
   Py_CLEAR(coro->param_refs);
-  Py_CLEAR(coro->fn);
 }
 
 
@@ -301,10 +305,9 @@ static int coroutine_traverse(
   KosCoroutine *const coro = (KosCoroutine *) self;
 
   Py_VISIT(coro->ctx);
-  Py_VISIT(coro->code);
-  Py_VISIT(coro->ns);
   Py_VISIT(coro->param_refs);
-  Py_VISIT(coro->fn);
+  if (coro->frame)
+    return kos_dynnode_traverse((KosDynNode *) coro->frame, visit, arg);
 
   return 0;
 }
@@ -849,24 +852,21 @@ PyTypeObject KosCoroutineType = {
 };
 
 
-int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
+int KosCoroutine_TakeFresh(PyObject *self, KosDynFrame **frame) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
 
   if (coro->state != KOS_CORO_NEW || coro->in_send)
     return 0;
 
-  /* the bound call itself: the program and namespace move to the
-     caller, the snapshot is dropped -- the grafted frame runs under
-     the awaiter's dynamic state */
-  if (! coro->code)
+  /* the bound call itself: the frame moves to the caller, the
+     snapshot is dropped -- the grafted frame runs under the awaiter's
+     dynamic state */
+  if (! coro->frame)
     return 0;
-  *code = coro->code;
-  coro->code = NULL;
-  *ns = coro->ns;
-  coro->ns = NULL;
+  *frame = coro->frame;
+  coro->frame = NULL;
   Py_CLEAR(coro->param_refs);
-  Py_CLEAR(coro->fn);
   coro->state = KOS_CORO_DONE;
   return 1;
 }

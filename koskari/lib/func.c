@@ -1608,10 +1608,32 @@ PyObject *KosFunction_VectorCall(
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
 
   /* Simple call: bind by slot index, skipping the general formals
-     machine -- the same classification the in-eval call core uses. */
+     machine -- the same classification the in-eval call core uses. A
+     cached frame takes the arguments into its reset namespace and
+     becomes the coroutine's root frame, as the in-eval steal arm takes
+     one; otherwise the namespace is a fresh copy and the coroutine
+     builds the frame. */
   if (! kwnames
       && nargs + 1 == KosFunction_SIMPLE_ARITY1(self)
       && KosFunction_BIND_SELF_STATE(self) != 0) {
+    KosDynFrame *cached = KosFunction_CACHED_FRAME(self);
+
+    if (cached && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(self))) {
+      PyObject *ns = KosDynFrame_NS(cached);
+
+      /* slot i is positional i (classification guarantee); a refused
+         store leaves the frame cached with its namespace reset */
+      for (Py_ssize_t i = 0; i < nargs; i++) {
+        if (unlikely(kos_ns_fast_store(ns, (size_t) i, args[i]) < 0)) {
+          KosNamespace_ResetToTemplate(ns);
+          return NULL;
+        }
+      }
+      KosFunction_StoreSelf(self, ns);
+      (void) KosFunction_PopCachedFrame(self);
+      return KosCoroutine_NewFromFrame(self, cached);
+    }
+
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
     if (! frame_ns)
       return NULL;

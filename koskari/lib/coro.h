@@ -39,13 +39,25 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns);
 /**
    Create a coroutine for a call of the KosFunction fn whose arguments
    are already bound into ns (stolen; released on failure). The
-   coroutine holds fn, and its root frame, built at the first send, is
-   tagged with fn so the frame is offered to fn's frame cache at
-   completion. Yielding code returns a new AsyncGenerator instead.
+   coroutine's root frame is built here and tagged with fn, so the
+   frame is offered to fn's frame cache at completion. Yielding code
+   returns a new AsyncGenerator instead.
 
    :return: new KosCoroutine, or NULL on error
 */
 PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns);
+
+
+/**
+   Create a coroutine for a call of the KosFunction fn whose arguments
+   are already bound into frame, a prepared root frame taken from fn's
+   frame cache (stolen; freed on failure, which offers it back). The
+   frame is tagged with fn. The caller has checked that fn's code does
+   not yield.
+
+   :return: new KosCoroutine, or NULL on error
+*/
+PyObject *KosCoroutine_NewFromFrame(PyObject *fn, KosDynFrame *frame);
 
 
 /* === KosCoroutine === */
@@ -83,16 +95,14 @@ typedef struct {
   KosCoroState state;
   int in_send;              /* re-entrancy guard */
 
-  /* The bound call an unstarted coroutine is: the program, its bound
-     namespace, the parameterize cells in force when the call was
-     made, and the function that made the call
-     (NULL for an Expression). All owned; all cleared once the frame
-     and context are built or the program is taken onto another
-     chain. */
-  KosCode *code;
-  PyObject *ns;
+  /* The bound call an unstarted coroutine is: its root frame (the
+     program, the bound namespace, and the function that made the
+     call as the frame's fn, NULL for an Expression) and the
+     parameterize cells in force when the call was made. Both owned;
+     both cleared once the context is built around the frame or the
+     frame is taken onto another chain. */
+  KosDynFrame *frame;
   PyObject *param_refs;
-  PyObject *fn;
 } KosCoroutine;
 
 
@@ -104,15 +114,16 @@ typedef struct {
 
 
 /**
-   Take a fresh coroutine's program for installation on another chain:
-   when coro has not been started, its bound code and namespace move to
-   the caller in *code and *ns, its dynamic snapshot and function are
-   dropped, and it is marked done, so a later send, throw, or close
-   from Python raises as it does after any completion. Returns 1 when
-   taken, 0 when the coroutine has already been started and keeps its
-   own drive.
+   Take a fresh coroutine's root frame for installation on another
+   chain: when coro has not been started, its prepared frame moves to
+   the caller in *frame (owned, ready for kos_dyn_push_ready_frame, its
+   fn tag kept so the frame returns to the function's cache at
+   completion), its dynamic snapshot is dropped, and it is marked done,
+   so a later send, throw, or close from Python raises as it does
+   after any completion. Returns 1 when taken, 0 when the coroutine
+   has already been started and keeps its own drive.
 */
-int KosCoroutine_TakeFresh(PyObject *coro, KosCode **code, PyObject **ns);
+int KosCoroutine_TakeFresh(PyObject *coro, KosDynFrame **frame);
 
 
 /* === Unit lifecycle === */
