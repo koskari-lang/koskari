@@ -373,7 +373,7 @@ static inline void yf_set_phase(
 #define YF_EMIT(ctx, frame, drive, delegate, element)                   \
   do {                                                                  \
     yf_set_phase((frame), (drive), (delegate));                         \
-    RESULT_RELAY((ctx), EVAL_YIELD(element));                           \
+    TAILCALL(kos_yield_deliver, (ctx), NULL, (element));                \
   } while (0)
 
 
