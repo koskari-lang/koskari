@@ -27,7 +27,10 @@
 
 /**
    Allocate a GEN node; owner borrowed, refcount for sharing. Callers:
-   generator object setup.
+   generator object setup. The namespace slot holds the empty
+   namespace for the node's life: no walk reads it, since every span
+   has the generator's frame between its head and the GEN, and the
+   fill keeps the node free of any consumer reference.
 */
 KosDynGen *kos_dyngen_new(PyObject *owner) {
   KosDynGen *gen = (KosDynGen *) kos_dynnode_alloc();
@@ -36,6 +39,7 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
 
   kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL,
                    KOS_DYN_CAP_INTERCEPTS_RAISE);
+  KosDynNode_NS(gen) = Py_NewRef(KosNamespace_Empty());
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;
   KosDynGen_REFCOUNT(gen) = 1;
@@ -319,17 +323,14 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
 
   /* The span kept its interior unwind caches across the freeze; the
      two on its bottom frame name the consumer, and are rewritten from
-     the registers just recorded. The GEN's own namespace fill is the
-     consumer's live namespace, dropped at the freeze. Done before
-     either splice path below: stamps never overwrite, so a stale link
-     here would survive the rebuild. */
+     the registers just recorded. Done before either splice path
+     below: stamps never overwrite, so a stale link here would survive
+     the rebuild. */
   if (KosDynNode_IS_FRAME(bottom))
     KosDynFrame_BACK_FRAME(bottom) =
         (KosDynNode *) KosDynGen_HOST(gen)->frame;
   if (KosDynNode_STACK(bottom))
     KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
-  if (! KosDynNode_NS(gen))
-    KosDynNode_NS(gen) = Py_XNewRef(KosDynGen_HOST(gen)->ns);
 
   /* 1. GEN's parent = current ctx's active node */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
@@ -525,8 +526,7 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
   kos_dyn_commit_dyn_top(ctx, consumer);
   kos_dynchain_free(frame, (KosDynNode *) gen);
   /* The dead GEN may outlive this drive on its owner; it holds no
-     consumer namespace or consumer link past the chain. */
-  Py_CLEAR(KosDynNode_NS((KosDynNode *) gen));
+     consumer link past the chain. */
   KosDynNode_PARENT(gen) = NULL;
   /* GEN is dead: drop the keepalive on its owner (ctx is now consistent).
      In the common case the consumer still holds the KPAG, so this is just a

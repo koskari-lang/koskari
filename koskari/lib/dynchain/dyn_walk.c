@@ -98,12 +98,6 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
     else
       KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_INSTALLS;
   }
-  /* The GEN's namespace fill is the consumer's live namespace stamped
-     at the install; the next install stamps it again from that
-     consumer's registers. Holding it across the freeze would keep the
-     consumer's frame namespace referenced from a suspended generator
-     the consumer itself may hold. */
-  Py_CLEAR(KosDynNode_NS(gen));
 
 #if VERBOSE_DEBUG
   {
