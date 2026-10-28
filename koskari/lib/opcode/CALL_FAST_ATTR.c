@@ -57,7 +57,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
      arm releases it only when it did not. */
   if (! tail) {
     KosOpResult r;
-    int taken = kos_call_cached_frame_install(
+    int taken = kos_call_simple_install(
         ctx, resolved, self_arg, self_arg != NULL, (Py_ssize_t) n, &r);
 
     if (likely(taken > 0)) {

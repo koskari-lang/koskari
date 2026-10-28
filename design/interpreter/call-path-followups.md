@@ -1,47 +1,24 @@
 # Call-path follow-ups: measured items not yet taken
 
-**Status:** a record of findings from the 2026-09 churn investigation
-that were verified but not implemented, so the measurements outlive the
-scratch files. Each entry names the evidence, the shape of the change,
-and what would gate it. The rule learned while closing the inlining
-item applies to all of them: fold helpers into the out-of-line call
-cores freely, but do not grow the RETURN and CALL handlers or the
-preserve-none trampolines with loop bodies; inlining all of the frame
-caching into `kos_return_deliver` cost the method kernel instructions
-per cycle at equal instruction counts.
-
-## Tail calls to a different function
-
-TAIL_CALL_FAST averages 95 ns against CALL_FAST at 45 plus RETURN at
-28. The non-self arm builds a namespace with
-`SimpleCallNamespaceFromVector`, increfing every argument, then
-`kos_dynframe_reset_for_tail` decrefs them in the block clear. Shape:
-steal-bind from the block into the callee's cached frame, cache the
-caller's frame, push the callee's ready frame. The self-tail in-place
-arm already runs without namespace allocation (`call_tail_inplace` is
-zero on the kernels because none self-tail-calls). Helps mutual
-recursion and state machines; 121k tail calls across the kernels, so no
-kernel will show it.
+Findings from the churn kernels that were verified but not
+implemented. Each entry names the evidence, the shape of the change,
+and what would gate it. One rule applies to all of them: fold helpers
+into the out-of-line call cores freely, but do not grow the RETURN and
+CALL handlers or the preserve-none trampolines with loop bodies;
+inlining all of the frame caching into `kos_return_deliver` costs the
+method kernel instructions per cycle at equal instruction counts.
 
 ## Installable arity field
 
 The hit test reads type, `simple_arity1`, `bind_self_state`, `code`,
 then the code's flags for yields, repeated in
-`kos_call_cached_frame_install`, `kos_call_invoke_impl`, the self path
-of `kos_call_invoke`, and `KosFunction_Install`. One field,
+`kos_call_simple_install`, `kos_call_invoke_impl`, the self path
+of `kos_call_invoke`, and `KosFunction_ReadyFrameVector`. One field,
 `install_arity1`, equal to `simple_arity1` when the code is present and
 does not yield and `bind_self_state` is resolved (1 or 2: the self
 store is the arm's, not a shape), recomputed where `bind_self_state`
 resolves. About 3-5 cycles per call. Belongs with the
 range test in [trailing-defaults.md](trailing-defaults.md).
-
-## ResetToTemplate word at a time (implemented)
-
-`KosNamespace_ResetToTemplate` runs every time a frame is cached and
-on every self-tail. It clears the locals prefix, the only slots a
-template holds raw, and copies the template's raw words back; no bit
-is tested. It is inlined where the frame is cached (commit a9cd0612),
-so its size counts there.
 
 ## Frame push and pop bookkeeping
 
@@ -64,7 +41,7 @@ holds it. FAST is 10.4G executions, FAST_STORE 3.3G.
 
 ## Dispatch prelude
 
-`KOS_THREAD_AT` stores both `es->acting_pc` and `es->pc` on every
+`KOS_THREAD_AT` stores both `ctx->acting_pc` and `ctx->pc` on every
 dispatch, about 56G stores. Store one and derive the other except where
 a handler sets it, or keep a single current-record pointer. Touches
 every `SET_PC` site. Related: the dispatch tweaks stub in
@@ -72,7 +49,7 @@ every `SET_PC` site. Related: the dispatch tweaks stub in
 
 ## Operand stack indirection
 
-Each push and pop goes `es->block`, then `*block`, a NULL test, then
+Each push and pop goes `ctx->block`, then `*block`, a NULL test, then
 `len < max`. Option A: compute the maximum stack depth at finalize and
 size the frame segment to it, as CPython does, dropping the bounds and
 NULL checks. Option B: carry the live segment pointer as a fourth

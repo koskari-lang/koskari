@@ -710,8 +710,6 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
       KosCode *code = (KosCode *) KosFunction_CODE(callable);
 
       if (! (code && KosCode_YIELDS(code))) {
-        PyObject *frame_ns;
-
         /* Discardable extents open above the frame (a tail call from
            inside let / loop / foreach) uninstall now: the reused frame
            never reaches their POP_* rows.  The window is unaffected --
@@ -761,35 +759,23 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           return kos_call_installed(ctx);
         }
 
-        if (likely(! kwnames
-                   && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
-          frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-              callable, argv, nargs);
-        } else {
-          frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+        /* Any other tail call: the callee's ready frame, bound from the
+           window while it still sits on the live frame's block, takes
+           the live frame's place on the chain. The swap frees the live
+           frame, whose block clear performs the window drop and whose
+           release offers it to its own function's cache; the ready
+           frame's tag holds the callable across that clear. */
+        {
+          KosDynFrame *ready = KosFunction_ReadyFrameVector(
               callable, argv, nargs, kwnames);
-        }
-        if (unlikely(! frame_ns))
-          goto fail;
-        if (unlikely(kos_code_fits_namespace(code, frame_ns) < 0)) {
-          Py_DECREF(frame_ns);
-          goto fail;
-        }
 
-        /* The callable is window-resident: the reset's block-clear
-           releases it.  Hold it (and thereby code) across the reset,
-           then transfer the reference into the FN tag -- the reset
-           cleared the previous one -- so a following self-tail can
-           rebind in place and release can offer it to the cache.  An owned
-           caller reference serves as the hold and transfers directly. */
-        if (! (flags & KOS_CALL_CALLABLE_OWNED))
-          Py_INCREF(callable);
-        kos_dynframe_reset_for_tail(frame);
-        (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, code,
-                                                     frame_ns);
-        KosDynFrame_FN(frame) = callable;
-        KosContext_SetEntryPC(ctx, code);
-        return kos_call_installed(ctx);
+          if (unlikely(! ready))
+            goto fail;
+          kos_dyn_swap_frame_for_tail(ctx, ready);
+          if (flags & KOS_CALL_CALLABLE_OWNED)
+            Py_DECREF(callable);
+          return kos_call_installed(ctx);
+        }
       }
     }
     goto legacy;
@@ -798,7 +784,6 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
   /* Class: exact KosFunction -- the dominant call target. */
   if (likely(Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType))) {
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
-    PyObject *frame_ns;
 
     /* A generator function call never begins evaluating its code: it
        binds the arguments and completes with the new AsyncGenerator as
@@ -821,55 +806,28 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
       if (likely((flags & KOS_CALL_ARGV_WINDOW)
                  && ! (flags & KOS_CALL_ARGV_PREPENDED)
                  && KosFunction_BIND_SELF_STATE(callable) != 0)) {
-        KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+        KosDynFrame *ready;
 
         if (unlikely(kos_eval_check_frame_room(
                 ctx, KosContext_FRAME(ctx), 1) < 0)) {
           goto fail;
         }
 
-        if (likely(cached)) {
-          KosOpResult r;
-
-          /* Cache hit: steal-bind into the cached namespace first -- on
-             failure nothing is stolen and the frame stays cached. */
-          if (unlikely(KosFormals_SimpleStealApplyBlock(
-                  KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
-            goto fail;
-          }
-          window -= (size_t) nargs;
-          r = kos_call_install_cached_frame(
-              ctx, callable, cached, flags & KOS_CALL_CALLABLE_OWNED);
-          if (window)
-            kos_stack_drop_noerr_fast(caller_slot, window);
-          return r;
-        }
-
-        frame_ns = KosFunction_SimpleCallNamespaceStealBlock(
-            callable, *caller_slot, nargs);
-        if (unlikely(! frame_ns)) {
-          /* nothing stolen; the whole window is still on the block */
+        /* The ready frame steal-binds the block tail; on failure
+           nothing is stolen and the whole window is still on the
+           block. An owned callable reference moves into the frame's
+           tag. */
+        ready = KosFunction_ReadyFrameBlock(
+            callable, flags & KOS_CALL_CALLABLE_OWNED, *caller_slot, NULL, 0,
+            nargs);
+        if (unlikely(! ready))
           goto fail;
-        }
         window -= (size_t) nargs;
-
-        /* Cache miss: install as usual, then tag the frame for the
-           cache offer at release. */
-        {
-          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
-              ctx, code, frame_ns);
-          if (unlikely(! frame))
-            goto fail;
-          if (! (flags & KOS_CALL_CALLABLE_OWNED))
-            Py_INCREF(callable);
-          KosDynFrame_FN(frame) = callable;
-          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
-          if (window)
-            kos_stack_drop_noerr_fast(caller_slot, window);
-          return kos_call_installed(ctx);
-        }
+        kos_dyn_push_ready_frame(ctx, ready);
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        return kos_call_installed(ctx);
       }
-
     }
 
     /* Every other function call (a generator function, a plain vector,
@@ -1058,14 +1016,15 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_body(
 
 
 /**
-   The frame-cache hit of a window call, taken in the handler before the
-   call core: an exact KosFunction at simple arity with a frame cached
-   on it steal-binds the block tail into that frame's namespace (slot 0
-   from self_arg when one is given), pushes the frame ready, and tags
-   it with the owned callable reference. Any other shape returns 0 with
-   nothing consumed and the handler goes on to kos_call_invoke. The
-   window is nargs wide and the callable is owned by the caller, so a
-   taken arm leaves no residue to drop.
+   The simple call of a window call, installed in the handler before
+   the call core: an exact KosFunction at simple arity on non-yielding
+   code takes its ready frame from the block tail
+   (KosFunction_ReadyFrameBlock: slot 0 from self_arg when one is
+   given, the cache head or a fresh frame) and pushes it. Any other
+   shape returns 0 with nothing consumed and the handler goes on to
+   kos_call_invoke. The window is nargs wide and the callable is owned
+   by the caller, so a taken arm leaves no residue to drop, and the
+   caller's reference moves into the frame's tag.
 
    :param self_arg: receiver for an unbound method call, or NULL; the
      arity classified is nargs + 2 with it, nargs + 1 without
@@ -1075,10 +1034,10 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_body(
    :param out: the installed result when 1 is returned
    :return: 1 when the call was installed here, 0 when the arm does not
      apply, -1 with an error set and nothing consumed when it applied
-     and failed (no frame room); the handler releases the window and
-     the callable
+     and failed (no frame room, a refused bind); the handler releases
+     the window and the callable
 */
-KOS_OP_INLINE int kos_call_cached_frame_install(
+KOS_OP_INLINE int kos_call_simple_install(
     KosContext *ctx,
     PyObject *callable,
     PyObject *self_arg,
@@ -1086,7 +1045,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
     Py_ssize_t nargs,
     KosOpResult *out) {
 
-  KosDynFrame *cached;
+  KosDynFrame *ready;
   Py_ssize_t arity1 = nargs + (self_arg ? 2 : 1);
 
   if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
@@ -1096,25 +1055,15 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
       || KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)))
     return 0;
 
-  cached = KosFunction_CACHED_FRAME(callable);
-  if (! cached)
-    return 0;
-
   if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0))
     return -1;
 
-  /* Steal-bind first: on failure nothing is stolen and the frame stays
-     cached. */
-  if (self_arg
-      ? unlikely(KosFormals_SimpleStealApplySelfBlock(
-            KosDynFrame_NS(cached), self_arg, self_owned,
-            *KosContext_BLOCK(ctx), nargs) < 0)
-      : unlikely(KosFormals_SimpleStealApplyBlock(
-            KosDynFrame_NS(cached), *KosContext_BLOCK(ctx), nargs) < 0))
+  ready = KosFunction_ReadyFrameBlock(callable, 1, *KosContext_BLOCK(ctx),
+                                      self_arg, self_owned, nargs);
+  if (unlikely(! ready))
     return -1;
-
-  /* the owned reference transfers */
-  *out = kos_call_install_cached_frame(ctx, callable, cached, 1);
+  kos_dyn_push_ready_frame(ctx, ready);
+  *out = kos_call_installed(ctx);
   return 1;
 }
 
@@ -1138,52 +1087,23 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
         Py_ssize_t nargs,
         unsigned flags) {
 
-  KosCode *code = (KosCode *) KosFunction_CODE(callable);
-  KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
-  PyObject *frame_ns;
+  KosDynFrame *ready;
 
   if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0))
     goto fail;
 
-  if (likely(cached)) {
-    KosOpResult r;
-
-    /* Cache hit: steal-bind into the cached namespace first -- on
-       failure nothing is stolen and the frame stays cached. */
-    if (unlikely(KosFormals_SimpleStealApplySelfBlock(
-            KosDynFrame_NS(cached), self_arg, 0, *caller_slot, nargs) < 0)) {
-      goto fail;
-    }
-    window -= (size_t) nargs;
-    r = kos_call_install_cached_frame(
-        ctx, callable, cached, flags & KOS_CALL_CALLABLE_OWNED);
-    if (window)
-      kos_stack_drop_noerr_fast(caller_slot, window);
-    return r;
-  }
-
-  frame_ns = KosFunction_SimpleCallNamespaceStealSelfBlock(
-      callable, self_arg, *caller_slot, nargs);
-  if (unlikely(! frame_ns)) {
-    /* nothing stolen; the whole window is still on the block */
+  /* on failure nothing is stolen; the whole window is still on the
+     block. An owned callable reference moves into the frame's tag. */
+  ready = KosFunction_ReadyFrameBlock(
+      callable, flags & KOS_CALL_CALLABLE_OWNED, *caller_slot, self_arg, 0,
+      nargs);
+  if (unlikely(! ready))
     goto fail;
-  }
   window -= (size_t) nargs;
-
-  /* Cache miss: install as usual, then tag the frame for the cache
-     offer at release. */
-  {
-    KosDynFrame *frame = kos_dyn_push_frame_unchecked(ctx, code, frame_ns);
-    if (unlikely(! frame))
-      goto fail;
-    if (! (flags & KOS_CALL_CALLABLE_OWNED))
-      Py_INCREF(callable);
-    KosDynFrame_FN(frame) = callable;
-    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
-    if (window)
-      kos_stack_drop_noerr_fast(caller_slot, window);
-    return kos_call_installed(ctx);
-  }
+  kos_dyn_push_ready_frame(ctx, ready);
+  if (window)
+    kos_stack_drop_noerr_fast(caller_slot, window);
+  return kos_call_installed(ctx);
 
 fail:
   if (window)

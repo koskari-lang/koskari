@@ -471,6 +471,33 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 }
 
 
+void kos_dyn_swap_frame_for_tail(KosContext *ctx, KosDynFrame *ready) {
+
+  KosDynFrame *live = KosContext_FRAME(ctx);
+  KosDynNode *live_node = (KosDynNode *) live;
+  KosDynNode *ready_node = (KosDynNode *) ready;
+
+  KosDynNode_PARENT(ready_node) = KosDynNode_PARENT(live_node);
+  KosDynNode_NODE_ID(ready_node) = 0;
+  KosDynFrame_FLAGS(ready) |= (KosDynFrame_FLAGS(live) & KOS_FRAME_DEMAND);
+  KosDynFrame_DEPTH(ready) = KosDynFrame_DEPTH(live);
+  KosDynFrame_BACK_FRAME(ready) = KosDynFrame_BACK_FRAME(live);
+  KosSegment_BACK(KosDynNode_STACK(ready_node)) =
+      KosSegment_BACK(KosDynNode_STACK(live_node));
+
+  KosContext_DYN_TOP(ctx) = ready_node;
+  KosContext_LoadFrame(ctx, ready, &KosDynNode_STACK(ready_node),
+                       KosDynNode_NS(ready_node));
+
+  /* unlinked and no longer named by any register, the live frame goes:
+     its block clear drops the call's window, and its release offers it
+     to its own function's cache */
+  KosDynNode_PARENT(live_node) = NULL;
+  KosDynFrame_BACK_FRAME(live) = NULL;
+  kos_dynframe_free(live);
+}
+
+
 /**
    Pop top if it is a FRAME; refresh the live frame. Does not run full uninstall
    (no extent teardown). Callers: simple frame exit when no extra nodes on top.

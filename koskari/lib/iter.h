@@ -83,6 +83,15 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen);
 */
 PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns);
 
+/**
+   An AsyncGenerator over a ready root frame (stolen; freed on
+   failure): the frame goes under a new GEN as its resting chain, its
+   fn tag kept so the frame returns to the function's cache when the
+   generator is exhausted. The one constructor a function call uses,
+   from either boundary.
+*/
+PyObject *KosAsyncGen_NewFromFrame(KosDynFrame *frame);
+
 
 /* === Unit lifecycle === */
 

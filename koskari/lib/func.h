@@ -240,11 +240,10 @@ static inline void KosFunction_StoreSelf(PyObject *self, PyObject *frame_ns) {
 
 /**
    Unlink and return the head of the function's cached frames, or NULL.
-   A steal-bind arm reads the head, binds into its namespace, and calls
-   this only once the bind succeeded, so a failed bind leaves the frame
-   cached. The general arm of KosFunction_Install calls it before its
-   bind, which can run user code, and offers the frame back through
-   KosFunction_CacheFrame when the bind fails. The install that follows
+   The ready-frame core takes the frame here before binding into it,
+   since a binder can run user code and a call of this function from
+   there must not take the frame being bound; a failed bind offers it
+   back through KosFunction_CacheFrame. The install that follows
    overwrites the returned frame's back_frame and depth.
 */
 static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
@@ -262,31 +261,6 @@ static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
 
 
 /**
-   Take the function's cached frame once the caller has bound the
-   arguments into its namespace: store the function into its own
-   slot, pop the frame from the cache, push it ready, tag it with the
-   function (a new reference unless owned hands the caller's over),
-   count the event, and report the install. The caller has asked
-   kos_eval_check_frame_room for one frame before the bind.
-*/
-KOS_OP_INLINE KosOpResult kos_call_install_cached_frame(
-    KosContext *ctx,
-    PyObject *callable,
-    KosDynFrame *cached,
-    int owned) {
-
-  KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
-  (void) KosFunction_PopCachedFrame(callable);
-  kos_dyn_push_ready_frame(ctx, cached);
-  if (! owned)
-    Py_INCREF(callable);
-  KosDynFrame_FN(cached) = callable;
-  KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-  return kos_call_installed(ctx);
-}
-
-
-/**
    Offer a released frame to the function's frame cache.
    The frame is cached only when the cache is under its cap and the
    frame is provably private: exact Namespace with refcount 1,
@@ -299,54 +273,6 @@ KOS_OP_INLINE KosOpResult kos_call_install_cached_frame(
    :return: 1 when cached (ownership taken), 0 when refused
 */
 int KosFunction_CacheFrame(PyObject *self, KosDynFrame *frame);
-
-
-/**
-   Simple-call namespace prep: copy the base namespace and bind exactly
-   nargs positionals by slot index, plus the cached self-bind.  Caller
-   must have matched fn->simple_arity == nargs (classification
-   guarantees plain positional formals; yielding code classifies too
-   and takes the generator gate).
-
-   :return: new namespace reference, or NULL with error set
-*/
-PyObject *KosFunction_SimpleCallNamespaceFromVector(
-      PyObject *self,
-      PyObject *const *args,
-      Py_ssize_t nargs);
-
-
-/**
-   Steal-binding variant of the simple-call namespace prep: the top
-   nargs references move off the block tail into the call namespace via
-   KosFormals_SimpleStealApplyBlock, retracting the block length.
-   Caller must have checked that bind_self_state is resolved; the
-   self store that follows the steal cannot fail, so the post-copy
-   path is infallible: a NULL return always means the arg span is
-   still intact on the block.
-
-   :return: new namespace reference, or NULL with error set
-*/
-PyObject *KosFunction_SimpleCallNamespaceStealBlock(
-      PyObject *self,
-      KosSegment *block,
-      Py_ssize_t nargs);
-
-
-/**
-   Self-injecting variant of KosFunction_SimpleCallNamespaceStealBlock:
-   slot 0 binds from recv (borrowed; a reference is taken) and the top
-   nargs block references steal into slots 1..nargs.  Same contract; the
-   function's simple arity is nargs + 1 and recv never lives on the
-   block, so the caller's window accounting is untouched.
-
-   :return: new namespace reference, or NULL with error set
-*/
-PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
-      PyObject *self,
-      PyObject *recv,
-      KosSegment *block,
-      Py_ssize_t nargs);
 
 
 /** Borrowed reference. Do not Py_DECREF the result. */
@@ -435,32 +361,6 @@ PyObject *KosFunction_Call(
 
 
 /**
-   Prepare the call namespace for a KosFunction with args/kwds applied.
-   Used by the evaluator to flatten Koskari calls without creating a coroutine.
-   func, args, kwds are borrowed.
-   Returns new reference to frame namespace, or NULL on error.
-*/
-PyObject *KosFunction_PrepareCallNamespace(
-      PyObject *func,
-      PyObject *args,
-      PyObject *kwds);
-
-
-/**
-   Prepare the call namespace using the vectorcall convention. args is a
-   C array of nargs positional arguments followed by keyword argument values;
-   kwnames is a tuple of keyword names (may be NULL for positional-only).
-   func, args, kwnames are borrowed.
-   Returns new reference to frame namespace, or NULL on error.
-*/
-PyObject *KosFunction_PrepareCallNamespaceFromVector(
-      PyObject *func,
-      PyObject *const *args,
-      Py_ssize_t nargs,
-      PyObject *kwnames);
-
-
-/**
    Call the function using the vectorcall convention, returning a new Coroutine.
    nargsf encodes the positional count (use PyVectorcall_NARGS to extract).
    kwnames is a tuple of keyword names corresponding to values at args[npos..].
@@ -491,6 +391,199 @@ KosOpResult KosFunction_Install(
    Return the function's code (new reference). Caller must Py_DECREF when done.
 */
 PyObject *KosFunction_GetCode(PyObject *func);
+
+
+/* === The ready frame: one bound root frame for any purpose ===
+
+   Every call of a KosFunction, wherever it comes from, needs the same
+   thing: a root frame over a namespace with the arguments bound into
+   it, tagged with the function so the frame returns to the function's
+   cache at completion. The core below is the one answer. It takes the
+   cache head when there is one, else a fresh frame over a template
+   copy; binds by the shape of the arguments; tags; and on a failed
+   bind hands the frame back through the cache offer, which resets the
+   namespace, so no caller ever sees a half-bound frame. The frame is
+   ready for kos_dyn_push_ready_frame: parent NULL, depth 1, pc at the
+   code's entry, stack empty.
+
+   What the frame becomes is the caller's last step and nothing else:
+   pushed on the chain (the call core, KosFunction_Install), held by a
+   Coroutine (the Python call entries), or parented under a new GEN
+   (KosAsyncGen_NewFromFrame) when the code yields. The core itself
+   knows nothing of contexts, chains or coroutines.
+
+   Three argument sources, one entry each so the bind folds at the
+   site:
+
+   - KosFunction_ReadyFrameBlock: the top nargs references of an
+     operand segment, stolen, with an optional receiver for slot 0.
+     The simple-call class only (plain positional formals at exact
+     arity, self-bind resolved, classified by the caller); the one
+     inline entry, since it is the evaluator's hottest call path.
+   - KosFunction_ReadyFrameVector: a borrowed vector with kwnames, the
+     vectorcall convention. The simple class binds by slot; anything
+     else through the formals machine.
+   - KosFunction_ReadyFrameTuple: a tuple and a dict, the tp_call
+     convention, through the formals machine. */
+
+
+/**
+   A fresh frame over a copy of the function's template namespace: the
+   cache miss. NULL with an error set.
+*/
+KosDynFrame *kos_function_frame_fresh(PyObject *self);
+
+
+/**
+   The frame the core starts from: the cache head, popped, else a
+   fresh frame (kos_function_frame_fresh, out of line: the hit is the
+   hot path). *cached reports which, for the event counts. NULL with
+   an error set.
+*/
+KOS_OP_INLINE KosDynFrame *kos_function_frame_take(
+    PyObject *self,
+    int *cached) {
+
+  KosDynFrame *frame = KosFunction_PopCachedFrame(self);
+
+  if (likely(frame != NULL)) {
+    *cached = 1;
+    return frame;
+  }
+  *cached = 0;
+  return kos_function_frame_fresh(self);
+}
+
+
+/**
+   A bind into the taken frame failed: the frame goes back through
+   the cache offer, which resets the namespace to the template, or is
+   freed when the cache refuses it. The frame is untagged at this
+   point, as the offer requires.
+*/
+void kos_function_frame_return(PyObject *self, KosDynFrame *frame);
+
+
+/** The bound frame's tag: the function, a new reference unless the
+    caller's owned reference moves in (self_owned). */
+static inline void kos_function_frame_tag(
+    PyObject *self,
+    int self_owned,
+    KosDynFrame *frame) {
+
+  if (! self_owned)
+    Py_INCREF(self);
+  KosDynFrame_FN(frame) = self;
+}
+
+
+/**
+   The ready frame for a simple call whose arguments sit at the tail of
+   block: the top nargs references move into fast slots, slot 0 from
+   recv when one is given (a reference taken when recv_owned is 0, the
+   caller's moved when it is 1), and the block length retracts in the
+   same step. The caller has classified the call (exact KosFunction at
+   simple arity, nargs + 1 or nargs + 2 with recv, self-bind resolved,
+   non-yielding code) and has asked kos_eval_check_frame_room when it
+   means to push. With self_owned the caller's reference to the
+   function moves into the frame's tag on success; otherwise the tag
+   takes its own. On failure nothing is stolen, recv and the caller's
+   references are untouched, and NULL is returned with the error set.
+*/
+KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameBlock(
+    PyObject *self,
+    int self_owned,
+    KosSegment *block,
+    PyObject *recv,
+    int recv_owned,
+    Py_ssize_t nargs) {
+
+  int cached;
+  KosDynFrame *frame = kos_function_frame_take(self, &cached);
+  PyObject *ns;
+
+  if (unlikely(! frame))
+    return NULL;
+  ns = KosDynFrame_NS(frame);
+  if (unlikely((recv
+                ? KosFormals_SimpleStealApplySelfBlock(ns, recv, recv_owned,
+                                                       block, nargs)
+                : KosFormals_SimpleStealApplyBlock(ns, block, nargs)) < 0)) {
+    kos_function_frame_return(self, frame);
+    return NULL;
+  }
+  KosFunction_StoreSelf(self, ns);
+  kos_function_frame_tag(self, self_owned, frame);
+  KOS_TRACE_EVENTS_INC(cached ? KOS_TE_CALL_FRAME_CACHED
+                              : KOS_TE_CALL_SIMPLE_STEAL);
+  return frame;
+}
+
+
+/**
+   The formals-machine half of KosFunction_ReadyFrameVector: frame is
+   the taken frame, bound through KosFormals_VectorApplyFast and the
+   lazy self-bind, tagged on success and returned through the cache
+   offer on failure. Out of line: the binder is the cold shape.
+*/
+KosDynFrame *kos_function_ready_frame_general(
+    PyObject *self,
+    KosDynFrame *frame,
+    int cached,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames);
+
+
+/**
+   The ready frame for a call in the vectorcall convention: args holds
+   nargs positionals then the keyword values kwnames names (NULL for
+   none), all borrowed. The simple class binds by slot here, after
+   taking a reference to each argument, since the steal binder moves
+   pointers; any other shape binds through the formals machine
+   (kos_function_ready_frame_general), which can run user code and can
+   fail midway, with the frame then returned through the cache offer.
+   NULL with the error set on failure.
+*/
+KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameVector(
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  int cached;
+  KosDynFrame *frame = kos_function_frame_take(self, &cached);
+  PyObject *ns;
+
+  if (unlikely(! frame))
+    return NULL;
+  if (kwnames
+      || nargs + 1 != KosFunction_SIMPLE_ARITY1(self)
+      || KosFunction_BIND_SELF_STATE(self) == 0)
+    return kos_function_ready_frame_general(self, frame, cached, args, nargs,
+                                            kwnames);
+
+  ns = KosDynFrame_NS(frame);
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    Py_INCREF(args[i]);
+  (void) KosFormals_SimpleStealApply(ns, args, nargs);
+  KosFunction_StoreSelf(self, ns);
+  kos_function_frame_tag(self, 0, frame);
+  KOS_TRACE_EVENTS_INC(cached ? KOS_TE_CALL_FRAME_CACHED
+                              : KOS_TE_CALL_SIMPLE_VECTOR);
+  return frame;
+}
+
+
+/**
+   The ready frame for a call in the tp_call convention: args a tuple,
+   kwds a dict or NULL, borrowed, bound through the formals machine.
+   NULL with the error set on failure.
+*/
+KosDynFrame *KosFunction_ReadyFrameTuple(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds);
 
 
 /* === Unit lifecycle === */

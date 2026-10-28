@@ -2968,19 +2968,21 @@ static PyObject *make_function_with_formals(PyObject *formals) {
 }
 
 
-/* The frame a return offers: the function's prepared call namespace
-   for one positional argument, in a fresh node. */
+/* The frame a return offers: the function's ready frame for one
+   positional argument, untagged as kos_dynframe_free leaves it before
+   the offer. */
 static KosDynFrame *make_offered_frame(PyObject *fn) {
 
   PyObject *arg = PyLong_FromLong(1);
   if (! arg)
     return NULL;
   PyObject *argv[1] = { arg };
-  PyObject *ns = KosFunction_PrepareCallNamespaceFromVector(fn, argv, 1, NULL);
+  KosDynFrame *frame = KosFunction_ReadyFrameVector(fn, argv, 1, NULL);
   Py_DECREF(arg);
-  if (! ns)
+  if (! frame)
     return NULL;
-  return kos_dynframe_new(NULL, (KosCode *) KosFunction_CODE(fn), ns);
+  Py_CLEAR(KosDynFrame_FN(frame));
+  return frame;
 }
 
 

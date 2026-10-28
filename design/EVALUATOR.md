@@ -1117,12 +1117,20 @@ not thread, so the prologue notices the new work.
 
 ### 7.3 Tail Call Behavior
 
-`KosContext_InstallCallFrame` and `KosContext_InstallNativeFrame`
-with `tail_call` tear down discardable extents above the live frame
-(`kos_dyn_teardown_to_frame`), reset it for reuse
-(`kos_dynframe_reset_for_tail`), and refill it, so a tail call costs
-no frame. A KosCallable that completes in hand keeps the caller's
-frame, and the RETURN after TAIL_CALL retires it.
+A tail call tears down the discardable extents above the live frame
+first (`kos_dyn_teardown_to_frame`). A function's self-tail at simple
+arity then rebinds the live namespace in place, no frame touched. Any
+other function tail call takes the callee's ready frame
+(`KosFunction_ReadyFrameVector`, bound from the window while it still
+sits on the live frame's block) and swaps it for the live frame
+(`kos_dyn_swap_frame_for_tail`): the ready frame takes the live
+frame's depth, parent and demand bit, and the live frame is freed,
+which drops the window with its block and offers the frame to its own
+function's cache. An Expression's tail call resets the live frame for
+reuse (`KosContext_InstallCallFrame`, `kos_dynframe_reset_for_tail`)
+and refills it, as `KosContext_InstallNativeFrame` does. A KosCallable
+that completes in hand keeps the caller's frame, and the RETURN after
+TAIL_CALL retires it.
 
 A plain-Python tail call completes with `EVAL_CONTROL_RETURNED()`; the handler's relay tails into `kos_eval_control_returned`, which runs `kos_eval_post_opcode_control_returned_after_hook`, which invokes `kos_dyn_settle_top` when a WIND or WITH is current and ends in `kos_eval_delivery_done`.
 
@@ -1225,10 +1233,10 @@ flowchart TD
         gen{"yielding code?"}
         agen["bind args, build AsyncGenerator,<br/>drop window, push it on the caller's block"]
         arity{"tail flag?"}
-        tail["teardown discardable extents;<br/>self-tail: rebind the live namespace in place<br/>else: reset the frame, new namespace"]
+        tail["teardown discardable extents;<br/>self-tail: rebind the live namespace in place<br/>else: ready frame swapped for the live one"]
         simple{"simple arity,<br/>args in the window?"}
-        steal["steal args off the block into<br/>a cached frame's namespace, or a fresh one"]
-        general["PrepareCallNamespaceFromVector;<br/>kos_dyn_push_frame"]
+        steal["ready frame: steal args off the block<br/>into the cached frame, or a fresh one"]
+        general["ready frame: the formals machine<br/>into the cached frame, or a fresh one"]
         inst["frame live at pc 0;<br/>drop window residue; FN tag holds callable"]
         coop{"eval breaker up?"}
     end
@@ -1276,11 +1284,32 @@ flowchart TD
     pending -->|yes| repro
 ```
 
+Every call of a KosFunction, from the opcodes, from Python, or for a
+generator, gets its frame from one place: the **ready frame** core in
+`func.h` (`KosFunction_ReadyFrameBlock`, `KosFunction_ReadyFrameVector`,
+`KosFunction_ReadyFrameTuple`, one entry per argument source). The core
+takes the function's cache head (`kos_function_frame_take`), else a
+fresh frame over a template copy (`kos_function_frame_fresh`); binds the
+arguments into its namespace by their shape (slot steal from the block,
+slot store from a vector, or the formals machine); stores the function
+into its own slot when the body names it (`KosFunction_StoreSelf`,
+`kos_function_bind_self_if_local`); and tags the frame with the function
+(`kos_function_frame_tag`), so the frame's release offers it back
+(`KosFunction_CacheFrame`, up to `KOS_FRAME_CACHE_MAX` per function,
+each reset to template state). A bind that fails midway hands the frame
+back through the same offer (`kos_function_frame_return`), so no caller
+sees a half-bound frame. The frame is ready for
+`kos_dyn_push_ready_frame`: parent NULL, depth 1, pc at the code's
+entry, stack empty. What it becomes is the caller's last step: pushed
+(the call core, `KosFunction_Install`), swapped for the live frame (a
+tail call), held by a `KosCoroutine` (the Python entries), or parented
+under a GEN (`KosAsyncGen_NewFromFrame`) when the code yields.
+
 | Path | What is pushed where | Threads or bounces |
 | ---- | ---------------- | ------------------ |
-| **Koskari function, plain call** | A callee frame above the caller; the caller's return address is its own saved pc. Simple-arity calls steal the arguments off the block into the namespace, reusing one of the function's cached frames when it has one: a function of plain positional formals keeps up to `KOS_FRAME_CACHE_MAX` returned frames, each reset to template state (`KosFunction_CacheFrame`), and a call at its exact arity takes the newest, steal-binds the arguments into it and, when the body names the function (the named-lambda form, `bind_self_state` 1), stores the function into its own slot (`KosFunction_StoreSelf`). A function of any other formals shape has `simple_arity1` 0 and never caches, since no arm could take the frame. Other arities build the namespace from the vector. | Threads into the callee's first instruction. Bounces only when the eval breaker is up (`kos_call_installed`, §1.6). |
-| **Koskari function, tail call** | The caller's own frame, reused: extents above it are torn down first, and a self-tail at simple arity rebinds the live namespace in place with no frame reset. | Threads, the same cooperation point. |
-| **Koskari generator function** | No frame: the arguments are bound and the `AsyncGenerator` is the call's value on the caller's block. The generator check runs ahead of every install arm. | Threads. |
+| **Koskari function, plain call** | The ready frame above the caller; the caller's return address is its own saved pc. A simple call with its arguments in the window (`kos_call_simple_install` in the CALL_FAST handlers, the window arm of `kos_call_invoke_impl`, `kos_call_invoke_self_steal` for an out-of-band receiver) steal-binds them off the block (`KosFunction_ReadyFrameBlock`); every other shape binds from the vector in `KosFunction_Install` (`KosFunction_ReadyFrameVector`). | Threads into the callee's first instruction. Bounces only when the eval breaker is up (`kos_call_installed`, §1.6). |
+| **Koskari function, tail call** | Extents above the live frame are torn down first. A self-tail at simple arity rebinds the live namespace in place; any other tail call swaps the callee's ready frame for the live frame (`kos_dyn_swap_frame_for_tail`), which goes to its own function's cache. | Threads, the same cooperation point. |
+| **Koskari generator function** | No frame on the chain: the ready frame goes under a new GEN (`KosAsyncGen_NewFromFrame`) and the `AsyncGenerator` is the call's value on the caller's block. The frame keeps its tag and returns to the cache at exhaustion. The generator check runs ahead of every install arm. | Threads. |
 | **Python callable, sync result** | The result on the caller's block. A future is pushed as a plain value; only an explicit `AWAIT` awaits it. | Threads. |
 | **Python callable, awaitable result** | The eager step runs `send(None)` once. Immediate completion pushes the value; a yield stores the iterator on the context. | Immediate completion threads. A yield is not a bounce: `koskari_eval` returns `AWAIT`, the coroutine yields to the event loop, and the revive delivers the awaited value through the Python resume slot into the prologue (§8.1). |
 | **Native KosCallable** (`partial`, `demand`, the koscallable natives) | The window is spilled so the legacy steal-first ordering holds, then `KosContext_Call` resolves the call suite and runs the install slot (§7.1, §7.2). | Threads when the install left no resume set and no goal active. Bounces when it set a resume or pushed a transfer goal, since the prologue is where those are delivered. |
@@ -1963,7 +1992,7 @@ template bottom (**`kos_chain_detach_template`**), resolve resume frame
 - Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
 - State machine: NEW → RUNNING → WAITING_PY / YIELDED → DONE
-- Created by Expression/Function call (via `KosCoroutine_NewFromCode` / `KosCoroutine_NewFromFunctionCall`); send and throw call `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
+- Created by an Expression (`KosCoroutine_NewFromCode`) or by a Function call from Python (`KosCoroutine_NewFromFrame` over the function's ready frame); the record holds the frame until the first send wraps it in a context, or a Koskari await takes it (`KosCoroutine_TakeFresh`); send and throw call `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
 
 **KosPyAsyncGen** (iter.c):
 - Wraps `KosContext` for async generator protocol

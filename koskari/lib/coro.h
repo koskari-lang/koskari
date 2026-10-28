@@ -37,23 +37,10 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns);
 
 
 /**
-   Create a coroutine for a call of the KosFunction fn whose arguments
-   are already bound into ns (stolen; released on failure). The
-   coroutine's root frame is built here and tagged with fn, so the
-   frame is offered to fn's frame cache at completion. Yielding code
-   returns a new AsyncGenerator instead.
-
-   :return: new KosCoroutine, or NULL on error
-*/
-PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns);
-
-
-/**
-   Create a coroutine for a call of the KosFunction fn whose arguments
-   are already bound into frame, a prepared root frame taken from fn's
-   frame cache (stolen; freed on failure, which offers it back). The
-   frame is tagged with fn. The caller has checked that fn's code does
-   not yield.
+   Create a coroutine for a call of the KosFunction fn over its ready
+   frame (KosFunction_ReadyFrameVector and kin; stolen, freed on
+   failure, which offers it back to fn's cache). The caller has checked
+   that fn's code does not yield.
 
    :return: new KosCoroutine, or NULL on error
 */

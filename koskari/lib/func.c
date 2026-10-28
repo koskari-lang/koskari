@@ -209,17 +209,12 @@ static KosOpResult kos_vinstall_expression(
 
 
 /**
-   Install a KosFunction call. A simple call (exact arity against plain
-   positional formals, no keywords, self-bind resolved) binds by slot
-   index, storing the function into its own slot when its body names
-   it:
-   not in tail position it takes the function's cached frame when one
-   is there, else pushes a fresh one; in tail position it refills the
-   caller's frame. Any other call binds through the general formals
-   machine: not in tail position into the function's cached frame when
-   one is there, else into a template copy. A generator function
-   completes in hand with its new AsyncGenerator. Every installed frame
-   is tagged with the function so its release can cache it.
+   Install a KosFunction call: the ready frame for the arguments
+   (KosFunction_ReadyFrameVector), then its last step. A generator
+   function never evaluates: its frame goes under a new GEN and the
+   call completes in hand with the AsyncGenerator. In tail position the
+   ready frame takes the live frame's place on the chain
+   (kos_dyn_swap_frame_for_tail); otherwise it is pushed.
 */
 KosOpResult KosFunction_Install(
     KosContext *ctx,
@@ -230,105 +225,32 @@ KosOpResult KosFunction_Install(
     int tail_call) {
 
   KosCode *code = (KosCode *) KosFunction_CODE(callable);
-  int simple = ! kwnames
-      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-      && KosFunction_BIND_SELF_STATE(callable) != 0;
-  int yields = code && KosCode_YIELDS(code);
-  PyObject *frame_ns;
-  KosOpResult r;
+  KosDynFrame *frame;
 
-  /* A generator function never takes a frame: it binds and completes
-     with the new AsyncGenerator, so the gate stands ahead of every
-     frame arm below. */
-  if (simple && ! tail_call && ! yields) {
-    KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
-
-    if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0)
-      return EVAL_RAISE();
-
-    if (cached) {
-      for (Py_ssize_t i = 0; i < nargs; i++)
-        Py_INCREF(args[i]);
-      (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
-                                         nargs);
-      return kos_call_install_cached_frame(ctx, callable, cached, 0);
-    }
-
-    frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
-                                                         nargs);
-    if (! frame_ns)
-      return EVAL_RAISE();
-    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
-    if (! kos_dyn_push_frame_unchecked(ctx, code, frame_ns))
-      return EVAL_RAISE();
-    Py_INCREF(callable);
-    KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
-    return kos_call_installed(ctx);
-  }
-
-  /* A general call binds into a cached frame's namespace, which holds
-     the template state a copy would give. The frame's code passed
-     kos_code_fits_namespace at the frame's first install, and neither
-     has changed since.
-
-     The frame leaves the cache before the bind, where the steal bind
-     above unlinks it only after: the binder can run user code (a
-     by-ref keyword formal's floor test on a dynamic ref), and a call
-     of this function from there must not take the frame being bound.
-     The binder can also fail midway (a bad keyword, a missing
-     argument) with stores already made, where the steal bind fails
-     before any store; the frame then goes back through
-     KosFunction_CacheFrame, which resets the namespace to the template
-     and links it under the cap as the cache is now, or is freed when
-     refused. */
-  if (! simple && ! tail_call && ! yields) {
-    KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
-
-    if (cached) {
-      KosFunction *fn = (KosFunction *) callable;
-      PyObject *ns = KosDynFrame_NS(cached);
-
-      if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0)
-        return EVAL_RAISE();
-
-      (void) KosFunction_PopCachedFrame(callable);
-      if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
-                                     (size_t) nargs, kwnames) < 0
-          || kos_function_bind_self_if_local(fn, ns, callable) < 0) {
-        if (! KosFunction_CacheFrame(callable, cached))
-          kos_dynframe_free(cached);
-        return EVAL_RAISE();
-      }
-
-      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
-      kos_dyn_push_ready_frame(ctx, cached);
-      Py_INCREF(callable);
-      KosDynFrame_FN(cached) = callable;
-      return kos_call_installed(ctx);
-    }
-  }
-
-  if (simple) {
-    frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
-                                                         nargs);
-  } else {
-    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-        callable, args, nargs, kwnames);
-  }
-  if (! frame_ns)
+  if (tail_call
+      && kos_dyn_teardown_to_frame(ctx, KosContext_FRAME(ctx)) < 0)
     return EVAL_RAISE();
 
-  if (yields) {
-    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
+  frame = KosFunction_ReadyFrameVector(callable, args, nargs, kwnames);
+  if (! frame)
+    return EVAL_RAISE();
+
+  if (code && KosCode_YIELDS(code)) {
+    PyObject *agen = KosAsyncGen_NewFromFrame(frame);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
 
-  r = KosContext_InstallCallFrame(ctx, code, frame_ns, tail_call);
-  if (r.kind != KOS_RES_RAISE) {
-    Py_INCREF(callable);
-    KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
+  if (tail_call) {
+    kos_dyn_swap_frame_for_tail(ctx, frame);
+    return kos_call_installed(ctx);
   }
-  return r;
+
+  if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0) {
+    kos_dynframe_free(frame);  /* tagged: the free offers it back */
+    return EVAL_RAISE();
+  }
+  kos_dyn_push_ready_frame(ctx, frame);
+  return kos_call_installed(ctx);
 }
 
 
@@ -1339,11 +1261,6 @@ static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
    base_ns), apply formals and name in caller.  Returns new reference or
    NULL on error.
 */
-static PyObject *func_obtain_call_namespace(KosFunction *fn) {
-  return KosNamespace_Copy(KosFunction_BASE_NS(fn));
-}
-
-
 /** True when the formals field is absent or an empty container. */
 static int formals_field_empty(PyObject *o) {
   if (! o || o == Py_None)
@@ -1458,40 +1375,88 @@ static int kos_function_bind_self_if_local(
 }
 
 
-/**
-   The Python call arms draw their root frame from the function's
-   frame cache, as the in-eval install does: the cached frame's
-   namespace holds the template state a copy would give, and the
-   arguments bind into it. The frame leaves the cache before the bind,
-   which can run user code (a by-ref keyword formal's floor test), and
-   a call of this function from there must not take the frame being
-   bound. A bind that fails midway hands the frame back through
-   KosFunction_CacheFrame, which resets the namespace to the template,
-   or frees it when refused. NULL when nothing is cached or the code
-   yields: a generator function takes no frame.
-*/
-static KosDynFrame *func_take_cached_frame(PyObject *self) {
+KosDynFrame *kos_function_frame_fresh(PyObject *self) {
 
-  KosDynFrame *cached = KosFunction_CACHED_FRAME(self);
+  PyObject *ns = KosNamespace_Copy(KosFunction_BASE_NS(self));
 
-  if (! cached || KosCode_YIELDS((KosCode *) KosFunction_CODE(self)))
+  if (! ns)
     return NULL;
-  return KosFunction_PopCachedFrame(self);
+  return kos_dynframe_new(NULL, (KosCode *) KosFunction_CODE(self), ns);
 }
 
 
-static void func_return_cached_frame(PyObject *self, KosDynFrame *frame) {
+void kos_function_frame_return(PyObject *self, KosDynFrame *frame) {
   if (! KosFunction_CacheFrame(self, frame))
     kos_dynframe_free(frame);
+}
+
+
+KosDynFrame *kos_function_ready_frame_general(
+    PyObject *self,
+    KosDynFrame *frame,
+    int cached,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *ns = KosDynFrame_NS(frame);
+
+  if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
+                                 (size_t) nargs, kwnames) < 0
+      || kos_function_bind_self_if_local(fn, ns, self) < 0) {
+    kos_function_frame_return(self, frame);
+    return NULL;
+  }
+  if (cached)
+    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
+
+  kos_function_frame_tag(self, 0, frame);
+  return frame;
+}
+
+
+KosDynFrame *KosFunction_ReadyFrameTuple(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
+
+  KosFunction *fn = (KosFunction *) self;
+  int cached;
+  KosDynFrame *frame = kos_function_frame_take(self, &cached);
+  PyObject *ns;
+
+  if (! frame)
+    return NULL;
+  ns = KosDynFrame_NS(frame);
+
+  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), ns, args, kwds) < 0
+      || kos_function_bind_self_if_local(fn, ns, self) < 0) {
+    kos_function_frame_return(self, frame);
+    return NULL;
+  }
+  if (cached)
+    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
+
+  kos_function_frame_tag(self, 0, frame);
+  return frame;
+}
+
+
+/* A call from Python completes with the object its ready frame
+   becomes: an AsyncGenerator over yielding code, else a Coroutine. */
+static PyObject *func_python_call_result(PyObject *self, KosDynFrame *frame) {
+
+  if (KosCode_YIELDS((KosCode *) KosFunction_CODE(self)))
+    return KosAsyncGen_NewFromFrame(frame);
+  return KosCoroutine_NewFromFrame(self, frame);
 }
 
 
 PyObject *KosFunction_Call(PyObject *self,
                            PyObject *args, PyObject *kwds) {
 
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = NULL;
-  KosDynFrame *cached;
+  KosDynFrame *frame;
 
   /* No keywords: ride the vector entry and its simple-bind arm. */
   if (! kwds) {
@@ -1501,152 +1466,10 @@ PyObject *KosFunction_Call(PyObject *self,
     return KosFunction_VectorCall(self, argv, (size_t) nargs, NULL);
   }
 
-  cached = func_take_cached_frame(self);
-  if (cached) {
-    PyObject *ns = KosDynFrame_NS(cached);
-
-    if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), ns, args, kwds) < 0
-        || kos_function_bind_self_if_local(fn, ns, self) < 0) {
-      func_return_cached_frame(self, cached);
-      return NULL;
-    }
-    return KosCoroutine_NewFromFrame(self, cached);
-  }
-
-  frame_ns = func_obtain_call_namespace(fn);
-  if (! frame_ns)
-    goto fail;
-
-  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0)
-    goto fail;
-
-  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
-    goto fail;
-
-  return KosCoroutine_NewFromFunctionCall(self, frame_ns);
-
- fail:
-  Py_XDECREF(frame_ns);
-  return NULL;
-}
-
-
-PyObject *KosFunction_PrepareCallNamespace(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwds) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = func_obtain_call_namespace(fn);
-  if (! frame_ns)
+  frame = KosFunction_ReadyFrameTuple(self, args, kwds);
+  if (! frame)
     return NULL;
-
-  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  return frame_ns;
-}
-
-
-PyObject *KosFunction_PrepareCallNamespaceFromVector(
-    PyObject *self,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = func_obtain_call_namespace(fn);
-  if (! frame_ns)
-    return NULL;
-
-  if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), frame_ns,
-                                 args, (size_t) nargs, kwnames) < 0) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  return frame_ns;
-}
-
-
-PyObject *KosFunction_SimpleCallNamespaceFromVector(
-    PyObject *self,
-    PyObject *const *args,
-    Py_ssize_t nargs) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = KosNamespace_Copy(KosFunction_BASE_NS(fn));
-  if (unlikely(! frame_ns))
-    return NULL;
-
-  /* slot i is positional i (classification guarantee) */
-  for (Py_ssize_t i = 0; i < nargs; i++) {
-    if (unlikely(kos_ns_fast_store(frame_ns, (size_t) i, args[i]) < 0)) {
-      Py_DECREF(frame_ns);
-      return NULL;
-    }
-  }
-
-  if (unlikely(fn->bind_self_state != 2)
-      && kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  return frame_ns;
-}
-
-
-PyObject *KosFunction_SimpleCallNamespaceStealBlock(
-    PyObject *self,
-    KosSegment *block,
-    Py_ssize_t nargs) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = KosNamespace_Copy(KosFunction_BASE_NS(fn));
-  if (unlikely(! frame_ns))
-    return NULL;
-
-  /* caller guarantees a resolved bind_self_state, so nothing after the
-     steal can fail: a NULL return always means the arg span is still
-     intact on the block */
-  if (unlikely(KosFormals_SimpleStealApplyBlock(frame_ns, block, nargs) < 0)) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  KosFunction_StoreSelf(self, frame_ns);
-  return frame_ns;
-}
-
-
-PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
-    PyObject *self,
-    PyObject *recv,
-    KosSegment *block,
-    Py_ssize_t nargs) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = KosNamespace_Copy(KosFunction_BASE_NS(fn));
-  if (unlikely(! frame_ns))
-    return NULL;
-
-  /* caller guarantees a resolved bind_self_state, so nothing after the
-     steal can fail: a NULL return always means the arg span is still
-     intact on the block */
-  if (unlikely(KosFormals_SimpleStealApplySelfBlock(
-          frame_ns, recv, 0, block, nargs) < 0)) {
-    Py_DECREF(frame_ns);
-    return NULL;
-  }
-  KosFunction_StoreSelf(self, frame_ns);
-  return frame_ns;
+  return func_python_call_result(self, frame);
 }
 
 
@@ -1656,70 +1479,13 @@ PyObject *KosFunction_VectorCall(
     size_t nargsf,
     PyObject *kwnames) {
 
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *frame_ns = NULL;
-  KosDynFrame *cached = func_take_cached_frame(self);
-
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
+  KosDynFrame *frame = KosFunction_ReadyFrameVector(self, args, nargs,
+                                                    kwnames);
 
-  /* Simple call: bind by slot index, skipping the general formals
-     machine -- the same classification the in-eval call core uses. A
-     cached frame takes the arguments into its reset namespace and
-     becomes the coroutine's root frame; otherwise the namespace is a
-     fresh copy and the coroutine builds the frame. */
-  if (! kwnames
-      && nargs + 1 == KosFunction_SIMPLE_ARITY1(self)
-      && KosFunction_BIND_SELF_STATE(self) != 0) {
-    if (cached) {
-      PyObject *ns = KosDynFrame_NS(cached);
-
-      /* slot i is positional i (classification guarantee) */
-      for (Py_ssize_t i = 0; i < nargs; i++) {
-        if (unlikely(kos_ns_fast_store(ns, (size_t) i, args[i]) < 0)) {
-          func_return_cached_frame(self, cached);
-          return NULL;
-        }
-      }
-      KosFunction_StoreSelf(self, ns);
-      return KosCoroutine_NewFromFrame(self, cached);
-    }
-
-    frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
-    if (! frame_ns)
-      return NULL;
-    return KosCoroutine_NewFromFunctionCall(self, frame_ns);
-  }
-
-  /* General call: the formals machine binds into the cached frame's
-     namespace, or into a fresh copy. */
-  if (cached) {
-    PyObject *ns = KosDynFrame_NS(cached);
-
-    if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
-                                   (size_t) nargs, kwnames) < 0
-        || kos_function_bind_self_if_local(fn, ns, self) < 0) {
-      func_return_cached_frame(self, cached);
-      return NULL;
-    }
-    return KosCoroutine_NewFromFrame(self, cached);
-  }
-
-  frame_ns = func_obtain_call_namespace(fn);
-  if (! frame_ns)
-    goto fail;
-
-  if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), frame_ns,
-                                 args, (size_t) nargs, kwnames) < 0)
-    goto fail;
-
-  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
-    goto fail;
-
-  return KosCoroutine_NewFromFunctionCall(self, frame_ns);
-
- fail:
-  Py_XDECREF(frame_ns);
-  return NULL;
+  if (! frame)
+    return NULL;
+  return func_python_call_result(self, frame);
 }
 
 

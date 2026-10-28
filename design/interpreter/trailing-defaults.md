@@ -40,8 +40,8 @@ cached, like any other local. A call with keyword names, or outside the
 range, keeps the general path.
 
 The hit test today compares `simple_arity1`, `bind_self_state`, and the
-code's yield flag at several sites (`kos_call_cached_frame_install`,
-`kos_call_invoke`, `KosFunction_Install`). A range test replaces the
+code's yield flag at several sites (`kos_call_simple_install`,
+`kos_call_invoke`, `KosFunction_ReadyFrameVector`). A range test replaces the
 equality; the "installable arity field" note in
 [call-path-followups.md](call-path-followups.md) folds those reads into
 one field and belongs with this change.

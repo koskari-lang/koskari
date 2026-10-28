@@ -4062,7 +4062,7 @@ popped.
 ### KOS_OP_CALL_FAST {#kos_op_call_fast}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
-- **Stack**: Same as CALL_VAR. Callable is loaded from the fast local slot (`kos_ns_fast_deref`, owned); not on stack. A non-tail row first tries the frame cache (`kos_call_cached_frame_install`); otherwise it hands the window to `kos_call_invoke` as CALL_VAR does.
+- **Stack**: Same as CALL_VAR. Callable is loaded from the fast local slot (`kos_ns_fast_deref`, owned); not on stack. A non-tail row installs a simple call from its ready frame (`kos_call_simple_install`: the block tail steal-bound into the function's cached frame, or a fresh one); otherwise it hands the window to `kos_call_invoke` as CALL_VAR does.
 - **Compiler form:** The `convert_fast` lowering of **CALL_VAR**; never emitted by a special.
 
 ---

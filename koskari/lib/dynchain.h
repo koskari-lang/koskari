@@ -1083,6 +1083,19 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 
 
 /**
+   A tail call's install: ready, a bound root frame
+   (KosFunction_ReadyFrameVector), takes the live frame's place on the
+   chain, at its depth, under its parent and with its demand bit, and
+   the live frame is freed, which clears its operand block (the call's
+   window with it) and offers it to its function's cache. The caller
+   has torn the chain down to the live frame (kos_dyn_teardown_to_frame)
+   and bound the window into ready before this. The live registers
+   name ready on return.
+*/
+void kos_dyn_swap_frame_for_tail(KosContext *ctx, KosDynFrame *ready);
+
+
+/**
    Clear a resume that will get no delivery: the kind's clear, when it
    has one, releases what the state holds, then the kind and state are
    nulled. The one rule behind free, cache, tail reset and a transfer

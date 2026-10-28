@@ -35,19 +35,14 @@ static PyObject *coro_str_close = NULL;
 /* === Run code as coroutine === */
 
 
-PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
+PyObject *KosAsyncGen_NewFromFrame(KosDynFrame *frame) {
 
+  KosCode *code = KosDynFrame_CODE(frame);
   KosDynGen *gen = kos_dyngen_new(NULL);
-  if (! gen) {
-    Py_DECREF(ns);
-    return NULL;
-  }
+  PyObject *agen;
 
-  /* the frame steals ns and releases it on failure */
-  KosDynFrame *frame = kos_dynframe_new(
-      (KosDynNode *) gen, code, ns);
-  if (! frame) {
-    kos_dyngen_free(gen);
+  if (! gen) {
+    kos_dynframe_free(frame);
     return NULL;
   }
 
@@ -55,10 +50,12 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
      the GEN's STARTED flag, clear until the bootstrap install, tells
      the first drive to enter fresh code rather than resume. No context:
      the splice from Koskari never needs one, and a drive from Python
-     creates the wrapper's at that moment. */
+     creates the wrapper's at that moment. The frame keeps its fn tag,
+     so its release at exhaustion offers it to the function's cache. */
+  KosDynNode_PARENT(frame) = (KosDynNode *) gen;
   KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
 
-  PyObject *agen = KosPyAsyncGen_New(NULL, gen);
+  agen = KosPyAsyncGen_New(NULL, gen);
   if (! agen) {
     kos_dyngen_free(gen);
     return NULL;
@@ -72,14 +69,24 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
 }
 
 
+PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
+
+  KosDynFrame *frame = kos_dynframe_new(NULL, code, ns);  /* steals ns */
+
+  if (! frame)
+    return NULL;
+  return KosAsyncGen_NewFromFrame(frame);
+}
+
+
 /**
    The bound call: a prepared root frame, held as it is until Python
    drives it, when a context is built around it, or a Koskari await
-   takes it onto its own chain. frame is stolen (freed on failure); fn
-   borrowed, held by the record and tagged on the frame when given so
-   the frame returns to fn's cache at completion. The record itself is
-   fn's parked coroutine when one is waiting, revived as a freelist
-   entry is, else a fresh allocation.
+   takes it onto its own chain. frame is stolen (freed on failure) and
+   arrives tagged with fn by the ready-frame core, so it returns to
+   fn's cache at completion; fn is borrowed and held by the record. The
+   record itself is fn's parked coroutine when one is waiting, revived
+   as a freelist entry is, else a fresh allocation.
 */
 static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
 
@@ -99,15 +106,12 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
     }
   }
 
-  if (fn) {
-    Py_INCREF(fn);
-    KosDynFrame_FN(frame) = fn;
 #if KOS_TRACE_EVENTS
-    /* the root bit tells the frame's release that a coroutine root is
-       the one offered to the cache */
+  /* the root bit tells the frame's release that a coroutine root is
+     the one offered to the cache */
+  if (fn)
     KosDynFrame_FLAGS(frame) |= KOS_FRAME_CORO_ROOT;
 #endif
-  }
 
   coro->ctx = NULL;
   coro->state = KOS_CORO_NEW;
@@ -121,25 +125,6 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
-}
-
-
-/* A call bound into ns (stolen): yielding code is an async generator,
-   anything else a coroutine over a fresh root frame. */
-static PyObject *coroutine_new_from_call(
-    PyObject *fn,
-    KosCode *code,
-    PyObject *ns) {
-
-  KosDynFrame *frame;
-
-  if (KosCode_YIELDS(code))
-    return KosAsyncGen_NewFromCodeAndNs(code, ns);
-
-  frame = kos_dynframe_new(NULL, code, ns);  /* steals ns */
-  if (! frame)
-    return NULL;
-  return coroutine_new_bound(fn, frame);
 }
 
 
@@ -157,14 +142,16 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   }
 
   Py_INCREF(ns);
-  return coroutine_new_from_call(NULL, (KosCode *) code, ns);
-}
+  if (KosCode_YIELDS((KosCode *) code))
+    return KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
 
+  {
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
 
-/* A function's code is a KosCode by construction, so it is not tested
-   again here. */
-PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns) {
-  return coroutine_new_from_call(fn, (KosCode *) KosFunction_CODE(fn), ns);
+    if (! frame)
+      return NULL;
+    return coroutine_new_bound(NULL, frame);
+  }
 }
 
 
