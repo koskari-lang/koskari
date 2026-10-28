@@ -1458,11 +1458,40 @@ static int kos_function_bind_self_if_local(
 }
 
 
+/**
+   The Python call arms draw their root frame from the function's
+   frame cache, as the in-eval install does: the cached frame's
+   namespace holds the template state a copy would give, and the
+   arguments bind into it. The frame leaves the cache before the bind,
+   which can run user code (a by-ref keyword formal's floor test), and
+   a call of this function from there must not take the frame being
+   bound. A bind that fails midway hands the frame back through
+   KosFunction_CacheFrame, which resets the namespace to the template,
+   or frees it when refused. NULL when nothing is cached or the code
+   yields: a generator function takes no frame.
+*/
+static KosDynFrame *func_take_cached_frame(PyObject *self) {
+
+  KosDynFrame *cached = KosFunction_CACHED_FRAME(self);
+
+  if (! cached || KosCode_YIELDS((KosCode *) KosFunction_CODE(self)))
+    return NULL;
+  return KosFunction_PopCachedFrame(self);
+}
+
+
+static void func_return_cached_frame(PyObject *self, KosDynFrame *frame) {
+  if (! KosFunction_CacheFrame(self, frame))
+    kos_dynframe_free(frame);
+}
+
+
 PyObject *KosFunction_Call(PyObject *self,
                            PyObject *args, PyObject *kwds) {
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
+  KosDynFrame *cached;
 
   /* No keywords: ride the vector entry and its simple-bind arm. */
   if (! kwds) {
@@ -1470,6 +1499,18 @@ PyObject *KosFunction_Call(PyObject *self,
         args ? &PyTuple_GET_ITEM(args, 0) : NULL;
     Py_ssize_t nargs = args ? PyTuple_GET_SIZE(args) : 0;
     return KosFunction_VectorCall(self, argv, (size_t) nargs, NULL);
+  }
+
+  cached = func_take_cached_frame(self);
+  if (cached) {
+    PyObject *ns = KosDynFrame_NS(cached);
+
+    if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), ns, args, kwds) < 0
+        || kos_function_bind_self_if_local(fn, ns, self) < 0) {
+      func_return_cached_frame(self, cached);
+      return NULL;
+    }
+    return KosCoroutine_NewFromFrame(self, cached);
   }
 
   frame_ns = func_obtain_call_namespace(fn);
@@ -1617,33 +1658,29 @@ PyObject *KosFunction_VectorCall(
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
+  KosDynFrame *cached = func_take_cached_frame(self);
 
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
 
   /* Simple call: bind by slot index, skipping the general formals
      machine -- the same classification the in-eval call core uses. A
      cached frame takes the arguments into its reset namespace and
-     becomes the coroutine's root frame, as the in-eval steal arm takes
-     one; otherwise the namespace is a fresh copy and the coroutine
-     builds the frame. */
+     becomes the coroutine's root frame; otherwise the namespace is a
+     fresh copy and the coroutine builds the frame. */
   if (! kwnames
       && nargs + 1 == KosFunction_SIMPLE_ARITY1(self)
       && KosFunction_BIND_SELF_STATE(self) != 0) {
-    KosDynFrame *cached = KosFunction_CACHED_FRAME(self);
-
-    if (cached && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(self))) {
+    if (cached) {
       PyObject *ns = KosDynFrame_NS(cached);
 
-      /* slot i is positional i (classification guarantee); a refused
-         store leaves the frame cached with its namespace reset */
+      /* slot i is positional i (classification guarantee) */
       for (Py_ssize_t i = 0; i < nargs; i++) {
         if (unlikely(kos_ns_fast_store(ns, (size_t) i, args[i]) < 0)) {
-          KosNamespace_ResetToTemplate(ns);
+          func_return_cached_frame(self, cached);
           return NULL;
         }
       }
       KosFunction_StoreSelf(self, ns);
-      (void) KosFunction_PopCachedFrame(self);
       return KosCoroutine_NewFromFrame(self, cached);
     }
 
@@ -1651,6 +1688,20 @@ PyObject *KosFunction_VectorCall(
     if (! frame_ns)
       return NULL;
     return KosCoroutine_NewFromFunctionCall(self, frame_ns);
+  }
+
+  /* General call: the formals machine binds into the cached frame's
+     namespace, or into a fresh copy. */
+  if (cached) {
+    PyObject *ns = KosDynFrame_NS(cached);
+
+    if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
+                                   (size_t) nargs, kwnames) < 0
+        || kos_function_bind_self_if_local(fn, ns, self) < 0) {
+      func_return_cached_frame(self, cached);
+      return NULL;
+    }
+    return KosCoroutine_NewFromFrame(self, cached);
   }
 
   frame_ns = func_obtain_call_namespace(fn);
