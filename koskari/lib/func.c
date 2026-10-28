@@ -1236,6 +1236,17 @@ static void func_drop_cached_frame(KosFunction *fn) {
 }
 
 
+/* Free the parked coroutine: untracked and cleared by its dealloc, it
+   needs only its storage released. */
+static void func_drop_dead_coro(KosFunction *fn) {
+  PyObject *coro = fn->dead_coro;
+
+  fn->dead_coro = NULL;
+  if (coro)
+    Py_TYPE(coro)->tp_free(coro);
+}
+
+
 static int function_traverse(
     PyObject *self,
     visitproc visit,
@@ -1270,6 +1281,7 @@ static int function_traverse(
 static int function_clear(PyObject *self) {
 
   func_drop_cached_frame((KosFunction *) self);
+  func_drop_dead_coro((KosFunction *) self);
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_CLEAR(KosFunction_DICT(self));
@@ -1287,6 +1299,7 @@ static void function_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
   Py_TRASHCAN_BEGIN(self, function_dealloc);
   func_drop_cached_frame((KosFunction *) self);
+  func_drop_dead_coro((KosFunction *) self);
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
@@ -1811,6 +1824,7 @@ static PyObject *function_construct(
   ((KosFunction *) self)->simple_arity1 =
       function_compute_simple_arity(code, formals) + 1;
   ((KosFunction *) self)->cached_frame = NULL;
+  ((KosFunction *) self)->dead_coro = NULL;
 
   KosFunction_DOC(self) = doc_from_code(code);
 

@@ -205,6 +205,13 @@ typedef struct {
                                 the list length in the head's depth
                                 field; capped at KOS_FRAME_CACHE_MAX.
                                 See KosFunction_CacheFrame */
+  PyObject *dead_coro;      /* one finished Coroutine of this function,
+                               parked by its dealloc: untracked, every
+                               field clear, refcount zero as on a
+                               freelist; the function's next Python
+                               call revives it (coroutine_new_bound)
+                               and the function's release frees it.
+                               NULL when none is parked */
 } KosFunction;
 
 /* Cached frames a function keeps. One serves a non-recursive function;
@@ -228,6 +235,7 @@ static inline void KosFunction_StoreSelf(PyObject *self, PyObject *frame_ns) {
 #define KosFunction_BIND_SELF_STATE(fn) (((KosFunction *) (fn))->bind_self_state)
 
 #define KosFunction_CACHED_FRAME(fn) (((KosFunction *) (fn))->cached_frame)
+#define KosFunction_DEAD_CORO(fn) (((KosFunction *) (fn))->dead_coro)
 
 
 /**

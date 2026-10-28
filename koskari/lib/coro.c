@@ -76,16 +76,27 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
    The bound call: a prepared root frame, held as it is until Python
    drives it, when a context is built around it, or a Koskari await
    takes it onto its own chain. frame is stolen (freed on failure); fn
-   borrowed, tagged on the frame when given so the frame returns to
-   fn's cache at completion.
+   borrowed, held by the record and tagged on the frame when given so
+   the frame returns to fn's cache at completion. The record itself is
+   fn's parked coroutine when one is waiting, revived as a freelist
+   entry is, else a fresh allocation.
 */
 static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
 
-  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
+  KosCoroutine *coro;
 
-  if (! coro) {
-    kos_dynframe_free(frame);
-    return NULL;
+  if (fn && KosFunction_DEAD_CORO(fn)) {
+    coro = (KosCoroutine *) KosFunction_DEAD_CORO(fn);
+    KosFunction_DEAD_CORO(fn) = NULL;
+    KOS_TRACE_FL_ALLOC("coroutine", 1);
+    _Py_NewReference((PyObject *) coro);
+  } else {
+    KOS_TRACE_FL_ALLOC("coroutine", 0);
+    coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
+    if (! coro) {
+      kos_dynframe_free(frame);
+      return NULL;
+    }
   }
 
   if (fn) {
@@ -103,6 +114,7 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
   coro->in_send = 0;
   coro->frame = frame;
   coro->param_refs = KosContext_Snapshot(kos_tls_current());
+  coro->fn = Py_XNewRef(fn);
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
@@ -293,6 +305,26 @@ static void coroutine_dealloc(PyObject *self) {
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
 
+  /* A function's coroutine is parked on the function when its slot is
+     free: untracked, every field clear, refcount zero, the next call
+     revives it. The function's own release frees a parked one, so the
+     reference dropped here may free both at once. */
+  {
+    PyObject *fn = coro->fn;
+
+    coro->fn = NULL;
+    if (fn) {
+      if (! KosFunction_DEAD_CORO(fn)) {
+        KosFunction_DEAD_CORO(fn) = self;
+        KOS_TRACE_FL_RETURN("coroutine", 0);
+        Py_DECREF(fn);
+        return;
+      }
+      KOS_TRACE_FL_RETURN("coroutine", 1);
+      Py_DECREF(fn);
+    }
+  }
+
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -306,6 +338,7 @@ static int coroutine_traverse(
 
   Py_VISIT(coro->ctx);
   Py_VISIT(coro->param_refs);
+  Py_VISIT(coro->fn);
   if (coro->frame)
     return kos_dynnode_traverse((KosDynNode *) coro->frame, visit, arg);
 
@@ -319,6 +352,7 @@ static int coroutine_clear(PyObject *self) {
 
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
+  Py_CLEAR(coro->fn);
 
   return 0;
 }

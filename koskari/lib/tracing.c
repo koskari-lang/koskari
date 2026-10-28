@@ -361,6 +361,7 @@ typedef struct {
 #define KOS_FL_NAME_CURSOR       "cursor"
 #define KOS_FL_NAME_MARK         "mark"
 #define KOS_FL_NAME_DATUM        "datum"
+#define KOS_FL_NAME_COROUTINE    "coroutine"
 
 static kos_fl_counters_t fl_dyn_node     = {0, 0, 0, 0};
 static kos_fl_counters_t fl_continuation = {0, 0, 0, 0};
@@ -371,6 +372,7 @@ static kos_fl_counters_t fl_namespace    = {0, 0, 0, 0};
 static kos_fl_counters_t fl_cursor       = {0, 0, 0, 0};
 static kos_fl_counters_t fl_mark         = {0, 0, 0, 0};
 static kos_fl_counters_t fl_datum        = {0, 0, 0, 0};
+static kos_fl_counters_t fl_coroutine    = {0, 0, 0, 0};
 
 
 static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
@@ -392,6 +394,8 @@ static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
     return &fl_mark;
   if (strcmp(name, KOS_FL_NAME_DATUM) == 0)
     return &fl_datum;
+  if (strcmp(name, KOS_FL_NAME_COROUTINE) == 0)
+    return &fl_coroutine;
   return NULL;
 }
 
@@ -433,6 +437,7 @@ void kos_trace_init(void) {
   memset(&fl_cursor, 0, sizeof(fl_cursor));
   memset(&fl_mark, 0, sizeof(fl_mark));
   memset(&fl_datum, 0, sizeof(fl_datum));
+  memset(&fl_coroutine, 0, sizeof(fl_coroutine));
 #endif
 #if KOS_TRACE_EVENTS
   memset(kos_te_counters, 0, sizeof(kos_te_counters));
@@ -520,6 +525,7 @@ static int add_fl_section(PyObject *report) {
   ADD_FL_ENTRY(KOS_FL_NAME_CURSOR, fl_cursor);
   ADD_FL_ENTRY(KOS_FL_NAME_MARK, fl_mark);
   ADD_FL_ENTRY(KOS_FL_NAME_DATUM, fl_datum);
+  ADD_FL_ENTRY(KOS_FL_NAME_COROUTINE, fl_coroutine);
 
 #undef ADD_FL_ENTRY
 
