@@ -711,6 +711,7 @@ PyObject *kos_context_param_refs(KosContext *ctx) {
     if (! table)
       return NULL;
     KosContext_PARAM_REFS(ctx) = table;
+    kos_param_tables_used = 1;
     return table;
   }
 
@@ -782,6 +783,11 @@ static PyObject *param_span_var = NULL;
    keeps the boundary entry free of the ContextVar read; after it a
    chain may be open on any task, so the var is read. */
 int kos_param_spans_used = 0;
+
+/* Set once the first context table is made in the process and never
+   cleared: a snapshot taken before that has nothing to find, so a
+   coroutine's creation skips resolving the thread for it. */
+int kos_param_tables_used = 0;
 
 
 static int param_node_traverse(PyObject *self, visitproc visit, void *arg) {

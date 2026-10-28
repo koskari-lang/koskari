@@ -110,6 +110,18 @@ PyObject *kos_context_param_refs(KosContext *ctx);
    after it a chain may be open on any task, so the var is read. */
 extern int kos_param_spans_used;
 
+/* Set once a context's own cell table has been made anywhere in the
+   process, never cleared. Every table an ambient read can see comes
+   from a span or from kos_context_param_refs, so with both flags clear
+   a snapshot is NULL without resolving the thread. */
+extern int kos_param_tables_used;
+
+
+/** Whether any parameterize cell table can exist on this process. */
+static inline int kos_param_cells_possible(void) {
+  return kos_param_spans_used || kos_param_tables_used;
+}
+
 
 /**
    The table of the innermost Python parameterize span opened inside

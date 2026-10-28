@@ -113,7 +113,10 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
   coro->state = KOS_CORO_NEW;
   coro->in_send = 0;
   coro->frame = frame;
-  coro->param_refs = KosContext_Snapshot(kos_tls_current());
+  /* the creation-time cells; with no table anywhere the snapshot is
+     NULL and the thread record is not resolved for it */
+  coro->param_refs = kos_param_cells_possible()
+      ? KosContext_Snapshot(kos_tls_current()) : NULL;
   coro->fn = Py_XNewRef(fn);
 
   PyObject_GC_Track((PyObject *) coro);
