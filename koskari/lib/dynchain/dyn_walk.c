@@ -27,7 +27,6 @@
 int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   KosDynNode *saved_parent;
   KosDynNode *ctx_active;
-  PyObject *owner;
 
   SAYF("[gen] freeze ENTER ctx=%p gen=%p dyn_top=%p (%s) gen_parent=%p\n",
        (void *) ctx, (void *) gen,
@@ -126,11 +125,8 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
   KosDynGen_HOST(gen)->top = NULL;
 
-  owner = KosDynGen_OWNER(gen);
-
-  /* Release only when owner holds the gen; standalone gen is kept for resume */
-  if (owner)
-    kos_dyngen_release(gen);
+  /* Off the chain: the owner's hold is the one that remains. */
+  KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_ON_CHAIN;
 
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p owner=%p gen=%p\n",
        (void *) KosContext_DYN_TOP(ctx),
@@ -138,7 +134,7 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosContext_FRAME(ctx),
-       (void *) owner,
+       (void *) KosDynGen_OWNER(gen),
        (void *) gen);
   return 0;
 }

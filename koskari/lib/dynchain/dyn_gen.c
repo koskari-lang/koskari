@@ -26,7 +26,7 @@
 
 
 /**
-   Allocate a GEN node; owner borrowed, refcount for sharing. Callers:
+   Allocate a GEN node; owner borrowed, the count at 1 for it. Callers:
    generator object setup. The namespace slot holds the empty
    namespace for the node's life: no walk reads it, since every span
    has the generator's frame between its head and the GEN, and the
@@ -84,27 +84,10 @@ void kos_dyngen_free(KosDynGen *gen) {
 }
 
 
-/**
-   Increment GEN refcount when chain holds an extra reference.
-*/
-void kos_dyngen_acquire(KosDynGen *gen) {
-  if (gen)
-    KosDynGen_REFCOUNT(gen)++;
-}
+void kos_dyngen_unlink(KosDynGen *gen) {
 
-
-/**
-   Decrement refcount; free at zero. Callers: freeze path, unwind exhausted.
-*/
-void kos_dyngen_release(KosDynGen *gen) {
-  if (! gen)
-    return;
-  if (KosDynGen_REFCOUNT(gen) == 0) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyngen_release: refcount underflow");
-    return;
-  }
-  KosDynGen_REFCOUNT(gen)--;
+  KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_ON_CHAIN;
+  KosDynNode_PARENT(gen) = NULL;
   if (KosDynGen_REFCOUNT(gen) == 0)
     kos_dyngen_free(gen);
 }
@@ -130,8 +113,7 @@ void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
     islots->ki_finish(owner, 1);
   PyErr_Fetch(&typ, &val, &tb);
   kos_dyn_commit_dyn_top(ctx, consumer);
-  KosDynNode_PARENT(gen) = NULL;
-  kos_dyngen_release(gen);
+  kos_dyngen_unlink(gen);
   PyErr_Restore(typ, val, tb);
 }
 
@@ -302,11 +284,11 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   if (KosDynNode_STACK(bottom))
     KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
 
-  /* 1. GEN's parent = current ctx's active node */
+  /* 1. GEN's parent = current ctx's active node; the chain holds the
+     node by that link from here to the freeze */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
-  /* 2. Incref GEN */
-  kos_dyngen_acquire(gen);
-  /* 3. Put GEN's active onto ctx's active; 4. NULL GEN's active.
+  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_ON_CHAIN;
+  /* 2. Put GEN's active onto ctx's active; 3. NULL GEN's active.
    * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
    * is already intact (e.g. FOREACH -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
@@ -423,12 +405,10 @@ int kos_dyn_gen_install_bootstrap(
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(ctx, KosDynGen_HOST(gen));
 
+  /* the chain holds the node by this link from here to the freeze */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
-  /* The GEN's chain-membership reference travels with the chain onto
-     ctx; do NOT acquire a fresh one, or the reference the resting place
-     held is orphaned and the GEN node leaks. */
   kos_dyn_commit_dyn_top(ctx, chain_head);
-  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_STARTED;
+  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_STARTED | KOS_DYNF_GEN_ON_CHAIN;
 
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);
@@ -494,8 +474,7 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
   kos_dynchain_free(frame, (KosDynNode *) gen);
   /* The dead GEN may outlive this drive on its owner; it holds no
      consumer link past the chain. */
-  KosDynNode_PARENT(gen) = NULL;
-  kos_dyngen_release(gen);
+  kos_dyngen_unlink(gen);
   return 0;
 }
 

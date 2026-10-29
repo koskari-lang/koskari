@@ -158,10 +158,9 @@ primary_success:
   }
   KosContext_EvalExit(ctx);
 
-  /* unwind_exhausted released only the install reference acquired above by
-     kos_dyn_gen_install; the owner reference held by agen still remains.
-     Release it now that the gen is consumed, matching the fallback path and
-     the non-frozen branch in the callers. */
+  /* The teardown took the node off the chain; the owner's hold is what
+     remains. Release it now that the gen is consumed, matching the
+     fallback path and the non-frozen branch in the callers. */
   kos_dyngen_release(gen);
   agen->gen = NULL;
   PyErr_Restore(fence_typ, fence_val, fence_tb);
@@ -195,9 +194,9 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
   if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
       && ! (KosDynNode_FLAGS(agen->gen) & KOS_DYNF_GEN_STARTED)) {
     /* never driven: nothing entered, nothing to unwind. The unstarted
-       frame still carries the GEN's chain-membership reference (a
-       freeze releases it; no freeze has happened), so the chain is
-       freed through the GEN node, and the owner's reference after. */
+       frame hangs under the GEN node, so the chain is freed through
+       the node, which the owner's hold keeps, and that hold is
+       released after. */
     KosDynGen *gen = (KosDynGen *) agen->gen;
     KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
     KosDynGen_ACTIVE(gen) = NULL;
@@ -248,9 +247,9 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 
   if (gen && KosDynGen_ACTIVE(gen)
       && ! (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_STARTED)) {
-    /* never driven: the unstarted frame still carries the GEN's
-       chain-membership reference, so the chain is freed through the
-       GEN node, and the owner's reference after */
+    /* never driven: the unstarted frame hangs under the GEN node, so
+       the chain is freed through the node, which the owner's hold
+       keeps, and that hold is released after */
     KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
     KosDynGen_ACTIVE(gen) = NULL;
     kos_dynchain_free(active, NULL);

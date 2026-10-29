@@ -1182,7 +1182,8 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
 
     case KOS_DYN_GEN:
-      kos_dyngen_release((KosDynGen *) node);
+      /* freed with its chain: the chain lets go, the owner may not */
+      kos_dyngen_unlink((KosDynGen *) node);
       break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);
