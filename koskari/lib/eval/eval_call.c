@@ -726,7 +726,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         if (callable == (PyObject *) KosDynFrame_FN(frame)
             && ! kwnames
             && ! (flags & KOS_CALL_ARGV_PREPENDED)
-            && nargs + 1 == KosFunction_INSTALL_ARITY1(callable)
+            && nargs == KosFunction_INSTALL_ARITY(callable)
             && ! KosDynFrame_RESUME_KIND(frame)
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
@@ -784,12 +784,12 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
   if (likely(Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType))) {
     /* Simple call with argv the block tail (window, no self-arg
        prepend) at the function's install arity, which a generator
-       function or an unresolved self-bind never has: the args
-       steal-move off the block into the ready frame's namespace, so
-       only the residue (a WINDOW_CALLABLE slot) drops after the
-       install. Any other shape takes the function's own install. */
+       function never has: the args steal-move off the block into the
+       ready frame's namespace, so only the residue (a WINDOW_CALLABLE
+       slot) drops after the install. Any other shape takes the
+       function's own install. */
     if (likely(! kwnames
-               && nargs + 1 == KosFunction_INSTALL_ARITY1(callable)
+               && nargs == KosFunction_INSTALL_ARITY(callable)
                && (flags & KOS_CALL_ARGV_WINDOW)
                && ! (flags & KOS_CALL_ARGV_PREPENDED))) {
       KosDynFrame *ready;
@@ -816,8 +816,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     }
 
     /* Every other function call (a generator function, a plain vector,
-       keywords, a non-simple arity, an unresolved self-bind, a
-       prepended receiver): the function's own install, reading argv
+       keywords, a non-simple arity, a prepended receiver): the
+       function's own install, reading argv
        in place.  An installed frame lands nothing on the caller's
        block, so the window drops after it; a generator function
        completes in hand and its AsyncGenerator lands on the block, so
@@ -1012,7 +1012,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_body(
    caller's reference moves into the frame's tag.
 
    :param self_arg: receiver for an unbound method call, or NULL; the
-     arity classified is nargs + 2 with it, nargs + 1 without
+     install arity classified is nargs + 1 with it, nargs without
    :param self_owned: 1 when the caller's reference to self_arg moves
      into slot 0 on a taken arm (the caller then does not release it),
      0 when self_arg is borrowed and the slot takes its own reference
@@ -1031,10 +1031,10 @@ KOS_OP_INLINE int kos_call_simple_install(
     KosOpResult *out) {
 
   KosDynFrame *ready;
-  Py_ssize_t arity1 = nargs + (self_arg ? 2 : 1);
+  Py_ssize_t arity = nargs + (self_arg != NULL);
 
   if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
-      || arity1 != KosFunction_INSTALL_ARITY1(callable))
+      || arity != KosFunction_INSTALL_ARITY(callable))
     return 0;
 
   if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0))
@@ -1055,8 +1055,8 @@ KOS_OP_INLINE int kos_call_simple_install(
    band (unbound method resolution): fast slot 0 binds from self_arg and
    the window's arg span steal-binds into slots 1..nargs, through the
    cached frame when one is available.  The caller has already
-   classified the callable -- exact KosFunction, simple arity nargs + 2,
-   no self-bind, no kwnames -- and the window holds the args at the
+   classified the callable -- exact KosFunction, install arity
+   nargs + 1, no kwnames -- and the window holds the args at the
    block tail.  Mirrors the two steal-bind arms of the simple-call
    branch in kos_call_invoke_impl.
 */
@@ -1132,7 +1132,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke(
       && ! (flags & KOS_CALL_TAIL)
       && ! kwnames
       && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
-      && nargs + 2 == KosFunction_INSTALL_ARITY1(callable))
+      && nargs + 1 == KosFunction_INSTALL_ARITY(callable))
     return kos_call_invoke_self_steal(ctx, caller_slot, window, callable,
                                       self_arg, nargs, flags);
 

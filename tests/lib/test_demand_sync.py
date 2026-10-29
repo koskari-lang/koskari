@@ -1649,10 +1649,10 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(d(10, 20), 31)
 
 
-    async def test_first_call_general_second_root(self):
+    async def test_first_call_runs_as_root(self):
         """
-        a fresh function's first call runs its own frame above the demand
-        root frame; the second runs as the drive's root frame
+        a fresh function's first call runs as the drive's root frame, the
+        same as every later call
         """
 
         mod = await self.load()
@@ -1664,13 +1664,13 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(d(probe, 1, 2), (1, 2))
         self.assertEqual(d(probe, 3, 4), (3, 4))
-        self.assertEqual(counts, [2, 1])
+        self.assertEqual(counts, [1, 1])
 
 
     async def test_keyword_call_runs_as_root(self):
         """
-        a call passing a keyword runs its own frame above the demand root
-        frame the first time, and as the drive's root frame the second
+        a call passing a keyword runs as the drive's root frame, first
+        call included
         """
 
         mod = await self.load()
@@ -1682,7 +1682,7 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(d(probe, 1, b=2), (1, 2))
         self.assertEqual(d(probe, 3, b=4), (3, 4))
-        self.assertEqual(counts, [2, 1])
+        self.assertEqual(counts, [1, 1])
 
 
     async def test_bad_keyword_then_good_call(self):

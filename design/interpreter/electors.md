@@ -291,7 +291,7 @@ one classification.
 
 **CALL family** (`CALL`, `CALL_NAMES`, `CALL_VAR*`, `CALL_FAST*`, the
 `TAIL_CALL*` twins). The flags word already folds per handler and the
-`KosFunction` classification (`SIMPLE_ARITY1`, `BIND_SELF_STATE`) already
+`KosFunction` classification (`INSTALL_ARITY`, `SELF_SLOT`) already
 hoists onto the callable, so the ladder for the dominant target is short.
 The win is the return path: the handler calls a `KOS_NOINLINE` body, which
 materializes a `KosOpResult`, which `RESULT_RELAY` tests before threading

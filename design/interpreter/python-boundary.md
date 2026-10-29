@@ -40,8 +40,8 @@ and `loop` are the Koskari-to-Koskari controls.
 
 ### B1. The callee is the root frame
 
-`eval_phase_entry_call` installs an exact `KosFunction` whose
-`bind_self_state` is resolved and whose code does not yield directly
+`eval_phase_entry_call` installs an exact `KosFunction` whose code does
+not yield directly
 through `KosFunction_Install`, with no frame below it, whatever the
 argument shape; `call->frame_flags` is OR-ed onto the installed frame,
 since a push inherits the demand bit only from a current frame. The
@@ -52,10 +52,9 @@ drive; a raise walks to no handler and terminates as `RAISE`.
 callee frame to the function's cache, so the cache serves boundary
 calls too.
 
-Every other callable (a bound method, an `Expression`, a `partial`), a
-generator function, and the first call of a function whose
-`bind_self_state` is unresolved, takes `KosContext_CallInto` with a
-code-less root frame and a resume. `Procedure` needs nothing more: its
+Every other callable (a bound method, an `Expression`, a `partial`) and
+a generator function takes `KosContext_CallInto` with a code-less root
+frame and a resume. `Procedure` needs nothing more: its
 vectorcall discards the result.
 
 Counter: `KOS_TE_ENTRY_ROOT_INSTALL`.
@@ -64,7 +63,7 @@ Tests: `tests/lib/test_demand_sync.py`,
 `test_demand_cached_context.py`: the return value, a raise, a function
 that names itself, recursion through Python re-entry while the wrapper
 is in use, a `call/cc` escape from the root callee, a function whose
-first call resolves `bind_self_state`.
+first call runs as the root frame like every later one.
 
 ### B2. The thread's default domain
 
@@ -216,13 +215,14 @@ One entry per argument source, so the bind folds at the site:
 - `KosFunction_ReadyFrameBlock`: the top `nargs` references of an
   operand segment, stolen, with an optional receiver for slot 0. The
   simple-call class only (plain positional formals at exact arity,
-  self-bind resolved, non-yielding code, classified by the caller);
+  non-yielding code, classified by the caller);
   inline, the evaluator's hottest call path. On failure nothing is
   stolen.
 - `KosFunction_ReadyFrameVector`: a borrowed vector with `kwnames`. The
   simple class binds by slot inline after taking a reference to each
-  argument; any other shape binds through the formals machine and the
-  lazy self-bind in `kos_function_ready_frame_general`, out of line.
+  argument; any other shape binds through the formals machine in
+  `kos_function_ready_frame_general`, out of line. Both store the
+  function into its own slot when the body names it.
 - `KosFunction_ReadyFrameTuple`: a tuple and a dict, through the
   formals machine.
 

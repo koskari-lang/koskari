@@ -189,7 +189,7 @@ PyObject *KosFormals_NamespaceSpec(
 /**
    Steal-bind positionals for the simple-call class: move args[0..nargs-1]
    into namespace fast slots 0..nargs-1.  Requires the simple-call
-   classification (KosFunction simple_arity1) and a namespace fresh from
+   classification (KosFunction simple_arity) and a namespace fresh from
    KosNamespace_Copy, so every target slot is raw positional and NULL --
    the bind is a bare pointer transfer with no refcount traffic.
 
@@ -257,7 +257,7 @@ KOS_OP_INLINE int KosFormals_SimpleStealApplyBlock(
    the same step.  self never lives on the block, so the caller's window
    accounting is untouched by the injection.  Same classification
    contract as KosFormals_SimpleStealApply against a simple arity of
-   nargs + 1.
+   nargs + 1, the receiver counted.
 
    :return: 0 on success; -1 on underrun (error set, nothing moved)
 */

@@ -7,8 +7,8 @@ would take, and the questions the discussion has to settle.
 ## The cost
 
 A function is "simple" when its formals are exact positionals with no
-defaults, star, or keywords: `KosFunction_SIMPLE_ARITY1` holds the
-arity plus one, and a call with that many arguments steal-binds the
+defaults, star, or keywords: `KosFunction_SIMPLE_ARITY` holds the
+arity (-1 when not simple), and a call with that many arguments steal-binds the
 block straight into a cached frame's namespace
 (`KosFormals_SimpleStealApplyBlock`, `kos_dyn_push_ready_frame`).
 
@@ -39,9 +39,9 @@ slots, so `KosNamespace_ResetToTemplate` clears them when the frame is
 cached, like any other local. A call with keyword names, or outside the
 range, keeps the general path.
 
-The hit test compares `nargs + 1` against `install_arity1`, the one
-field that records the simple arity of a function whose code is
-present, does not yield and whose self-bind is resolved (0 otherwise),
+The hit test compares `nargs` against `install_arity`, the one field
+that records the simple arity of a function whose code does not yield
+(-1 otherwise),
 at `kos_call_simple_install`, the window arm of `kos_call_invoke_impl`,
 the self-receiver path of `kos_call_invoke` and the tail self arm. A
 range test replaces that equality.
@@ -58,10 +58,11 @@ range test replaces that equality.
    path either excludes those formals from the classification or fills
    them through a per-slot operation table. Deciding this first decides
    how much of the classification survives.
-2. **Self binding.** `bind_self_state` resolves lazily; the self-steal
-   arm (`kos_call_invoke_self_steal`) injects the receiver into slot 0
-   and shifts the count. The range test has to apply to `nargs + 1`
-   there, as the simple test does.
+2. **Self binding.** The function's own slot, `self_slot`, comes from
+   its spec at construction; the self-steal arm
+   (`kos_call_invoke_self_steal`) injects the receiver into slot 0 and
+   shifts the count. The range test has to apply to `nargs + 1` there,
+   as the simple test does.
 3. **Where the vector lives.** On the KosFunction as a tuple, or as
    the trailing slots of the template namespace already holding the
    default values (the template is copied per call today; a cached

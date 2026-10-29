@@ -3014,10 +3014,10 @@ static int test_cache_frame_takes_every_shape(void) {
     Py_DECREF(plain_formals);
     Py_DECREF(star_formals);
 
-    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(plain), 2,
-                   "one positional formal is simple arity 1, stored as 2");
-    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(starred), 0,
-                   "star formals are not simple: stored as 0");
+    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY(plain), 1,
+                   "one positional formal is simple arity 1");
+    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY(starred), -1,
+                   "star formals are not simple: -1");
 
     KosDynFrame *frame = make_offered_frame(plain);
     TEST_ASSERT_NOT_NULL(frame, "plain frame");
@@ -3060,10 +3060,10 @@ static PyObject *create_nspec_with_self(const char *formal, const char *self) {
 
 static int test_cache_frame_takes_self_binding_function(void) {
     /*
-      A function whose body names it, the named-lambda shape, resolves
-      bind_self_state to 1 with self_slot the name's slot, and its
-      frame is cached like any simple function's: the self-bind is a
-      store the call arms make, not a shape the cache refuses.
+      A function whose body names it, the named-lambda shape, takes
+      the name's slot as self_slot from its spec, and its frame is
+      cached like any simple function's: the self-bind is a store the
+      call arms make, not a shape the cache refuses.
     */
     PyObject *nspec = create_nspec_with_self("a", "f");
     TEST_ASSERT_NOT_NULL(nspec, "nspec with a self local");
@@ -3080,28 +3080,34 @@ static int test_cache_frame_takes_self_binding_function(void) {
 
     PyObject *pos = Py_BuildValue("(s)", "a");
     TEST_ASSERT_NOT_NULL(pos, "pos tuple");
-    PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
-                                           NULL, NULL, NULL, NULL);
+    PyObject *formals_spec = KosFormalsSpec_New(pos, NULL, NULL, NULL,
+                                                NULL, NULL, NULL);
     Py_DECREF(pos);
-    TEST_ASSERT_NOT_NULL(formals, "formals");
-
-    PyObject *fn = KosFunction_NewFromFormals(code, formals, parent);
+    TEST_ASSERT_NOT_NULL(formals_spec, "formals spec");
+    PyObject *name = PyUnicode_FromString("f");
+    TEST_ASSERT_NOT_NULL(name, "function name");
+    PyObject *fspec = KosFunctionSpec_New(name, formals_spec, code);
+    Py_DECREF(name);
+    Py_DECREF(formals_spec);
     Py_DECREF(code);
-    Py_DECREF(parent);
-    Py_DECREF(formals);
-    TEST_ASSERT_NOT_NULL(fn, "function");
-    KosFunction_NAME(fn) = PyUnicode_FromString("f");
-    TEST_ASSERT_NOT_NULL(KosFunction_NAME(fn), "function name");
+    TEST_ASSERT_NOT_NULL(fspec, "function spec");
+    TEST_ASSERT_EQ(KosFunctionSpec_SELF_SLOT(fspec), 1,
+                   "the spec finds the name's slot after the formal's");
 
-    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(fn), 2,
-                   "one positional formal is simple arity 1, stored as 2");
+    PyObject *fn = KosFunction_New(fspec, NULL, parent);
+    Py_DECREF(fspec);
+    Py_DECREF(parent);
+    TEST_ASSERT_NOT_NULL(fn, "function");
+
+    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY(fn), 1,
+                   "one positional formal is simple arity 1");
+    TEST_ASSERT_EQ(KosFunction_INSTALL_ARITY(fn), 1,
+                   "a non-generator installs at its simple arity");
+    TEST_ASSERT_EQ(KosFunction_SELF_SLOT(fn), 1,
+                   "the function copies the spec's self slot");
 
     KosDynFrame *frame = make_offered_frame(fn);
     TEST_ASSERT_NOT_NULL(frame, "prepared frame");
-    TEST_ASSERT_EQ(KosFunction_BIND_SELF_STATE(fn), 1,
-                   "a body naming the function resolves to bind (1)");
-    TEST_ASSERT_EQ(((KosFunction *) fn)->self_slot, 1,
-                   "the name's slot follows the formal's");
     TEST_ASSERT(kos_ns_fast_peek(KosDynFrame_NS(frame), 1) == fn,
                 "the prepared frame holds the function in its slot");
 
@@ -3214,8 +3220,8 @@ static int test_general_call_binds_into_cached_frame(void) {
   Py_DECREF(parent);
   Py_DECREF(formals);
   TEST_ASSERT_NOT_NULL(fn, "star function");
-  TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(fn), 0,
-                 "star formals are not simple: stored as 0");
+  TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY(fn), -1,
+                 "star formals are not simple: -1");
 
   PyObject *locals = Py_BuildValue("(s)", "f");
   TEST_ASSERT_NOT_NULL(locals, "caller locals");

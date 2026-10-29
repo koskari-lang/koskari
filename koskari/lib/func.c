@@ -40,11 +40,6 @@ static Py_ssize_t function_compute_simple_arity(
 static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
                                         PyObject *parent_ns);
 
-static int kos_function_bind_self_if_local(
-    KosFunction *fn,
-    PyObject *frame_ns,
-    PyObject *self);
-
 static PyObject *function_construct(PyTypeObject *type, PyObject *code,
                                     PyObject *formals, PyObject *parent_ns);
 
@@ -442,6 +437,27 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
   Py_INCREF(code);
   KosFunctionSpec_CODE(spec) = code;
 
+  spec->self_slot = -1;
+  if (name) {
+    /* the function's own name among the code's locals: the named
+       lambda declares it, and locals head the fast names in
+       declaration order, so its index is its slot */
+    PyObject *nspec = KosCode_NSPEC(code);
+    PyObject *locals = nspec ? KosNamespaceSpec_LOCAL_SYMS(nspec) : NULL;
+
+    if (locals && locals != Py_None) {
+      int bind = PySequence_Contains(locals, name);
+      Py_ssize_t slot = bind > 0 ? PySequence_Index(locals, name) : 0;
+
+      if (bind < 0 || slot < 0) {
+        Py_DECREF(self);
+        return NULL;
+      }
+      if (bind)
+        spec->self_slot = (int) slot;
+    }
+  }
+
   return self;
 }
 
@@ -535,8 +551,8 @@ function_get_name_dunder(PyObject *self, void *closure) {
 
 /*
   __name__ and __qualname__ writes land in metadata override slots, never
-  in `name`: self-binding keys off `name` at call time (see
-  kos_function_bind_self_if_local), so the semantic name stays fixed
+  in `name`: self-binding keys off `name` through the spec's self_slot
+  (see KosFunction_StoreSelf), so the semantic name stays fixed
   after construction while wraps-style renames remain visible to
   introspection.
 */
@@ -1204,7 +1220,7 @@ static int function_clear(PyObject *self) {
 
   func_drop_cached_frame((KosFunction *) self);
   func_drop_dead_record((KosFunction *) self);
-  ((KosFunction *) self)->install_arity1 = 0;
+  ((KosFunction *) self)->install_arity = -1;
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_CLEAR(KosFunction_DICT(self));
@@ -1223,7 +1239,7 @@ static void function_dealloc(PyObject *self) {
   Py_TRASHCAN_BEGIN(self, function_dealloc);
   func_drop_cached_frame((KosFunction *) self);
   func_drop_dead_record((KosFunction *) self);
-  ((KosFunction *) self)->install_arity1 = 0;
+  ((KosFunction *) self)->install_arity = -1;
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
@@ -1322,66 +1338,6 @@ static Py_ssize_t function_compute_simple_arity(
 }
 
 
-/**
-  Stores self-reference in frame_ns if the function's name is listed in the
-  Code's local_syms.
-
-  The membership test is static per function (name and code are fixed after
-  construction), so the verdict is computed once on the first call and
-  cached in bind_self_state; every later call is a flag test.
-
-  :param fn: KosFunction instance
-  :param frame_ns: KosNamespace instance
-  :param self: self-reference to bind :return: 0 if self-bind not applied, 1 if applied, -1 on error
-*/
-static int kos_function_bind_self_if_local(
-    KosFunction *fn,
-    PyObject *frame_ns,
-    PyObject *self) {
-
-  if (likely(fn->bind_self_state == 2))
-    return 0;
-
-  if (unlikely(fn->bind_self_state == 0)) {
-    PyObject *name = KosFunction_NAME(fn);
-    PyObject *code;
-    PyObject *nspec;
-    PyObject *locals;
-    int bind = 0;
-
-    code = name ? KosFunction_CODE(fn) : NULL;
-    nspec = code ? KosCode_NSPEC(code) : NULL;
-    locals = nspec ? KosNamespaceSpec_LOCAL_SYMS(nspec) : NULL;
-
-    if (locals && locals != Py_None) {
-      bind = PySequence_Contains(locals, name);
-      if (bind < 0)
-        return -1;  /* leave unresolved; retried on the next call */
-    }
-
-    if (bind) {
-      /* locals head the fast names in declaration order, so the
-         name's index among them is its slot */
-      Py_ssize_t slot = PySequence_Index(locals, name);
-      if (slot < 0)
-        return -1;
-      fn->self_slot = slot;
-    }
-    fn->bind_self_state = bind ? 1 : 2;
-    /* resolved: a call may install, unless the function is a
-       generator; at the simple arity when the formals are simple, at
-       none (-1) otherwise */
-    if (fn->code && ! KosCode_YIELDS((KosCode *) fn->code))
-      fn->install_arity1 = fn->simple_arity1 ? fn->simple_arity1 : -1;
-    if (! bind)
-      return 0;
-  }
-
-  KosFunction_StoreSelf(self, frame_ns);
-  return 1;
-}
-
-
 KosDynFrame *kos_function_frame_fresh(PyObject *self) {
 
   PyObject *ns = KosNamespace_Copy(KosFunction_BASE_NS(self));
@@ -1410,11 +1366,11 @@ KosDynFrame *kos_function_ready_frame_general(
   PyObject *ns = KosDynFrame_NS(frame);
 
   if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
-                                 (size_t) nargs, kwnames) < 0
-      || kos_function_bind_self_if_local(fn, ns, self) < 0) {
+                                 (size_t) nargs, kwnames) < 0) {
     kos_function_frame_return(self, frame);
     return NULL;
   }
+  KosFunction_StoreSelf(self, ns);
   if (cached)
     KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
 
@@ -1437,11 +1393,11 @@ KosDynFrame *KosFunction_ReadyFrameTuple(
     return NULL;
   ns = KosDynFrame_NS(frame);
 
-  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), ns, args, kwds) < 0
-      || kos_function_bind_self_if_local(fn, ns, self) < 0) {
+  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), ns, args, kwds) < 0) {
     kos_function_frame_return(self, frame);
     return NULL;
   }
+  KosFunction_StoreSelf(self, ns);
   if (cached)
     KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
 
@@ -1643,11 +1599,12 @@ static PyObject *function_construct(
   ((KosFunction *) self)->creation_annotations = NULL;
   ((KosFunction *) self)->annotations_cache = NULL;
   ((KosFunction *) self)->annotations_need_resolve = 0;
-  ((KosFunction *) self)->bind_self_state = 0;
-  ((KosFunction *) self)->self_slot = -1;
-  ((KosFunction *) self)->simple_arity1 =
-      function_compute_simple_arity(code, formals) + 1;
-  ((KosFunction *) self)->install_arity1 = 0;  /* until the self-bind resolves */
+  ((KosFunction *) self)->simple_arity =
+      (int) function_compute_simple_arity(code, formals);
+  ((KosFunction *) self)->install_arity =
+      KosCode_YIELDS((KosCode *) code)
+          ? -1 : ((KosFunction *) self)->simple_arity;
+  ((KosFunction *) self)->self_slot = -1;  /* KosFunction_New copies the spec's */
   ((KosFunction *) self)->cached_frame = NULL;
   ((KosFunction *) self)->dead_record = NULL;
 
@@ -1693,6 +1650,7 @@ PyObject *KosFunction_New(
       KosFunction_NAME(fn) = spec_name;
       Py_INCREF(spec_name);
     }
+    ((KosFunction *) fn)->self_slot = KosFunctionSpec_SELF_SLOT(func_spec);
   }
   return fn;
 }

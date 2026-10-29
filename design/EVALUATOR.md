@@ -1292,8 +1292,8 @@ takes the function's cache head (`kos_function_frame_take`), else a
 fresh frame over a template copy (`kos_function_frame_fresh`); binds the
 arguments into its namespace by their shape (slot steal from the block,
 slot store from a vector, or the formals machine); stores the function
-into its own slot when the body names it (`KosFunction_StoreSelf`,
-`kos_function_bind_self_if_local`); and tags the frame with the function
+into its own slot when the body names it (`KosFunction_StoreSelf`, the
+slot known from the spec at construction); and tags the frame with the function
 (`kos_function_frame_tag`), so the frame's release offers it back
 (`KosFunction_CacheFrame`, up to `KOS_FRAME_CACHE_MAX` per function,
 each reset to template state). A bind that fails midway hands the frame

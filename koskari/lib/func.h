@@ -91,6 +91,13 @@ typedef struct KosFunctionSpec {
   PyObject *name;           /* PyUnicode or NULL */
   PyObject *formals_spec;   /* KosFormalsSpec */
   PyObject *code;           /* KosCode */
+  int self_slot;            /* fast slot of name among the code's locals,
+                               or -1 when name is NULL or not a local.
+                               Only the named-lambda form declares the
+                               function's own name as a body local;
+                               define and function refer to the outer
+                               binding. Computed once here, since every
+                               function built from this spec shares it */
 } KosFunctionSpec;
 
 
@@ -108,6 +115,9 @@ PyObject *KosFunctionSpec_New(
 
 #define KosFunctionSpec_CODE(fspec)            \
   (((KosFunctionSpec *) (fspec))->code)
+
+#define KosFunctionSpec_SELF_SLOT(fspec)       \
+  (((KosFunctionSpec *) (fspec))->self_slot)
 
 #define KosFunctionSpec_CheckExact(obj)                \
   ((obj) && ((obj)->ob_type == &KosFunctionSpecType))
@@ -176,37 +186,23 @@ typedef struct {
   PyObject *qualname_override; /* __qualname__ metadata write, or NULL */
   PyObject *module_override; /* __module__ metadata write, or NULL */
   int annotations_need_resolve; /* creation dict holds str forward refs */
-  int bind_self_state;      /* self-bind on call: 0 unresolved (lazily
-                               computed on first call; name is fixed after
-                               construction), 1 bind, 2 no-bind. Only the
-                               named-lambda form declares the function's
-                               own name as a body local, so 1 is that
-                               form recursing through its name; define
-                               and function refer to the outer binding
-                               and resolve to 2 */
-  Py_ssize_t self_slot;     /* fast slot of the function's own name in its
-                               frame, set when bind_self_state resolves to
-                               1 (locals head the fast names in declaration
-                               order); -1 otherwise. A call arm stores the
-                               function there after binding the arguments,
-                               see KosFunction_StoreSelf */
-  Py_ssize_t install_arity1; /* whether a call installs: 0 until the
-                                self-bind resolves, and for yielding
-                                code, which no call's nargs + 1 matches
-                                and the entry call reads as "not
-                                installable"; else simple_arity1 when
-                                the formals are simple, so a call at
-                                that arity takes the simple install
-                                arms; else -1, installable at no simple
-                                arity. The one fact the call arms test;
-                                written where bind_self_state resolves */
-  Py_ssize_t simple_arity1; /* exact positional arity PLUS ONE for the
-                               simple-call fast path (plain positional
-                               formals, no defaults/star/kwd/by-refs);
-                               a property of the formals alone, so the
-                               call arms test the code for yields
-                               themselves; 0 = not simple, so zeroed
-                               construction is fail-safe */
+  int simple_arity;         /* count of plain positional formals, or -1
+                               when a positional-only, keyword-only,
+                               star or by-ref formal makes the formals
+                               not simple. Defaults do not matter: the
+                               simple paths bind a call passing exactly
+                               this many arguments by slot, and no
+                               default is consulted at full supply */
+  int install_arity;        /* simple_arity, or -1 for a generator
+                               function, whose call creates a record
+                               instead of installing a frame. The one
+                               value the install arms compare nargs
+                               against; -1 matches no call */
+  int self_slot;            /* fast slot of the function's own name in
+                               its frame, or -1 when the body does not
+                               name it (locals head the fast names in
+                               declaration order). Copied from the
+                               spec; see KosFunction_StoreSelf */
   KosDynFrame *cached_frame; /* head of the cached prepared frames
                                 (code + reset ns + cleared stack, fn
                                 NULL) for the next calls; owned;
@@ -232,20 +228,19 @@ typedef struct {
    this depth. */
 #define KOS_FRAME_CACHE_MAX 8
 
-#define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
-#define KosFunction_INSTALL_ARITY1(fn) (((KosFunction *) (fn))->install_arity1)
+#define KosFunction_SIMPLE_ARITY(fn) (((KosFunction *) (fn))->simple_arity)
+#define KosFunction_INSTALL_ARITY(fn) (((KosFunction *) (fn))->install_arity)
+#define KosFunction_SELF_SLOT(fn) (((KosFunction *) (fn))->self_slot)
 
 /* Bind the function into its own frame when its body names it: a
    store into self_slot, a raw local, which cannot fail. A no-op for
-   every other function, so every positional call arm runs it after
-   binding the arguments; the arm requires only a resolved state. */
+   every other function, so every call path runs it after binding the
+   arguments. */
 static inline void KosFunction_StoreSelf(PyObject *self, PyObject *frame_ns) {
   KosFunction *fn = (KosFunction *) self;
-  if (fn->bind_self_state == 1)
+  if (fn->self_slot >= 0)
     (void) kos_ns_fast_store(frame_ns, (size_t) fn->self_slot, self);
 }
-
-#define KosFunction_BIND_SELF_STATE(fn) (((KosFunction *) (fn))->bind_self_state)
 
 #define KosFunction_CACHED_FRAME(fn) (((KosFunction *) (fn))->cached_frame)
 #define KosFunction_DEAD_RECORD(fn) (((KosFunction *) (fn))->dead_record)
@@ -431,7 +426,7 @@ PyObject *KosFunction_GetCode(PyObject *func);
    - KosFunction_ReadyFrameBlock: the top nargs references of an
      operand segment, stolen, with an optional receiver for slot 0.
      The simple-call class only (plain positional formals at exact
-     arity, self-bind resolved, classified by the caller); the one
+     arity, classified by the caller); the one
      inline entry, since it is the evaluator's hottest call path.
    - KosFunction_ReadyFrameVector: a borrowed vector with kwnames, the
      vectorcall convention. The simple class binds by slot; anything
@@ -495,9 +490,9 @@ static inline void kos_function_frame_tag(
    block: the top nargs references move into fast slots, slot 0 from
    recv when one is given (a reference taken when recv_owned is 0, the
    caller's moved when it is 1), and the block length retracts in the
-   same step. The caller has classified the call (exact KosFunction at
-   simple arity, nargs + 1 or nargs + 2 with recv, self-bind resolved,
-   non-yielding code) and has asked kos_eval_check_frame_room when it
+   same step. The caller has classified the call (exact KosFunction
+   with install arity nargs, or nargs + 1 with recv, which excludes a
+   generator function) and has asked kos_eval_check_frame_room when it
    means to push. With self_owned the caller's reference to the
    function moves into the frame's tag on success; otherwise the tag
    takes its own. On failure nothing is stolen, recv and the caller's
@@ -536,7 +531,7 @@ KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameBlock(
 /**
    The formals-machine half of KosFunction_ReadyFrameVector: frame is
    the taken frame, bound through KosFormals_VectorApplyFast and the
-   lazy self-bind, tagged on success and returned through the cache
+   self store, tagged on success and returned through the cache
    offer on failure. Out of line: the binder is the cold shape.
 */
 KosDynFrame *kos_function_ready_frame_general(
@@ -570,9 +565,7 @@ KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameVector(
 
   if (unlikely(! frame))
     return NULL;
-  if (kwnames
-      || nargs + 1 != KosFunction_SIMPLE_ARITY1(self)
-      || KosFunction_BIND_SELF_STATE(self) == 0)
+  if (kwnames || nargs != KosFunction_SIMPLE_ARITY(self))
     return kos_function_ready_frame_general(self, frame, cached, args, nargs,
                                             kwnames);
 

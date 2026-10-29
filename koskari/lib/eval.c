@@ -2219,11 +2219,10 @@ static KosOpResult entry_revive_await(
 /**
    Phase 0: the entry call a Python-boundary entry recorded on a fresh
    context. Takes it off the context and installs it on this context.
-   A call of a non-yielding exact KosFunction whose self-bind is
-   resolved installs the callee as the root frame, carrying
-   frame_flags, and its return ends the drive; the install binds any
-   argument shape, keywords included. Any other call (another
-   callable, a function's first call, a generator) is made through
+   A call of a non-yielding exact KosFunction installs the callee as
+   the root frame, carrying frame_flags, and its return ends the
+   drive; the install binds any argument shape, keywords included. Any
+   other call (another callable, a generator) is made through
    KosContext_CallInto from a code-less root frame carrying resume and
    frame_flags, taken from frame_cache when the slot holds one; the
    slot is also the resume's state, so the resume returns the frame to
@@ -2243,12 +2242,10 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
 
   KosContext_ENTRY_CALL(ctx) = NULL;
 
-  /* an installable function of any formals: resolved self-bind, code
-     present and non-yielding, the facts a non-zero install_arity1
-     records; any shape binds here, so the arity itself, simple or -1,
-     is not compared */
+  /* a non-generator function of any formals: the install binds any
+     shape, so the arity is not compared, only the code's yield flag */
   if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
-      && KosFunction_INSTALL_ARITY1(callable) != 0) {
+      && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))) {
 
     /* The chain is empty, so the install inherits no demand bit; the
        recorded flags go onto the root frame it pushed. */
