@@ -69,38 +69,37 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
 
   /* An INPLACE delim inside a captured segment carries the shift
      handler's remainder: the stashed span is cloned with it, so a
-     landing of the template can restitch and run that remainder, and a
-     handler snapshot the delim owns (KOS_DYNF_HOLDS_RETURN_FRAME) is
-     cloned and owned by the clone in turn. A borrowed return frame is
-     copied as is; kos_dyn_remap_delim_frames points it at the frame's
-     clone when the segment holds one. */
+     landing of the template can restitch and run that remainder. The
+     return frame is borrowed: when it is a frame of the stashed span
+     (the invoking helper, or the handler snapshot at the span's
+     bottom) the clone takes that frame's clone, found by position;
+     otherwise it is copied as is and kos_dyn_remap_delim_frames points
+     it at the frame's clone when the enclosing segment holds one. */
   KosDynDelim_MODE(clone) = KosDynDelim_MODE(delim);
   KosDynDelim_RETURN_CHAIN(clone) = NULL;
   KosDynDelim_RETURN_PC(clone) = KosDynDelim_RETURN_PC(delim);
   KosDynDelim_RETURN_FRAME_NODE(clone) = KosDynDelim_RETURN_FRAME_NODE(delim);
-  if (KosDynDelim_MODE(delim) == KOS_DYN_DELIM_MODE_INPLACE) {
-    if (KosDynDelim_RETURN_CHAIN(delim)) {
-      KosDynDelim_RETURN_CHAIN(clone) =
-          kos_dyn_clone_segment(KosDynDelim_RETURN_CHAIN(delim), NULL);
-      if (! KosDynDelim_RETURN_CHAIN(clone)) {
-        KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
-        KosDynDelim_RETURN_FRAME_NODE(clone) = NULL;
-        kos_dyndelim_free(clone);
-        return NULL;
+  if (KosDynDelim_MODE(delim) == KOS_DYN_DELIM_MODE_INPLACE
+      && KosDynDelim_RETURN_CHAIN(delim)) {
+    KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE(delim);
+    KosDynNode *src;
+    KosDynNode *dst;
+
+    KosDynDelim_RETURN_CHAIN(clone) =
+        kos_dyn_clone_segment(KosDynDelim_RETURN_CHAIN(delim), NULL);
+    if (! KosDynDelim_RETURN_CHAIN(clone)) {
+      kos_dyndelim_free(clone);
+      return NULL;
+    }
+    for (src = KosDynDelim_RETURN_CHAIN(delim),
+         dst = KosDynDelim_RETURN_CHAIN(clone);
+         src && dst;
+         src = KosDynNode_PARENT(src), dst = KosDynNode_PARENT(dst)) {
+      if (src == want) {
+        KosDynDelim_RETURN_FRAME_NODE(clone) = dst;
+        break;
       }
     }
-    if (KosDynNode_FLAGS(clone) & KOS_DYNF_HOLDS_RETURN_FRAME) {
-      KosDynFrame *snapshot = kos_dynframe_clone(KosDynDelim_RETURN_FRAME(delim));
-      if (! snapshot) {
-        KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
-        KosDynDelim_RETURN_FRAME_NODE(clone) = NULL;
-        kos_dyndelim_free(clone);
-        return NULL;
-      }
-      KosDynDelim_RETURN_FRAME_NODE(clone) = (KosDynNode *) snapshot;
-    }
-  } else {
-    KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
   }
   /* RETURN_NODE is a self-reference meaning "unwind to me", so copying it
      verbatim leaves the clone pointing at the original -- a pointer out of
@@ -140,9 +139,9 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
 
 
 /**
-   Free DELIM payload and node. A held yoyo return-address snapshot
-   (KOS_DYNF_HOLDS_RETURN_FRAME) dies with the delim: teardown without a
-   restitch means no chain ever took ownership of it.
+   Free DELIM payload and node. The stashed span dies with an INPLACE
+   delim, a handler snapshot at its bottom included: teardown without a
+   restitch means no chain ever took it.
 */
 void kos_dyndelim_free(KosDynDelim *delim) {
   if (! delim)
@@ -151,12 +150,6 @@ void kos_dyndelim_free(KosDynDelim *delim) {
   if (KosDynDelim_RETURN_CHAIN(delim)) {
     kos_dynchain_free(KosDynDelim_RETURN_CHAIN(delim), NULL);
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
-  }
-
-  if (KosDynNode_FLAGS((KosDynNode *) delim)
-      & KOS_DYNF_HOLDS_RETURN_FRAME) {
-    kos_dynframe_free(KosDynDelim_RETURN_FRAME(delim));
-    KosDynDelim_RETURN_FRAME_NODE(delim) = NULL;
   }
 
   /* a displaced resume freed with the delimiter gets no delivery */
@@ -253,22 +246,34 @@ int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
 
 
 /**
-   GC traverse a KOS_DYN_DELIM: visit the owned return chain, a held
-   yoyo return-address snapshot -- the snapshot's code, namespace, and
-   operand references have no other owner between invoke and restitch
-   -- and the displaced resume's state through its kind.
+   Whether an INPLACE delim's borrowed return frame is a node of its own
+   stashed span (the invoking helper, or the handler snapshot at the
+   bottom), which the delim's clone remaps itself; a frame outside the
+   span is resolved against the segment or the live chain by its id.
+*/
+static int kos_dyndelim_return_frame_in_span(KosDynDelim *delim) {
+  KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE(delim);
+  KosDynNode *node;
+
+  for (node = KosDynDelim_RETURN_CHAIN(delim); node;
+       node = KosDynNode_PARENT(node)) {
+    if (node == want)
+      return 1;
+  }
+  return 0;
+}
+
+
+/**
+   GC traverse a KOS_DYN_DELIM: visit the owned return chain, which
+   holds any handler snapshot, and the displaced resume's state through
+   its kind.
 */
 static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) {
   KosDynDelim *delim = (KosDynDelim *) node;
   KosDynNode *chain = KosDynDelim_RETURN_CHAIN(delim);
   int tr;
 
-  if (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME) {
-    tr = kos_dynnode_traverse(
-        KosDynDelim_RETURN_FRAME_NODE(delim), visit, arg);
-    if (tr != 0)
-      return tr;
-  }
   tr = kos_resume_traverse(KosDynDelim_SAVED_RESUME_KIND(delim),
                            KosDynDelim_SAVED_RESUME_STATE(delim), visit, arg);
   if (tr != 0)

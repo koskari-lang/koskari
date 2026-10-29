@@ -1352,7 +1352,7 @@ an undelimited invoke, before anything moves), and both generator installs
 (a resume that would not fit raises at the request, as Python's `next()`
 does, with the generator left suspended). Splices renumber the spliced frames
 (`kos_dyn_renumber_frames`): a goal's LANDING, generator install, and the
-handler snapshot re-linked by an in-place restitch.
+stashed span an in-place restitch re-links above the prompt.
 
 ---
 

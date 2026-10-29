@@ -173,10 +173,15 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
    resumes over the region's own operands and the live prompt keeps its
    own for the handler's return; the frame's segment is never touched.
    Only the first invoke runs in place; re-invokes fall through to the
-   landing path (multi-shot). The slice's `POP_PROMPT` restitches the
-   stashed span and restores the invoke-site pc and the resume the
-   frame carried into the invoke, both displaced onto the delimiter
-   while the slice runs in that frame
+   landing path (multi-shot). When the shift sits in a callee of the
+   reset, the slice runs in the handler's own frame and frees it on
+   return, so the invoke clones that frame and makes the copy the
+   bottom of the stashed span: the handler resumes in the copy, and a
+   helper the handler called to invoke k keeps its own frame in the
+   span above it. The slice's `POP_PROMPT` restitches the stashed span
+   above the prompt, renumbering its frames, and restores the pc and
+   resume of the frame below the prompt, displaced onto the delimiter
+   while the slice ran through that frame
    (`kos_dyn_inplace_restitch`); an exception raised in the slice
    restitches likewise and continues the raise from the invoke site.
 

@@ -106,10 +106,13 @@ static int kos_delimited_inplace_ready(
    operands sit on the SHIFT node in the stashed span. The invocation
    prompt that stands in for the live prompt under the slice takes a
    copy of the prompt's operands, so the slice resumes over them and
-   the live prompt keeps its own for the handler's return. No transfer
-   plan, no clone, no wind replay; live extents unwind exactly once as
-   the slice runs to POP_PROMPT, which restitches via
-   kos_dyn_finish_inplace_pop_return. Borrows value.
+   the live prompt keeps its own for the handler's return. A handler in
+   a callee of the reset runs the slice in its own frame and loses it
+   when the slice returns, so that frame is cloned and the copy stashed
+   at the span's bottom for the handler to resume in. No transfer plan,
+   no wind replay; live extents unwind exactly once as the slice runs
+   to POP_PROMPT, which restitches via kos_dyn_finish_inplace_pop_return.
+   Borrows value.
 */
 static int kos_delimited_invoke_inplace(
     KosContext *ctx,
@@ -121,24 +124,18 @@ static int kos_delimited_invoke_inplace(
   KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
   KosDynNode *span_top = KosContext_DYN_TOP(ctx);
   KosDynNode *slice_top = KosDynNode_PARENT(shift);
+  KosDynFrame *region_frame;
   KosDynFrame *resume_frame;
+  KosDynFrame *snapshot = NULL;
   KosDynDelim *delim;
   KosDynFrame *return_frame;
   KosOp *return_pc;
-  int handler_nested = (nested_frame != NULL);
 
-  /* Resume frame: the FRAME owning the SHIFT, which is what capture
-     recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
-     the first frame walking down from the captured chain's top). Chain
-     order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so when
-     the shift sits in a callee that frame is ABOVE the prompt and a walk
-     at-or-below the prompt can never reach it -- installing the callee's
-     pc and stack into the caller's frame. The readiness walk records
-     that frame (nested_frame); when the shift is lexically inside the
-     reset no frame intervenes, so fall back to the frame below the
-     prompt. */
-  resume_frame = nested_frame;
-  if (! resume_frame) {
+  /* Region frame: the FRAME at-or-below the prompt, the one the slice
+     runs through to POP_PROMPT. Its pc and resume are displaced onto
+     the delim and restored at the restitch, which finds it by the same
+     walk. */
+  {
     KosDynNode *node = prompt;
 
     while (node && ! KosDynNode_IS_FRAME(node))
@@ -148,26 +145,43 @@ static int kos_delimited_invoke_inplace(
                       "in-place invoke: no frame below prompt");
       return -1;
     }
-    resume_frame = (KosDynFrame *) node;
+    region_frame = (KosDynFrame *) node;
   }
+
+  /* Resume frame: the FRAME owning the SHIFT, which is what capture
+     recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
+     the first frame walking down from the captured chain's top). Chain
+     order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so when
+     the shift sits in a callee that frame is ABOVE the prompt and a walk
+     at-or-below the prompt can never reach it -- installing the callee's
+     pc and stack into the caller's frame. The readiness walk records
+     that frame (nested_frame); when the shift is lexically inside the
+     reset no frame intervenes and the region frame is the resume frame. */
+  resume_frame = nested_frame ? nested_frame : region_frame;
 
   KosContext_FlushLiveRegsToFrame(ctx);
   return_frame = KosContext_FRAME(ctx);
   return_pc = return_frame ? KosContext_PC(ctx) : NULL;
 
-  /* Nested handler: the slice returns out of the handler's own frame and
-     frees it, so restitch has nothing live to resume into and its final
-     "load the invoke-site pc" step -- guarded on the live frame being
-     that frame -- silently never fires. Snapshot the handler's
-     environment (code, ns, operand block, pc) and resume in the copy. */
-  if (handler_nested && return_frame) {
-    KosDynFrame *tmpl = kos_dynframe_clone(return_frame);
-    if (! tmpl) {
+  /* Nested handler: the slice runs in the handler's frame, returns out
+     of it and frees it, so the handler needs a frame to resume in once
+     the span is restitched. Snapshot it now: its stored pc is the
+     handler's continuation point, flushed above when the handler itself
+     invokes k, and by the push of the invoking frame when a helper
+     called from the handler does. The copy becomes the bottom of the
+     stashed span, so the chain owns it and the restitch places it above
+     the prompt with the rest of the span. When the handler is the
+     invoker the copy is also where the value lands; a helper's frame
+     survives in the span and takes the value itself. */
+  if (nested_frame) {
+    snapshot = kos_dynframe_clone(nested_frame);
+    if (! snapshot) {
       if (! PyErr_Occurred())
         PyErr_NoMemory();
       return -1;
     }
-    return_frame = tmpl;
+    if (return_frame == nested_frame)
+      return_frame = snapshot;
   }
 
   delim = kos_dyndelim_new(prompt,
@@ -177,21 +191,12 @@ static int kos_delimited_invoke_inplace(
                            return_frame,
                            NULL);
   if (! delim) {
-    /* No delim took the holds flag, so the handler snapshot is still
-       ours to free. */
-    if (handler_nested)
-      kos_dynframe_free(return_frame);
+    kos_dynframe_free(snapshot);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
   }
   KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
-  /* The snapshot has no owner but this delim until the restitch hands
-     it to the chain. The flag is only ever set here, on an INPLACE
-     delim, which kos_dyn_clone_segment never clones, so no template
-     can hold a borrowed pointer to a frame this delim will free. */
-  if (handler_nested)
-    KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 
   /* The invocation re-delimits: a shift firing inside the resumed slice
      must capture up to THIS invocation's prompt, not the original
@@ -205,6 +210,7 @@ static int kos_delimited_invoke_inplace(
   if (! invocation_prompt) {
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
+    kos_dynframe_free(snapshot);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
@@ -219,6 +225,7 @@ static int kos_delimited_invoke_inplace(
     kos_dynprompt_free(invocation_prompt);
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
+    kos_dynframe_free(snapshot);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
@@ -231,9 +238,12 @@ static int kos_delimited_invoke_inplace(
          (void *) resume_frame, (unsigned) kos_insn_pc(return_pc));
   #endif
 
-  /* Detach the invoke span and stash it on the delim. Its segments'
+  /* Detach the invoke span and stash it on the delim, the handler
+   * snapshot as its bottom when there is one. Its segments'
    * unwind-cache back links die with the detach. */
-  KosDynNode_PARENT(shift) = NULL;
+  KosDynNode_PARENT(shift) = (KosDynNode *) snapshot;
+  if (snapshot)
+    KosDynNode_PARENT((KosDynNode *) snapshot) = NULL;
   KosDynDelim_RETURN_CHAIN(delim) = span_top;
   kos_dyn_clear_unwind_caches(span_top, NULL);
 
@@ -253,18 +263,20 @@ static int kos_delimited_invoke_inplace(
     kos_dyn_clear_unwind_caches(slice_top, (KosDynNode *) invocation_prompt);
   }
 
-  /* Point the resume frame at the captured resume pc; the invoke-site
-   * pc and acting pc are saved for the restitch (slice execution
-   * overwrites both). A resume the frame carries, waiting on a
-   * delivery the invoke site will receive later, is displaced with
-   * them: the frame runs the slice now, and the prologue would offer
-   * the resume cold. */
-  KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
+  /* The region frame's pc and resume are displaced onto the delim for
+   * the restitch: the slice runs through that frame to POP_PROMPT and
+   * overwrites its pc, and a resume it carries, waiting on a delivery
+   * the invoke site will receive later, would be offered cold by the
+   * prologue. The invoke-site acting pc is saved with them. Then the
+   * resume frame is pointed at the captured resume pc; a nested resume
+   * frame dies with the slice, and carries no resume at this point,
+   * mid-handler or mid-call as it is. */
+  KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(region_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosContext_ACTING_PC(ctx);
-  KosDynDelim_SAVED_RESUME_KIND(delim) = KosDynFrame_RESUME_KIND(resume_frame);
-  KosDynDelim_SAVED_RESUME_STATE(delim) = KosDynFrame_RESUME_STATE(resume_frame);
-  KosDynFrame_RESUME_KIND(resume_frame) = NULL;
-  KosDynFrame_RESUME_STATE(resume_frame) = NULL;
+  KosDynDelim_SAVED_RESUME_KIND(delim) = KosDynFrame_RESUME_KIND(region_frame);
+  KosDynDelim_SAVED_RESUME_STATE(delim) = KosDynFrame_RESUME_STATE(region_frame);
+  KosDynFrame_RESUME_KIND(region_frame) = NULL;
+  KosDynFrame_RESUME_STATE(region_frame) = NULL;
   KosDynFrame_PC(resume_frame) = KosContinuation_RESUME_PC(k);
 
   KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;
@@ -363,13 +375,13 @@ int kos_invoke_continuation(
   if (target && tmpl_stop)
     kos_chain_detach_template(target, tmpl_stop);
 
-  /* An INPLACE delim in the landed segment whose handler frame is not
-     in the segment resumes into the live frame of that id, shared at
-     or below the seam. */
+  /* An INPLACE delim in the landed segment whose return frame is in
+     neither its own stashed span nor the segment resumes into the live
+     frame of that id, shared at or below the seam. */
   for (KosDynNode *node = target; node; node = KosDynNode_PARENT(node)) {
     if (! KosDynNode_IS_DELIM(node)
         || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
-        || (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME))
+        || kos_dyndelim_return_frame_in_span((KosDynDelim *) node))
       continue;
     KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
     if (! want)

@@ -102,12 +102,6 @@ typedef enum KosDynFlags {
                                    (graft instantiation or in-place invoke);
                                    no POP_PROMPT instruction pairs with it, so
                                    delivery routes through the paired DELIM */
-  KOS_DYNF_HOLDS_RETURN_FRAME = 0x10,  /* DELIM: owns its RETURN_FRAME, the
-                                   yoyo return-address snapshot of a nested
-                                   handler; restitch clears the flag when it
-                                   re-parents the frame onto the chain.
-                                   Traversal and teardown must cover it
-                                   while held */
   KOS_DYNF_GEN_INSTALLS = 0x20,  /* GEN: a node of the frozen span holds an
                                    effect the install puts back */
 } KosDynFlags;
@@ -496,11 +490,12 @@ struct KosDynNode {
                              frame, and for a code-less frame, whose
                              resume takes the delivery. frame alone says
                              whether there is a return site */
-      /* The yoyo return address: the frame control lands in when the
-         invoke yoyos back from the slice. For an INPLACE invoke of a
-         nested handler this is a parentless CLONED snapshot (the slice
-         returns out of and frees the original); restitch pushes it
-         above the prompt so the handler has a frame to resume in. */
+      /* The frame control lands in when the invoke comes back from
+         the slice: the invoking frame, borrowed. For an INPLACE invoke
+         it is the frame below the prompt, a frame of the stashed span
+         (a helper the handler called), or the handler snapshot the
+         invoke placed at the span's bottom when the handler's own
+         frame is the invoker and dies with the slice. */
       KosDynNode *frame;
       KosDynNode *node;
       /* INPLACE only: the invoke-site pc and acting pc, restored at
@@ -1285,9 +1280,10 @@ int kos_dyn_finish_inplace_pop_return(
 
 /**
    Restitch an in-place (Path A) delimited invoke at its INPLACE delim
-   without delivering a value: restore the resume frame's displaced
-   stack/pc, re-link the stashed invoke span above the prompt, free the
-   delim, and restore invoke-site live registers. Used by the POP_PROMPT
+   without delivering a value: restore the pc and resume of the frame
+   below the prompt, re-link the stashed invoke span above the prompt
+   and renumber its frames, free the delim, and restore invoke-site live
+   registers. Used by the POP_PROMPT
    value return and by exception propagation out of the slice. Expects
    the delim at dyn_top.
 

@@ -1222,8 +1222,8 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop) {
    segment, the delim clone takes the clone, so the template refers to
    itself and not into the live chain; a frame outside the segment is
    left for the caller to resolve against the live chain by id (the
-   landing does). An owned handler snapshot is cloned with the delim
-   and needs no remap.
+   landing does). A frame of the delim's own stashed span was remapped
+   by the delim's clone and needs nothing here.
 */
 static void kos_dyn_remap_delim_frames(KosDynNode *chain, KosDynNode *stop) {
 
@@ -1231,7 +1231,7 @@ static void kos_dyn_remap_delim_frames(KosDynNode *chain, KosDynNode *stop) {
        node = KosDynNode_PARENT(node)) {
     if (! KosDynNode_IS_DELIM(node)
         || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
-        || (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME))
+        || kos_dyndelim_return_frame_in_span((KosDynDelim *) node))
       continue;
 
     KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
@@ -3134,18 +3134,18 @@ int kos_dyn_finish_delimited_pop_return(
 
 /**
    Restitch an in-place (Path A) delimited invoke at its INPLACE delim:
-   restore the resume frame's displaced stack/pc, re-link the stashed
-   invoke span above the prompt (which stays on the chain for the shift
-   body's POP_SHIFT), free the delim, and restore the invoke-site live
-   registers. Shared by value return (POP_PROMPT) and exception
-   propagation out of the slice. Expects the delim at dyn_top.
+   restore the region frame's displaced pc and resume, re-link the
+   stashed invoke span above the prompt (which stays on the chain for
+   the shift body's POP_SHIFT), free the delim, and restore the
+   invoke-site live registers. Shared by value return (POP_PROMPT) and
+   exception propagation out of the slice. Expects the delim at dyn_top.
 */
 int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
 
   KosDynNode *prompt;
   KosDynNode *span;
   KosDynFrame *ret_frame;
-  KosDynFrame *resume_frame;
+  KosDynFrame *region_frame;
   KosOp *ret_pc;
 
   if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)
@@ -3171,8 +3171,8 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
     return -1;
   }
 
-  /* Resume frame whose state was displaced: nearest FRAME at-or-below the
-   * prompt. */
+  /* Region frame whose state was displaced: nearest FRAME at-or-below
+   * the prompt, the same walk the invoke made. */
   {
     KosDynNode *node = prompt;
     while (node && ! KosDynNode_IS_FRAME(node))
@@ -3182,64 +3182,48 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
                       "kos_dyn_inplace_restitch: no frame below prompt");
       return -1;
     }
-    resume_frame = (KosDynFrame *) node;
+    region_frame = (KosDynFrame *) node;
   }
 
-  /* Restore the invoke-site pc, and the resume the frame carried into
-     the invoke. The frame's operand segment was never displaced: the
-     slice ran over the invocation prompt's copy of the region's
-     operands, which went with that node. */
-  KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
-  KosDynFrame_RESUME_KIND(resume_frame) = KosDynDelim_SAVED_RESUME_KIND(delim);
-  KosDynFrame_RESUME_STATE(resume_frame) = KosDynDelim_SAVED_RESUME_STATE(delim);
+  /* Restore the pc the region frame had at the invoke, and the resume
+     it carried into it. The frame's operand segment was never
+     displaced: the slice ran over the invocation prompt's copy of the
+     region's operands, which went with that node. */
+  KosDynFrame_PC(region_frame) = KosDynDelim_SAVED_PC(delim);
+  KosDynFrame_RESUME_KIND(region_frame) = KosDynDelim_SAVED_RESUME_KIND(delim);
+  KosDynFrame_RESUME_STATE(region_frame) = KosDynDelim_SAVED_RESUME_STATE(delim);
   KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
   KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
 
-  /* POP_PROMPT runs in the resume frame, so the live registers still
+  /* POP_PROMPT runs in the region frame, so the live registers still
      hold the spent slice's pc: load the restored state into them, or
      the resync below flushes the slice's pc back over it. The reload
      after the resync covers only an invoker that is this same frame; a
      code-less invoker (a resume frame that called the continuation)
      returns into this one later, at the restored pc. */
-  if (KosContext_FRAME(ctx) == resume_frame)
-    kos_dyn_resync_load_regs(ctx, resume_frame);
+  if (KosContext_FRAME(ctx) == region_frame)
+    kos_dyn_resync_load_regs(ctx, region_frame);
 
-  /* Re-link the stashed invoke span above the prompt; the prompt stays on
-   * the chain for the shift body's POP_SHIFT. */
+  /* Re-link the stashed invoke span above the prompt; the prompt stays
+   * on the chain for the shift body's POP_SHIFT. The span's bottom is
+   * the SHIFT, or the handler snapshot the invoke placed under it when
+   * the handler's own frame died with the slice: either way it hangs
+   * straight off the prompt. The span's frames take their depths from
+   * the prompt's: a snapshot taken above other frames in the region now
+   * stands directly above the prompt. */
   {
     KosDynNode *bottom = span;
-    KosDynNode *base = prompt;
-
-    /* A snapshotted handler frame is not on the chain -- the original was
-     * freed when the slice returned out of it. Push the copy above the
-     * prompt so the handler has a frame to resume in, and hang the span
-     * off that rather than straight onto the prompt. Ownership transfers
-     * to the chain here; the delim stops covering the frame in its
-     * traversal and teardown. */
-    if (KosDynNode_FLAGS((KosDynNode *) delim)
-        & KOS_DYNF_HOLDS_RETURN_FRAME) {
-      KosDynNode_FLAGS((KosDynNode *) delim) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
-      KosDynNode_PARENT((KosDynNode *) ret_frame) = prompt;
-      /* the snapshot copied its source's flags, which may record a
-         frame parent; the parent is the prompt now */
-      kos_dynframe_note_parent(ret_frame);
-      /* The snapshot was taken of the frame nearest the shift, which
-         may have sat above other frames in the region; here it stands
-         directly above the prompt. */
-      KosDynFrame_DEPTH(ret_frame) =
-          (uint16_t) (kos_dyn_frame_depth_at(prompt) + 1);
-      base = (KosDynNode *) ret_frame;
-    }
 
     while (KosDynNode_PARENT(bottom))
       bottom = KosDynNode_PARENT(bottom);
-    KosDynNode_PARENT(bottom) = base;
+    KosDynNode_PARENT(bottom) = prompt;
     kos_dynnode_note_parent(bottom);
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
+    kos_dyn_renumber_frames(span, prompt, kos_dyn_frame_depth_at(prompt));
 
     /* The re-linked span's unwind-cache back links predate the stash;
        clear them and let the walk answer. */
-    kos_dyn_clear_unwind_caches(span, base);
+    kos_dyn_clear_unwind_caches(span, prompt);
   }
 
   KosDynFrame_PC(ret_frame) = ret_pc;
