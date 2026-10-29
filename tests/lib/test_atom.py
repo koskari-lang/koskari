@@ -368,4 +368,29 @@ class TestSymbolKeywordDistinct(unittest.IsolatedAsyncioTestCase):
         self.assertNotIsInstance(k, symbol)
 
 
+class TestAtomHash(unittest.IsolatedAsyncioTestCase):
+    """
+    An interned atom hashes as its name does, so the hash follows the
+    spelling and not the address
+    """
+
+    async def test_symbol_hashes_as_its_name(self):
+        self.assertEqual(hash(symbol("hashed")), hash("hashed"))
+
+    async def test_keyword_hashes_as_its_name(self):
+        self.assertEqual(hash(keyword("hashed")), hash("hashed"))
+
+    async def test_gensym_hashes_as_its_name(self):
+        g = gensym("hashed")
+        self.assertEqual(hash(g), hash(str(g)))
+
+    async def test_same_name_different_type_still_distinct_keys(self):
+        s = symbol("shared")
+        k = keyword("shared")
+        self.assertEqual(hash(s), hash(k))
+        table = {s: 1, k: 2}
+        self.assertEqual(table[s], 1)
+        self.assertEqual(table[k], 2)
+
+
 # The end.

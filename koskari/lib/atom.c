@@ -126,6 +126,24 @@ static PyObject *atom_str(PyObject *self) {
 }
 
 
+/**
+   The hash of an interned atom is its name's. Equality is identity and
+   interning gives one atom per name, so equal atoms share it as they
+   would share the address hash, and a program's dict work is the same
+   on every build and run instead of following the allocator. The name
+   is an exact str that keyed the intern table, so its hash is cached
+   there; a name not yet hashed takes the str's own hash call.
+*/
+static Py_hash_t atom_hash(PyObject *self) {
+  PyObject *name = KosInternedAtom_NAME(self);
+  Py_hash_t h = ((PyASCIIObject *) name)->hash;
+
+  if (unlikely(h == -1))
+    return PyObject_Hash(name);
+  return h;
+}
+
+
 static Py_ssize_t atom_len(PyObject *self) {
   PyObject *name = KosInternedAtom_NAME(self);
   return PyUnicode_GET_LENGTH(name);
@@ -321,6 +339,7 @@ PyTypeObject KosSymbolType = {
   .tp_as_sequence = &atom_as_sequence,
   .tp_repr = atom_repr,
   .tp_str = atom_str,
+  .tp_hash = atom_hash,
 };
 
 
@@ -958,6 +977,7 @@ PyTypeObject KosKeywordType = {
   .tp_as_sequence = &atom_as_sequence,
   .tp_repr = atom_repr,
   .tp_str = atom_str,
+  .tp_hash = atom_hash,
 };
 
 
