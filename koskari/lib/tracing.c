@@ -362,6 +362,7 @@ typedef struct {
 #define KOS_FL_NAME_MARK         "mark"
 #define KOS_FL_NAME_DATUM        "datum"
 #define KOS_FL_NAME_COROUTINE    "coroutine"
+#define KOS_FL_NAME_ASYNCGEN     "asyncgen"
 
 static kos_fl_counters_t fl_dyn_node     = {0, 0, 0, 0};
 static kos_fl_counters_t fl_continuation = {0, 0, 0, 0};
@@ -373,6 +374,7 @@ static kos_fl_counters_t fl_cursor       = {0, 0, 0, 0};
 static kos_fl_counters_t fl_mark         = {0, 0, 0, 0};
 static kos_fl_counters_t fl_datum        = {0, 0, 0, 0};
 static kos_fl_counters_t fl_coroutine    = {0, 0, 0, 0};
+static kos_fl_counters_t fl_asyncgen     = {0, 0, 0, 0};
 
 
 static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
@@ -396,6 +398,8 @@ static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
     return &fl_datum;
   if (strcmp(name, KOS_FL_NAME_COROUTINE) == 0)
     return &fl_coroutine;
+  if (strcmp(name, KOS_FL_NAME_ASYNCGEN) == 0)
+    return &fl_asyncgen;
   return NULL;
 }
 
@@ -526,6 +530,7 @@ static int add_fl_section(PyObject *report) {
   ADD_FL_ENTRY(KOS_FL_NAME_MARK, fl_mark);
   ADD_FL_ENTRY(KOS_FL_NAME_DATUM, fl_datum);
   ADD_FL_ENTRY(KOS_FL_NAME_COROUTINE, fl_coroutine);
+  ADD_FL_ENTRY(KOS_FL_NAME_ASYNCGEN, fl_asyncgen);
 
 #undef ADD_FL_ENTRY
 

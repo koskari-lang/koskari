@@ -210,6 +210,22 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 }
 
 
+/* Forget that op's finalizer has run: a record revived from a dead
+   slot with _Py_NewReference keeps its GC record, whose finalized bit
+   survives untrack and track, and PyObject_CallFinalizer skips an
+   object with the bit set. The free-threaded build keeps the bit in
+   the object header; the default build keeps it as the low bit of the
+   _gc_prev link word, the second word of the head that precedes the
+   object. */
+static inline void kos_gc_clear_finalized(PyObject *op) {
+#ifdef Py_GIL_DISABLED
+  op->ob_gc_bits &= ~2u;   /* _PyGC_BITS_FINALIZED */
+#else
+  ((uintptr_t *) op)[-1] &= ~(uintptr_t) 1;  /* _PyGC_PREV_MASK_FINALIZED */
+#endif
+}
+
+
 /* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
    types.coroutine marked generator function's product), which await
    takes as its own iterator. gi_code is gone from the struct; the

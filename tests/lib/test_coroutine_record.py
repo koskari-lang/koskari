@@ -169,6 +169,22 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(coro.close())
         self.assertEqual(mod["finally_box"], ["ran"])
 
+    async def test_dropped_suspended_coroutines_close_each_time(self):
+        """
+        A coroutine of the same function after one was dropped reuses
+        that coroutine's record; dropped suspended, it is closed the
+        same way, finally body and all
+        """
+
+        mod = await self.load()
+        loop = asyncio.get_running_loop()
+        for _ in range(3):
+            coro = mod["guarded"](loop.create_future())
+            coro.send(None)
+            del coro
+            gc.collect()
+        self.assertEqual(mod["finally_box"], ["ran"] * 3)
+
     async def test_repeated_python_awaits_return_each_value(self):
         mod = await self.load()
         mix = mod["mix"]

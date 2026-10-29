@@ -236,7 +236,7 @@ KosOpResult KosFunction_Install(
     return EVAL_RAISE();
 
   if (code && KosCode_YIELDS(code)) {
-    PyObject *agen = KosAsyncGen_NewFromFrame(frame);
+    PyObject *agen = KosAsyncGen_NewFromFrame(callable, frame);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
 
@@ -1158,14 +1158,14 @@ static void func_drop_cached_frame(KosFunction *fn) {
 }
 
 
-/* Free the parked coroutine: untracked and cleared by its dealloc, it
-   needs only its storage released. */
-static void func_drop_dead_coro(KosFunction *fn) {
-  PyObject *coro = fn->dead_coro;
+/* Free the stored dead record: untracked and cleared by its dealloc,
+   it needs only its storage released. */
+static void func_drop_dead_record(KosFunction *fn) {
+  PyObject *record = fn->dead_record;
 
-  fn->dead_coro = NULL;
-  if (coro)
-    Py_TYPE(coro)->tp_free(coro);
+  fn->dead_record = NULL;
+  if (record)
+    Py_TYPE(record)->tp_free(record);
 }
 
 
@@ -1203,7 +1203,7 @@ static int function_traverse(
 static int function_clear(PyObject *self) {
 
   func_drop_cached_frame((KosFunction *) self);
-  func_drop_dead_coro((KosFunction *) self);
+  func_drop_dead_record((KosFunction *) self);
   ((KosFunction *) self)->install_arity1 = 0;
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
@@ -1222,7 +1222,7 @@ static void function_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
   Py_TRASHCAN_BEGIN(self, function_dealloc);
   func_drop_cached_frame((KosFunction *) self);
-  func_drop_dead_coro((KosFunction *) self);
+  func_drop_dead_record((KosFunction *) self);
   ((KosFunction *) self)->install_arity1 = 0;
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
@@ -1454,7 +1454,7 @@ KosDynFrame *KosFunction_ReadyFrameTuple(
 static PyObject *func_python_call_result(PyObject *self, KosDynFrame *frame) {
 
   if (KosCode_YIELDS((KosCode *) KosFunction_CODE(self)))
-    return KosAsyncGen_NewFromFrame(frame);
+    return KosAsyncGen_NewFromFrame(self, frame);
   return KosCoroutine_NewFromFrame(self, frame);
 }
 
@@ -1648,7 +1648,7 @@ static PyObject *function_construct(
       function_compute_simple_arity(code, formals) + 1;
   ((KosFunction *) self)->install_arity1 = 0;  /* until the self-bind resolves */
   ((KosFunction *) self)->cached_frame = NULL;
-  ((KosFunction *) self)->dead_coro = NULL;
+  ((KosFunction *) self)->dead_record = NULL;
 
   KosFunction_DOC(self) = doc_from_code(code);
 

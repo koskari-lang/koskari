@@ -108,6 +108,21 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(log, ["finally"])
         self.assertEqual(reports.seen, [])
 
+    async def test_dropped_suspended_generators_run_their_finally_each_time(self):
+        """
+        A generator of the same function after one was dropped reuses
+        that generator's record; dropped suspended, it is closed the
+        same way, finally body and all
+        """
+
+        log = []
+        with Unraisables() as reports:
+            for _ in range(3):
+                agen = await self.suspended(log, Box())
+                del agen
+        self.assertEqual(log, ["finally"] * 3)
+        self.assertEqual(reports.seen, [])
+
     async def test_dropped_inside_a_cycle_runs_its_finally(self):
         """
         The generator's frame holds box in an argument slot, and box

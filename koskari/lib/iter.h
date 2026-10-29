@@ -43,6 +43,10 @@ struct KosPyAsyncGen {
   KosContext *ctx;
   void *gen;         /* KosDynGen * when set; agen holds ref when GEN released from chain */
   PyObject *code_name;  /* strong ref; KosCode name for repr (ctx may not expose frame) */
+  PyObject *fn;      /* the function that made the call, owned for the
+                        generator's whole life so the dealloc can store
+                        the finished generator on it
+                        (KosFunction_DEAD_RECORD); NULL otherwise */
   int in_progress;   /* anext in progress */
   int closed;        /* generator closed */
 };
@@ -60,9 +64,11 @@ struct KosPyAsyncGen {
    A wrapper over gen, complete before it is GC-tracked: gen is the
    field the traverse dereferences, so it is set here rather than by
    the caller afterwards. Steals ctx (may be NULL); gen is borrowed and
-   the caller arranges its ownership.
+   the caller arranges its ownership. fn (borrowed, may be NULL) is the
+   function that made the call: its stored dead generator is the record
+   revived when one is waiting, else a fresh allocation.
 */
-PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen);
+PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen, PyObject *fn);
 
 
 /**
@@ -88,9 +94,10 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns);
    failure): the frame goes under a new GEN as its resting chain, its
    fn tag kept so the frame returns to the function's cache when the
    generator is exhausted. The one constructor a function call uses,
-   from either boundary.
+   from either boundary; fn is that function (borrowed, NULL for an
+   Expression) and holds the record between calls.
 */
-PyObject *KosAsyncGen_NewFromFrame(KosDynFrame *frame);
+PyObject *KosAsyncGen_NewFromFrame(PyObject *fn, KosDynFrame *frame);
 
 
 /* === Unit lifecycle === */

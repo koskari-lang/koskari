@@ -92,8 +92,8 @@ typedef struct {
   PyObject *param_refs;
 
   /* The function that made the call, owned for the coroutine's whole
-     life so the dealloc can park the finished coroutine on it
-     (KosFunction_DEAD_CORO); NULL for an Expression. */
+     life so the dealloc can store the finished coroutine on it
+     (KosFunction_DEAD_RECORD); NULL for an Expression. */
   PyObject *fn;
 } KosCoroutine;
 

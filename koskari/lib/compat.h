@@ -45,7 +45,9 @@
 
 /* kos_gc_is_tracked(op): whether the collector holds op, read from the
    object's own GC record the way CPython's internal inline reads it.
-   Defined in each version's compat header, which owns the layout. */
+   kos_gc_clear_finalized(op): forget that op's finalizer has run, for
+   a record revived from a function's dead slot. Both defined in each
+   version's compat header, which owns the layout. */
 
 
 /* === Immortal objects === */

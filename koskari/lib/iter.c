@@ -307,7 +307,27 @@ static void asyncgen_dealloc(PyObject *self) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   asyncgen_drop_state(agen);
-  Py_XDECREF(agen->code_name);
+  Py_CLEAR(agen->code_name);
+
+  /* A function's generator is stored on the function when its slot is
+     free: untracked, every field clear, refcount zero, the next call
+     revives it. The function's own release frees a stored one, so the
+     reference dropped here may free both at once. */
+  {
+    PyObject *fn = agen->fn;
+
+    agen->fn = NULL;
+    if (fn) {
+      if (! KosFunction_DEAD_RECORD(fn)) {
+        KosFunction_DEAD_RECORD(fn) = self;
+        KOS_TRACE_FL_RETURN("asyncgen", 0);
+        Py_DECREF(fn);
+        return;
+      }
+      KOS_TRACE_FL_RETURN("asyncgen", 1);
+      Py_DECREF(fn);
+    }
+  }
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -319,6 +339,7 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
   int res;
 
   Py_VISIT(agen->code_name);
+  Py_VISIT(agen->fn);
 
   if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
     res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
@@ -337,6 +358,7 @@ static int asyncgen_clear(PyObject *self) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   Py_CLEAR(agen->code_name);
+  Py_CLEAR(agen->fn);
   asyncgen_drop_state(agen);
 
   return 0;
@@ -743,17 +765,30 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
 };
 
 
-PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen) {
+PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen, PyObject *fn) {
 
-  KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
-  if (! agen) {
-    Py_XDECREF(ctx);
-    return NULL;
+  KosPyAsyncGen *agen;
+
+  if (fn && KosFunction_DEAD_RECORD(fn)) {
+    agen = (KosPyAsyncGen *) KosFunction_DEAD_RECORD(fn);
+    KosFunction_DEAD_RECORD(fn) = NULL;
+    KOS_TRACE_FL_ALLOC("asyncgen", 1);
+    _Py_NewReference((PyObject *) agen);
+    kos_gc_clear_finalized((PyObject *) agen);
+  } else {
+    KOS_TRACE_FL_ALLOC("asyncgen", 0);
+    agen = PyObject_GC_New(KosPyAsyncGen,
+                           KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
+    if (! agen) {
+      Py_XDECREF(ctx);
+      return NULL;
+    }
   }
 
   agen->ctx = ctx;
   agen->gen = (void *) gen;
   agen->code_name = NULL;
+  agen->fn = Py_XNewRef(fn);
   agen->in_progress = 0;
   agen->closed = 0;
 

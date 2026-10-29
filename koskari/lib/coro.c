@@ -35,7 +35,7 @@ static PyObject *coro_str_close = NULL;
 /* === Run code as coroutine === */
 
 
-PyObject *KosAsyncGen_NewFromFrame(KosDynFrame *frame) {
+PyObject *KosAsyncGen_NewFromFrame(PyObject *fn, KosDynFrame *frame) {
 
   KosCode *code = KosDynFrame_CODE(frame);
   KosDynGen *gen = kos_dyngen_new(NULL);
@@ -56,7 +56,7 @@ PyObject *KosAsyncGen_NewFromFrame(KosDynFrame *frame) {
   kos_dynframe_note_parent(frame);
   KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
 
-  agen = KosPyAsyncGen_New(NULL, gen);
+  agen = KosPyAsyncGen_New(NULL, gen, fn);
   if (! agen) {
     kos_dyngen_free(gen);
     return NULL;
@@ -76,7 +76,7 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
 
   if (! frame)
     return NULL;
-  return KosAsyncGen_NewFromFrame(frame);
+  return KosAsyncGen_NewFromFrame(NULL, frame);
 }
 
 
@@ -86,18 +86,19 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
    takes it onto its own chain. frame is stolen (freed on failure) and
    arrives tagged with fn by the ready-frame core, so it returns to
    fn's cache at completion; fn is borrowed and held by the record. The
-   record itself is fn's parked coroutine when one is waiting, revived
-   as a freelist entry is, else a fresh allocation.
+   record itself is fn's stored dead coroutine when one is waiting,
+   revived as a freelist entry is, else a fresh allocation.
 */
 static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
 
   KosCoroutine *coro;
 
-  if (fn && KosFunction_DEAD_CORO(fn)) {
-    coro = (KosCoroutine *) KosFunction_DEAD_CORO(fn);
-    KosFunction_DEAD_CORO(fn) = NULL;
+  if (fn && KosFunction_DEAD_RECORD(fn)) {
+    coro = (KosCoroutine *) KosFunction_DEAD_RECORD(fn);
+    KosFunction_DEAD_RECORD(fn) = NULL;
     KOS_TRACE_FL_ALLOC("coroutine", 1);
     _Py_NewReference((PyObject *) coro);
+    kos_gc_clear_finalized((PyObject *) coro);
   } else {
     KOS_TRACE_FL_ALLOC("coroutine", 0);
     coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
@@ -296,17 +297,17 @@ static void coroutine_dealloc(PyObject *self) {
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
 
-  /* A function's coroutine is parked on the function when its slot is
+  /* A function's coroutine is stored on the function when its slot is
      free: untracked, every field clear, refcount zero, the next call
-     revives it. The function's own release frees a parked one, so the
+     revives it. The function's own release frees a stored one, so the
      reference dropped here may free both at once. */
   {
     PyObject *fn = coro->fn;
 
     coro->fn = NULL;
     if (fn) {
-      if (! KosFunction_DEAD_CORO(fn)) {
-        KosFunction_DEAD_CORO(fn) = self;
+      if (! KosFunction_DEAD_RECORD(fn)) {
+        KosFunction_DEAD_RECORD(fn) = self;
         KOS_TRACE_FL_RETURN("coroutine", 0);
         Py_DECREF(fn);
         return;
