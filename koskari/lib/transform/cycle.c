@@ -60,7 +60,7 @@ static PyObject *cycle_replay(KosCycle *c) {
 */
 static int cycle_switch_to_buffer(KosCycle *c) {
 
-  Py_CLEAR(c->base.source);
+  Py_CLEAR(c->base.src.iter);
   c->filled = 1;
   c->pos = 0;
 
@@ -119,7 +119,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
   KosCycle *c = (KosCycle *) state;
   KosTransform *t = &c->base;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element) {
     if (! kos_transform_source_spent())
@@ -163,8 +163,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
   if (PyErr_Occurred())
     return kos_transform_decline(ctx, t);
 
-  r = KosContext_NextResume(
-      ctx, t->source, &cycle_resume_deliver_kind, t);
+  r = KosContext_NextResumeBound(
+      ctx, &t->src, &cycle_resume_deliver_kind, t);
   RESULT_ENTRY(ctx, r, &cycle_resume_deliver_kind, t);
 }
 
@@ -192,7 +192,7 @@ static KosIterStepResult cycle_step_body(
   {
     PyObject *element;
 
-    switch (KosContext_NextOrDefer(ctx, t->source, &cycle_resume_fetch_kind,
+    switch (KosContext_NextOrDefer(ctx, &t->src, &cycle_resume_fetch_kind,
                                      t, &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
         *out = cycle_keep(c, element);

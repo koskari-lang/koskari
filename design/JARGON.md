@@ -211,8 +211,9 @@ exactly one delivery: a call's settled result, a callee's
 return, an iteration element, or an awaited value. Invoked with the
 value, or with NULL and an exception set when the operation failed.
 Set through the CPS entries `KosContext_Call` and
-`KosContext_NextResume`; the map and filter steps are built from
-them. Reference: EVALUATOR.md §8.2.
+`KosContext_NextResume` (`KosContext_NextResumeBound` for a source held
+in a bound request); the map and filter steps are built from them.
+Reference: EVALUATOR.md §8.2.
 
 ## special (special form)
 

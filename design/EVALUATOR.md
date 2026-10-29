@@ -372,7 +372,7 @@ Three sites step:
 - `ITER_NEXT` and its fused twins step the innermost FOREACH region's
   **`KosIterRequest`** (`{iter, islots, kind}`, embedded only in the
   FOREACH node arm; the kind is bound once, at
-  `kos_dyn_iter_request_bind_iter`, by **`kos_iter_kind`**) through
+  `kos_dyn_iter_request_bind_iter`) through
   **`KOS_ITER_STEP`**, the threaded step the handler expands: the
   fetch, then each outcome threaded to its destination, an element in
   hand finished and delivered by the handler itself, the end in hand
@@ -389,8 +389,8 @@ Three sites step:
   being the resume's state (§8.2).
 
 Every fetch is **`kos_iter_fetch(ctx, req, &out)`**, keyed by
-`req->kind`; a site without a record classifies with `kos_iter_kind`
-on the way in. Its status:
+`req->kind`; a site without a record binds one on the way in
+(`kos_iter_request_bind_next`). Its status:
 
 - **DELIVERED** / **EXHAUSTED** -- the element (or the end of the
   iteration) is in hand and the opcode completes immediately.

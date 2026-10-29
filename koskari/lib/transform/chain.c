@@ -34,8 +34,9 @@
 
 typedef struct KosChain {
   KosTransform base;
-  PyObject *series;        /* acquired iterator over the iterables not
-                              yet reached; NULL once it runs out */
+  KosIterRequest series;   /* the acquired iterator over the iterables
+                              not yet reached, bound with its kind;
+                              iter NULL once it runs out */
 } KosChain;
 
 
@@ -54,7 +55,7 @@ static int chain_take_source(KosChain *c, PyObject *iterable) {
   if (! source)
     return -1;
 
-  t->source = source;
+  kos_iter_request_bind_next(&t->src, source);
 
   return 0;
 }
@@ -107,14 +108,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     return kos_transform_decline(ctx, t);
 
   for (;;) {
-    if (! t->source) {
-      if (! c->series) {
+    if (! t->src.iter) {
+      if (! c->series.iter) {
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
       }
       /* the next iterable is requested from the series; its
          delivery lands in chain_resume_series */
-      KosOpResult r = KosContext_NextResume(ctx, c->series,
+      KosOpResult r = KosContext_NextResumeBound(ctx, &c->series,
                                               &chain_resume_series_kind, c);
       RESULT_ENTRY(ctx, r, &chain_resume_series_kind, c);
     }
@@ -122,7 +123,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     /* the element lands in chain_resume_deliver; a spent source is
        released there and the walk re-enters here */
     {
-      KosOpResult r = KosContext_NextResume(ctx, t->source,
+      KosOpResult r = KosContext_NextResumeBound(ctx, &t->src,
                                               &chain_resume_deliver_kind, c);
       RESULT_ENTRY(ctx, r, &chain_resume_deliver_kind, c);
     }
@@ -142,14 +143,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
   KosChain *c = (KosChain *) state;
   KosTransform *t = &c->base;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element) {
     if (! kos_transform_source_spent())
       return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
-    Py_CLEAR(t->source);
+    Py_CLEAR(t->src.iter);
 
     RESUME_HOP(&chain_resume_fetch_kind, ctx, c, NULL);
   }
@@ -169,7 +170,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
   KosChain *c = (KosChain *) state;
   int r;
 
-  kos_transform_fetched(c->series, iterable);
+  kos_transform_fetched(&c->series, iterable);
 
   if (! iterable) {
     if (! kos_transform_source_spent())
@@ -177,7 +178,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
 
     /* the series is spent, and with it the chain: the StopIteration
        stands as the step's outcome */
-    Py_CLEAR(c->series);
+    Py_CLEAR(c->series.iter);
     return kos_transform_decline(ctx, &c->base);
   }
 
@@ -209,22 +210,22 @@ static KosIterStepResult chain_step_body(
   for (;;) {
     PyObject *element;
 
-    if (! t->source) {
+    if (! t->src.iter) {
       PyObject *iterable;
       int r;
 
-      if (! c->series) {
+      if (! c->series.iter) {
         t->closed = 1;
         *out = NULL;
         return KOS_ITER_EXHAUSTED;
       }
-      switch (KosContext_NextOrDefer(ctx, c->series,
+      switch (KosContext_NextOrDefer(ctx, &c->series,
                                        &chain_resume_fetch_kind, t,
                                        &t->cached_frame, &iterable)) {
         case KOS_IREQ_DELIVERED:
           break;
         case KOS_IREQ_EXHAUSTED:
-          Py_CLEAR(c->series);
+          Py_CLEAR(c->series.iter);
           t->closed = 1;
           *out = NULL;
           return KOS_ITER_EXHAUSTED;
@@ -240,7 +241,7 @@ static KosIterStepResult chain_step_body(
       continue;
     }
 
-    switch (KosContext_NextOrDefer(ctx, t->source,
+    switch (KosContext_NextOrDefer(ctx, &t->src,
                                      &chain_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
@@ -248,7 +249,7 @@ static KosIterStepResult chain_step_body(
         return KOS_ITER_VALUE;
       case KOS_IREQ_EXHAUSTED:
         /* this source is spent; the chain is not until the series is */
-        Py_CLEAR(t->source);
+        Py_CLEAR(t->src.iter);
         continue;
       case KOS_IREQ_CONTINUES:
         return KOS_ITER_INSTALLED_VALUE;
@@ -286,16 +287,20 @@ static PyObject *chain_build(PyTypeObject *type, PyObject *series) {
   if (! c)
     return NULL;
 
-  c->series = kos_iter_acquire(series);
-  if (! c->series) {
-    Py_DECREF(c);
-    return NULL;
+  {
+    PyObject *acquired = kos_iter_acquire(series);
+
+    if (! acquired) {
+      Py_DECREF(c);
+      return NULL;
+    }
+    kos_iter_request_bind_next(&c->series, acquired);
   }
 
   /* One source is live at a time, so the arity-one view serves: the
      step fills the slot as it advances and close reaches whichever
      source is current. A NULL slot is nothing to close. */
-  kos_transform_init_view(&c->base, &c->base.source, 1);
+  kos_transform_init_view(&c->base, &c->base.src, 1);
 
   return (PyObject *) c;
 }
@@ -346,9 +351,9 @@ static int koschain_close(PyObject *self) {
   KosChain *c = (KosChain *) self;
   int r = kos_transform_close(self);
 
-  if (c->base.closed && ! c->base.busy && c->series) {
-    kos_iter_close(c->series);
-    Py_CLEAR(c->series);
+  if (c->base.closed && ! c->base.busy && c->series.iter) {
+    kos_iter_close(c->series.iter);
+    Py_CLEAR(c->series.iter);
   }
 
   return r;
@@ -359,7 +364,7 @@ static int koschain_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosChain *c = (KosChain *) self;
 
-  Py_VISIT(c->series);
+  Py_VISIT(c->series.iter);
   return kos_transform_traverse(self, visit, arg);
 }
 
@@ -368,7 +373,7 @@ static int koschain_clear(PyObject *self) {
 
   KosChain *c = (KosChain *) self;
 
-  Py_CLEAR(c->series);
+  Py_CLEAR(c->series.iter);
   return kos_transform_clear(self);
 }
 
@@ -378,7 +383,7 @@ static void koschain_dealloc(PyObject *self) {
   KosChain *c = (KosChain *) self;
 
   PyObject_GC_UnTrack(self);
-  Py_CLEAR(c->series);
+  Py_CLEAR(c->series.iter);
 
   kos_transform_dealloc(self);
 }

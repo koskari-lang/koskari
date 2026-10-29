@@ -1398,12 +1398,6 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 */
 KosDynGen *kos_dyn_find_gen(KosContext *ctx);
 
-/**
-   The exception type that ends the region's step: StopAsyncIteration
-   for a python async iterator, StopIteration for anything else.
-*/
-PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node);
-
 
 /**
    Pop a region from the dynamic chain.

@@ -29,10 +29,10 @@
 
 
 typedef struct KosZipLongest {
-  KosTransformMulti multi;  /* a spent source's slot in multi.srcs is
-                               cleared to NULL in place -- the tuple is
-                               private to this object and its item
-                               block never moves */
+  KosTransformMulti multi;  /* a spent source's request in multi.srcs
+                               has its iterator released in place; the
+                               array is private to this object and
+                               never moves */
   PyObject *fill;      /* value standing in for a spent source */
   uint16_t live;       /* sources not yet spent */
 } KosZipLongest;
@@ -47,10 +47,7 @@ typedef struct KosZipLongest {
 */
 static int zip_longest_retire(KosZipLongest *z, uint16_t i) {
 
-  PyObject *spent = z->multi.base.sources[i];
-
-  z->multi.base.sources[i] = NULL;
-  Py_XDECREF(spent);
+  Py_CLEAR(z->multi.base.reqs[i].iter);
   z->live--;
 
   return z->live != 0;
@@ -113,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     return kos_transform_decline(ctx, t);
 
   while (t->idx < t->nsrc) {
-    if (! t->sources[t->idx]) {
+    if (! t->reqs[t->idx].iter) {
       zip_longest_fill(z, t->pending, t->idx);
       t->idx++;
       continue;
@@ -122,8 +119,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     /* the element, or the source's exhaustion, lands in
        zip_longest_resume_deliver, which files it and hops back here */
     {
-      KosOpResult r = KosContext_NextResume(
-          ctx, t->sources[t->idx], &zip_longest_resume_deliver_kind, z);
+      KosOpResult r = KosContext_NextResumeBound(
+          ctx, &t->reqs[t->idx], &zip_longest_resume_deliver_kind, z);
       RESULT_ENTRY(ctx, r, &zip_longest_resume_deliver_kind, z);
     }
   }
@@ -150,7 +147,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
   KosZipLongest *z = (KosZipLongest *) state;
   KosTransform *t = &z->multi.base;
 
-  kos_transform_fetched(t->sources[t->idx], element);
+  kos_transform_fetched(&t->reqs[t->idx], element);
 
   if (! element) {
     if (! kos_transform_source_spent())
@@ -211,12 +208,12 @@ static KosIterStepResult zip_longest_step_body(
     for (i = 0; i < t->nsrc; i++) {
       PyObject *element;
 
-      if (! t->sources[i]) {
+      if (! t->reqs[i].iter) {
         zip_longest_fill(z, row, i);
         continue;
       }
 
-      switch (KosContext_NextOrDefer(ctx, t->sources[i],
+      switch (KosContext_NextOrDefer(ctx, &t->reqs[i],
                                        &zip_longest_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:

@@ -2117,12 +2117,6 @@ KosDynFrame *KosResumeFrame_Install(
    next request without a record of its own: the next classifier, so a
    python object answering both protocols is taken through its sync
    one, as Python's next takes it. */
-static inline void kos_iter_request_local(KosIterRequest *req, PyObject *iter) {
-  req->iter = iter;
-  req->kind = kos_iter_kind_next(iter, &req->islots);
-}
-
-
 KosIterRequestStatus KosNativeFrame_RequestNext(
     KosContext *ctx,
     PyObject *iter,
@@ -2130,7 +2124,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 
   KosIterRequest req;
 
-  kos_iter_request_local(&req, iter);
+  kos_iter_request_bind_next(&req, iter);
   return kos_iter_fetch(ctx, &req, out);
 }
 
@@ -2143,7 +2137,7 @@ KosOpResult KosContext_NextResume(
 
   KosIterRequest req;
 
-  kos_iter_request_local(&req, iter);
+  kos_iter_request_bind_next(&req, iter);
   return KosContext_NextResumeBound(ctx, &req, resume, state);
 }
 

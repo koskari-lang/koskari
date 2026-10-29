@@ -25,23 +25,31 @@
 /* === The FOREACH region's request === */
 
 
+/* The for-each bind: as kos_iter_request_bind_next, with async tried
+   before sync, as the for-each over a python object answering both
+   protocols has always taken its async one. */
 void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter) {
+
   req->iter = iter;
-  req->kind = kos_iter_kind(iter, &req->islots);
+  if (KosIter_CheckSlots(iter, &req->islots)) {
+    req->kind = KOS_IREQ_KIND_PROVIDER;
+    return;
+  }
+  req->islots = NULL;
+  if (! iter)
+    req->kind = KOS_IREQ_KIND_NONE;
+  else if (Py_TYPE(iter)->tp_as_async && Py_TYPE(iter)->tp_as_async->am_anext)
+    req->kind = KOS_IREQ_KIND_PY_ASYNC;
+  else if (PyIter_Check(iter))
+    req->kind = KOS_IREQ_KIND_PY_SYNC;
+  else
+    req->kind = KOS_IREQ_KIND_NONE;
 }
 
 
 void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted) {
   if (req->islots)
     kos_iter_finish(req->iter, req->islots, exhausted);
-}
-
-
-PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node) {
-
-  if (KosDynForeach_REQ(node)->kind == KOS_IREQ_KIND_PY_ASYNC)
-    return PyExc_StopAsyncIteration;
-  return PyExc_StopIteration;
 }
 
 

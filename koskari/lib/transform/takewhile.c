@@ -82,7 +82,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
   if (PyErr_Occurred())
     return kos_transform_decline(ctx, t);
 
-  r = KosContext_NextResume(ctx, t->source,
+  r = KosContext_NextResumeBound(ctx, &t->src,
                               &takewhile_resume_invoke_kind, t);
   RESULT_ENTRY(ctx, r, &takewhile_resume_invoke_kind, t);
 }
@@ -96,7 +96,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
 
   KosTransform *t = (KosTransform *) state;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element)
     return kos_transform_decline(ctx, t);
@@ -158,7 +158,7 @@ static KosIterStepResult takewhile_step_body(
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(ctx, t, t->source, &takewhile_resume_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, &t->src, &takewhile_resume_fetch_kind, pre_top, out,
                         element);
 
     /* Any KosCallable predicate's verdict must come back to this

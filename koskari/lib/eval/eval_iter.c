@@ -158,7 +158,8 @@ int KosEval_ResultIsValue(PyObject *result) {
 /* === The fetch: one next element, keyed by the iterator's kind ===
 
    Every site that asks an iterator for its next element asks through
-   kos_iter_fetch with the iterator's kind (kos_iter_kind): the
+   kos_iter_fetch with the iterator's kind (bound by
+   kos_dyn_iter_request_bind_iter or kos_iter_request_bind_next): the
    for-each step reads the kind its region bound once, the next
    request and a provider's in-step fetch classify on the way in. The
    sync arm calls tp_iternext through the type, as CPython's FOR_ITER
@@ -170,10 +171,9 @@ int KosEval_ResultIsValue(PyObject *result) {
    delivery finishes it. */
 
 
-/* A sync step returned NULL: a StopIteration or a clean NULL is
-   exhaustion, any other error propagates. had_next is 0 when the type
-   lost its tp_iternext since it was classified. */
-static KOS_NOINLINE KosIterRequestStatus iter_fetch_sync_ended(int had_next) {
+/* The cold end of kos_iter_next_sync (evaluated.h): a sync step
+   returned NULL. */
+KOS_NOINLINE KosIterRequestStatus kos_iter_next_sync_ended(int had_next) {
 
   if (PyErr_Occurred()) {
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
@@ -184,22 +184,6 @@ static KOS_NOINLINE KosIterRequestStatus iter_fetch_sync_ended(int had_next) {
     return KOS_IREQ_ERROR;
   }
   return KOS_IREQ_EXHAUSTED;
-}
-
-
-/* The sync arm: tp_iternext through the type. */
-KOS_OP_INLINE KosIterRequestStatus iter_fetch_sync(
-    PyObject *iter,
-    PyObject **out) {
-
-  iternextfunc next = Py_TYPE(iter)->tp_iternext;
-  PyObject *n = likely(next) ? next(iter) : NULL;
-
-  if (likely(n)) {
-    *out = n;
-    return KOS_IREQ_DELIVERED;
-  }
-  return iter_fetch_sync_ended(next != NULL);
 }
 
 
@@ -220,7 +204,7 @@ static KosIterRequestStatus iter_fetch_async(
     /* No error: the type lost its __anext__ since it was classified;
        take the sync step, which raises for an iterator with neither. */
     if (! PyErr_Occurred())
-      return iter_fetch_sync(iter, out);
+      return kos_iter_next_sync(iter, out);
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyErr_Clear();
       return KOS_IREQ_EXHAUSTED;
@@ -248,31 +232,6 @@ static KosIterRequestStatus iter_fetch_async(
 }
 
 
-/* The provider arm: one step through the suite. The end's payload is
-   dropped; a fetch has no use for it, and yield-from, which does,
-   steps the provider itself. */
-static KosIterRequestStatus iter_fetch_provider(
-    KosContext *ctx,
-    PyObject *iter,
-    KosIterSlots *islots,
-    PyObject **out) {
-
-  switch (kos_iter_step_provider(ctx, iter, islots, NULL, out)) {
-    case KOS_ITER_VALUE:
-      return KOS_IREQ_DELIVERED;
-    case KOS_ITER_EXHAUSTED:
-      Py_CLEAR(*out);
-      return KOS_IREQ_EXHAUSTED;
-    case KOS_ITER_INSTALLED:
-    case KOS_ITER_INSTALLED_VALUE:
-      return KOS_IREQ_CONTINUES;
-    case KOS_ITER_ERROR:
-    default:
-      return KOS_IREQ_ERROR;
-  }
-}
-
-
 /**
    The next element of the bound iterator req describes, by its kind.
    *out is NULL on entry's behalf and set as KosIterRequestStatus says.
@@ -294,9 +253,27 @@ KOS_OP_INLINE KosIterRequestStatus kos_iter_fetch(
 
   switch (req->kind) {
     case KOS_IREQ_KIND_PY_SYNC:
-      return iter_fetch_sync(req->iter, out);
+      return kos_iter_next_sync(req->iter, out);
+
     case KOS_IREQ_KIND_PROVIDER:
-      return iter_fetch_provider(ctx, req->iter, req->islots, out);
+      /* one step through the suite; the end's payload is dropped,
+         since a fetch has no use for it, and yield-from, which does,
+         steps the provider itself */
+      switch (kos_iter_step_provider(ctx, req->iter, req->islots, NULL,
+                                     out)) {
+        case KOS_ITER_VALUE:
+          return KOS_IREQ_DELIVERED;
+        case KOS_ITER_EXHAUSTED:
+          Py_CLEAR(*out);
+          return KOS_IREQ_EXHAUSTED;
+        case KOS_ITER_INSTALLED:
+        case KOS_ITER_INSTALLED_VALUE:
+          return KOS_IREQ_CONTINUES;
+        case KOS_ITER_ERROR:
+        default:
+          return KOS_IREQ_ERROR;
+      }
+
     case KOS_IREQ_KIND_PY_ASYNC:
       return iter_fetch_async(ctx, req->iter, out);
     default:
@@ -337,12 +314,8 @@ KOS_OP_INLINE KosIterRequestStatus kos_iter_fetch(
 KOS_OP_INLINE void kos_iter_step_finish(KosContext *ctx, int ended) {
   KosDynNode *region = KosContext_DYN_TOP(ctx);
 
-  if (region && KosDynNode_IS_FOREACH(region)) {
-    KosIterRequest *req = KosDynForeach_REQ(region);
-
-    if (req->islots)
-      kos_iter_finish(req->iter, req->islots, ended);
-  }
+  if (region && KosDynNode_IS_FOREACH(region))
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), ended);
 }
 
 
@@ -367,7 +340,11 @@ KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
 
   if (! region || ! KosDynNode_IS_FOREACH(region) || ! PyErr_Occurred())
     return 0;
-  if (! PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(region))) {
+  /* the region's own end: StopAsyncIteration from an async source,
+     StopIteration from any other kind */
+  if (! PyErr_ExceptionMatches(
+          KosDynForeach_REQ(region)->kind == KOS_IREQ_KIND_PY_ASYNC
+              ? PyExc_StopAsyncIteration : PyExc_StopIteration)) {
     kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), 0);
     return 0;
   }

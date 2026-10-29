@@ -87,7 +87,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
   KosTransform *m = (KosTransform *) state;
   KosOpResult r;
 
-  kos_transform_fetched(m->source, element);
+  kos_transform_fetched(&m->src, element);
 
   if (! element)
     return kos_transform_decline(ctx, m);
@@ -122,8 +122,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
   if (PyErr_Occurred())
     return kos_transform_decline(ctx, t);
 
-  r = KosContext_NextResume(
-      ctx, t->source, &map_resume_after_fetch_kind, t);
+  r = KosContext_NextResumeBound(
+      ctx, &t->src, &map_resume_after_fetch_kind, t);
   RESULT_ENTRY(ctx, r, &map_resume_after_fetch_kind, t);
 }
 
@@ -143,7 +143,7 @@ static KosIterStepResult map_step_body(
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(ctx, m, m->source, &map_resume_start_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, m, &m->src, &map_resume_start_fetch_kind, pre_top, out,
                         element);
 
     /* A direct-delivery koskari function (cs_direct: its install

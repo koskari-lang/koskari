@@ -102,7 +102,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
   KosAccumulate *a = (KosAccumulate *) state;
   KosTransform *t = &a->base;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element)
     return kos_transform_decline(ctx, t);
@@ -154,8 +154,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
   if (PyErr_Occurred())
     return kos_transform_decline(ctx, t);
 
-  r = KosContext_NextResume(
-      ctx, t->source, &accumulate_resume_fold_kind, t);
+  r = KosContext_NextResumeBound(
+      ctx, &t->src, &accumulate_resume_fold_kind, t);
   RESULT_ENTRY(ctx, r, &accumulate_resume_fold_kind, t);
 }
 
@@ -186,7 +186,7 @@ static KosIterStepResult accumulate_step_body(
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(ctx, t, t->source, &accumulate_resume_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, &t->src, &accumulate_resume_fetch_kind, pre_top, out,
                         element);
 
     if (! a->total) {

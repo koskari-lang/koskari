@@ -90,8 +90,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
      and hops back here; either source running out ends the
      compress through its StopIteration */
   {
-    KosOpResult r = KosContext_NextResume(
-        ctx, t->sources[t->idx], &compress_resume_deliver_kind, c);
+    KosOpResult r = KosContext_NextResumeBound(
+        ctx, &t->reqs[t->idx], &compress_resume_deliver_kind, c);
     RESULT_ENTRY(ctx, r, &compress_resume_deliver_kind, c);
   }
 }
@@ -107,7 +107,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
   KosTransformMulti *c = (KosTransformMulti *) state;
   KosTransform *t = &c->base;
 
-  kos_transform_fetched(t->sources[t->idx], element);
+  kos_transform_fetched(&t->reqs[t->idx], element);
 
   if (! element)
     return kos_transform_decline(ctx, t);
@@ -163,10 +163,10 @@ static KosIterStepResult compress_step_body(
       PyObject *selector;
       int ok;
 
-      KOS_TRANSFORM_FETCH(ctx, t, t->sources[COMPRESS_DATA],
+      KOS_TRANSFORM_FETCH(ctx, t, &t->reqs[COMPRESS_DATA],
                           &compress_resume_fetch_kind, pre_top, out, data);
 
-      switch (KosContext_NextOrDefer(ctx, t->sources[COMPRESS_SELECTOR],
+      switch (KosContext_NextOrDefer(ctx, &t->reqs[COMPRESS_SELECTOR],
                                        &compress_resume_fetch_kind, c,
                                        &t->cached_frame, &selector)) {
         case KOS_IREQ_DELIVERED:

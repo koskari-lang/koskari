@@ -110,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     return kos_transform_decline(ctx, f);
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, f->source,
+    KosOpResult r = KosContext_NextResumeBound(ctx, &f->src,
                                             &filter_resume_do_invoke_kind, f);
     RESULT_ENTRY(ctx, r, &filter_resume_do_invoke_kind, f);
   }
@@ -128,7 +128,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
 
   KosTransform *f = (KosTransform *) state;
 
-  kos_transform_fetched(f->source, element);
+  kos_transform_fetched(&f->src, element);
 
   if (! element)
     return kos_transform_decline(ctx, f);
@@ -211,7 +211,7 @@ static KosIterStepResult filter_step_body(
     for (;;) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(ctx, f, f->source, &filter_resume_do_fetch_kind, pre_top, out,
+      KOS_TRANSFORM_FETCH(ctx, f, &f->src, &filter_resume_do_fetch_kind, pre_top, out,
                           element);
 
       if (! f->fn.cs_callable) {

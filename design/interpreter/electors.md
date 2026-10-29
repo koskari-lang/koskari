@@ -315,7 +315,7 @@ a run of two, and the elector's guard is on the resolved callable, not the
 receiver. The `*_STAR` members are cold and stay on the ladder.
 
 **OBJECT_NEXT, VAR_NEXT, FAST_NEXT**. `KosContext_NextResume` classifies
-the iterator per step (`kos_iter_kind`: provider, sync `tp_iternext`,
+the iterator per step (`kos_iter_request_bind_next`: provider, sync `tp_iternext`,
 async `__anext__`) and fetches by that kind through
 `KosContext_NextResumeBound`. The kind-accepting entry exists; what an
 elector would add is classifying once per site instead of per step,

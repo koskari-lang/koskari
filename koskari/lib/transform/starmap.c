@@ -98,7 +98,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
   PyObject *args;
   KosOpResult r;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element)
     return kos_transform_decline(ctx, t);
@@ -132,8 +132,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
   if (PyErr_Occurred())
     return kos_transform_decline(ctx, t);
 
-  r = KosContext_NextResume(
-      ctx, t->source, &starmap_resume_invoke_kind, t);
+  r = KosContext_NextResumeBound(
+      ctx, &t->src, &starmap_resume_invoke_kind, t);
   RESULT_ENTRY(ctx, r, &starmap_resume_invoke_kind, t);
 }
 
@@ -154,7 +154,7 @@ static KosIterStepResult starmap_step_body(
     PyObject *element;
     PyObject *args;
 
-    KOS_TRANSFORM_FETCH(ctx, t, t->source, &starmap_resume_start_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, &t->src, &starmap_resume_start_fetch_kind, pre_top, out,
                         element);
 
     /* A FRAME-shaped function's call must run inside koskari_eval's

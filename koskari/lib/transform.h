@@ -33,9 +33,11 @@
    step and the resume chain that step arms.
 
    A provider embeds KosTransform first, sets a larger tp_basicsize,
-   and chains its traverse and clear to the base's. Sources beyond the
-   first live in storage the provider owns and publishes through the
-   sources view; the base reads that view only to close what it holds.
+   and chains its traverse and clear to the base's. Every source is a
+   bound request, its kind and provider suite classified once at
+   acquisition so no step classifies it again; sources beyond the first
+   live in storage the provider owns and publishes through the reqs
+   view, which the base reads only to close what it holds.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -48,14 +50,17 @@ typedef struct KosTransform {
                             resolved at construction; cs_callable NULL
                             for filter's None predicate (the element's
                             truthiness decides) */
-  PyObject *source;      /* arity-1 storage: acquired iterator (sync
-                            or async); sources points here */
-  PyObject **sources;    /* borrowed view of nsrc acquired iterators,
-                            never owned: &source at arity 1, else a
-                            provider's own storage. A provider
-                            retracts the view before releasing that
-                            storage, since tp_clear runs while the
-                            object is still alive */
+  KosIterRequest src;    /* arity-1 storage: the acquired iterator
+                            (sync or async), owned, bound with its kind
+                            and provider suite once at acquisition
+                            (kos_iter_request_bind_next); reqs points
+                            here */
+  KosIterRequest *reqs;  /* borrowed view of nsrc bound requests, never
+                            owned: &src at arity 1, else a provider's
+                            own storage. A provider retracts the view
+                            before releasing that storage, since
+                            tp_clear runs while the object is still
+                            alive */
   PyObject *pending;     /* value in flight across a suspension --
                             filter's element under test, a partial row
                             -- owned, and cleared at every step
@@ -130,28 +135,30 @@ int kos_transform_init_one(
    the transform steps or closes.
 
    :param t: freshly allocated, zeroed
-   :param sources: the view, nsrc slots the provider keeps alive until
-                   it retracts the view
+   :param reqs: the view, nsrc bound requests the provider keeps alive
+                until it retracts the view
    :param nsrc: entries in the view
 */
 void kos_transform_init_view(
     KosTransform *t,
-    PyObject **sources,
+    KosIterRequest *reqs,
     uint16_t nsrc);
 
 
 /**
    The shape of a provider over several sources acquired together
-   (zip, zip-longest, compress): the base and the tuple that holds
-   the acquired iterators and that the base's view points into. A provider
+   (zip, zip-longest, compress): the base and the array of bound
+   requests that owns the acquired iterators and that the base's view
+   points into. A provider
    with fields of its own embeds this first and chains its traverse,
    clear and dealloc to the multi ones, as a one-source provider
    chains to the base's.
 */
 typedef struct KosTransformMulti {
   KosTransform base;
-  PyObject *srcs;      /* tuple of acquired iterators; the storage the
-                          base's sources view points into */
+  KosIterRequest *srcs; /* the nsrc bound requests, owning their
+                           iterators, the storage the base's reqs view
+                           points into; traversed and cleared here */
   PyObject *row;       /* zip: the last row emitted, refilled in place
                           for the next element while zip alone holds
                           it; NULL before the first */
@@ -160,8 +167,8 @@ typedef struct KosTransformMulti {
 
 /**
    Fill a freshly allocated multi-source transform: acquire every
-   iterable of the tuple into the srcs tuple and publish the view over
-   the tuple's items.
+   iterable of the tuple into the srcs array of bound requests and
+   publish the view over it.
 
    :param m: freshly allocated, zeroed
    :param iterables: borrowed tuple, at most UINT16_MAX long
@@ -293,16 +300,16 @@ int kos_transform_source_spent(void);
    exhausted when the delivery is its end; a plain iterator needs
    nothing. The transform owns its source, so the finish is its own.
 */
-static inline void kos_transform_fetched(PyObject *source, PyObject *element) {
-
-  KosIterSlots *islots;
+static inline void kos_transform_fetched(
+    const KosIterRequest *req,
+    PyObject *element) {
 
   if (! element && PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
     PyErr_Clear();
     PyErr_SetNone(PyExc_StopIteration);
   }
-  if (KosIter_CheckSlots(source, &islots))
-    kos_iter_finish(source, islots,
+  if (req->islots)
+    kos_iter_finish(req->iter, req->islots,
                     ! element && kos_transform_source_spent());
 }
 
@@ -358,11 +365,12 @@ KosIterStepResult kos_transform_stage(
    step goes on; on EXHAUSTED the provider closes and reports it; on
    CONTINUES the fetch was deferred to resume on an installed frame
    and the step reports its work installed; on ERROR the step aborts
-   to pre_top. The kind of the source is the request entry's business.
+   to pre_top. req is the source's bound request, whose kind decides
+   the fetch.
 */
-#define KOS_TRANSFORM_FETCH(ctx, t, source, resume, pre_top, out, element) \
+#define KOS_TRANSFORM_FETCH(ctx, t, req, resume, pre_top, out, element)  \
   do {                                                                  \
-    switch (KosContext_NextOrDefer((ctx), (source), (resume), (t),     \
+    switch (KosContext_NextOrDefer((ctx), (req), (resume), (t),        \
                                      &(t)->cached_frame, &(element))) { \
       case KOS_IREQ_DELIVERED:                                          \
         break;                                                          \

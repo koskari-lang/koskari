@@ -91,7 +91,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
     return kos_transform_decline(ctx, t);
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, t->source,
+    KosOpResult r = KosContext_NextResumeBound(ctx, &t->src,
                                             &dropwhile_resume_invoke_kind, t);
     RESULT_ENTRY(ctx, r, &dropwhile_resume_invoke_kind, t);
   }
@@ -108,7 +108,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
   KosDropWhile *d = (KosDropWhile *) state;
   KosTransform *t = &d->base;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element)
     return kos_transform_decline(ctx, t);
@@ -181,7 +181,7 @@ static KosIterStepResult dropwhile_step_body(
     for (;;) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(ctx, t, t->source, &dropwhile_resume_fetch_kind, pre_top, out,
+      KOS_TRANSFORM_FETCH(ctx, t, &t->src, &dropwhile_resume_fetch_kind, pre_top, out,
                           element);
 
       if (d->passed) {

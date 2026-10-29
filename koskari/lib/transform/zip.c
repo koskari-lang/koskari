@@ -107,8 +107,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
        hops back here; a spent source's StopIteration reaches the
        consumer's step resume, and the partial row is cleared by
        ki_finish */
-    KosOpResult r = KosContext_NextResume(
-        ctx, t->sources[t->idx], &zip_resume_deliver_kind, z);
+    KosOpResult r = KosContext_NextResumeBound(
+        ctx, &t->reqs[t->idx], &zip_resume_deliver_kind, z);
     RESULT_ENTRY(ctx, r, &zip_resume_deliver_kind, z);
   }
 
@@ -133,7 +133,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   KosTransformMulti *z = (KosTransformMulti *) state;
   KosTransform *t = &z->base;
 
-  kos_transform_fetched(t->sources[t->idx], element);
+  kos_transform_fetched(&t->reqs[t->idx], element);
 
   if (! element)
     return kos_transform_decline(ctx, t);
@@ -193,7 +193,7 @@ static KosIterStepResult zip_step_body(
     for (i = 0; i < t->nsrc; i++) {
       PyObject *element;
 
-      switch (KosContext_NextOrDefer(ctx, t->sources[i],
+      switch (KosContext_NextOrDefer(ctx, &t->reqs[i],
                                        &zip_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:

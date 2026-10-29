@@ -650,8 +650,8 @@ KosDynFrame *KosResumeFrame_Install(
 /**
    Fetch the next element of iter from inside a code-less frame, with
    no node, for a caller that interprets the KosIterRequestStatus
-   itself (see the enum): iter is classified on the way in
-   (kos_iter_kind) and fetched by its kind. The caller's own record
+   itself (see the enum): iter is bound into a request on the way in
+   (kos_iter_request_bind_next) and fetched by its kind. The caller's own record
    holds iter and finishes it on delivery.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
@@ -693,7 +693,7 @@ KosOpResult KosContext_NextResumeBound(
 
 /**
    KosContext_NextResumeBound for an iterator with no record: iter is
-   classified on the way in (kos_iter_kind).
+   bound into one on the way in (kos_iter_request_bind_next).
 */
 KosOpResult KosContext_NextResume(
     KosContext *ctx,

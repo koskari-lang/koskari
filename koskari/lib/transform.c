@@ -84,14 +84,15 @@ int kos_transform_init_one(
   if (! source)
     return -1;
 
-  t->source = source;
-  t->sources = &t->source;
+  /* the source's kind and suite are bound once with it, so no step
+     classifies it again */
+  kos_iter_request_bind_next(&t->src, source);
+  t->reqs = &t->src;
   t->nsrc = 1;
   t->idx = 0;
 
   /* Resolve the callable's shape once; it is fixed for the
-     transform's lifetime. The source's protocol is resolved per
-     acquisition, which for a one-source provider is the same thing. */
+     transform's lifetime. */
   if (func && func != Py_None) {
     KosCallShape_Init(&t->fn, func);
   } else {
@@ -109,14 +110,16 @@ int kos_transform_init_one(
 
 void kos_transform_init_view(
     KosTransform *t,
-    PyObject **sources,
+    KosIterRequest *reqs,
     uint16_t nsrc) {
 
   t->fn.cs_callable = NULL;
   t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
-  t->source = NULL;
-  t->sources = sources;
+  t->src.iter = NULL;
+  t->src.islots = NULL;
+  t->src.kind = KOS_IREQ_KIND_NONE;
+  t->reqs = reqs;
   t->nsrc = nsrc;
   t->idx = 0;
 
@@ -131,25 +134,33 @@ void kos_transform_init_view(
 int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables) {
 
   Py_ssize_t n = PyTuple_GET_SIZE(iterables);
-  PyObject *srcs = PyTuple_New(n);
+  KosIterRequest *srcs = NULL;
   Py_ssize_t i;
 
-  if (! srcs)
-    return -1;
+  if (n) {
+    srcs = PyMem_Calloc((size_t) n, sizeof(KosIterRequest));
+    if (! srcs) {
+      PyErr_NoMemory();
+      return -1;
+    }
+  }
 
+  /* each source bound as it is acquired; a failure releases the ones
+     before it, every later slot being still clear */
   for (i = 0; i < n; i++) {
     PyObject *source = kos_iter_acquire(PyTuple_GET_ITEM(iterables, i));
 
     if (! source) {
-      Py_DECREF(srcs);
+      while (i--)
+        Py_CLEAR(srcs[i].iter);
+      PyMem_Free(srcs);
       return -1;
     }
-    PyTuple_SET_ITEM(srcs, i, source);
+    kos_iter_request_bind_next(&srcs[i], source);
   }
 
   m->srcs = srcs;
-  kos_transform_init_view(&m->base, n ? PySequence_Fast_ITEMS(srcs) : NULL,
-                          (uint16_t) n);
+  kos_transform_init_view(&m->base, srcs, (uint16_t) n);
   return 0;
 }
 
@@ -234,17 +245,17 @@ KosIterStepResult kos_transform_stage(
    Close every acquired iterator the view names. A NULL slot -- one a
    lazy provider has not reached, or one it cleared as it finished --
    is a no-op in kos_iter_close, so a partly populated view needs no
-   special case. A retracted view (sources NULL) closes nothing.
+   special case. A retracted view (reqs NULL) closes nothing.
 */
 static void close_sources(KosTransform *t) {
 
   uint16_t i;
 
-  if (! t->sources)
+  if (! t->reqs)
     return;
 
   for (i = 0; i < t->nsrc; i++)
-    kos_iter_close(t->sources[i]);
+    kos_iter_close(t->reqs[i].iter);
 }
 
 
@@ -347,7 +358,7 @@ int kos_transform_traverse(PyObject *self, visitproc visit, void *arg) {
   KosTransform *t = (KosTransform *) self;
 
   Py_VISIT(t->fn.cs_callable);
-  Py_VISIT(t->source);
+  Py_VISIT(t->src.iter);
   Py_VISIT(t->pending);
   Py_VISIT(t->ctx);
   return 0;
@@ -359,7 +370,7 @@ int kos_transform_clear(PyObject *self) {
   KosTransform *t = (KosTransform *) self;
 
   KosCallShape_Clear(&t->fn);
-  Py_CLEAR(t->source);
+  Py_CLEAR(t->src.iter);
   Py_CLEAR(t->pending);
   /* a stepper mid-step on this context holds its own reference and
      finishes its drive before letting go; the last holder frees */
@@ -395,11 +406,33 @@ PyObject *kos_transform_repr(PyObject *self) {
 }
 
 
+/* Retract the view and release the requests' iterators and the array
+   that held them: the view goes first, since the base reads it
+   whenever it closes and tp_clear runs on a live object. */
+static void multi_release_srcs(KosTransformMulti *m) {
+
+  KosIterRequest *srcs = m->srcs;
+  uint16_t nsrc = m->base.nsrc;
+  uint16_t i;
+
+  m->base.reqs = NULL;
+  m->base.nsrc = 0;
+  m->srcs = NULL;
+  if (! srcs)
+    return;
+  for (i = 0; i < nsrc; i++)
+    Py_CLEAR(srcs[i].iter);
+  PyMem_Free(srcs);
+}
+
+
 int kos_transform_multi_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosTransformMulti *m = (KosTransformMulti *) self;
+  uint16_t i;
 
-  Py_VISIT(m->srcs);
+  for (i = 0; m->srcs && i < m->base.nsrc; i++)
+    Py_VISIT(m->srcs[i].iter);
   Py_VISIT(m->row);
   return kos_transform_traverse(self, visit, arg);
 }
@@ -409,9 +442,7 @@ int kos_transform_multi_clear(PyObject *self) {
 
   KosTransformMulti *m = (KosTransformMulti *) self;
 
-  m->base.sources = NULL;
-  m->base.nsrc = 0;
-  Py_CLEAR(m->srcs);
+  multi_release_srcs(m);
   Py_CLEAR(m->row);
 
   return kos_transform_clear(self);
@@ -423,9 +454,7 @@ void kos_transform_multi_dealloc(PyObject *self) {
   KosTransformMulti *m = (KosTransformMulti *) self;
 
   PyObject_GC_UnTrack(self);
-  m->base.sources = NULL;
-  m->base.nsrc = 0;
-  Py_CLEAR(m->srcs);
+  multi_release_srcs(m);
   Py_CLEAR(m->row);
 
   kos_transform_dealloc(self);

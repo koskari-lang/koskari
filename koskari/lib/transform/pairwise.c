@@ -72,7 +72,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     return kos_transform_decline(ctx, t);
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, t->source,
+    KosOpResult r = KosContext_NextResumeBound(ctx, &t->src,
                                             &pairwise_resume_deliver_kind, t);
     RESULT_ENTRY(ctx, r, &pairwise_resume_deliver_kind, t);
   }
@@ -96,7 +96,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
   KosTransform *t = &p->base;
   PyObject *row;
 
-  kos_transform_fetched(t->source, element);
+  kos_transform_fetched(&t->src, element);
 
   if (! element) {
     if (kos_transform_source_spent()) {
@@ -144,7 +144,7 @@ static KosIterStepResult pairwise_step_body(
     /* Prime the pair on the first step. A source of fewer than two
        elements never yields, exactly as Python's does. */
     if (! p->held) {
-      KOS_TRANSFORM_FETCH(ctx, t, t->source, &pairwise_resume_fetch_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, &t->src, &pairwise_resume_fetch_kind,
                           pre_top, out, p->held);
     }
 
@@ -154,7 +154,7 @@ static KosIterStepResult pairwise_step_body(
     PyObject *held = p->held;
     Py_INCREF(held);
 
-    switch (KosContext_NextOrDefer(ctx, t->source,
+    switch (KosContext_NextOrDefer(ctx, &t->src,
                                      &pairwise_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:

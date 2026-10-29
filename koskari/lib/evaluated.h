@@ -295,64 +295,44 @@ static inline int kos_iter_check(PyObject *obj) {
 
 
 /**
-   Classify iter for the fetch (kos_iter_fetch): KOS_IREQ_KIND_PROVIDER
-   with *islots its suite, else NULL in *islots and PY_ASYNC for a
-   type with am_anext (async wins over sync, as the for-each bind
-   always had it), PY_SYNC for one with tp_iternext, NONE for an
-   object that is no iterator. The classifier of a site that binds
-   its iterator once and keeps the answer in its request record; a
-   next request without a record classifies with kos_iter_kind_next
-   on the way to the same fetch.
+   Bind iter into req for a next request, classified for the fetch
+   (kos_iter_fetch): KOS_IREQ_KIND_PROVIDER with islots its suite,
+   else islots NULL and PY_SYNC for a type with tp_iternext, PY_ASYNC
+   for one with am_anext, NONE for an object that is no iterator. Sync
+   is tried first: a python object answering both protocols is a sync
+   iterator here, as Python's next takes it, where the for-each bind
+   (kos_dyn_iter_request_bind_iter) prefers its async protocol. For a
+   request on the stack of one next entry, and for a record that holds
+   its source for many elements and so classifies it once. iter is
+   borrowed; the record's holder owns the reference.
 */
-static inline uint8_t kos_iter_kind(PyObject *iter, KosIterSlots **islots) {
+static inline void kos_iter_request_bind_next(
+    KosIterRequest *req,
+    PyObject *iter) {
 
-  PyTypeObject *tp;
-
-  if (KosIter_CheckSlots(iter, islots))
-    return KOS_IREQ_KIND_PROVIDER;
-  *islots = NULL;
+  req->iter = iter;
+  if (KosIter_CheckSlots(iter, &req->islots)) {
+    req->kind = KOS_IREQ_KIND_PROVIDER;
+    return;
+  }
+  req->islots = NULL;
   if (! iter)
-    return KOS_IREQ_KIND_NONE;
-
-  tp = Py_TYPE(iter);
-  if (tp->tp_as_async && tp->tp_as_async->am_anext)
-    return KOS_IREQ_KIND_PY_ASYNC;
-  if (PyIter_Check(iter))
-    return KOS_IREQ_KIND_PY_SYNC;
-  return KOS_IREQ_KIND_NONE;
+    req->kind = KOS_IREQ_KIND_NONE;
+  else if (PyIter_Check(iter))
+    req->kind = KOS_IREQ_KIND_PY_SYNC;
+  else if (Py_TYPE(iter)->tp_as_async && Py_TYPE(iter)->tp_as_async->am_anext)
+    req->kind = KOS_IREQ_KIND_PY_ASYNC;
+  else
+    req->kind = KOS_IREQ_KIND_NONE;
 }
 
 
 /**
-   The classifier for a next request: the same kinds as kos_iter_kind,
-   with a python object that answers both protocols a sync iterator,
-   as Python's next takes it, where the for-each bind prefers its
-   async protocol.
-*/
-static inline uint8_t kos_iter_kind_next(PyObject *iter, KosIterSlots **islots) {
-
-  PyTypeObject *tp;
-
-  if (KosIter_CheckSlots(iter, islots))
-    return KOS_IREQ_KIND_PROVIDER;
-  *islots = NULL;
-  if (! iter)
-    return KOS_IREQ_KIND_NONE;
-
-  if (PyIter_Check(iter))
-    return KOS_IREQ_KIND_PY_SYNC;
-  tp = Py_TYPE(iter);
-  if (tp->tp_as_async && tp->tp_as_async->am_anext)
-    return KOS_IREQ_KIND_PY_ASYNC;
-  return KOS_IREQ_KIND_NONE;
-}
-
-
-/**
-   Whether kind and islots are an answer either classifier gives for
-   iter: the kind's protocol is one iter has, and islots is its suite
-   exactly when it is a provider. The consistency test behind a fetch
-   under KOS_EVAL_SAFETYNET.
+   Whether kind and islots are an answer either bind gives for iter
+   (kos_iter_request_bind_next, kos_dyn_iter_request_bind_iter): the
+   kind's protocol is one iter has, and islots is its suite exactly
+   when it is a provider. The consistency test behind a fetch under
+   KOS_EVAL_SAFETYNET.
 */
 static inline int kos_iter_kind_fits(
     PyObject *iter,
@@ -402,78 +382,60 @@ KosIterStepResult kos_iter_step_provider(
 
 
 /**
-   An acquired iterator that steps through tp_iternext alone, with no
-   evaluator involvement: a plain sync iterator that is not a KosIter
-   provider. Anything else -- a provider, a python async iterator --
-   must be driven through the evaluator.
+   A sync step returned NULL: a StopIteration or a clean NULL is
+   exhaustion, any other error propagates. had_next is 0 when the type
+   lost its tp_iternext since it was classified. Out of line: the cold
+   end of kos_iter_next_sync.
 */
-static inline int KosIter_CheckSync(PyObject *iter) {
-
-  return ! KosIter_Check(iter) && PyIter_Check(iter);
-}
+KosIterRequestStatus kos_iter_next_sync_ended(int had_next);
 
 
 /**
-   The plain-iterator arm the request entries share: a python iterator
-   that is no provider and has tp_iternext answers through it alone,
-   a StopIteration read as exhaustion. Returns 1 when iter is such an
-   iterator, with *status set and *out the element on DELIVERED; 0
-   when iter needs a request. Inline, so a
-   provider's per-element fetch is the type test and the call.
+   One step of a sync iterator through tp_iternext alone, as CPython's
+   FOR_ITER makes it: DELIVERED with *out the element, else the cold
+   end's answer, EXHAUSTED or ERROR with the error set. The caller has
+   classified iter as KOS_IREQ_KIND_PY_SYNC. The one sync step every
+   fetch makes, from a bound request or a provider's own.
 */
-KOS_OP_INLINE int kos_iter_next_plain(
+KOS_OP_INLINE KosIterRequestStatus kos_iter_next_sync(
     PyObject *iter,
-    PyObject **out,
-    KosIterRequestStatus *status) {
+    PyObject **out) {
 
-  if (! KosIter_CheckSync(iter))
-    return 0;
+  iternextfunc next = Py_TYPE(iter)->tp_iternext;
 
-  *out = Py_TYPE(iter)->tp_iternext(iter);
-  if (likely(*out)) {
-    *status = KOS_IREQ_DELIVERED;
-    return 1;
-  }
-
-  if (PyErr_Occurred()) {
-    if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      *status = KOS_IREQ_ERROR;
-      return 1;
-    }
-    PyErr_Clear();
-  }
-  *status = KOS_IREQ_EXHAUSTED;
-  return 1;
+  *out = likely(next) ? next(iter) : NULL;
+  if (likely(*out))
+    return KOS_IREQ_DELIVERED;
+  return kos_iter_next_sync_ended(next != NULL);
 }
 
 
 /**
-   Request the next element of iter from a provider's step, which
-   runs outside the drive and so cannot defer in place. A
-   plain python iterator answers now: DELIVERED with *out the element
-   (new ref), EXHAUSTED, or ERROR with PyErr set. Any other kind is
-   deferred: a code-less frame carrying resume and state is installed
-   (through cache, as KosResumeFrame_Install takes it) and CONTINUES is
-   returned, so the step reports its work installed and resume makes
-   the request through KosContext_NextResume once the drive reaches
-   the frame. ERROR with nothing installed when the frame cannot be.
-   The one place a provider asks for an element from its step; the
-   kind of the source is decided here, never by the provider.
+   Request the next element of the bound iterator req describes from a
+   provider's step, which runs outside the drive and so cannot defer
+   in place. A plain python iterator answers now: DELIVERED with *out
+   the element (new ref), EXHAUSTED, or ERROR with PyErr set. Any
+   other kind is deferred: a code-less frame carrying resume and state
+   is installed (through cache, as KosResumeFrame_Install takes it) and
+   CONTINUES is returned, so the step reports its work installed and
+   resume makes the request through KosContext_NextResumeBound once
+   the drive reaches the frame. ERROR with nothing installed when the
+   frame cannot be. The one place a provider asks for an element from
+   its step; the kind was decided when the source was bound, never by
+   the provider.
 */
 KOS_OP_INLINE KosIterRequestStatus KosContext_NextOrDefer(
     KosContext *ctx,
-    PyObject *iter,
+    const KosIterRequest *req,
     const KosResumeKind *resume,
     void *state,
     KosDynFrame **cache,
     PyObject **out) {
 
-  KosIterRequestStatus status;
-
   *out = NULL;
 
-  if (kos_iter_next_plain(iter, out, &status))
-    return status;
+  if (likely(req->kind == KOS_IREQ_KIND_PY_SYNC))
+    return kos_iter_next_sync(req->iter, out);
 
   if (! KosResumeFrame_Install(ctx, resume, state, cache))
     return KOS_IREQ_ERROR;

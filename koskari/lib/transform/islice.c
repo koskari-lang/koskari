@@ -140,7 +140,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     return kos_transform_decline(ctx, t);
 
   if (s->cnt < s->next) {
-    KosOpResult r = KosContext_NextResume(ctx, t->source,
+    KosOpResult r = KosContext_NextResumeBound(ctx, &t->src,
                                             &islice_resume_discard_kind, s);
     RESULT_ENTRY(ctx, r, &islice_resume_discard_kind, s);
   }
@@ -152,7 +152,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   }
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, t->source,
+    KosOpResult r = KosContext_NextResumeBound(ctx, &t->src,
                                             &islice_resume_emit_kind, s);
     RESULT_ENTRY(ctx, r, &islice_resume_emit_kind, s);
   }
@@ -169,7 +169,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
 
   KosISlice *s = (KosISlice *) state;
 
-  kos_transform_fetched(s->base.source, element);
+  kos_transform_fetched(&s->base.src, element);
 
   if (! element)
     return kos_transform_decline(ctx, &s->base);
@@ -190,7 +190,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
 
   KosISlice *s = (KosISlice *) state;
 
-  kos_transform_fetched(s->base.source, element);
+  kos_transform_fetched(&s->base.src, element);
 
   if (! element)
     return kos_transform_decline(ctx, &s->base);
@@ -222,7 +222,7 @@ static KosIterStepResult islice_step_body(
     while (s->cnt < s->next) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(ctx, t, t->source, &islice_resume_skip_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, &t->src, &islice_resume_skip_kind,
                           pre_top, out, element);
       Py_DECREF(element);
       s->cnt++;
@@ -237,7 +237,7 @@ static KosIterStepResult islice_step_body(
     {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(ctx, t, t->source, &islice_resume_skip_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, &t->src, &islice_resume_skip_kind,
                           pre_top, out, element);
 
       s->cnt++;
