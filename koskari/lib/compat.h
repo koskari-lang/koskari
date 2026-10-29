@@ -199,22 +199,27 @@ static inline int koskari_gil_drop_requested(void) {
    value slot. The type call that would do the same costs a vectorcall
    into type_call, BaseException_new and StopIteration_init per raise,
    and the iterator protocol raises one on every return a Python
-   driver takes from a Koskari coroutine. value borrowed. New
-   reference, or NULL with an error set.
+   driver takes from a Koskari coroutine. Steals value: the value slot
+   takes the caller's reference, the args tuple its own. New reference,
+   or NULL with an error set and value released.
    https://github.com/python/cpython/blob/v3.12.0/Objects/exceptions.c */
 static inline PyObject *kos_stop_iteration_new(PyObject *value) {
   PyTypeObject *type = (PyTypeObject *) PyExc_StopIteration;
   PyStopIterationObject *exc =
       (PyStopIterationObject *) type->tp_alloc(type, 0);
 
-  if (! exc)
-    return NULL;
-  exc->args = PyTuple_Pack(1, value);
-  if (! exc->args) {
-    Py_DECREF(exc);
+  if (! exc) {
+    Py_DECREF(value);
     return NULL;
   }
-  exc->value = Py_NewRef(value);
+  exc->args = PyTuple_New(1);
+  if (! exc->args) {
+    Py_DECREF(exc);
+    Py_DECREF(value);
+    return NULL;
+  }
+  PyTuple_SET_ITEM(exc->args, 0, Py_NewRef(value));
+  exc->value = value;
   return (PyObject *) exc;
 }
 
@@ -235,7 +240,6 @@ static inline PyObject *kos_raise_stop_iteration(PyObject *value) {
   }
 
   exc = kos_stop_iteration_new(value);
-  Py_DECREF(value);
   if (exc)
     kos_raise_stop_instance(exc);
   return NULL;

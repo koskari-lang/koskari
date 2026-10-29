@@ -765,40 +765,34 @@ static PyObject *coroutine_close(PyObject *self) {
 
 
 /*
-   demand() – Run coroutine to completion on the demand path (no asyncio).
-   If the coroutine suspends on a Python awaitable, raises RuntimeError.
+   demand() -- run the coroutine to completion on the demand path (no
+   asyncio), stepping it directly so the return is taken as a value and
+   never built into a StopIteration. A suspension on a Python awaitable
+   cannot be served here and raises RuntimeError.
 */
 static PyObject *coroutine_demand(PyObject *self) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
 
   for (;;) {
-    PyObject *step = coroutine_send(self, Py_None);
+    PyObject *out;
+    int settled = coroutine_step(coro, Py_None, &out);
 
-    if (! step) {
-      if (PyErr_Occurred()) {
-        if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-          PyObject *val = NULL;
-
-          (void) PyGen_FetchStopIterationValue(&val);
-          if (! val)
-            Py_RETURN_NONE;
-          return val;
-        }
-        return NULL;
-      }
+    if (settled < 0)
       return NULL;
+    if (settled == 0) {
+      if (! out)
+        Py_RETURN_NONE;
+      return out;
     }
 
+    Py_DECREF(out);
     if (coro->state == KOS_CORO_WAITING_PY) {
-      Py_DECREF(step);
       PyErr_SetString(PyExc_RuntimeError,
                       "coroutine.demand() cannot complete: coroutine is "
                       "waiting on a Python awaitable; use async await");
       return NULL;
     }
-
-    Py_DECREF(step);
   }
 }
 
