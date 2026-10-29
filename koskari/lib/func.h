@@ -190,13 +190,16 @@ typedef struct {
                                order); -1 otherwise. A call arm stores the
                                function there after binding the arguments,
                                see KosFunction_StoreSelf */
-  Py_ssize_t install_arity1; /* simple_arity1 when a call at that arity
-                                takes the simple install arms: the code
-                                is present, does not yield, and the
-                                self-bind is resolved; 0 otherwise, which
-                                no call's nargs + 1 matches. The one
-                                fact the call arms test; written where
-                                bind_self_state resolves */
+  Py_ssize_t install_arity1; /* whether a call installs: 0 until the
+                                self-bind resolves, and for yielding
+                                code, which no call's nargs + 1 matches
+                                and the entry call reads as "not
+                                installable"; else simple_arity1 when
+                                the formals are simple, so a call at
+                                that arity takes the simple install
+                                arms; else -1, installable at no simple
+                                arity. The one fact the call arms test;
+                                written where bind_self_state resolves */
   Py_ssize_t simple_arity1; /* exact positional arity PLUS ONE for the
                                simple-call fast path (plain positional
                                formals, no defaults/star/kwd/by-refs);

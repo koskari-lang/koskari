@@ -2241,9 +2241,10 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
 
   KosContext_ENTRY_CALL(ctx) = NULL;
 
-  /* an installable function of any arity: resolved self-bind, code
-     present and non-yielding, the three facts install_arity1 records
-     (any shape binds here, so the arity itself is not compared) */
+  /* an installable function of any formals: resolved self-bind, code
+     present and non-yielding, the facts a non-zero install_arity1
+     records; any shape binds here, so the arity itself, simple or -1,
+     is not compared */
   if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
       && KosFunction_INSTALL_ARITY1(callable) != 0) {
 

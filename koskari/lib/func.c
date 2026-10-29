@@ -1368,10 +1368,11 @@ static int kos_function_bind_self_if_local(
       fn->self_slot = slot;
     }
     fn->bind_self_state = bind ? 1 : 2;
-    /* resolved: a call at the simple arity may take the install arms,
-       unless the function is a generator */
+    /* resolved: a call may install, unless the function is a
+       generator; at the simple arity when the formals are simple, at
+       none (-1) otherwise */
     if (fn->code && ! KosCode_YIELDS((KosCode *) fn->code))
-      fn->install_arity1 = fn->simple_arity1;
+      fn->install_arity1 = fn->simple_arity1 ? fn->simple_arity1 : -1;
     if (! bind)
       return 0;
   }
