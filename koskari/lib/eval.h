@@ -304,8 +304,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
    bounce without the pass. A site that knows it has a RESUME tails
    here directly; the relay's RESUME arm tails here for one that
    carries the kind in a variable. A delivery already staged for the
-   frame is the value; a kind that settles its delivery goes through
-   the prologue, which settles it. A failed delivery arrives as NULL
+   frame is the value; an awaitable delivered to a kind that settles
+   goes through the prologue, which settles it, while a plain value
+   hops at once. A failed delivery arrives as NULL
    with the error pending and supersedes any staged delivery, in the
    slot or on a code-less frame's stack. insn is unused.
 */

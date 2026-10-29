@@ -1959,7 +1959,12 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_resume_live(
     val = KosContext_PENDING_VALUE(ctx);
     KosContext_PENDING_VALUE(ctx) = NULL;
   }
-  if (resume->settle && val) {
+  /* A settling kind takes a value as it is: a type with no am_await
+     is one by the classifier's first test, so it hops now. An
+     awaitable, or a Defer or future the classifier's later tests
+     admit, is staged for the prologue's pass, which settles it. */
+  if (resume->settle && val
+      && Py_TYPE(val)->tp_as_async && Py_TYPE(val)->tp_as_async->am_await) {
     KosContext_PENDING_VALUE(ctx) = val;
     TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   }
@@ -3015,10 +3020,12 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 /**
    After RETURN opcode pop: a parent waiting on a resume takes the
-   value through the pending slot, delivered on the next prologue
-   pass; a bytecode parent takes it on its stack. Then
-   kos_dyn_settle_top (WIND/WITH). val is a new ref; ownership is
-   consumed by this function.
+   value as a RESUME answer when it is at dyn_top, which the return's
+   thread function hands to kos_eval_resume_live, or through the
+   pending slot when a WIND or WITH node above it has hook work, which
+   the next prologue pass delivers; a bytecode parent takes it on its
+   stack. Then kos_dyn_settle_top (WIND/WITH). val is a new ref;
+   ownership is consumed by this function.
 */
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosContext *ctx, PyObject *val) {
@@ -3026,9 +3033,12 @@ static inline KosOpResult eval_parent_return_deliver_impl(
   KosDynFrame *parent = KosContext_FRAME(ctx);
 
   /* Destination by one field: a parent waiting on a resume takes the
-     value through the pending slot; a bytecode parent takes it on its
-     stack, where its next instruction finds it. */
+     value, at once when nothing sits above it, through the pending
+     slot otherwise; a bytecode parent takes it on its stack, where its
+     next instruction finds it. */
   if (parent && KosDynFrame_RESUME_KIND(parent)) {
+    if (likely(KosContext_DYN_TOP(ctx) == (KosDynNode *) parent))
+      return EVAL_RESUME(val);
     KosContext_StageDelivery(ctx, val);
   } else if (KosContext_StackPUSH(ctx, val) < 0) {
     return EVAL_FATAL();

@@ -594,9 +594,11 @@ sit above the frame, **`eval_event_return_unwind`** first runs
 - **Other parents** (WIND, TRY, WITH, a stepping FOREACH region whose
   grafted invoke is returning, a resume-carrying frame the fast arm
   declined): pop the callee frame, then
-  **`eval_parent_return_deliver`** (stage the value in the pending slot
-  when the parent frame carries a resume, or push it onto the parent
-  stack, then `kos_dyn_settle_top`), then
+  **`eval_parent_return_deliver`** (a resume-carrying parent at
+  dyn_top takes the value as a RESUME answer, threaded into
+  `kos_eval_resume_live`; one under a WIND or WITH node has it staged
+  in the pending slot; a plain parent takes it on its stack, then
+  `kos_dyn_settle_top`), then
   **`kos_eval_delivery_done`**: `EVAL_DISPATCH()` when a plain bytecode
   frame is current with nothing staged, else `EVAL_REPROLOGUE()`.
 - **No parent:** root frame -- returns `EVAL_RETURN(val)`.
@@ -695,7 +697,7 @@ threads straight into a plain parent, an extent over one, or a resume-carrying
 parent (§2.6); otherwise it signals **`EVAL_RETURN(val)`** and
 **`eval_event_return`** pops the frame and delivers -- the consumer
 frame's resume above a GEN via **`iter_deliver_to_resume`**, or
-**`eval_parent_return_deliver`** for other parents (stage in the pending slot for a resume-carrying parent, or push onto
+**`eval_parent_return_deliver`** for other parents (a RESUME answer for a resume-carrying parent at dyn_top, the pending slot for one under a WIND or WITH node, or a push onto
 the caller's stack, then **`kos_dyn_settle_top`**, then
 **`kos_eval_delivery_done`**). The caller does **not** get a
 `KOS_RES_RETURN` for that step; the evaluator keeps running in the caller.
@@ -2019,7 +2021,7 @@ To avoid recursive C calls and keep a single state machine:
 
 1. **CALL (Koskari callables)**: The CALL opcode's class dispatch (`kos_call_invoke_impl`) installs an exact `KosFunction` directly (`KosFunction_Install`) and routes every other KosCallable through `kos_call_push`, which resolves the call suite and dispatches the install slot; the slot installs its own frame (TAIL_CALL reuses the current one). The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. The install slot is `kc_vinstall` in the call suite (`evaluated.h`, `callable.h`); the two-slot design it replaced is archived at [archive/special-call-protocol.md](archive/special-call-protocol.md).
 
-2. **RETURN (frame has parent, normal call return)**: When the callee's parent is a plain bytecode frame, a discardable extent over one, or a frame waiting on a resume, the RETURN opcode frees the callee, delivers (push onto the parent's stack, or hand the value to the resume), and threads on (§2.6). Otherwise `kos_return_deliver` runs **`eval_event_return`**, which runs the unwind walk if extents sit above the frame, pops it, and delivers through the consumer frame's resume or **`eval_parent_return_deliver`** (pending slot or parent stack, then **`kos_dyn_settle_top`** for WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the evaluator eventually stops for another reason.
+2. **RETURN (frame has parent, normal call return)**: When the callee's parent is a plain bytecode frame, a discardable extent over one, or a frame waiting on a resume, the RETURN opcode frees the callee, delivers (push onto the parent's stack, or hand the value to the resume), and threads on (§2.6). Otherwise `kos_return_deliver` runs **`eval_event_return`**, which runs the unwind walk if extents sit above the frame, pops it, and delivers through the consumer frame's resume or **`eval_parent_return_deliver`** (a RESUME answer for a resume-carrying parent at dyn_top, the pending slot for one under a WIND or WITH node, or the parent stack, then **`kos_dyn_settle_top`** for WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the evaluator eventually stops for another reason.
 
 3. **NEXT/ITER_NEXT (KosIter providers)**: the NEXT opcodes (**`OBJECT_NEXT`**, **`VAR_NEXT`**, **`FAST_NEXT`**, through **`KosContext_NextResume`**) step the provider with a next resume set on the frame, owning the iterator as its state; **`ITER_NEXT`** and its fused twins step the innermost **`KOS_DYN_FOREACH`** region's iterator through **`KOS_ITER_STEP`** (the fetch `kos_iter_fetch` by the request's bound kind) with the step resume set; both with the live **`KosContext *ctx`** from the opcode. A generator provider's `ki_step` splices its frozen chain via **`kos_dyn_gen_install(ctx, gen)`** so **`kos_dyn_resync_chain`** updates the same **`ctx`** the dispatch loop uses. The installed frames run until YIELD or RETURN, delivered to the consumer frame's resume via **`iter_deliver_to_resume`**, and the loop continues with the consumer as `frame`. No recursive `koskari_eval(agen->ctx, ...)`.
 
