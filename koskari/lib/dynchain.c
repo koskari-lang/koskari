@@ -3220,6 +3220,9 @@ int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
         & KOS_DYNF_HOLDS_RETURN_FRAME) {
       KosDynNode_FLAGS((KosDynNode *) delim) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
       KosDynNode_PARENT((KosDynNode *) ret_frame) = prompt;
+      /* the snapshot copied its source's flags, which may record a
+         frame parent; the parent is the prompt now */
+      kos_dynframe_note_parent(ret_frame);
       /* The snapshot was taken of the frame nearest the shift, which
          may have sat above other frames in the region; here it stands
          directly above the prompt. */
