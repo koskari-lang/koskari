@@ -480,8 +480,14 @@ void kos_dyn_swap_frame_for_tail(KosContext *ctx, KosDynFrame *ready) {
 
   KosDynNode_PARENT(ready_node) = KosDynNode_PARENT(live_node);
   KosDynNode_NODE_ID(ready_node) = 0;
-  KosDynFrame_FLAGS(ready) |= (KosDynFrame_FLAGS(live)
-                               & (KOS_FRAME_DEMAND | KOS_FRAME_PARENT_IS_FRAME));
+  /* the demand bit and the parent-kind record are the live frame's,
+     the same parent; assigned, not merged, so a ready frame that
+     arrived with either bit set does not keep it */
+  KosDynFrame_FLAGS(ready) =
+      (KosDynFrame_FLAGS(ready)
+       & ~(KOS_FRAME_DEMAND | KOS_FRAME_PARENT_IS_FRAME))
+      | (KosDynFrame_FLAGS(live)
+         & (KOS_FRAME_DEMAND | KOS_FRAME_PARENT_IS_FRAME));
   KosDynFrame_DEPTH(ready) = KosDynFrame_DEPTH(live);
   KosDynFrame_BACK_FRAME(ready) = KosDynFrame_BACK_FRAME(live);
   KosSegment_BACK(KosDynNode_STACK(ready_node)) =
