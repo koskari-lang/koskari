@@ -2,8 +2,9 @@
 
 ## Status
 
-Fixed. Reproducers are the `binding` group in
-`tests/sweep/delimited_sweep.py`. Found while writing
+Fixed. Reproducers are the `shape_bind_*` functions of
+`tests/reproducers/scripts/delimited_shapes.ki`, run by
+`tests/reproducers/test_delimited_shapes.py`. Found while writing
 [koskari.solve](../../koskari/solve.ki).
 
 **Cause:** an invocation-bounded capture stops at the invocation

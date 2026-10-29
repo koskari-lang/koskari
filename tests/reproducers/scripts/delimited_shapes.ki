@@ -1,0 +1,394 @@
+;; Delimited-continuation shapes: where a shift sits relative to its
+;; reset, k escaping its prompt, a shift firing inside a resumed
+;; continuation, bindings read back inside a resumed region, operands
+;; pending in the call around the reset, how k is used, and the other
+;; dynamic extents a reset meets. One function per shape, each
+;; returning the value test_delimited_shapes.py checks against the
+;; Danvy/Filinski reduction.
+
+
+(define-parameter p 1)
+
+
+;; === 1. Where the shift sits relative to its reset ===
+
+
+;; shift lexically in reset body
+def shape_pos_lexical []:
+    (reset (shift k (k 1)))
+
+
+;; shift lexical, one pending operand in region
+def shape_pos_arith []:
+    (reset (+ 1 (shift k (k 5))))
+
+
+;; shift lexical, inside a let in the region
+def shape_pos_let []:
+    (reset (let [[z 1]] (+ z (shift k (k 5)))))
+
+
+;; shift lexical, pending #list and + in region
+def shape_pos_nested_build []:
+    (reset (#list "x" (+ 1 (shift k (k 5))) "y"))
+
+
+;; shift one frame deep via immediately-invoked lambda
+def shape_pos_iife []:
+    (reset ((lambda [] (shift k (k 1)))))
+
+
+;; shift one frame deep in a named function
+def shape_pos_callee []:
+    def f []:
+        (shift k (k 1))
+    (reset (f))
+
+
+;; shift one frame deep, pending operand in caller region
+def shape_pos_callee_arith []:
+    def f []:
+        (shift k (k 5))
+    (reset (+ 1 (f)))
+
+
+;; shift one frame deep, pending operand in callee frame
+def shape_pos_callee_own_arith []:
+    def f [n]:
+        (+ n (shift k (k 100)))
+    (reset (+ 1 (f 2)))
+
+
+;; shift two frames deep
+def shape_pos_callee2 []:
+    def inner []:
+        (shift k (k 1))
+    def outer []:
+        (inner)
+    (reset (outer))
+
+
+;; cross-frame shift that never invokes k
+def shape_xframe_abandon []:
+    def f []:
+        (shift k "abandoned")
+    (reset (+ 1 (f)))
+
+
+;; cross-frame shift, reset nested in a let (NS below prompt)
+def shape_xframe_in_let []:
+    def f []:
+        (shift k (k 5))
+    (let [[z 9]] (reset (+ 1 (f))))
+
+
+;; cross-frame shift, reset nested in a dyn-wind (WIND below prompt)
+def shape_xframe_in_wind []:
+    def f []:
+        (shift k (k 5))
+    var log (#list)
+    var r (dyn-wind (log.append "in") (reset (+ 1 (f))) (log.append "out"))
+    (#tuple r log)
+
+
+;; === 1b. Provenance: k escaping its prompt ===
+
+
+;; k escapes as the reset's value, invoked later in the same form
+def shape_remote_invoke []:
+    (let [[captured None]]
+      (begin
+        (set! captured (reset (+ 1 (shift k k))))
+        (captured 5)))
+
+
+;; escaped k invoked twice after its prompt unwound
+def shape_remote_invoke_twice []:
+    (let [[captured None]]
+      (begin
+        (set! captured (reset (+ 1 (shift k k))))
+        (#tuple (captured 5) (captured 30))))
+
+
+;; escaped k replays a dyn-wind around the graft on invoke
+def shape_remote_invoke_wound []:
+    var log (#list)
+    var r:
+        (let [[captured None]]
+          (begin
+            (set! captured
+              (reset
+                (dyn-wind (log.append "in")
+                  (+ 1 (shift k k))
+                  (log.append "out"))))
+            (captured 5)))
+    (#tuple r log)
+
+
+;; === 1c. Re-entrancy: a shift firing inside a resumed continuation ===
+
+
+;; two shifts in one reset; the second fires inside the first's k
+def shape_reentrant_two_shifts []:
+    (reset (+ (shift k (k 1)) (shift j (j 10))))
+
+
+;; outer k invoked twice; its continuation contains a second shift
+def shape_reentrant_multishot []:
+    (reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10))))
+
+
+;; control: nested resets, each with its own shift
+def shape_nested_resets []:
+    (reset (+ 1 (shift k (k (reset (+ 2 (shift j (j 3))))))))
+
+
+;; inner shift abandons inside invoked k; value lands at the invoke site
+def shape_reentrant_inner_abandon []:
+    (reset (+ (shift k (+ (k 1) (k 2))) (shift j 100)))
+
+
+;; three-deep re-entrancy: k applied to its own result twice
+def shape_reentrant_k_of_k []:
+    (reset (+ 1 (shift k (k (k (k 0))))))
+
+
+;; k re-invoked from an inner handler while a graft of k is still live
+def shape_reentrant_nested_same_k []:
+    var log (#list)
+    (reset
+      (+ (shift k (+ (k 1) (k 2)))
+         (shift j
+           (cond
+             ((== (len log) 1)
+               (log.append "re")
+               (+ (j 100) (k 7)))
+             (else:
+               (log.append "x")
+               (j 100))))))
+
+
+;; function amb x amb: multi-shot inside a multi-shot invocation
+def shape_reentrant_amb_product []:
+    def amb [choices]:
+        shift k:
+            let [[out (#list)]]:
+                for-each [c choices]:
+                    (out.extend (k c))
+                out
+    (reset
+      (#list (#tuple (amb (#list 1 2)) (amb (#list 10 20)))))
+
+
+;; === 1d. Bindings read back inside a resumed region ===
+;;
+;; A let around the reset puts its bindings in an NS node that capture
+;; clones into the template. Reading one back inside the region after a
+;; multi-shot re-invoke once found the cell empty or holding the raw
+;; dict, and inside a function frame the same shape took the process
+;; down. Module globals were unaffected, the module namespace never
+;; being cloned, which is why every earlier shape missed this.
+
+
+;; let binding read inside the region after a multi-shot second shift
+def shape_bind_let_reread []:
+    (let [[tag "T"]]
+      (reset
+        (begin
+          (shift k (k 1))
+          (shift j (begin (j 2) (j 3) "b"))
+          tag)))
+
+
+;; same shape inside a function frame
+def shape_bind_let_reread_fn []:
+    def runner []:
+        let [[tag "T"]]:
+            (reset
+              (begin
+                (shift k (k 1))
+                (shift j (begin (j 2) (j 3) "b"))
+                tag))
+    (runner)
+
+
+;; let-bound accumulator mutated once per invocation, both shifts multi-shot
+def shape_bind_let_accumulate []:
+    def runner []:
+        let [[acc (#list)]]:
+            let [[r (reset
+                      (begin
+                        (shift k (begin (k 1) (k 2) "done"))
+                        (shift j (begin (j 3) (j 4) "done"))
+                        (acc.append True)
+                        "z"))]]:
+                (#tuple r (len acc))
+    (runner)
+
+
+;; === 2. Operands pending in the enclosing call, same frame ===
+
+
+;; reset as sole argument
+def shape_encl_none []:
+    (#list (reset (+ 1 (shift k (k 5)))))
+
+
+;; one enclosing operand, nothing pending in region
+def shape_encl_clean_region []:
+    (#list "B" (reset (shift k (k 5))))
+
+
+;; one enclosing operand, one pending in region
+def shape_encl_one []:
+    (#list "B" (reset (+ 1 (shift k (k 5)))))
+
+
+;; two enclosing operands, two pending in region
+def shape_encl_two []:
+    (#list "C" "D" (reset (+ 1 2 (shift k (k 5)))))
+
+
+;; three pending in region; a one-slot leak would read 6 (= 1 + 2 + 3)
+def shape_encl_three []:
+    (#list "B" (reset (+ 1 2 3 (shift k (k 4)))))
+
+
+;; the pending operand is a call arg, not a reducing op
+def shape_encl_nonarith []:
+    (#list "B" (reset (max 1 (shift k (k 5)))))
+
+
+;; reset inside a pending #list build
+def shape_encl_build_list []:
+    (#list "E" (reset (+ 1 (shift k (k 5)))))
+
+
+;; === 3. How k is used ===
+
+
+;; k never invoked; shift body value wins
+def shape_k_abandon []:
+    (reset (+ 1 (shift k "abandoned")))
+
+
+;; k invoked twice (multi-shot)
+def shape_k_twice []:
+    (reset (+ 1 (shift k (+ (k 10) (k 20)))))
+
+
+;; k invoked once per element of a list
+def shape_k_loop []:
+    (reset
+      (+ 100
+        (shift k
+          (let [[out (#list)]]
+            (for-each [c (#list 1 2 3)]
+              (out.append (k c)))
+            out))))
+
+
+;; k invoked per element, shift one frame deep (the amb shape)
+def shape_k_callee_loop []:
+    def collect [choices]:
+        shift k:
+            let [[out (#list)]]:
+                for-each [c choices]:
+                    (out.append (k c))
+                out
+    (reset (+ 100 (collect (#list 1 2 3))))
+
+
+;; === 4. Interaction with other dynamic extents ===
+
+
+;; try block inside the region, shift inside the try
+def shape_try_inside []:
+    (reset
+      (try
+        (+ 1 (shift k (k 5)))
+        [[Exception] "caught"]))
+
+
+;; reset inside a try block
+def shape_try_outside []:
+    var r None
+    try:
+        (set! r (reset (+ 1 (shift k (k 5)))))
+    except [Exception as: e]:
+        (set! r (repr e))
+    r
+
+
+;; dyn-wind around the shift, k invoked once
+def shape_dynwind_around []:
+    var log (#list)
+    var r:
+        (reset
+          (dyn-wind
+            (log.append "in")
+            (+ 1 (shift k (k 5)))
+            (log.append "out")))
+    (#tuple r log)
+
+
+;; dyn-wind around the shift, k invoked twice
+def shape_dynwind_multishot []:
+    var log (#list)
+    var r:
+        (reset
+          (dyn-wind
+            (log.append "in")
+            (+ 1 (shift k (+ (k 10) (k 20))))
+            (log.append "out")))
+    (#tuple r (len log))
+
+
+;; parameterize around the shift
+def shape_param_around []:
+    (reset
+      (parameterize [[p 9]]
+        (+ p (shift k (k 0)))))
+
+
+;; parameterize spans the region; every invoke reads the bound value
+def shape_param_around_multishot []:
+    var seen (#list)
+    var r:
+        (reset
+          (parameterize [[p 9]]
+            (begin
+              (shift k (begin (k "a") (k "b") "done"))
+              (seen.append p)
+              p)))
+    (#tuple r seen)
+
+
+;; parameterize inside the resumed part; entered and restored per invoke
+def shape_param_inside_multishot []:
+    var seen (#list)
+    var r:
+        (reset
+          (begin
+            (shift k (begin (k "a") (k "b") "done"))
+            (parameterize [[p 9]]
+              (seen.append p))
+            (seen.append p)
+            "z"))
+    (#tuple r seen)
+
+
+;; parameterize closes before the shift returns; resume sees the default
+def shape_param_ends_before_resume []:
+    var seen (#list)
+    var r:
+        (reset
+          (begin
+            (parameterize [[p 9]]
+              (shift k (begin (k "a") (k "b") "done")))
+            (seen.append p)
+            "z"))
+    (#tuple r seen)
+
+
+;; The end.
