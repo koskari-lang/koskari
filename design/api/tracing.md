@@ -265,7 +265,7 @@ counts (`uint64_t` in C).
 | **live_rebuild** | Full register rebuilds from the chain (`kos_dyn_resync_chain`). |
 | **call_frame_cached** | A simple call served by a cached frame (`kos_call_install_cached_frame`). |
 | **call_simple_steal** | A simple call steal-binding into a fresh namespace. |
-| **call_simple_vector** | A simple call bound from a vector: no steal, not cacheable (`KosFunction_Install`). |
+| **call_simple_vector** | A simple call bound from a vector into a fresh frame (`KosFunction_ReadyFrameVector`); one bound into a cached frame counts as call_frame_cached. |
 | **call_tail_inplace** | A self-tail call rebinding the live frame's namespace. |
 | **entry_root_install** | A Python-boundary entry call installed as the eval's root frame. |
 | **entry_root_cached** | An entry call's code-less root frame taken from its Demand wrapper's slot. |

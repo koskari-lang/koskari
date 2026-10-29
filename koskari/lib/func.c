@@ -209,11 +209,16 @@ static KosOpResult kos_vinstall_expression(
    function never evaluates: its frame goes under a new GEN and the
    call completes in hand with the AsyncGenerator. In tail position the
    ready frame takes the live frame's place on the chain
-   (kos_dyn_swap_frame_for_tail); otherwise it is pushed.
+   (kos_dyn_swap_frame_for_tail); otherwise it is pushed. With
+   self_owned the caller's reference to callable is consumed on every
+   path: it moves into the frame's tag, which the frame's free releases
+   on the failures past the bind, and is released here on the failures
+   before it.
 */
-KosOpResult KosFunction_Install(
+KosOpResult KosFunction_InstallCall(
     KosContext *ctx,
     PyObject *callable,
+    int self_owned,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
@@ -223,12 +228,19 @@ KosOpResult KosFunction_Install(
   KosDynFrame *frame;
 
   if (tail_call
-      && kos_dyn_teardown_to_frame(ctx, KosContext_FRAME(ctx)) < 0)
+      && kos_dyn_teardown_to_frame(ctx, KosContext_FRAME(ctx)) < 0) {
+    if (self_owned)
+      Py_DECREF(callable);
     return EVAL_RAISE();
+  }
 
-  frame = KosFunction_ReadyFrameVector(callable, args, nargs, kwnames);
-  if (! frame)
+  frame = KosFunction_ReadyFrameVector(callable, self_owned, args, nargs,
+                                       kwnames);
+  if (! frame) {
+    if (self_owned)
+      Py_DECREF(callable);
     return EVAL_RAISE();
+  }
 
   if (code && KosCode_YIELDS(code)) {
     PyObject *agen = KosAsyncGen_NewFromFrame(callable, frame);
@@ -246,6 +258,19 @@ KosOpResult KosFunction_Install(
   }
   kos_dyn_push_ready_frame(ctx, frame);
   return kos_call_installed(ctx);
+}
+
+
+KosOpResult KosFunction_Install(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  return KosFunction_InstallCall(ctx, callable, 0, args, nargs, kwnames,
+                                 tail_call);
 }
 
 
@@ -1356,6 +1381,7 @@ void kos_function_frame_return(PyObject *self, KosDynFrame *frame) {
 
 KosDynFrame *kos_function_ready_frame_general(
     PyObject *self,
+    int self_owned,
     KosDynFrame *frame,
     int cached,
     PyObject *const *args,
@@ -1374,7 +1400,7 @@ KosDynFrame *kos_function_ready_frame_general(
   if (cached)
     KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
 
-  kos_function_frame_tag(self, 0, frame);
+  kos_function_frame_tag(self, self_owned, frame);
   return frame;
 }
 
@@ -1443,7 +1469,7 @@ PyObject *KosFunction_VectorCall(
     PyObject *kwnames) {
 
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
-  KosDynFrame *frame = KosFunction_ReadyFrameVector(self, args, nargs,
+  KosDynFrame *frame = KosFunction_ReadyFrameVector(self, 0, args, nargs,
                                                     kwnames);
 
   if (! frame)

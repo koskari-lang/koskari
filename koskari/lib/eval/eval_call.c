@@ -760,19 +760,31 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
         /* Any other tail call: the callee's ready frame, bound from the
            window while it still sits on the live frame's block, takes
-           the live frame's place on the chain. The swap frees the live
-           frame, whose block clear performs the window drop and whose
-           release offers it to its own function's cache; the ready
-           frame's tag holds the callable across that clear. */
+           the live frame's place on the chain. At the install arity
+           with argv the block tail the arguments steal-move off the
+           block; any other shape binds from the vector and the swap's
+           block clear releases them. Either way the swap frees the
+           live frame, whose block clear drops what is left of the
+           window and whose release offers it to its own function's
+           cache; an owned callable reference moves into the ready
+           frame's tag, which holds the callable across that clear. */
         {
-          KosDynFrame *ready = KosFunction_ReadyFrameVector(
-              callable, argv, nargs, kwnames);
+          KosDynFrame *ready;
 
+          if (likely(! kwnames
+                     && nargs == KosFunction_INSTALL_ARITY(callable)
+                     && (flags & KOS_CALL_ARGV_WINDOW)
+                     && ! (flags & KOS_CALL_ARGV_PREPENDED)))
+            ready = KosFunction_ReadyFrameBlock(
+                callable, flags & KOS_CALL_CALLABLE_OWNED, *caller_slot,
+                NULL, 0, nargs);
+          else
+            ready = KosFunction_ReadyFrameVector(
+                callable, flags & KOS_CALL_CALLABLE_OWNED, argv, nargs,
+                kwnames);
           if (unlikely(! ready))
             goto fail;
           kos_dyn_swap_frame_for_tail(ctx, ready);
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
           return kos_call_installed(ctx);
         }
       }
@@ -815,23 +827,56 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
       return kos_call_installed(ctx);
     }
 
-    /* Every other function call (a generator function, a plain vector,
-       keywords, a non-simple arity, a prepended receiver): the
-       function's own install, reading argv
-       in place.  An installed frame lands nothing on the caller's
-       block, so the window drops after it; a generator function
-       completes in hand and its AsyncGenerator lands on the block, so
-       the window drops first. */
-    {
-      KosOpResult r = KosFunction_Install(
-          ctx, callable, argv, nargs, kwnames, 0);
+    /* A generator function at its simple arity with argv the block
+       tail, which the install arity of -1 kept off the arm above: the
+       arguments steal-move off the block into the ready frame, which
+       goes under a new GEN, and the call completes in hand with the
+       AsyncGenerator, so the residue drops before it lands. An owned
+       callable reference moves into the frame's tag, and the frame is
+       freed with it when the record cannot be made. */
+    if (! kwnames
+        && nargs == KosFunction_SIMPLE_ARITY(callable)
+        && (flags & KOS_CALL_ARGV_WINDOW)
+        && ! (flags & KOS_CALL_ARGV_PREPENDED)
+        && KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))) {
+      KosDynFrame *ready = KosFunction_ReadyFrameBlock(
+          callable, flags & KOS_CALL_CALLABLE_OWNED, *caller_slot, NULL, 0,
+          nargs);
+      PyObject *agen;
 
-      if (unlikely(r.kind == KOS_RES_RAISE))
+      if (unlikely(! ready))
         goto fail;
+      window -= (size_t) nargs;
+      agen = KosAsyncGen_NewFromFrame(callable, ready);
       if (window)
         kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
+      if (unlikely(! agen))
+        return EVAL_RAISE();
+      return kos_op_result_PUSH_OR_AWAIT(ctx, agen);
+    }
+
+    /* Every other function call (a plain vector, keywords, a
+       non-simple arity, a prepended receiver, a generator function off
+       the window): the function's own install, reading argv in place,
+       an owned callable reference moving into the frame's tag. An
+       installed frame lands nothing on the caller's block, so the
+       window drops after it; a generator function completes in hand
+       and its AsyncGenerator lands on the block, so the window drops
+       first. */
+    {
+      KosOpResult r = KosFunction_InstallCall(
+          ctx, callable, flags & KOS_CALL_CALLABLE_OWNED, argv, nargs,
+          kwnames, 0);
+
+      /* the install consumed an owned reference on every path, so a
+         failure here drops only the window */
+      if (unlikely(r.kind == KOS_RES_RAISE)) {
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        return EVAL_RAISE();
+      }
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
       if (r.kind == KOS_RES_RETURN)
         return kos_op_result_PUSH_OR_AWAIT(ctx, r.val);
       return r;

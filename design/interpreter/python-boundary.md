@@ -222,7 +222,9 @@ One entry per argument source, so the bind folds at the site:
   simple class binds by slot inline after taking a reference to each
   argument; any other shape binds through the formals machine in
   `kos_function_ready_frame_general`, out of line. Both store the
-  function into its own slot when the body names it.
+  function into its own slot when the body names it, and both take
+  `self_owned` as the block entry does, so a caller's owned reference
+  to the function moves into the tag.
 - `KosFunction_ReadyFrameTuple`: a tuple and a dict, through the
   formals machine.
 
@@ -230,10 +232,16 @@ Consumers do their last step only:
 
 - The call core pushes: `kos_call_simple_install` in the CALL_FAST
   handlers (hit or miss), the window arm of `kos_call_invoke_impl`,
-  `kos_call_invoke_self_steal` for an out-of-band receiver.
-- `KosFunction_Install` pushes, or in tail position swaps the ready
-  frame for the live frame (`kos_dyn_swap_frame_for_tail`), whose
-  release offers it to its own function's cache. The self-tail at
+  `kos_call_invoke_self_steal` for an out-of-band receiver. A
+  generator function at its simple arity with its arguments in the
+  window takes the block entry too, and its ready frame goes under a
+  new GEN with the call completing in hand.
+- `KosFunction_InstallCall` (the `kc_vinstall` slot `KosFunction_Install`
+  with the callable borrowed) binds from the vector and pushes, or in
+  tail position swaps the ready frame for the live frame
+  (`kos_dyn_swap_frame_for_tail`), whose release offers it to its own
+  function's cache; the call core's tail arm steal-binds from the
+  window at the install arity before the same swap. The self-tail at
   simple arity rebinds the live namespace in place: it reuses the
   running frame rather than acquiring one, and is the one arm outside
   the core.

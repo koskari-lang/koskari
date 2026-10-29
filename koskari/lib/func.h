@@ -381,10 +381,28 @@ PyObject *KosFunction_VectorCall(
 
 
 /**
-   The install slot of an exact KosFunction: binds args into a call
+   The install of an exact KosFunction call: binds args into a call
    namespace and installs the body as a frame, or completes a
    generator function in hand with its AsyncGenerator. Reads argv in
-   place. Reported through the install contract (evaluated.h).
+   place. With self_owned the caller's reference to callable is
+   consumed on every path: it moves into the frame's tag on success
+   and is released on failure, by the frame's free once the frame was
+   tagged, directly before that. Reported through the install contract
+   (evaluated.h).
+*/
+KosOpResult KosFunction_InstallCall(
+    KosContext *ctx,
+    PyObject *callable,
+    int self_owned,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call);
+
+
+/**
+   The install slot of an exact KosFunction (kc_vinstall):
+   KosFunction_InstallCall with the callable borrowed.
 */
 KosOpResult KosFunction_Install(
     KosContext *ctx,
@@ -531,11 +549,13 @@ KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameBlock(
 /**
    The formals-machine half of KosFunction_ReadyFrameVector: frame is
    the taken frame, bound through KosFormals_VectorApplyFast and the
-   self store, tagged on success and returned through the cache
-   offer on failure. Out of line: the binder is the cold shape.
+   self store, tagged on success (the caller's reference moving in
+   with self_owned) and returned through the cache offer on failure.
+   Out of line: the binder is the cold shape.
 */
 KosDynFrame *kos_function_ready_frame_general(
     PyObject *self,
+    int self_owned,
     KosDynFrame *frame,
     int cached,
     PyObject *const *args,
@@ -551,10 +571,13 @@ KosDynFrame *kos_function_ready_frame_general(
    pointers; any other shape binds through the formals machine
    (kos_function_ready_frame_general), which can run user code and can
    fail midway, with the frame then returned through the cache offer.
-   NULL with the error set on failure.
+   With self_owned the caller's reference to the function moves into
+   the frame's tag on success and is untouched on failure; otherwise
+   the tag takes its own. NULL with the error set on failure.
 */
 KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameVector(
     PyObject *self,
+    int self_owned,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames) {
@@ -566,15 +589,15 @@ KOS_OP_INLINE KosDynFrame *KosFunction_ReadyFrameVector(
   if (unlikely(! frame))
     return NULL;
   if (kwnames || nargs != KosFunction_SIMPLE_ARITY(self))
-    return kos_function_ready_frame_general(self, frame, cached, args, nargs,
-                                            kwnames);
+    return kos_function_ready_frame_general(self, self_owned, frame, cached,
+                                            args, nargs, kwnames);
 
   ns = KosDynFrame_NS(frame);
   for (Py_ssize_t i = 0; i < nargs; i++)
     Py_INCREF(args[i]);
   (void) KosFormals_SimpleStealApply(ns, args, nargs);
   KosFunction_StoreSelf(self, ns);
-  kos_function_frame_tag(self, 0, frame);
+  kos_function_frame_tag(self, self_owned, frame);
   KOS_TRACE_EVENTS_INC(cached ? KOS_TE_CALL_FRAME_CACHED
                               : KOS_TE_CALL_SIMPLE_VECTOR);
   return frame;

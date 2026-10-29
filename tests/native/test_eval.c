@@ -2977,7 +2977,7 @@ static KosDynFrame *make_offered_frame(PyObject *fn) {
   if (! arg)
     return NULL;
   PyObject *argv[1] = { arg };
-  KosDynFrame *frame = KosFunction_ReadyFrameVector(fn, argv, 1, NULL);
+  KosDynFrame *frame = KosFunction_ReadyFrameVector(fn, 0, argv, 1, NULL);
   Py_DECREF(arg);
   if (! frame)
     return NULL;
