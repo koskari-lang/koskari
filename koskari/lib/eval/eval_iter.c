@@ -285,14 +285,10 @@ KOS_OP_INLINE KosIterRequestStatus kos_iter_fetch(
   *out = NULL;
 
 #if KOS_EVAL_SAFETYNET
-  {
-    KosIterSlots *fresh = NULL;
-    if (kos_iter_kind(req->iter, &fresh) != req->kind
-        || fresh != req->islots) {
-      PyErr_SetString(PyExc_SystemError,
-                      "iteration request kind does not match its iterator");
-      return KOS_IREQ_ERROR;
-    }
+  if (! kos_iter_kind_fits(req->iter, req->kind, req->islots)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "iteration request kind does not match its iterator");
+    return KOS_IREQ_ERROR;
   }
 #endif
 

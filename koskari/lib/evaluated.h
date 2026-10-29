@@ -297,12 +297,12 @@ static inline int kos_iter_check(PyObject *obj) {
 /**
    Classify iter for the fetch (kos_iter_fetch): KOS_IREQ_KIND_PROVIDER
    with *islots its suite, else NULL in *islots and PY_ASYNC for a
-   type with am_anext (async wins over sync, as the probing order
+   type with am_anext (async wins over sync, as the for-each bind
    always had it), PY_SYNC for one with tp_iternext, NONE for an
-   object that is no iterator. The one classifier: a site that binds
-   its iterator once keeps the answer in its request record and never
-   classifies again; a site without a record classifies on the way to
-   the same fetch.
+   object that is no iterator. The classifier of a site that binds
+   its iterator once and keeps the answer in its request record; a
+   next request without a record classifies with kos_iter_kind_next
+   on the way to the same fetch.
 */
 static inline uint8_t kos_iter_kind(PyObject *iter, KosIterSlots **islots) {
 
@@ -320,6 +320,66 @@ static inline uint8_t kos_iter_kind(PyObject *iter, KosIterSlots **islots) {
   if (PyIter_Check(iter))
     return KOS_IREQ_KIND_PY_SYNC;
   return KOS_IREQ_KIND_NONE;
+}
+
+
+/**
+   The classifier for a next request: the same kinds as kos_iter_kind,
+   with a python object that answers both protocols a sync iterator,
+   as Python's next takes it, where the for-each bind prefers its
+   async protocol.
+*/
+static inline uint8_t kos_iter_kind_next(PyObject *iter, KosIterSlots **islots) {
+
+  PyTypeObject *tp;
+
+  if (KosIter_CheckSlots(iter, islots))
+    return KOS_IREQ_KIND_PROVIDER;
+  *islots = NULL;
+  if (! iter)
+    return KOS_IREQ_KIND_NONE;
+
+  if (PyIter_Check(iter))
+    return KOS_IREQ_KIND_PY_SYNC;
+  tp = Py_TYPE(iter);
+  if (tp->tp_as_async && tp->tp_as_async->am_anext)
+    return KOS_IREQ_KIND_PY_ASYNC;
+  return KOS_IREQ_KIND_NONE;
+}
+
+
+/**
+   Whether kind and islots are an answer either classifier gives for
+   iter: the kind's protocol is one iter has, and islots is its suite
+   exactly when it is a provider. The consistency test behind a fetch
+   under KOS_EVAL_SAFETYNET.
+*/
+static inline int kos_iter_kind_fits(
+    PyObject *iter,
+    uint8_t kind,
+    KosIterSlots *islots) {
+
+  KosIterSlots *fresh = NULL;
+  int provider = KosIter_CheckSlots(iter, &fresh);
+  PyTypeObject *tp;
+
+  if (islots != (provider ? fresh : NULL))
+    return 0;
+  switch (kind) {
+    case KOS_IREQ_KIND_PROVIDER:
+      return provider;
+    case KOS_IREQ_KIND_PY_SYNC:
+      return ! provider && iter && PyIter_Check(iter);
+    case KOS_IREQ_KIND_PY_ASYNC:
+      tp = iter ? Py_TYPE(iter) : NULL;
+      return ! provider && tp && tp->tp_as_async && tp->tp_as_async->am_anext;
+    case KOS_IREQ_KIND_NONE:
+      tp = iter ? Py_TYPE(iter) : NULL;
+      return ! provider && ! (iter && PyIter_Check(iter))
+          && ! (tp && tp->tp_as_async && tp->tp_as_async->am_anext);
+    default:
+      return 0;
+  }
 }
 
 #define KosIter_Check(obj) kos_iter_check(obj)

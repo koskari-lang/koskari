@@ -2103,10 +2103,12 @@ KosDynFrame *KosResumeFrame_Install(
 
 
 /* iter classified into a request record on the caller's stack, for a
-   site without a record of its own. */
+   next request without a record of its own: the next classifier, so a
+   python object answering both protocols is taken through its sync
+   one, as Python's next takes it. */
 static inline void kos_iter_request_local(KosIterRequest *req, PyObject *iter) {
   req->iter = iter;
-  req->kind = kos_iter_kind(iter, &req->islots);
+  req->kind = kos_iter_kind_next(iter, &req->islots);
 }
 
 
