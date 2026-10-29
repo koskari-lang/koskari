@@ -1179,7 +1179,7 @@ bottom to top matches push order).
 ### KOS_OP_YIELD
 
 - **Style**: COUNT. Arg = number of values to yield (typically 1).
-- **Stack**: Pops the yielded value(s) and tail-calls **`kos_yield_deliver`**. Sets **`KOS_CODE_YIELDS`** on the code object. **`eval_event_yield`** freezes the running frame's GEN (**`kos_dyn_gen_freeze`**). When the live frame then has a resume -- a flattened consumer: a for-each step, a next request, a yield-from -- **`iter_deliver_to_resume`** hands it the value and the relay's RESUME arm threads into that resume without stopping **`koskari_eval`**. Otherwise the yield is terminal: **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the adapter that runs the generator.
+- **Stack**: Pops the yielded value(s) and tail-calls **`kos_yield_deliver`**. Sets **`KOS_CODE_YIELDS`** on the code object. **`eval_event_yield`** freezes the running frame's GEN (**`kos_dyn_gen_freeze`**). When the live frame then has a resume -- a flattened consumer: a for-each step, a next request, a yield-from -- **`iter_deliver_to_resume`** hands it the value and **`kos_eval_resume_live`** threads into that resume without stopping **`koskari_eval`**. Otherwise the yield is terminal: **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the adapter that runs the generator.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
 

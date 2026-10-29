@@ -298,6 +298,22 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     void *kind,
     PyObject *val);
 
+/**
+   The RESUME answer's service, a thread function of its own: the live
+   frame's resume takes the delivery by tail call, the prologue's slim
+   bounce without the pass. A site that knows it has a RESUME tails
+   here directly; the relay's RESUME arm tails here for one that
+   carries the kind in a variable. A delivery already staged for the
+   frame is the value; a kind that settles its delivery goes through
+   the prologue, which settles it. A failed delivery arrives as NULL
+   with the error pending and supersedes any staged delivery, in the
+   slot or on a code-less frame's stack. insn is unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_resume_live(
+    KosContext *ctx,
+    void *insn,
+    PyObject *val);
+
 
 /* === Threaded control transfer === */
 
@@ -521,8 +537,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     if (kos_re_.kind == KOS_RES_NORMAL)                                 \
       KOS_THREAD_NEXT(ctx);                                             \
     if (kos_re_.kind == KOS_RES_RESUME)                                 \
-      TAILCALL(kos_eval_relay, (ctx),                                   \
-               (void *) (uintptr_t) KOS_RES_RESUME, kos_re_.val);       \
+      TAILCALL(kos_eval_resume_live, (ctx), NULL, kos_re_.val);         \
     return kos_re_;                                                     \
   } while (0)
 
@@ -1029,9 +1044,10 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 /**
    KOS_ITER_INSTALLED_THREAD(ctx): kos_iter_installed as the tails a
    thread function makes once an iteration install has left its frame
-   live: into the frame's next instruction, into the relay's RESUME arm
-   for a frame halted on its own resume, into the prologue otherwise.
-   The calling function must have the KosThreadFn prototype.
+   live: into the frame's next instruction, into the live frame's
+   resume (kos_eval_resume_live) for a frame halted on one, into the
+   prologue otherwise. The calling function must have the KosThreadFn
+   prototype.
 */
 #define KOS_ITER_INSTALLED_THREAD(ctx)                                  \
   do {                                                                  \
@@ -1040,8 +1056,7 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
       KOS_THREAD_NEXT(ctx);                                             \
     if (kos_iit_frame_ && KosDynFrame_CODE(kos_iit_frame_)              \
         && KosDynFrame_RESUME_KIND(kos_iit_frame_))                     \
-      TAILCALL(kos_eval_relay, (ctx),                                   \
-               (void *) (uintptr_t) KOS_RES_RESUME, NULL);              \
+      TAILCALL(kos_eval_resume_live, (ctx), NULL, NULL);                \
     RESULT_REPROLOGUE(ctx);                                             \
   } while (0)
 

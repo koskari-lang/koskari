@@ -223,7 +223,7 @@ static inline int iter_frame_has_resume(KosContext *ctx) {
    the resume's to finish. An end arrives as the protocol states it,
    NULL with StopIteration carrying the producer's return value. The
    answer is RESUME with the kind left on the frame: the event's
-   thread function tails into the relay, whose RESUME arm clears the
+   thread function tails into kos_eval_resume_live, which clears the
    resume and enters it by tail call, staging first for a kind that
    settles its delivery. Never a call into the resume from here: a
    resume threads the consumer on and does not return while the loop
@@ -1765,7 +1765,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(ctx);
   if (r.kind == KOS_RES_RESUME)
-    TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
+    TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
@@ -1808,7 +1808,7 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
     KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(ctx, gen, val));
   if (likely(r.kind == KOS_RES_RESUME))
-    TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
+    TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
   if (unlikely(r.kind == KOS_RES_YIELD && flattened)) {
     /* The freeze found no consumer for a generator that had one:
        never hand the trampoline a YIELD it would deliver again. */
@@ -1887,7 +1887,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
   KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
   if (r.kind == KOS_RES_RESUME)
-    TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
+    TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
@@ -1931,6 +1931,45 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
 }
 
 
+KOS_PRESERVE_NONE KosOpResult kos_eval_resume_live(
+    KosContext *ctx,
+    void *insn,
+    PyObject *val) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  const KosResumeKind *resume = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
+  void *state;
+
+  (void) insn;
+
+  if (unlikely(! resume)) {
+    Py_XDECREF(val);
+    PyErr_SetString(PyExc_SystemError,
+                    "RESUME with no resume on the live frame");
+    return EVAL_FATAL();
+  }
+  /* A failed delivery supersedes any staged one, in the slot or on a
+     code-less frame's stack, as the prologue's delivery step drops
+     it; otherwise a staged delivery is the value. */
+  if (! val && PyErr_Occurred()) {
+    Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+    if (! KosDynFrame_CODE(frame) && KosContext_StackLen(ctx) > 0)
+      Py_XDECREF(KosContext_StackPopRef(ctx));
+  } else if (! val && KosContext_PENDING_VALUE(ctx)) {
+    val = KosContext_PENDING_VALUE(ctx);
+    KosContext_PENDING_VALUE(ctx) = NULL;
+  }
+  if (resume->settle && val) {
+    KosContext_PENDING_VALUE(ctx) = val;
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+  }
+  state = KosDynFrame_RESUME_STATE(frame);
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  RESUME_HOP(resume, ctx, state, val);
+}
+
+
 KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     KosContext *ctx,
     void *kind,
@@ -1949,41 +1988,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     TAILCALL(kos_yield_deliver, ctx, NULL, val);
   case KOS_RES_CONTROL_RETURNED:
     TAILCALL(kos_eval_control_returned, ctx, NULL, NULL);
-  case KOS_RES_RESUME: {
-    /* The live frame's resume takes the delivery by tail call: the
-       prologue's slim bounce without the pass. A delivery already
-       staged for the frame is the value; a kind that settles its
-       delivery goes through the prologue, which settles it. A failed
-       delivery arrives as NULL with the error pending and supersedes
-       any staged delivery, in the slot or on a code-less frame's
-       stack, as the prologue's delivery step drops it. */
-    KosDynFrame *frame = KosContext_FRAME(ctx);
-    const KosResumeKind *resume = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
-    void *state;
-
-    if (unlikely(! resume)) {
-      Py_XDECREF(val);
-      PyErr_SetString(PyExc_SystemError,
-                      "RESUME relay with no resume on the live frame");
-      return EVAL_FATAL();
-    }
-    if (! val && PyErr_Occurred()) {
-      Py_CLEAR(KosContext_PENDING_VALUE(ctx));
-      if (! KosDynFrame_CODE(frame) && KosContext_StackLen(ctx) > 0)
-        Py_XDECREF(KosContext_StackPopRef(ctx));
-    } else if (! val && KosContext_PENDING_VALUE(ctx)) {
-      val = KosContext_PENDING_VALUE(ctx);
-      KosContext_PENDING_VALUE(ctx) = NULL;
-    }
-    if (resume->settle && val) {
-      KosContext_PENDING_VALUE(ctx) = val;
-      TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
-    }
-    state = KosDynFrame_RESUME_STATE(frame);
-    KosDynFrame_RESUME_KIND(frame) = NULL;
-    KosDynFrame_RESUME_STATE(frame) = NULL;
-    RESUME_HOP(resume, ctx, state, val);
-  }
+  case KOS_RES_RESUME:
+    TAILCALL(kos_eval_resume_live, ctx, NULL, val);
   case KOS_RES_DISPATCH:
   case KOS_RES_NORMAL:
     KOS_THREAD_NEXT(ctx);
@@ -3418,8 +3424,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     if (err) {
       KosOpResult pend = process_raise(ctx);
       if (pend.kind == KOS_RES_RESUME)
-        TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME,
-                 pend.val);
+        TAILCALL(kos_eval_resume_live, ctx, NULL, pend.val);
       if (pend.kind != KOS_RES_NORMAL) {
         if (pend.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(ctx);
