@@ -442,6 +442,7 @@ void kos_trace_init(void) {
   memset(&fl_mark, 0, sizeof(fl_mark));
   memset(&fl_datum, 0, sizeof(fl_datum));
   memset(&fl_coroutine, 0, sizeof(fl_coroutine));
+  memset(&fl_asyncgen, 0, sizeof(fl_asyncgen));
 #endif
 #if KOS_TRACE_EVENTS
   memset(kos_te_counters, 0, sizeof(kos_te_counters));
