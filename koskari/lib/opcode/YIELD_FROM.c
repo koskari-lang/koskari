@@ -801,10 +801,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
         KosDynFrame_RESUME_KIND(frame) = &yf_emit_kos_iter_kind;       \
         KosDynFrame_RESUME_STATE(frame) = (void *) (delegate);         \
         /* A throw the ingress left raised for the installed frame is  \
-           processed by the prologue, never threaded past. */          \
+           processed by the prologue, never threaded past; otherwise   \
+           the installed frame is threaded into as any iteration       \
+           install's is. */                                            \
         if (PyErr_Occurred())                                          \
-          RESULT_RELAY((ctx), EVAL_REPROLOGUE());                      \
-        RESULT_RELAY((ctx), kos_iter_installed(ctx));                  \
+          RESULT_REPROLOGUE(ctx);                                      \
+        KOS_ITER_INSTALLED_THREAD(ctx);                                \
       case KOS_ITER_VALUE:                                              \
         YF_EMIT((ctx), (frame), &yf_drive_kos_iter_kind, (delegate),    \
                 (out));                                                 \
