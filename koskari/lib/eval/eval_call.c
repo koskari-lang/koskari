@@ -709,7 +709,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         && caller_slot == &KosDynFrame_STACK(frame)) {
       KosCode *code = (KosCode *) KosFunction_CODE(callable);
 
-      if (! (code && KosCode_YIELDS(code))) {
+      if (! KosCode_YIELDS(code)) {
         /* Discardable extents open above the frame (a tail call from
            inside let / loop / foreach) uninstall now: the reused frame
            never reaches their POP_* rows.  The window is unaffected --

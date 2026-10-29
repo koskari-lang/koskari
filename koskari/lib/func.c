@@ -169,7 +169,7 @@ static KosOpResult kos_expression_install_core(
   PyObject *ns = KosExpression_NS(callable);
 
   Py_INCREF(ns);  /* NewFromCodeAndNs and InstallCallFrame steal it */
-  if (code && KosCode_YIELDS(code)) {
+  if (KosCode_YIELDS(code)) {
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
@@ -242,7 +242,7 @@ KosOpResult KosFunction_InstallCall(
     return EVAL_RAISE();
   }
 
-  if (code && KosCode_YIELDS(code)) {
+  if (KosCode_YIELDS(code)) {
     PyObject *agen = KosAsyncGen_NewFromFrame(callable, frame);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
