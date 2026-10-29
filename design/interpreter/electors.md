@@ -434,10 +434,11 @@ push the node, elect `drive`, tail-call it. The four drive bodies and the
 phase resumes are shared out-of-line functions.
 
 **FOREACH region and the next request**. Done. The request record's
-modes are gone, every delivery (element, failure) reaches the step
-resume the loop's frame carries, which finishes the region's request;
-an end in hand never reaches the resume, the step finishes the request
-and threads to the else target itself. The step (`KOS_ITER_STEP`)
+modes are gone, every deferred delivery (element, failure) reaches the
+step resume the loop's frame carries, which finishes the region's
+request; an element in hand is finished and delivered by the step
+itself, and an end in hand never reaches the resume, the step finishes
+the request and threads to the else target. The step (`KOS_ITER_STEP`)
 fetches through `kos_iter_fetch` by the kind
 `kos_dyn_iter_request_bind_iter` recorded once, with no cache slot:
 the bound kind is the election. The next instruction has no node, its

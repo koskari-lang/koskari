@@ -16,14 +16,13 @@
 /**
   ITER_NEXT: the for-each step; arg = else PC. One request for the
   next element of the FOREACH region's iterator (KOS_ITER_STEP), the
-  element pushed by the step's resume, which runs at once when the
-  element is in hand and when it arrives otherwise. Branch to else_pc
-  at the end of the iteration. Must be inside a PUSH_FOREACH block.
-  Auto-await.
+  element pushed by the handler when it is in hand and by the step's
+  resume when it arrives later. Branch to else_pc at the end of the
+  iteration. Must be inside a PUSH_FOREACH block. Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
   KOS_SYNC_PC(ctx, insn);
-  KOS_ITER_STEP(ctx, insn, &kos_iter_next_resume_kind,
+  KOS_ITER_STEP(ctx, insn, iter_next_push_deliver, &kos_iter_next_resume_kind,
                 KosOp_TARGET((KosOp *) insn));
 }
 

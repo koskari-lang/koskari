@@ -309,21 +309,26 @@ KOS_OP_INLINE KosIterRequestStatus kos_iter_fetch(
 /* === The for-each step: one entry, one resume per step instruction ===
 
    The step instructions ITER_NEXT, ITER_NEXT_STORE_FAST and
-   ITER_NEXT_STORE_VAR each name a resume and make the request through
-   KOS_ITER_STEP, which fetches by the kind the region bound. The
-   element reaches that resume and nothing else: in hand, the handler
-   hops into it at once; deferred (a Koskari generator installed, a
-   provider's invoke grafted, a python async step awaited), the resume
-   is set on the loop's frame and the delivery that reaches the frame
-   runs it, the element or its end. The resume finishes the region's
-   request, since the region owns the iterator, then threads on. The
-   resume's state is the step instruction, which carries the slot or
-   name. The kinds take their delivery as it is: an element is data,
-   never awaited. An end in hand never reaches the resume: the step
-   finishes the request and jumps to the else target itself. A
-   failure reaches the resume as a NULL with the error pending: the
-   region's own end is the end of the iteration, anything else
-   declines and the raise walk goes on. */
+   ITER_NEXT_STORE_VAR each name a delivery and a resume and make the
+   request through KOS_ITER_STEP, which fetches by the kind the region
+   bound. An element in hand is delivered by the handler itself: it
+   finishes the region's request from the region it holds, runs the
+   instruction's delivery (a push, a slot store, a named store) and
+   threads on, with no cooperation point of its own, since CONTINUE,
+   the back-edge every step follows, polls the breaker. A deferred
+   element (a Koskari generator installed, a provider's invoke
+   grafted, a python async step awaited) reaches the resume and
+   nothing else: the resume is set on the loop's frame and the
+   delivery that reaches the frame runs it, the element or its end.
+   The resume finishes the region's request, since the region owns
+   the iterator, runs the same delivery, then threads on. The resume's
+   state is the step instruction, which carries the slot or name. The
+   kinds take their delivery as it is: an element is data, never
+   awaited. An end in hand never reaches the resume: the step finishes
+   the request and jumps to the else target itself. A failure reaches
+   the resume as a NULL with the error pending: the region's own end
+   is the end of the iteration, anything else declines and the raise
+   walk goes on. */
 
 
 /* The step is over: finish the region's request, exhausted at the
@@ -373,6 +378,52 @@ KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
 }
 
 
+/* === The three deliveries: the element's destination by instruction.
+   Each consumes value and answers 0, or -1 with the error set. The
+   handler runs them for an element in hand, the resume for a deferred
+   one. === */
+
+
+/* ITER_NEXT: the element onto the stack. */
+KOS_OP_INLINE int iter_next_push_deliver(
+    KosContext *ctx,
+    KosOp *insn,
+    PyObject *value) {
+
+  (void) insn;
+  return KosContext_StackPUSH(ctx, value);
+}
+
+
+/* ITER_NEXT_STORE_FAST: the element into the fast slot the
+   instruction names. */
+KOS_OP_INLINE int iter_next_store_fast_deliver(
+    KosContext *ctx,
+    KosOp *insn,
+    PyObject *value) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+
+  return kos_ns_fast_store_steal(KosContext_NAMESPACE(ctx),
+                                 (size_t) KosExtra_IMM(row, 0), value);
+}
+
+
+/* ITER_NEXT_STORE_VAR: the element under the name the instruction
+   names. */
+KOS_OP_INLINE int iter_next_store_var_deliver(
+    KosContext *ctx,
+    KosOp *insn,
+    PyObject *value) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  int res = frame_ns_store(ctx, KosExtra_OBJ(row, 0), value);
+
+  Py_DECREF(value);
+  return res;
+}
+
+
 /* The element or a failure: push it and thread on, or jump to the
    instruction's else target. */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
@@ -388,7 +439,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
     KOS_THREAD_AT(ctx, KosOp_TARGET(insn));
   }
   kos_iter_step_finish(ctx, 0);
-  if (unlikely(KosContext_StackPUSH(ctx, value) < 0))
+  if (unlikely(iter_next_push_deliver(ctx, insn, value) < 0))
     return EVAL_RAISE();
   KOS_THREAD_NEXT(ctx);
 }
@@ -402,17 +453,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_fast_resume(
     PyObject *value) {
 
   KosOp *insn = (KosOp *) state;
-  const KosExtra *row = KosOp_ROW(insn);
 
   if (unlikely(! value)) {
     if (! kos_iter_step_ended_by_exception(ctx))
       return EVAL_RAISE();
-    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(KosOp_ROW(insn), 1));
   }
   kos_iter_step_finish(ctx, 0);
-  if (unlikely(kos_ns_fast_store_steal(
-          KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0),
-          value) < 0))
+  if (unlikely(iter_next_store_fast_deliver(ctx, insn, value) < 0))
     return EVAL_RAISE();
   KOS_THREAD_NEXT(ctx);
 }
@@ -425,18 +473,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_var_resume(
     PyObject *value) {
 
   KosOp *insn = (KosOp *) state;
-  const KosExtra *row = KosOp_ROW(insn);
-  int res;
 
   if (unlikely(! value)) {
     if (! kos_iter_step_ended_by_exception(ctx))
       return EVAL_RAISE();
-    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(KosOp_ROW(insn), 1));
   }
   kos_iter_step_finish(ctx, 0);
-  res = frame_ns_store(ctx, KosExtra_OBJ(row, 0), value);
-  Py_DECREF(value);
-  if (unlikely(res < 0))
+  if (unlikely(iter_next_store_var_deliver(ctx, insn, value) < 0))
     return EVAL_RAISE();
   KOS_THREAD_NEXT(ctx);
 }
@@ -461,36 +505,43 @@ static KOS_NOINLINE void kos_iter_step_misplaced(const KosOp *insn) {
 
 
 /**
-   KOS_ITER_STEP(ctx, insn, resume, else_target): one request for the
-   next element of the FOREACH region at dyn_top, from the step
-   instruction insn whose resume is resume, each outcome threaded to
-   its destination. An element in hand hops into the resume; the end
-   in hand finishes the region's request as exhausted and threads to
-   else_target; a deferred step (the producer's frames installed, an
-   async step awaiting) sets the resume on the loop's frame, the one
-   that ran the step, and threads into the installed frame or leaves
-   for the await; a step that fails before it defers raises at the
-   frame with no resume set: nothing is in flight, the provider has
-   undone its own step, and the raise walks as any instruction's does.
-   The region is at dyn_top when a step runs: the step sits at the
-   loop's continue target and every node the body pushes is gone
-   before CONTINUE. The calling handler must have the KosThreadFn
-   prototype.
+   KOS_ITER_STEP(ctx, insn, deliver, resume, else_target): one request
+   for the next element of the FOREACH region at dyn_top, from the
+   step instruction insn whose delivery is deliver and whose resume is
+   resume, each outcome threaded to its destination. An element in
+   hand finishes the region's request, is delivered by the handler
+   and threads on; the end in hand finishes the region's request as
+   exhausted and threads to else_target; a deferred step (the
+   producer's frames installed, an async step awaiting) sets the
+   resume on the loop's frame, the one that ran the step, and threads
+   into the installed frame or leaves for the await; a step that
+   fails before it defers raises at the frame with no resume set:
+   nothing is in flight, the provider has undone its own step, and
+   the raise walks as any instruction's does. The region is at
+   dyn_top when a step runs: the step sits at the loop's continue
+   target and every node the body pushes is gone before CONTINUE,
+   whose poll is the loop's cooperation point. The calling handler
+   must have the KosThreadFn prototype.
 */
-#define KOS_ITER_STEP(ctx, insn, resume, else_target)                   \
+#define KOS_ITER_STEP(ctx, insn, deliver, resume, else_target)          \
   do {                                                                  \
     KosDynNode *kos_is_region_ = KosContext_DYN_TOP(ctx);               \
     KosDynFrame *kos_is_frame_ = KosContext_FRAME(ctx);                 \
+    KosIterRequest *kos_is_req_;                                        \
     PyObject *kos_is_out_;                                              \
     if (unlikely(! kos_is_region_                                       \
                  || ! KosDynNode_IS_FOREACH(kos_is_region_))) {         \
       kos_iter_step_misplaced((const KosOp *) (insn));                  \
       RESULT_RAISE();                                                   \
     }                                                                   \
-    switch (kos_iter_fetch((ctx), KosDynForeach_REQ(kos_is_region_),    \
-                           &kos_is_out_)) {                             \
+    kos_is_req_ = KosDynForeach_REQ(kos_is_region_);                    \
+    switch (kos_iter_fetch((ctx), kos_is_req_, &kos_is_out_)) {         \
       case KOS_IREQ_DELIVERED:                                          \
-        RESUME_HOP((resume), (ctx), (insn), kos_is_out_);               \
+        if (kos_is_req_->islots)                                        \
+          kos_iter_finish(kos_is_req_->iter, kos_is_req_->islots, 0);   \
+        if (unlikely(deliver((ctx), (KosOp *) (insn), kos_is_out_) < 0))\
+          RESULT_RAISE();                                               \
+        KOS_THREAD_NEXT(ctx);                                           \
       case KOS_IREQ_EXHAUSTED:                                          \
         kos_iter_step_finish((ctx), 1);                                 \
         KOS_THREAD_AT((ctx), (else_target));                            \

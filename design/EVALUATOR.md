@@ -374,9 +374,10 @@ Three sites step:
   FOREACH node arm; the kind is bound once, at
   `kos_dyn_iter_request_bind_iter`, by **`kos_iter_kind`**) through
   **`KOS_ITER_STEP`**, the threaded step the handler expands: the
-  fetch, then each outcome tail-called to its destination, an element
-  in hand hopping into the step resume, the end in hand finishing the
-  request and threading to the else target.
+  fetch, then each outcome threaded to its destination, an element in
+  hand finished and delivered by the handler itself, the end in hand
+  finishing the request and threading to the else target, a deferred
+  element reaching the step resume set on the loop's frame.
 - The next instructions (`OBJECT_NEXT`, `VAR_NEXT`, `FAST_NEXT`) call
   **`KosContext_NextResume(ctx, iter, kind, iter)`**: the resume set
   on the frame owns the iterator as its state, the arity picks the
