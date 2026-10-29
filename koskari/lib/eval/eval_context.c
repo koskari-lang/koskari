@@ -125,6 +125,9 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
   if (top) {
     KosDynNode *node = (KosDynNode *) top;
 
+    /* the root of a one-frame chain; a frame from a function's cache
+       arrives with the cache list's length in this field */
+    KosDynFrame_DEPTH(top) = 1;
     KosContext_LoadFrame(
         ctx, top,
         KosDynNode_STACK(node) ? &KosDynNode_STACK(node) : NULL,

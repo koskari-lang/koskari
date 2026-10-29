@@ -30,6 +30,7 @@ own call's value.
 
 import asyncio
 import gc
+import sys
 import types
 import unittest
 import weakref
@@ -206,6 +207,23 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(RuntimeError):
                 coro.send(None)
             self.assertEqual(await mix(i, 2), i * 31 + 2)
+
+    async def test_root_frame_from_a_deep_cache_starts_at_depth_one(self):
+        """
+        Eight unstarted coroutines dropped at once leave eight frames in
+        the function's cache; the next coroutine's root frame is the
+        head of that list and must still count as depth one, so a
+        recursion that fits under the limit from a fresh frame fits
+        from this one too
+        """
+
+        mod = await self.load()
+        count_down = mod["count_down"]
+        limit = sys.getrecursionlimit()
+        held = [count_down(1) for _ in range(8)]
+        del held
+        gc.collect()
+        self.assertEqual(await count_down(limit - 2), limit - 2)
 
     async def test_unstarted_coroutines_dropped_then_called_again(self):
         mod = await self.load()
