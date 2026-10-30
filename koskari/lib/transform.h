@@ -147,22 +147,40 @@ void kos_transform_init_view(
 
 /**
    The shape of a provider over several sources acquired together
-   (zip, zip-longest, compress): the base and the array of bound
+   (map, zip, zip-longest, compress): the base and the array of bound
    requests that owns the acquired iterators and that the base's view
-   points into. A provider
-   with fields of its own embeds this first and chains its traverse,
-   clear and dealloc to the multi ones, as a one-source provider
-   chains to the base's.
+   points into. A provider with fields of its own embeds this first and
+   chains its traverse, clear and dealloc to the multi ones, as a
+   one-source provider chains to the base's. A provider that takes one
+   source or several (map) is always this shape, with the one-source
+   case keeping its request in the base's own slot and srcs NULL.
 */
 typedef struct KosTransformMulti {
   KosTransform base;
-  KosIterRequest *srcs; /* the nsrc bound requests, owning their
-                           iterators, the storage the base's reqs view
-                           points into; traversed and cleared here */
-  PyObject *row;       /* zip: the last row emitted, refilled in place
-                          for the next element while zip alone holds
-                          it; NULL before the first */
+  /* the nsrc bound requests, owning their iterators, the storage the
+     base's reqs view points into; traversed and cleared here. NULL
+     when the one source lives in the base's slot */
+  KosIterRequest *srcs;
+  /* a tuple of nsrc elements, one per source, refilled in place for
+     each step. zip: the last row emitted, reused while zip alone
+     holds it, NULL before the first. map: the argument vector of the
+     call, private to the map, allocated at construction */
+  PyObject *row;
 } KosTransformMulti;
+
+
+/* Store an element at a row position, releasing the item a reused row
+   held there; a fresh row's slot is NULL. element is consumed. */
+static inline void kos_transform_row_set(
+    PyObject *row,
+    Py_ssize_t i,
+    PyObject *element) {
+
+  PyObject *old = PyTuple_GET_ITEM(row, i);
+
+  PyTuple_SET_ITEM(row, i, element);
+  Py_XDECREF(old);
+}
 
 
 /**

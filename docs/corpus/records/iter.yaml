@@ -1812,3 +1812,21 @@ tags:
   - higher-order
   - surprising
 notes: "sorted is the documented exception: koskari's sorted demand-wraps a callable key: itself, so a bare koskari lambda works here. The same lambda handed to list.sort fails (iter-sort-key-koskari-lambda-invalid-001); do not generalise from sorted to other python higher-order functions."
+---
+id: iter-map-two-sources-005
+feature: builtin/map
+source: |-
+  (list (map + #[1 2 3] #[10 20 30]))
+  
+verify:
+  read: (list (map + (#list 1 2 3) (#list 10 20 30)))
+  eval: list:[11,22,33]
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - higher-order
+  - iterate
+notes: "map takes one or more iterables: func receives one element from each per step, in the order they are written, and the shortest iterable ends the map, as python's map does. The iterables are stepped left to right, so a spent one stops the step before the ones after it are asked."

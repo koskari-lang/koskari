@@ -8,10 +8,10 @@
    builtins.zip, implemented as a KosIter provider on the shared
    transform body (transform.c). A multi-source provider on the
    shared KosTransformMulti shape: the acquired iterators live in the
-   tuple that shape owns, published to the base through the sources
-   view so the base closes them without knowing where they are kept,
-   and the last row emitted is kept in that shape's row field, to be
-   refilled in place for the next element while zip alone holds it.
+   request array that shape owns, published to the base through the
+   sources view so the base closes them without knowing where they are
+   kept, and the last row emitted is kept in that shape's row field, to
+   be refilled in place for the next element while zip alone holds it.
 
    The fast path is pure C: when every source steps through
    tp_iternext the whole row is built in one loop with the evaluator
@@ -36,16 +36,6 @@
 
 
 /* === the row === */
-
-
-/* Store an element at a row position, releasing the item a reused row
-   held there; a fresh row's slot is NULL. element is consumed. */
-static inline void zip_row_set(PyObject *row, Py_ssize_t i, PyObject *element) {
-  PyObject *old = PyTuple_GET_ITEM(row, i);
-
-  PyTuple_SET_ITEM(row, i, element);
-  Py_XDECREF(old);
-}
 
 
 /* A row about to be emitted: the collector may have untracked a reused
@@ -138,7 +128,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   if (! element)
     return kos_transform_decline(ctx, t);
 
-  zip_row_set(t->pending, (Py_ssize_t) t->idx, element);
+  kos_transform_row_set(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
 
   RESUME_HOP(&zip_resume_fetch_kind, ctx, z, NULL);
@@ -197,7 +187,7 @@ static KosIterStepResult zip_step_body(
                                        &zip_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:
-          zip_row_set(row, (Py_ssize_t) i, element);
+          kos_transform_row_set(row, (Py_ssize_t) i, element);
           continue;
         case KOS_IREQ_EXHAUSTED:
           Py_DECREF(row);

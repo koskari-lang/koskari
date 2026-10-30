@@ -12,7 +12,7 @@ driven directly, with no wrapping, and may await.
 
 ## map
 
-**Syntax:** `(map FUNC ITERABLE)`
+**Syntax:** `(map FUNC ITERABLE ITERABLE...)`
 
 Return a lazy iterator producing `(FUNC element)` for each element of
 **`ITERABLE`**. Nothing is consumed until the map itself is iterated.
@@ -20,6 +20,19 @@ Return a lazy iterator producing `(FUNC element)` for each element of
 ```koskari
 (list (map (lambda [x] (* x 10)) #[1 2 3]))
 ; #[10 20 30]
+```
+
+With several iterables, **`FUNC`** takes one element from each per
+step, in the order the iterables are written, and the map ends with
+the shortest of them. The iterables are stepped left to right, so once
+one is spent the ones after it are not asked for that step.
+
+```koskari
+(list (map + #[1 2 3] #[10 20 30]))
+; #[11 22 33]
+
+(list (map (lambda [a b] (#tuple a b)) #[1 2 3] "ab"))
+; #[#(1 "a") #(2 "b")]
 ```
 
 **`FUNC`** may be any callable: a koskari function, a python function,
