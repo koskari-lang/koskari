@@ -2232,8 +2232,8 @@ typedef struct {
 /* PUSH_* -> POP_*, extent kind and discardability; the source of truth
    for extent op classification. The OpCode enum carries these facts to
    the compiler (decorate_opcode), so the compiler's tables derive from
-   this one. The runtime teardown (kos_dyn_teardown_to_frame) holds the
-   discardable set once more, keyed by node kind. */
+   this one. The runtime teardown (kos_dyn_teardown_extents_to_frame)
+   holds the discardable set once more, keyed by node kind. */
 static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
   { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },

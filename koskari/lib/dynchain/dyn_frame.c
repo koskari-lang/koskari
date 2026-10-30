@@ -409,9 +409,12 @@ int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
    fails loudly rather than discarding an extent whose uninstall
    behavior must run.
 
+   The out-of-line half of kos_dyn_teardown_to_frame, reached only when
+   something is open above the frame.
+
    :return: 0 on success (DYN_TOP == frame), -1 with an exception set
 */
-int kos_dyn_teardown_to_frame(KosContext *ctx, KosDynFrame *frame) {
+int kos_dyn_teardown_extents_to_frame(KosContext *ctx, KosDynFrame *frame) {
   KosDynNode *top = KosContext_DYN_TOP(ctx);
 
   while (top && top != (KosDynNode *) frame) {

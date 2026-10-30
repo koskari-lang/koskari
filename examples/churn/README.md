@@ -144,6 +144,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 |-----------|-----------|--------|
 | `loop` | tight while loop, arithmetic dispatch | — |
 | `tree` | recursive call depth, frame churn | — |
+| `tail` | self tail call per step, frame reuse | — |
 | `list_each` | comprehension build + fold | — |
 | `method` | bound-method call + attr resolution | — |
 | `field` | instance-attribute read/modify/write (dict path) | — |

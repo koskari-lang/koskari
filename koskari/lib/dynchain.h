@@ -1118,8 +1118,9 @@ void kos_dyn_swap_frame_for_tail(KosContext *ctx, KosDynFrame *ready);
 void kos_dynframe_clear_resume(KosDynFrame *frame);
 
 /* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
-   tail-call frame reuse; errors on any other open node kind. */
-int kos_dyn_teardown_to_frame(KosContext *ctx, KosDynFrame *frame);
+   tail-call frame reuse; errors on any other open node kind. The
+   out-of-line half of kos_dyn_teardown_to_frame (eval.h). */
+int kos_dyn_teardown_extents_to_frame(KosContext *ctx, KosDynFrame *frame);
 
 
 /**

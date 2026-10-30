@@ -1511,6 +1511,24 @@ extern PyObject *KoskariContinuationError;
 /* === KosContext_Call* : context-oriented generic call entry points === */
 
 /**
+   Tear the chain down to frame before tail-call frame reuse. A tail
+   call from the function body's top level finds the frame already on
+   top and pays only this compare; one from inside a let, loop or
+   foreach drops those extents out of line.
+
+   :return: 0 on success (DYN_TOP == frame), -1 with an exception set
+*/
+static inline int kos_dyn_teardown_to_frame(
+    KosContext *ctx,
+    KosDynFrame *frame) {
+
+  if (KosContext_DYN_TOP(ctx) == (KosDynNode *) frame)
+    return 0;
+  return kos_dyn_teardown_extents_to_frame(ctx, frame);
+}
+
+
+/**
    Install a code frame for a call: on a tail call the live frame is
    torn down to, reset, and refilled with code and ns; otherwise a new
    frame is pushed above it. ns is stolen on every path. Returns the

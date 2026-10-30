@@ -1,0 +1,14 @@
+;; churn_tail -- self tail-call churn.  One tail call per step with one
+;; integer mixing op, so the tail-call frame reuse path dominates.
+
+(var MASK32 0xffffffff)
+
+
+def churn_tail [n x]:
+    if (<= n 0):
+        x
+    else:
+        (churn_tail (- n 1) (& (+ (* x 1664525) 1013904223) MASK32))
+
+
+;; The end.
