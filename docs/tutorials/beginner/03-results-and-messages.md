@@ -77,7 +77,6 @@ Yes. Koskari can read this, but cannot do it:
 ```koskari
 >>> (/ 1 0)
 Traceback (most recent call last):
-  Koskari dynchain (native eval):
   File "<stdin>", line 1, in __main__
 ZeroDivisionError: division by zero
 ```

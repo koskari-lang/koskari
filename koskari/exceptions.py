@@ -546,102 +546,47 @@ class CodeBoundary(Exception):
 _FRAME_SUMMARY_HAS_COLUMNS = sys.version_info >= (3, 11)
 
 
-def _render_koskari_dynchain(trace_data, exclude_files=()):
+def _koskari_frame_summary(entry):
     """
-    Render dynchain metadata attached to synthetic koskari native frames
+    The FrameSummary for a synthetic koskari native frame, from the
+    dynchain entry its globals carry as __koskari_trace__
 
-    trace_data is built innermost-first by the C runtime; it is reversed
-    before rendering so output matches Python's root-first traceback order.
-    Each frame is rendered through traceback.FrameSummary and
-    StackSummary.format(), which reads the source line via linecache and
-    draws the PEP 657 caret whenever the frame carries end-column data
-    (end_line / end_col).  Column data is only passed on Python 3.11+
-    (see _FRAME_SUMMARY_HAS_COLUMNS); earlier versions still render the
-    source line, without the caret.  Non-dict entries in trace_data are
-    silently skipped.
+    The summary renders through StackSummary.format, which reads the
+    source line via linecache and draws the PEP 657 caret from the
+    column data.  Column data is only passed on Python 3.11+ (see
+    _FRAME_SUMMARY_HAS_COLUMNS); earlier versions still render the
+    source line, without the caret.
 
-    :param trace_data: iterable of dict-like frame metadata
-    :param exclude_files: filenames whose entries are left out
-    :return: list[str] of traceback-formatted lines
+    :param entry: dict of frame metadata (filename, name, line, col)
+    :return: traceback.FrameSummary
     """
 
-    if not isinstance(trace_data, (list, tuple)) or not trace_data:
-        return []
+    filename = entry.get('filename') or '<unknown>'
+    name = entry.get('name') or '<anonymous>'
+    line = entry.get('line') or None
 
-    frames = list(trace_data)
-    frames.reverse()
+    if not _FRAME_SUMMARY_HAS_COLUMNS:
+        return traceback.FrameSummary(filename, line or 0, name)
 
-    summaries = []
-    for frame in frames:
-        if not isinstance(frame, dict):
-            continue
-        if frame.get('filename') in exclude_files:
-            continue
+    col = entry.get('col') if line is not None else None
+    end_line = entry.get('end_line')
+    end_col = entry.get('end_col')
 
-        line = frame.get('line') or None
+    # Koskari positions are start-oriented: a form records where it
+    # opens, not where it closes.  Without a recorded end, point a
+    # single-column caret at the start.  end_lineno must accompany
+    # end_colno or traceback renders the caret one column too wide.
+    if col is not None:
+        if end_col is None:
+            end_col = col + 1
+        if end_line is None:
+            end_line = line
+    else:
+        end_line = end_col = None
 
-        if _FRAME_SUMMARY_HAS_COLUMNS:
-            col = frame.get('col') if line is not None else None
-            end_line = frame.get('end_line')
-            end_col = frame.get('end_col')
-
-            # Koskari positions are start-oriented: a form records where it
-            # opens, not where it closes.  Without a recorded end, point a
-            # single-column caret at the start.  end_lineno must accompany
-            # end_colno or traceback renders the caret one column too wide.
-            if col is not None:
-                if end_col is None:
-                    end_col = col + 1
-                if end_line is None:
-                    end_line = line
-            else:
-                end_line = end_col = None
-
-            summaries.append(traceback.FrameSummary(
-                frame.get('filename') or '<unknown>',
-                line,
-                frame.get('name') or '<anonymous>',
-                colno=col,
-                end_lineno=end_line,
-                end_colno=end_col))
-        else:
-            summaries.append(traceback.FrameSummary(
-                frame.get('filename') or '<unknown>',
-                line or 0,
-                frame.get('name') or '<anonymous>'))
-
-    if not summaries:
-        return []
-
-    lines = ["  Koskari dynchain (native eval):\n"]
-    lines.extend(traceback.StackSummary.from_list(summaries).format())
-    return lines
-
-
-def _find_dynchain_in_chain(exc_val):
-    """
-    Walk the exception chain and return __koskari_dynchain__ if present
-
-    :param exc_val: exception value to start from
-    :return: dynchain data or None
-    """
-
-    seen = set()
-    to_visit = [exc_val]
-    while to_visit:
-        current = to_visit.pop()
-        if current is None or id(current) in seen:
-            continue
-        seen.add(id(current))
-        if hasattr(current, '__koskari_dynchain__'):
-            trace_data = getattr(current, '__koskari_dynchain__', None)
-            if trace_data is not None:
-                return trace_data
-        for attr in ('__cause__', '__context__'):
-            link = getattr(current, attr, None)
-            if link is not None:
-                to_visit.append(link)
-    return None
+    return traceback.FrameSummary(
+        filename, line, name,
+        colno=col, end_lineno=end_line, end_colno=end_col)
 
 
 def _filter_infrastructure_tb(tb, infrastructure_modules, infrastructure_files=()):
@@ -655,9 +600,9 @@ def _filter_infrastructure_tb(tb, infrastructure_modules, infrastructure_files=(
     traceback objects.
 
     Returns None when the input traceback is None and, distinctly, when every
-    frame was infrastructure.  The caller is responsible for deciding how to
-    render a fully-filtered chain (for example, falling back to native dynchain
-    metadata) rather than silently restoring the unfiltered traceback.
+    frame was infrastructure.  The caller renders a fully-filtered chain as
+    the exception line alone rather than silently restoring the unfiltered
+    traceback.
 
     :param tb: traceback object (root of chain)
     :param infrastructure_modules: frozenset of __name__ values to drop
@@ -684,71 +629,39 @@ def _filter_infrastructure_tb(tb, infrastructure_modules, infrastructure_files=(
     return filtered[0]
 
 
-def format_exception_with_koskari_trace(
-        exc_type,
-        exc_val,
-        tb,
-        chain_root=None,
-        exclude_files=()):
+def format_exception_with_koskari_trace(exc_type, exc_val, tb):
     """
-    Format an exception traceback, rendering the koskari native dynchain
+    Format an exception traceback, rendering the koskari native frames
+    where they sit
 
-    A synthetic native frame carries the whole dynchain record as
-    __koskari_trace__ and is itself one entry of it, so the record is
-    rendered once, where the first such frame stands, and the frames
-    themselves are not listed again.  Falls back to
-    exc_val.__koskari_dynchain__ when no such frame exists.  When
-    chain_root is given, searches that exception chain for dynchain.
+    A synthetic native frame carries its own dynchain entry as
+    __koskari_trace__, so one walk of the traceback renders every frame
+    in order: a native frame from its entry, with the source line and
+    column caret, any other frame as the standard traceback does.  The
+    frames of a raise that crossed Koskari, Python and Koskari again
+    therefore print in their true nesting.
 
-    :param chain_root: optional exception to walk for dynchain
-    :param exclude_files: filenames left out of the rendered dynchain
     :return: list[str], matching traceback.format_exception style
     """
 
     if tb is None:
-        fallback = None
-        trace_data = _find_dynchain_in_chain(
-            chain_root if chain_root is not None else exc_val)
-        if trace_data is not None:
-            fallback = _render_koskari_dynchain(trace_data, exclude_files)
-        if fallback:
-            out = ["Traceback (most recent call last):\n"]
-            out.extend(fallback)
-            out.extend(format_exception_only(exc_type, exc_val))
-            return out
         return list(format_exception_only(exc_type, exc_val))
 
-    found_dynchain = False
-    for frame, _lineno in traceback.walk_tb(tb):
-        if frame.f_globals.get('__koskari_trace__') is not None:
-            found_dynchain = True
-            break
-
-    fallback_dynchain = None
-    trace_data = _find_dynchain_in_chain(
-        chain_root if chain_root is not None else exc_val)
-    if not found_dynchain and trace_data is not None:
-        fallback_dynchain = _render_koskari_dynchain(trace_data, exclude_files)
-
-    if not found_dynchain and not fallback_dynchain:
+    walked = list(traceback.walk_tb(tb))
+    if not any(frame.f_globals.get('__koskari_trace__') is not None
+               for frame, _lineno in walked):
         return traceback.format_exception(exc_type, exc_val, tb)
 
+    summaries = []
+    for summary, (frame, _lineno) in zip(traceback.extract_tb(tb), walked):
+        entry = frame.f_globals.get('__koskari_trace__')
+        if isinstance(entry, dict):
+            summaries.append(_koskari_frame_summary(entry))
+        else:
+            summaries.append(summary)
+
     out = ["Traceback (most recent call last):\n"]
-    extracted = traceback.extract_tb(tb)
-    walked = list(traceback.walk_tb(tb))
-
-    rendered_dynchain = False
-    for summary, (frame, _lineno) in zip(extracted, walked):
-        trace_data = frame.f_globals.get('__koskari_trace__')
-        if trace_data is None:
-            out.extend(traceback.format_list([summary]))
-        elif not rendered_dynchain:
-            out.extend(_render_koskari_dynchain(trace_data, exclude_files))
-            rendered_dynchain = True
-
-    if fallback_dynchain:
-        out.extend(fallback_dynchain)
-
+    out.extend(traceback.StackSummary.from_list(summaries).format())
     out.extend(format_exception_only(exc_type, exc_val))
     return out
 
@@ -790,7 +703,7 @@ def format_code_boundary_exception(
             lines.extend(traceback.format_exception(
                 type(boundary), boundary, boundary.__traceback__))
         lines.extend(format_exception_with_koskari_trace(
-            exc_type, exc_val, tb, chain_root=boundary))
+            exc_type, exc_val, tb))
         return lines, exc_type, exc_val, tb
 
     tb_for_format = tb
@@ -800,16 +713,15 @@ def format_code_boundary_exception(
         if tb_filtered is not None:
             tb_for_format = tb_filtered
             tb_for_last = tb_filtered
-        elif _find_dynchain_in_chain(boundary) is not None:
-            # Every surviving frame was infrastructure but native dynchain
-            # metadata remains: drop the traceback entirely so only the
-            # user-visible dynchain and exception line are shown.  Restoring
-            # the unfiltered traceback here would leak the eval boundary frame.
+        else:
+            # Every surviving frame was infrastructure: drop the traceback
+            # so only the exception line is shown.  Restoring the
+            # unfiltered traceback here would leak the eval boundary frame.
             tb_for_format = None
             tb_for_last = None
 
     lines = format_exception_with_koskari_trace(
-        exc_type, exc_val, tb_for_format, chain_root=boundary)
+        exc_type, exc_val, tb_for_format)
     return lines, exc_type, exc_val, tb_for_last
 
 
@@ -839,7 +751,7 @@ def format_run_exception(
     single top-level run (a file, ``-c`` command, or ``.kio``).  Reader and
     compile errors render their own source-annotated explanation; runtime
     errors have infrastructure frames stripped (per infrastructure_modules)
-    and the koskari native dynchain interleaved.
+    and their koskari frames rendered where they sit.
 
     When full_trace is True the raw traceback is kept and no filtering is
     applied, for debugging the runtime itself.
@@ -859,23 +771,14 @@ def format_run_exception(
             and not isinstance(exc_val, UncaughtCompilerError):
         return [exc_val.explain()], None
 
-    files = ()
     if not full_trace:
-        # the launchpad is Koskari code, so its frame and its dynchain
-        # entry are dropped by file, not by module name
-        files = _launchpad_files()
-        filtered = _filter_infrastructure_tb(
-            tb, infrastructure_modules, files)
-        if filtered is not None:
-            tb = filtered
-        elif _find_dynchain_in_chain(exc_val) is not None:
-            # Every surviving frame was infrastructure but native dynchain
-            # metadata remains: drop the traceback so only the user-visible
-            # dynchain and exception line are shown.
-            tb = None
+        # the launchpad is Koskari code, so its synthetic frame is
+        # dropped by file, not by module name; every surviving frame
+        # being infrastructure leaves the exception line alone
+        tb = _filter_infrastructure_tb(
+            tb, infrastructure_modules, _launchpad_files())
 
-    lines = format_exception_with_koskari_trace(
-        type(exc_val), exc_val, tb, chain_root=exc_val, exclude_files=files)
+    lines = format_exception_with_koskari_trace(type(exc_val), exc_val, tb)
     return lines, tb
 
 

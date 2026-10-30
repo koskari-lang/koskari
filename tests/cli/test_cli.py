@@ -310,18 +310,16 @@ class TestREPLCodeBoundary(unittest.IsolatedAsyncioTestCase):
 
 class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
 
-    async def test_formats_koskari_dynchain_from_synthetic_frame(self):
+    async def test_formats_koskari_frame_from_its_entry(self):
         g = {
             '__name__': 'koskari.native',
-            '__koskari_trace__': [
-                {
-                    'name': 'inner-fn',
-                    'filename': 'example.ki',
-                    'line': 12,
-                    'col': 3,
-                    'pc': 42,
-                },
-            ],
+            '__koskari_trace__': {
+                'name': 'inner-fn',
+                'filename': 'example.ki',
+                'line': 12,
+                'col': 3,
+                'pc': 42,
+            },
         }
 
         try:
@@ -333,8 +331,9 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
 
         rendered = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
         self.assertIn('Traceback (most recent call last):', rendered)
-        self.assertIn('Koskari dynchain (native eval):', rendered)
-        self.assertIn('File "example.ki", line 12, in inner-fn', rendered)
+        self.assertNotIn('Koskari dynchain', rendered)
+        self.assertNotIn('<string>', rendered)
+        self.assertEqual(2, rendered.count('File "example.ki", line 12, in inner-fn'))
         self.assertIn('ZeroDivisionError', rendered)
 
 
@@ -355,17 +354,15 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
 
         g = {
             '__name__': 'koskari.native',
-            '__koskari_trace__': [
-                {
-                    'name': 'foo',
-                    'filename': path,
-                    'line': 2,
-                    'col': 9,
-                    'end_line': 2,
-                    'end_col': 16,
-                    'pc': 2,
-                },
-            ],
+            '__koskari_trace__': {
+                'name': 'foo',
+                'filename': path,
+                'line': 2,
+                'col': 9,
+                'end_line': 2,
+                'end_col': 16,
+                'pc': 2,
+            },
         }
 
         try:
@@ -402,15 +399,13 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         # start-oriented frame: col but no end_col / end_line
         g = {
             '__name__': 'koskari.native',
-            '__koskari_trace__': [
-                {
-                    'name': 'foo',
-                    'filename': path,
-                    'line': 2,
-                    'col': 9,
-                    'pc': 2,
-                },
-            ],
+            '__koskari_trace__': {
+                'name': 'foo',
+                'filename': path,
+                'line': 2,
+                'col': 9,
+                'pc': 2,
+            },
         }
 
         try:
@@ -494,24 +489,36 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
 
 class TestFormatCodeBoundaryException(unittest.IsolatedAsyncioTestCase):
 
-    def _make_boundary_with_infra_cause_and_dynchain(self):
+    def _make_boundary_with_infra_cause(self, koskari_frame):
+        """
+        A REPLCodeBoundary whose cause was raised from an infrastructure
+        frame, with the test-method frame dropped so every surviving
+        Python frame is infrastructure, as an error raised behind the
+        REPL await; koskari_frame adds a synthetic koskari frame under
+        it, as the native injection does
+        """
+
         g = {'__name__': 'koskari.cli'}
+        if koskari_frame:
+            native = {
+                '__name__': 'koskari.native',
+                '__koskari_trace__': {
+                    'name': '__main__',
+                    'filename': '<stdin>',
+                    'line': 1,
+                    'col': 0,
+                    'pc': 2,
+                },
+            }
+            g['native'] = native
+            src = 'exec(\'raise ValueError("boom")\', native)'
+        else:
+            src = 'raise ValueError("boom")'
         try:
-            exec('raise ValueError("boom")', g)
+            exec(src, g)
         except ValueError as e:
             cause = e
-        # drop the test-method frame so every surviving cause frame is
-        # infrastructure, mirroring an error raised behind the REPL await
         cause.__traceback__ = cause.__traceback__.tb_next
-        cause.__koskari_dynchain__ = [
-            {
-                'name': '__main__',
-                'filename': '<stdin>',
-                'line': 0,
-                'col': 0,
-                'pc': 2,
-            },
-        ]
         try:
             raise REPLCodeBoundary() from cause
         except REPLCodeBoundary as b:
@@ -519,29 +526,41 @@ class TestFormatCodeBoundaryException(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_snips_fully_infrastructure_traceback(self):
-        boundary = self._make_boundary_with_infra_cause_and_dynchain()
+        boundary = self._make_boundary_with_infra_cause(False)
         lines, _t, _v, tb = format_code_boundary_exception(
             boundary,
             infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
         rendered = ''.join(lines)
         self.assertNotIn('File "<string>"', rendered)
         self.assertNotIn('koskari/cli', rendered)
-        self.assertIn('Koskari dynchain (native eval):', rendered)
-        self.assertIn('File "<stdin>"', rendered)
-        self.assertIn('in __main__', rendered)
+        self.assertNotIn('Traceback', rendered)
         self.assertIn('ValueError', rendered)
         self.assertIsNone(tb)
 
 
+    async def test_koskari_frame_survives_infrastructure_filter(self):
+        boundary = self._make_boundary_with_infra_cause(True)
+        lines, _t, _v, tb = format_code_boundary_exception(
+            boundary,
+            infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
+        rendered = ''.join(lines)
+        self.assertNotIn('koskari/cli', rendered)
+        self.assertNotIn('Koskari dynchain', rendered)
+        self.assertIn('File "<stdin>", line 1, in __main__', rendered)
+        self.assertIn('ValueError', rendered)
+        self.assertIsNotNone(tb)
+
+
     async def test_nofold_retains_boundary_frames(self):
-        boundary = self._make_boundary_with_infra_cause_and_dynchain()
+        boundary = self._make_boundary_with_infra_cause(True)
         lines, _t, _v, _tb = format_code_boundary_exception(
             boundary,
             nofold=True,
             infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
         rendered = ''.join(lines)
         self.assertIn('ValueError', rendered)
-        self.assertIn('Koskari dynchain (native eval):', rendered)
+        self.assertIn('File "<stdin>", line 1, in __main__', rendered)
+        self.assertIn('REPLCodeBoundary', rendered)
 
 
 class TestMain(unittest.IsolatedAsyncioTestCase):
@@ -571,8 +590,8 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
 
     async def test_main_script_error_prints_each_user_frame_once(self):
         """
-        An uncaught script error prints the user frames once, as one
-        dynchain block, and never the launchpad's own frame
+        An uncaught script error prints the user frames once, each where
+        it sits, and never the launchpad's own frame
         """
 
         def run():
@@ -589,9 +608,10 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         code, err = await loop.run_in_executor(None, run)
         self.assertEqual(1, code, err)
         self.assertNotIn('launch.ki', err)
-        self.assertEqual(1, err.count('Koskari dynchain'), err)
+        self.assertNotIn('Koskari dynchain', err)
         self.assertEqual(1, err.count('line 7, in __main__'), err)
         self.assertEqual(1, err.count('line 2, in f'), err)
+        self.assertLess(err.index('in __main__'), err.index('in f'), err)
         self.assertTrue(err.rstrip().endswith(
             'ZeroDivisionError: division by zero'), err)
 

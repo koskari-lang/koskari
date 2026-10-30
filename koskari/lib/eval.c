@@ -600,10 +600,11 @@ void kos_eval_note_crossed_frame(KosContext *ctx) {
    and each goes in ahead of the ones before, so the printed order is
    the outermost frame first, as for Python frames. A record entry
    with no file (the code-less root of a demand drive) adds nothing.
-   The frame's globals carry the whole record as __koskari_trace__.
+   The frame's globals carry its own entry as __koskari_trace__, so a
+   formatter walking the traceback renders each frame where it sits.
    The extended chain is attached to the value as its __traceback__.
 */
-static PyFrameObject *frame_for_record(PyObject *entry, PyObject *record) {
+static PyFrameObject *frame_for_record(PyObject *entry) {
 
   PyObject *filename = PyDict_GetItemString(entry, "filename");
   PyObject *name = PyDict_GetItemString(entry, "name");
@@ -630,7 +631,7 @@ static PyFrameObject *frame_for_record(PyObject *entry, PyObject *record) {
     PyDict_SetItemString(globals, "__name__", modname);
     Py_DECREF(modname);
   }
-  PyDict_SetItemString(globals, "__koskari_trace__", record);
+  PyDict_SetItemString(globals, "__koskari_trace__", entry);
 
   PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), code, globals,
                                        NULL);
@@ -670,7 +671,7 @@ void kos_eval_inject_recorded_frames(
 
     /* the triple stays in hand while the frame is built, so a failure
        there cannot displace the exception being decorated */
-    pyframe = frame_for_record(entry, record);
+    pyframe = frame_for_record(entry);
     if (! pyframe) {
       PyErr_Clear();
       continue;

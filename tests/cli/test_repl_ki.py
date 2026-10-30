@@ -303,12 +303,12 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('koskari/cli', err)
 
 
-    async def test_koskari_exception_shows_native_dynchain(self):
-        # A runtime error surfaces the native dynchain, not just the Python
-        # exception line.
+    async def test_koskari_exception_shows_native_frame(self):
+        # A runtime error surfaces the Koskari frame that raised, not just
+        # the Python exception line.
         _, err = await self._run_repl(['(/ 1 0)'])
         self.assertIn('ZeroDivisionError', err)
-        self.assertIn('Koskari dynchain', err)
+        self.assertIn('File "<stdin>", line 1, in __main__', err)
 
 
     async def test_compiler_error_uses_explain_only(self):

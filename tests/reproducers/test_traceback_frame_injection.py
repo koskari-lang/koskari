@@ -17,9 +17,10 @@ tests.reproducers.test_traceback_frame_injection
 
 An uncaught Koskari exception reaches Python with the raising Koskari
 frame in its traceback: a frame whose code names the Koskari file and
-function and whose globals carry the dynchain record, so a stock
-traceback shows the Koskari location and the koskari formatter renders
-it in place.
+function and whose globals carry that frame's dynchain entry, so a
+stock traceback shows the Koskari location and the koskari formatter
+renders each frame where it sits, Koskari frames on both sides of a
+Python frame included.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -31,6 +32,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import format_exception_with_koskari_trace
+from koskari.lib import demand
 from koskari.module import load_module_source_async, new_module
 
 
@@ -75,8 +77,69 @@ class TestTracebackFrameInjection(unittest.IsolatedAsyncioTestCase):
         exc = await self.raise_it()
         text = "".join(format_exception_with_koskari_trace(
             type(exc), exc, exc.__traceback__))
-        self.assertEqual(1, text.count("Koskari dynchain"), text)
+        self.assertNotIn("Koskari dynchain", text)
         self.assertEqual(1, text.count("in boom"), text)
+
+    async def test_frame_carries_only_its_own_entry(self):
+        exc = await self.raise_it()
+        frames = [f for f, _ in traceback.walk_tb(exc.__traceback__)]
+        entries = [f.f_globals["__koskari_trace__"] for f in frames
+                   if "__koskari_trace__" in f.f_globals]
+        self.assertEqual(len(entries), 1)
+        self.assertIsInstance(entries[0], dict)
+        self.assertEqual(entries[0]["name"], "boom")
+
+
+INTERLEAVED_SRC = """
+(def inner [] (raise (ValueError "boom")))
+(def outer [relay] (relay inner))
+"""
+
+
+def relay(fn):
+    """
+    A Python frame between two Koskari frames
+    """
+
+    return demand(fn)()
+
+
+class TestInterleavedFrames(unittest.IsolatedAsyncioTestCase):
+    """
+    A raise that crosses Koskari, Python and Koskari again lists each
+    Koskari frame in its true place against the Python frame between
+    """
+
+    async def raise_it(self):
+        mod = new_module("tb_interleaved")
+        vars(mod)["__file__"] = "<tb_interleaved>"
+        await load_module_source_async(mod, INTERLEAVED_SRC, layout=False)
+        try:
+            await vars(mod)["outer"](relay)
+        except ValueError as exc:
+            return exc
+        self.fail("no exception")
+
+    async def test_traceback_holds_both_segments(self):
+        exc = await self.raise_it()
+        names = []
+        for frame, _lineno in traceback.walk_tb(exc.__traceback__):
+            entry = frame.f_globals.get("__koskari_trace__")
+            if entry is not None:
+                names.append(entry["name"])
+            elif frame.f_code.co_name == "relay":
+                names.append("relay")
+        self.assertEqual(names, ["outer", "relay", "inner"])
+
+    async def test_formatter_renders_the_segments_in_order(self):
+        exc = await self.raise_it()
+        text = "".join(format_exception_with_koskari_trace(
+            type(exc), exc, exc.__traceback__))
+        self.assertEqual(1, text.count("in outer"), text)
+        self.assertEqual(1, text.count("in relay"), text)
+        self.assertEqual(1, text.count("in inner"), text)
+        self.assertLess(text.index("in outer"), text.index("in relay"), text)
+        self.assertLess(text.index("in relay"), text.index("in inner"), text)
 
 
 # The end.
