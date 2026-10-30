@@ -1786,6 +1786,11 @@ static int make_simple_ctx(
             return -1;
         }
         KosDynGen_OWNER(gen) = NULL;
+        /* the frame under the gen becomes the context's chain below,
+           a bootstrap install by hand: the chain takes its hold here
+           as the install would, and the test keeps the birth count as
+           the owner's, released when the test is done */
+        kos_dyngen_acquire(gen);
         if (gen_out_opt)
             *gen_out_opt = gen;
     }
@@ -2417,6 +2422,9 @@ static int test_gen_return_into_frame_without_resume_is_fatal(void) {
   Py_XDECREF(tb);
   Py_XDECREF(ev.val);
   Py_DECREF(ctx);
+  /* the chain freed with the context released its hold; the birth
+     count is the test's, as owner */
+  kos_dyngen_release(gen);
   Py_DECREF(code_obj);
 
   TEST_ASSERT_EQ(ev.kind, KOS_RES_FATAL, "the return is fatal");

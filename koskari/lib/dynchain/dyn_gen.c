@@ -86,10 +86,8 @@ void kos_dyngen_free(KosDynGen *gen) {
 
 void kos_dyngen_unlink(KosDynGen *gen) {
 
-  KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_ON_CHAIN;
   KosDynNode_PARENT(gen) = NULL;
-  if (KosDynGen_REFCOUNT(gen) == 0)
-    kos_dyngen_free(gen);
+  kos_dyngen_release(gen);
 }
 
 
@@ -284,10 +282,10 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   if (KosDynNode_STACK(bottom))
     KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
 
-  /* 1. GEN's parent = current ctx's active node; the chain holds the
-     node by that link from here to the freeze */
+  /* 1. GEN's parent = current ctx's active node; the chain takes its
+     hold on the node here and releases it at the freeze */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
-  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_ON_CHAIN;
+  kos_dyngen_acquire(gen);
   /* 2. Put GEN's active onto ctx's active; 3. NULL GEN's active.
    * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
    * is already intact (e.g. FOREACH -> FRAME -> GEN). Overwriting
@@ -405,10 +403,12 @@ int kos_dyn_gen_install_bootstrap(
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(ctx, KosDynGen_HOST(gen));
 
-  /* the chain holds the node by this link from here to the freeze */
+  /* the chain takes its hold on the node here and releases it at the
+     freeze */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+  kos_dyngen_acquire(gen);
   kos_dyn_commit_dyn_top(ctx, chain_head);
-  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_STARTED | KOS_DYNF_GEN_ON_CHAIN;
+  KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_STARTED;
 
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);

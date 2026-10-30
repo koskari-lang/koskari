@@ -125,8 +125,8 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
   KosDynGen_HOST(gen)->top = NULL;
 
-  /* Off the chain: the owner's hold is the one that remains. */
-  KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_ON_CHAIN;
+  /* Off the chain: the chain's hold ends; the owner's remains. */
+  kos_dyngen_release(gen);
 
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p owner=%p gen=%p\n",
        (void *) KosContext_DYN_TOP(ctx),

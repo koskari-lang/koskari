@@ -343,8 +343,12 @@ static int test_dyngen_bootstrap_no_active(void) {
 
     ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
+    /* a bootstrap install by hand: the chain takes its hold as the
+       install would, and the birth count is the test's, as owner */
+    kos_dyngen_acquire(gen);
 
     Py_DECREF(ctx);
+    kos_dyngen_release(gen);
 
     return 0;
 }

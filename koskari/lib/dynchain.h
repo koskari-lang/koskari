@@ -102,11 +102,6 @@ typedef enum KosDynFlags {
                                    (graft instantiation or in-place invoke);
                                    no POP_PROMPT instruction pairs with it, so
                                    delivery routes through the paired DELIM */
-  KOS_DYNF_GEN_ON_CHAIN = 0x10, /* GEN: the span is spliced onto a chain,
-                                   which holds the node by linkage; set by
-                                   the installs, cleared by the freeze and
-                                   by kos_dyngen_unlink, the chain's end of
-                                   the hold */
   KOS_DYNF_GEN_INSTALLS = 0x20,  /* GEN: a node of the frozen span holds an
                                    effect the install puts back */
 } KosDynFlags;
@@ -583,13 +578,11 @@ struct KosDynNode {
     struct {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
-      uint32_t refcount;   /* holders other than a chain: the generator
-                              object (the 1 at construction) and any
-                              drive that keeps the node past it. A chain
-                              holds the node by linkage (GEN_ON_CHAIN),
-                              not by count: a release at zero while on a
-                              chain leaves the node to the chain's unlink,
-                              which frees it when no holder remains */
+      uint32_t refcount;   /* holders of the node: the owner, whose hold
+                              is the 1 at construction, and a chain while
+                              the span is installed on it, from the
+                              install to the freeze or the teardown. The
+                              last release frees */
       uint16_t nframes;    /* frames in the frozen span, counted at the
                               freeze for the install's room check */
       uint16_t base_depth; /* consumer depth the span's frames are
@@ -1130,10 +1123,11 @@ void kos_dyngen_free(KosDynGen *gen);
 
 
 /**
-   The chain's end of its hold on a GEN: the node leaves the chain
-   (parent cleared, GEN_ON_CHAIN cleared) and is freed when no other
-   holder remains. Callers: the exhaustion teardown, the flattened
-   finish, kos_dynnode_free for a GEN freed with its chain.
+   The chain's end of its hold on a GEN: the parent link is cleared
+   and the chain's count released. Callers: the exhaustion teardown,
+   the flattened finish, kos_dynnode_free for a GEN freed with its
+   chain. The freeze releases the same count itself, since the span
+   leaves the chain with the parent link saved for the resume.
 */
 void kos_dyngen_unlink(KosDynGen *gen);
 
@@ -2062,20 +2056,15 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
     on this chain; a GEN at the chain root surfaces them to an adapter */
 #define KosDynGen_IS_FLATTENED(n) (KosDynNode_PARENT(n) != NULL)
 
-/* A holder other than a chain takes the node. */
+/* A holder takes the node: the owner at construction (counted there),
+   a chain at each install. */
 static inline void kos_dyngen_acquire(KosDynGen *gen) {
   KosDynGen_REFCOUNT(gen)++;
 }
 
-/* A holder other than a chain lets go. The last one frees the node,
-   unless a chain holds it by linkage: then the owner is gone, so the
-   chain's finish has no object to report to, and its unlink frees. */
+/* A holder lets go. The last one frees the node. */
 static inline void kos_dyngen_release(KosDynGen *gen) {
-  if (--KosDynGen_REFCOUNT(gen))
-    return;
-  if (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_ON_CHAIN)
-    KosDynGen_OWNER(gen) = NULL;
-  else
+  if (! --KosDynGen_REFCOUNT(gen))
     kos_dyngen_free(gen);
 }
 
