@@ -116,11 +116,13 @@ class ByteCodeFragment:
         self.annotation_bindings = []
         self.doc = None
 
-        # the source position of the first write to each name, by its
-        # str spelling, carried along by merge so the fragment that is
-        # validated can locate the write that fails
+        # the source position of the first write, the first declaration
+        # (define or define-global) and the first read request of each
+        # name, carried along by merge so the fragment that is validated
+        # can locate the form that fails
         self.write_positions = {}
         self.declare_positions = {}
+        self.request_positions = {}
 
         # write requests copied up from inner Codes at completion; they
         # are validated where they originate, so the validator skips
@@ -161,18 +163,21 @@ class ByteCodeFragment:
         self.marked = True
 
 
-    def request_var(self, var_name):
+    def request_var(self, var_name, position=None):
         """
         Record a closure request for var_name unless it is already declared
 
         :param var_name: name to request from enclosing scope
+        :param position: optional (line, col) for error reporting
         """
 
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
             self.note_mark(var_name)
-        self.resolution.on_request_var(self, var_name)
+        self.resolution.on_request_var(self, var_name, position=position)
+        if position is not None:
+            self.request_positions.setdefault(var_name, position)
 
 
     def request_for_write(self, var_name, position=None):
@@ -204,9 +209,11 @@ class ByteCodeFragment:
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
             self.note_mark(var_name)
+        # the hook runs first so it sees the position of an earlier
+        # declaration of the name, never this one's
+        self.resolution.on_explicit_global(self, var_name, position=position)
         if position is not None:
             self.declare_positions.setdefault(var_name, position)
-        self.resolution.on_explicit_global(self, var_name, position=position)
 
 
     def declare_var(self, var_name, position=None, type_expr=None):
@@ -221,9 +228,11 @@ class ByteCodeFragment:
 
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
+        # the hook runs first so it sees the position of an earlier
+        # declaration of the name, never this one's
+        self.resolution.on_declare(self, var_name, position=position)
         if position is not None:
             self.declare_positions.setdefault(var_name, position)
-        self.resolution.on_declare(self, var_name, position=position)
         if type_expr is not None:
             self.annotation_bindings.append((str(var_name), type_expr))
 
@@ -364,7 +373,8 @@ class ByteCodeFragment:
             self.declare_var(
                 name, position=other.declare_positions.get(name))
         for name in other.requests:
-            self.request_var(name)
+            self.request_var(
+                name, position=other.request_positions.get(name))
         for name in other.requests_for_write:
             self.request_for_write(
                 name, position=other.write_positions.get(name))
@@ -1094,11 +1104,11 @@ class Compiler:
             return self.compile_special(
                 fragment, comp, Datum(sym, position))
 
-        return self.compile_raw_symbol(fragment, sym)
+        return self.compile_raw_symbol(fragment, sym, position)
 
 
-    def compile_raw_symbol(self, fragment, sym):
-        fragment.request_var(sym)
+    def compile_raw_symbol(self, fragment, sym, position=None):
+        fragment.request_var(sym, position=position)
         fragment.instruction(OpCode.VAR, sym)
         return fragment
 

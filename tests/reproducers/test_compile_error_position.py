@@ -18,7 +18,8 @@ tests.reproducers.test_compile_error_position
 A compile error carries the module's file name and the line of the
 innermost enclosing form, and explain() names both. The write to an
 undeclared name and the local-or-global conflict carry the line of the
-form that made the request, in layout mode as in s-expression mode.
+form that made the request, in layout mode as in s-expression mode,
+and the conflict names the line of the earlier declaration.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -98,6 +99,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
             "    define-global q 2\n"
             "    q\n")
         self.assertIn("cannot be both local", str(err))
+        self.assertIn("declared local at line 4", str(err))
         self.assert_located(err, 5)
 
 
@@ -109,6 +111,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
             "    define q 1\n"
             "    q\n")
         self.assertIn("cannot be both local", str(err))
+        self.assertIn("declared global at line 2", str(err))
         self.assert_located(err, 4)
 
 

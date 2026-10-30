@@ -320,8 +320,15 @@ Suggested messages:
 - Write to undeclared name:  
   `"Cannot write to %r: not declared in this scope or any enclosing scope. Use define for a local or define-global for a global."`
 
-- request_global vs declare conflict:  
-  `"%r cannot be both local (define) and global (define-global)."`
+- request_global vs declare conflict, raised at the later of the two
+  declarations and naming the earlier one by its kind and line:  
+  `"%r cannot be both local and global in the same scope: declared global at line N"`  
+  `"%r cannot be both local and global in the same scope: declared local at line N"`
+
+The fragment records the position of the first write, the first
+declaration (define or define-global) and the first read request of
+each name, and merge carries all three up, so every diagnostic above
+locates the form it names.
 
 ---
 

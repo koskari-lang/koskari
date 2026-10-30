@@ -57,7 +57,7 @@ def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
     name = str(sym.datum.base)
 
     if is_symbol(obj) and compiler.symbol_is_variable(obj):
-        frag.request_var(obj)
+        frag.request_var(obj, position=called_by.position)
         if before is not None:
             before(frag)
         frag.instruction(var_op, (obj, name, 0, 0))

@@ -62,6 +62,20 @@ def _spellings(fragment):
         str(n) for n in fragment._request_global]
 
 
+def _conflict_message(fragment, name, earlier_kind):
+    """
+    The local-or-global conflict message for name, a symbol, naming
+    the earlier declaration by its kind ("local" or "global") and the
+    line the fragment recorded for it, when it recorded one
+    """
+
+    earlier = fragment.declare_positions.get(name)
+    where = (f"at line {earlier[0]}" if earlier is not None
+             else "earlier in the same scope")
+    return (f"{str(name)!r} cannot be both local and global in the"
+            f" same scope: declared {earlier_kind} {where}")
+
+
 class ResolutionPragma(Protocol):
     """
     Protocol for resolution semantics during compilation
@@ -88,7 +102,7 @@ class ResolutionPragma(Protocol):
         ...
 
 
-    def on_request_var(self, fragment, name):
+    def on_request_var(self, fragment, name, *, position=None):
         """
         Invoked when a closure read is requested (name not yet declared)
         """
@@ -194,8 +208,9 @@ class KoskariPragma:
         Record a declaration (define, params, bindings) of name, a
         symbol. Removes name from the read and write requests and adds
         to declares. A name the fragment already pulls from the module
-        is the local-or-global conflict, except at module scope, where
-        a declaration and a global request name the same binding
+        is the local-or-global conflict, raised at this declaration
+        and naming the line of the global one, except at module scope,
+        where a declaration and a global request name the same binding
         """
 
         if name in fragment._request_global:
@@ -203,10 +218,8 @@ class KoskariPragma:
                 fragment._request_global.remove(name)
             else:
                 raise CompilerError(
-                    f"{str(name)!r} cannot be both local and global"
-                    " in the same scope.", name,
-                    position=position
-                    or fragment.declare_positions.get(name))
+                    _conflict_message(fragment, name, "global"),
+                    name, position=position)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
@@ -217,16 +230,16 @@ class KoskariPragma:
 
     def on_explicit_global(self, fragment, name, *, position=None):
         """
-        Record explicit global (global var) of name, a symbol.
-        Conflicts with local declaration; removes from requests buckets.
+        Record explicit global (global var) of name, a symbol. A name
+        the fragment already declares is the local-or-global conflict,
+        raised at this declaration and naming the line of the local
+        one, except at module scope; removes from requests buckets.
         """
 
         if name in fragment.declares and not _in_module_scope(fragment):
             raise CompilerError(
-                f"{str(name)!r} cannot be both local and global"
-                " in the same scope.", name,
-                position=position
-                or fragment.declare_positions.get(name))
+                _conflict_message(fragment, name, "local"),
+                name, position=position)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
@@ -235,12 +248,13 @@ class KoskariPragma:
         _unique_append(fragment._request_global, name)
 
 
-    def on_request_var(self, fragment, name):
+    def on_request_var(self, fragment, name, *, position=None):
         """
         Record a closure read request of name, a symbol.
         Adds to requests unless already declared.
         """
 
+        # the fragment records the position itself (request_positions)
         if name not in fragment.declares:
             _unique_append(fragment.requests, name)
 

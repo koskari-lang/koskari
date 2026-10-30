@@ -531,6 +531,27 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
         f.request_var(symbol("outer"))
         self.assertEqual(f.requests, [symbol("outer"), symbol("other")])
 
+    async def test_request_var_records_first_position(self):
+        f = ByteCodeFragment()
+        f.request_var(symbol("outer"))
+        self.assertEqual(f.request_positions, {})
+        f.request_var(symbol("outer"), position=(3, 4))
+        f.request_var(symbol("outer"), position=(7, 1))
+        f.request_var(symbol("other"), position=(5, 2))
+        self.assertEqual(
+            f.request_positions,
+            {symbol("outer"): (3, 4), symbol("other"): (5, 2)})
+
+    async def test_declare_positions_keep_the_first_declaration(self):
+        f = ByteCodeFragment()
+        f.declare_var(symbol("a"), position=(2, 1))
+        f.declare_var(symbol("a"), position=(6, 1))
+        f.request_global(symbol("g"), position=(3, 1))
+        f.request_global(symbol("g"), position=(8, 1))
+        self.assertEqual(
+            f.declare_positions,
+            {symbol("a"): (2, 1), symbol("g"): (3, 1)})
+
     async def test_request_var_skipped_if_declared(self):
         f = ByteCodeFragment()
         f.declare_var(symbol("local"))
@@ -587,6 +608,19 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
             a.instructions,
             [(OpCode.CONST, 1), (OpCode.RETURN, 1)],
         )
+
+    async def test_merge_carries_request_positions(self):
+        a = ByteCodeFragment(name="a")
+        b = ByteCodeFragment(name="b")
+        b.request_var(symbol("y"), position=(4, 2))
+        b.request_var(symbol("w"))
+        a.merge(b)
+        self.assertEqual(a.requests, [symbol("y"), symbol("w")])
+        self.assertEqual(a.request_positions, {symbol("y"): (4, 2)})
+        c = ByteCodeFragment(name="c")
+        c.request_var(symbol("y"), position=(9, 0))
+        a.merge(c)
+        self.assertEqual(a.request_positions, {symbol("y"): (4, 2)})
 
     async def test_declare_var_with_type_expr(self):
         f = ByteCodeFragment()

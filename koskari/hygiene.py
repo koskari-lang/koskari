@@ -636,7 +636,8 @@ class Resolver:
         :param fragment: the fragment being completed
         """
 
-        self.resolve_bucket(fragment.requests)
+        self.resolve_bucket(fragment.requests,
+                            positions=fragment.request_positions)
         self.resolve_bucket(fragment.requests_for_write,
                             positions=fragment.write_positions)
         self.resolve_bucket(fragment._request_global,

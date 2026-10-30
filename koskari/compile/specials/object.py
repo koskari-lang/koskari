@@ -1200,7 +1200,7 @@ def special_inplace_attr(compiler, called_by, op, obj, attr, values):
         # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
         # get/op/set-ing the attribute in one op. Only the values ride the
         # stack. Resolution lowers this to FAST_ATTR_INPLACE where possible.
-        frag.request_var(obj_expr)
+        frag.request_var(obj_expr, position=obj.position)
         for value_expr in value_exprs:
             frag.merge(compiler.full_compile(value_expr))
         frag.instruction(OpCode.VAR_ATTR_INPLACE,

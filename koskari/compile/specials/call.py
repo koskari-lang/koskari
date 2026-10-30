@@ -231,7 +231,7 @@ def special_call(
         # through compile_symbol, so the stray-symbol check has to run here.
         # The other path calls full_compile, which checks for us.
         compiler.check_stray_symbol(callable.base, pos)
-        fragment.request_var(callable)
+        fragment.request_var(callable, position=pos)
 
     fragment.position(pos)
     if not use_var_path:
@@ -280,7 +280,7 @@ def special_call_attr(
 
     fragment.position(pos)
     if use_var_path:
-        fragment.request_var(obj)
+        fragment.request_var(obj, position=pos)
     else:
         fragment.merge(compiler.full_compile(obj))
 

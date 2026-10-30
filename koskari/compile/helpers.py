@@ -377,7 +377,8 @@ def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
         # carries over without its instruction
         frag.merge(keyfrag)
         for sym in objfrag.requests:
-            frag.request_var(sym)
+            frag.request_var(
+                sym, position=objfrag.request_positions.get(sym))
         frag.instruction(named_op, obj_name)
     else:
         frag.merge(objfrag)
@@ -426,14 +427,16 @@ def emit_item_place(compiler, frag, obj, keyfrag, key, value_feeders):
         frag.merge(objfrag)
     else:
         for sym in objfrag.requests:
-            frag.request_var(sym)
+            frag.request_var(
+                sym, position=objfrag.request_positions.get(sym))
         obj_op = OpCode.VAR
         fields.append(obj_name)
     if key_kind is None:
         frag.merge(keyfrag)
     else:
         for sym in keyfrag.requests:
-            frag.request_var(sym)
+            frag.request_var(
+                sym, position=keyfrag.request_positions.get(sym))
         key_op = ITEM_FEEDER_OP[key_kind]
         fields.append(key_val)
     return obj_op, key_op, fields

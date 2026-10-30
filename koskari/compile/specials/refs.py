@@ -98,7 +98,7 @@ def special_refq(compiler, called_by, sym):
 
     frag = compiler.fragment(called_by.datum)
     frag.position(sym.position)
-    frag.request_var(sym.datum)
+    frag.request_var(sym.datum, position=sym.position)
     frag.instruction(OpCode.VAR_REF, sym.datum)
 
     return frag
