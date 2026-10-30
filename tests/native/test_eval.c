@@ -1787,10 +1787,8 @@ static int make_simple_ctx(
         }
         KosDynGen_OWNER(gen) = NULL;
         /* the frame under the gen becomes the context's chain below,
-           a bootstrap install by hand: the chain takes its hold here
-           as the install would, and the test keeps the birth count as
-           the owner's, released when the test is done */
-        kos_dyngen_acquire(gen);
+           a bootstrap install by hand; the test is the node's owner
+           and frees it once the context has let go */
         if (gen_out_opt)
             *gen_out_opt = gen;
     }
@@ -1858,7 +1856,7 @@ static int test_eval_yield_empty_resume(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
-    kos_dyngen_release(dyn_gen);
+    kos_dyngen_free(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1907,7 +1905,7 @@ static int test_eval_yield_send_resume(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
-    kos_dyngen_release(dyn_gen);
+    kos_dyngen_free(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2116,7 +2114,7 @@ static int test_eval_yield_throw_resume(void) {
     PyErr_Clear();
 
     Py_DECREF(ctx);
-    kos_dyngen_release(dyn_gen);
+    kos_dyngen_free(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2193,7 +2191,7 @@ static int test_eval_yield_throw_caught(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
-    kos_dyngen_release(dyn_gen);
+    kos_dyngen_free(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2243,7 +2241,8 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    int rc = make_simple_ctx(instr, &code_obj, &ctx, NULL);
+    KosDynGen *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
@@ -2256,6 +2255,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
+    kos_dyngen_free(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2422,9 +2422,8 @@ static int test_gen_return_into_frame_without_resume_is_fatal(void) {
   Py_XDECREF(tb);
   Py_XDECREF(ev.val);
   Py_DECREF(ctx);
-  /* the chain freed with the context released its hold; the birth
-     count is the test's, as owner */
-  kos_dyngen_release(gen);
+  /* the chain freed with the context let go; the test owns the node */
+  kos_dyngen_free(gen);
   Py_DECREF(code_obj);
 
   TEST_ASSERT_EQ(ev.kind, KOS_RES_FATAL, "the return is fatal");

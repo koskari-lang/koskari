@@ -125,9 +125,6 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
   KosDynGen_HOST(gen)->top = NULL;
 
-  /* Off the chain: the chain's hold ends; the owner's remains. */
-  kos_dyngen_release(gen);
-
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p owner=%p gen=%p\n",
        (void *) KosContext_DYN_TOP(ctx),
        KosContext_DYN_TOP(ctx)
@@ -557,19 +554,17 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
           /* Flattened generator: the raise propagates INTO the consumer
              at the iteration point, per Python generator semantics. The
              generator is finished by the exception: record its frame in
-             the trace, mark the owner closed, unlink frame+GEN (the
-             chain state here -- frame on top, GEN parent, consumer
-             below -- is exactly the exhaustion shape), and continue the
-             walk so the consumer's regions can catch. */
+             the trace, unlink frame+GEN (the chain state here -- frame
+             on top, GEN parent, consumer below -- is exactly the
+             exhaustion shape), then mark the owner closed, whose
+             finish frees the node once the chain has let go, and
+             continue the walk so the consumer's regions can catch. */
           kos_eval_note_crossed_frame(ctx);
           {
             PyObject *owner = KosDynGen_OWNER(parent);
             KosIterSlots *islots;
-            if (owner && KosIter_CheckSlots(owner, &islots))
-              islots->ki_finish(owner, 1);
-          }
-          {
             PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
             PyErr_Fetch(&typ, &val, &tb);
             if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
               Py_XDECREF(typ);
@@ -578,6 +573,8 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
               return EVAL_FATAL();
             }
             PyErr_Restore(typ, val, tb);
+            if (owner && KosIter_CheckSlots(owner, &islots))
+              islots->ki_finish(owner, 1);
           }
           continue;
         }

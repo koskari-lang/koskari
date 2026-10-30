@@ -331,21 +331,18 @@ void kos_transform_step_clear(void *state) {
 
 
 /**
-   The transform's durable drive context, created lazily: python-adapter
-   drives run their work here across steps instead of allocating a
-   context per element. The suite marks it recyclable, so the adapters
-   reset it at their completion points; a creation failure falls back
-   to an adapter-owned context.
+   The transform's durable context, created lazily: python-adapter
+   steps run their work here instead of allocating a context per
+   element. The suite marks it recyclable, so the adapters reset it at
+   their completion points. NULL with the error set on a creation
+   failure, and the step fails with it.
 */
 KosContext *kos_transform_pyctx(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
-  if (! t->ctx) {
+  if (! t->ctx)
     t->ctx = KosContext_New(NULL, kos_tls_current());
-    if (! t->ctx)
-      PyErr_Clear();
-  }
   return t->ctx;
 }
 

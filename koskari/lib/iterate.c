@@ -55,14 +55,18 @@ static PyObject *iterate_display_name(PyObject *provider) {
 
 
 /**
-   Acquire the drive context: the provider's durable ki_pyctx when it
-   has one (context-level state persists across steps there), else a
-   lazily created adapter-owned context. Either way the adapter holds a
-   reference of its own, so a provider cleared out from under a
-   mid-step adapter cannot take the context with it. *owned reports
-   which kind was taken: only an adapter-owned context is recycled or
-   dropped between steps; a durable one keeps the provider's
-   lifecycle.
+   Acquire the context the step runs on: the provider's durable
+   ki_pyctx when its suite has the slot (context-level state persists
+   across steps there), else a lazily created adapter-owned context.
+   A suite with the slot is stepped on that context or not at all: a
+   NULL return is the provider's failure, left set, and the step fails
+   with it. Either way the adapter holds a reference of its own, so a
+   provider cleared out from under a mid-step adapter cannot take the
+   context with it. *owned reports which kind was taken: only an
+   adapter-owned context is recycled or dropped between steps; a
+   durable one keeps the provider's lifecycle.
+
+   :return: 0, or -1 with the error set
 */
 static int iterate_acquire_context(
     KosIterSlots *islots,
@@ -75,12 +79,12 @@ static int iterate_acquire_context(
 
   if (islots->ki_pyctx) {
     KosContext *ctx = islots->ki_pyctx(provider);
-    if (ctx) {
-      Py_INCREF(ctx);
-      *ctx_slot = ctx;
-      *owned = 0;
-      return 0;
-    }
+    if (! ctx)
+      return -1;
+    Py_INCREF(ctx);
+    *ctx_slot = ctx;
+    *owned = 0;
+    return 0;
   }
 
   *ctx_slot = KosContext_New(NULL, kos_tls_current());
@@ -465,7 +469,7 @@ static int stepper_resume_await(
 /**
    Drive one step of the provider and render the outcome into the
    Python coroutine protocol. Suite entries run against the provider's
-   durable context when it has one, else the adapter-owned context;
+   durable context when its suite has one, else the adapter-owned context;
    installed work runs there via koskari_eval, and mid-work awaits are
    resumed by driving that context's in-flight await iterator.
 
@@ -751,10 +755,15 @@ static PyObject *stepper_iternext(PyObject *self) {
        the provider's context between steps. A provider whose durable
        context is recyclable is stateless between steps and keeps the
        fresh-step drive semantics (ki_throw ingress, StopIteration
-       exhaustion, value-graft returns). */
-    int durable = (islots->ki_pyctx
-                   && ! islots->ki_pyctx_recyclable
-                   && islots->ki_pyctx(st->provider) != NULL);
+       exhaustion, value-graft returns). A durable context that cannot
+       be had fails the step with the provider's error. */
+    int durable = 0;
+
+    if (islots->ki_pyctx && ! islots->ki_pyctx_recyclable) {
+      if (! islots->ki_pyctx(st->provider))
+        return NULL;
+      durable = 1;
+    }
 
     st->send_value = NULL;
     st->throw_typ = NULL;
@@ -1153,8 +1162,8 @@ static PyObject *pyiter_finish_exhausted(
 
 /**
    One demand-path step of the provider. Suite entries run against the
-   provider's durable context when it has one, else the adapter-owned
-   context; installed work runs there via koskari_eval under
+   provider's durable context when its suite has one, else the
+   adapter-owned context; installed work runs there via koskari_eval under
    KOS_FRAME_DEMAND, so genuine suspension denies in-eval as
    KoskariSyncViolation. The provider arrangements differ at the same
    points as the async stepper: a durable-context provider receives
@@ -1172,12 +1181,16 @@ static PyObject *pyiter_step_run(
     PyObject *throw_exc) {
 
   KosIterSlots *islots = gen->islots;
-  int durable;
+  int durable = 0;
   int drive_mode = 0;   /* 1: value graft (frame return is element) */
 
-  durable = (islots->ki_pyctx
-             && ! islots->ki_pyctx_recyclable
-             && islots->ki_pyctx(gen->provider) != NULL);
+  /* a durable context that cannot be had fails the step with the
+     provider's error */
+  if (islots->ki_pyctx && ! islots->ki_pyctx_recyclable) {
+    if (! islots->ki_pyctx(gen->provider))
+      return NULL;
+    durable = 1;
+  }
 
   {
     PyObject *out = NULL;

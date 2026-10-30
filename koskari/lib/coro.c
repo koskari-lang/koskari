@@ -64,7 +64,7 @@ PyObject *KosAsyncGen_NewFromFrame(PyObject *fn, KosDynFrame *frame) {
 
   Py_XINCREF(KosCode_NAME(code));
   ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);
-  /* the count the node was born with is the owner's */
+  /* the node is the wrapper's to free */
   KosDynGen_OWNER(gen) = (PyObject *) agen;
   return agen;
 }

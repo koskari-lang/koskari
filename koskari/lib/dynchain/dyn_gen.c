@@ -26,8 +26,8 @@
 
 
 /**
-   Allocate a GEN node; owner borrowed, the count at 1 for it. Callers:
-   generator object setup. The namespace slot holds the empty
+   Allocate a GEN node; owner borrowed, and the node is the owner's to
+   free. Callers: generator object setup. The namespace slot holds the empty
    namespace for the node's life: no walk reads it, since every span
    has the generator's frame between its head and the GEN, and the
    fill keeps the node free of any consumer reference.
@@ -42,7 +42,6 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
   KosDynNode_NS(gen) = Py_NewRef(KosNamespace_Empty());
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;
-  KosDynGen_REFCOUNT(gen) = 1;
   KosDynGen_NFRAMES(gen) = 0;
   KosDynGen_BASE_DEPTH(gen) = UINT16_MAX;
   *KosDynGen_HOST(gen) = (KosLiveRegs) { 0 };
@@ -72,22 +71,24 @@ static void kos_dyngen_dispose_active(KosDynGen *gen) {
 
 
 /**
-   Clear owner/active; return node to freelist.
+   The owner's free, the node's one: dispose of a frozen span, clear
+   the owner, return the node to the freelist. The owner calls it only
+   once every chain has let go, so the node has no parent here; a
+   span still at the root of the owner's own context is freed by the
+   owner first.
 */
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
     return;
 
+#if KOS_EVAL_SAFETYNET
+  if (KosDynNode_PARENT(gen))
+    Py_FatalError("kos_dyngen_free: the node is still on a chain");
+#endif
+
   kos_dyngen_dispose_active(gen);
   KosDynGen_OWNER(gen) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
-}
-
-
-void kos_dyngen_unlink(KosDynGen *gen) {
-
-  KosDynNode_PARENT(gen) = NULL;
-  kos_dyngen_release(gen);
 }
 
 
@@ -99,6 +100,9 @@ void kos_dyngen_unlink(KosDynGen *gen) {
    the span sits above that record in the chain and a GEN refuses
    continuation capture, so the record cannot go while the span is
    live.
+
+   The chain lets go before the owner is told: the owner's exhausted
+   finish frees the node, so the parent link is cleared first.
 */
 void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
 
@@ -107,12 +111,12 @@ void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
   PyObject *owner = KosDynGen_OWNER(gen);
   KosIterSlots *islots;
 
-  if (owner && KosIter_CheckSlots(owner, &islots))
-    islots->ki_finish(owner, 1);
   PyErr_Fetch(&typ, &val, &tb);
   kos_dyn_commit_dyn_top(ctx, consumer);
-  kos_dyngen_unlink(gen);
+  KosDynNode_PARENT(gen) = NULL;
   PyErr_Restore(typ, val, tb);
+  if (owner && KosIter_CheckSlots(owner, &islots))
+    islots->ki_finish(owner, 1);
 }
 
 
@@ -122,9 +126,6 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_uint(data, "active_node_id",
       KosDynGen_ACTIVE(node) ? kos_dynnode_id(KosDynGen_ACTIVE(node)) : 0) < 0)
-    return -1;
-  if (snapshot_set_item(data, "refcount",
-                        PyLong_FromSize_t((size_t) KosDynGen_REFCOUNT(node))) < 0)
     return -1;
   return 0;
 }
@@ -282,10 +283,9 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   if (KosDynNode_STACK(bottom))
     KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
 
-  /* 1. GEN's parent = current ctx's active node; the chain takes its
-     hold on the node here and releases it at the freeze */
+  /* 1. GEN's parent = current ctx's active node; the chain borrows the
+     node by that link from here to the freeze, the owner keeps it */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
-  kos_dyngen_acquire(gen);
   /* 2. Put GEN's active onto ctx's active; 3. NULL GEN's active.
    * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
    * is already intact (e.g. FOREACH -> FRAME -> GEN). Overwriting
@@ -403,10 +403,9 @@ int kos_dyn_gen_install_bootstrap(
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(ctx, KosDynGen_HOST(gen));
 
-  /* the chain takes its hold on the node here and releases it at the
-     freeze */
+  /* the chain borrows the node by this link from here to the freeze,
+     the owner keeps it */
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
-  kos_dyngen_acquire(gen);
   kos_dyn_commit_dyn_top(ctx, chain_head);
   KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_STARTED;
 
@@ -472,9 +471,9 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
      GEN are still allocated; the chain is freed only afterwards. */
   kos_dyn_commit_dyn_top(ctx, consumer);
   kos_dynchain_free(frame, (KosDynNode *) gen);
-  /* The dead GEN may outlive this drive on its owner; it holds no
+  /* The dead GEN lives on until its owner frees it; it holds no
      consumer link past the chain. */
-  kos_dyngen_unlink(gen);
+  KosDynNode_PARENT(gen) = NULL;
   return 0;
 }
 

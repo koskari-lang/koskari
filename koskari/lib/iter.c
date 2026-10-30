@@ -55,8 +55,24 @@ static void asyncgen_dissociate_chain(KosPyAsyncGen *agen) {
   KosDynGen_ACTIVE(gen) = NULL;
   if (active)
     kos_dynchain_free(active, (KosDynNode *) gen);
-  kos_dyngen_release(gen);
+  kos_dyngen_free(gen);
   agen->gen = NULL;
+}
+
+
+/**
+   Free the chain on a context the wrapper stepped its generator on, if
+   one is there: a span the GEN still roots after a close the eval
+   could not honor. The chain lets go of the node this way before the
+   wrapper frees it. The same two steps the context's clear takes;
+   nothing refuses them.
+*/
+static void asyncgen_free_chain_on(KosContext *ctx) {
+
+  if (! ctx || ! KosContext_DYN_TOP(ctx))
+    return;
+  kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
+  KosContext_ClearLiveRegs(ctx);
 }
 
 
@@ -92,9 +108,8 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   PyObject *fence_tb = NULL;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    /* No active chain; release and let caller free ctx */
-    if (gen)
-      kos_dyngen_release(gen);
+    /* No active chain; free the node and let caller free ctx */
+    kos_dyngen_free(gen);
     agen->gen = NULL;
     return;
   }
@@ -158,16 +173,19 @@ primary_success:
   }
   KosContext_EvalExit(ctx);
 
-  /* The teardown took the node off the chain; the owner's hold is what
-     remains. Release it now that the gen is consumed, matching the
-     fallback path and the non-frozen branch in the callers. */
-  kos_dyngen_release(gen);
+  /* The teardown took the node off the chain; the wrapper frees it
+     now that the gen is consumed, matching the fallback path and the
+     non-frozen branch in the callers. */
+  kos_dyngen_free(gen);
   agen->gen = NULL;
   PyErr_Restore(fence_typ, fence_val, fence_tb);
   return;
 
 fallback:
   PyErr_Clear();
+  /* an install that went through left the span on ctx; a refused one
+     left it in ACTIVE, and the chain here is empty */
+  asyncgen_free_chain_on(ctx);
   asyncgen_dissociate_chain(agen);
   PyErr_Restore(fence_typ, fence_val, fence_tb);
 }
@@ -195,13 +213,12 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
       && ! (KosDynNode_FLAGS(agen->gen) & KOS_DYNF_GEN_STARTED)) {
     /* never driven: nothing entered, nothing to unwind. The unstarted
        frame hangs under the GEN node, so the chain is freed through
-       the node, which the owner's hold keeps, and that hold is
-       released after. */
+       the node, and the node after it. */
     KosDynGen *gen = (KosDynGen *) agen->gen;
     KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
     KosDynGen_ACTIVE(gen) = NULL;
     kos_dynchain_free(active, NULL);
-    kos_dyngen_release(gen);
+    kos_dyngen_free(gen);
     agen->gen = NULL;
 
   } else if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
@@ -226,7 +243,10 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     }
 
   } else if (agen->gen) {
-    kos_dyngen_release((KosDynGen *) agen->gen);
+    /* spent, or still at the root of the wrapper's own context after a
+       close the drive could not honor: that chain lets go first */
+    asyncgen_free_chain_on(agen->ctx);
+    kos_dyngen_free((KosDynGen *) agen->gen);
     agen->gen = NULL;
   }
 
@@ -248,17 +268,19 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
   if (gen && KosDynGen_ACTIVE(gen)
       && ! (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_STARTED)) {
     /* never driven: the unstarted frame hangs under the GEN node, so
-       the chain is freed through the node, which the owner's hold
-       keeps, and that hold is released after */
+       the chain is freed through the node, and the node after it */
     KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
     KosDynGen_ACTIVE(gen) = NULL;
     kos_dynchain_free(active, NULL);
-    kos_dyngen_release(gen);
+    kos_dyngen_free(gen);
     agen->gen = NULL;
   } else if (gen && KosDynGen_ACTIVE(gen)) {
     asyncgen_dissociate_chain(agen);
   } else if (gen) {
-    kos_dyngen_release(gen);
+    /* spent, or still at the root of the wrapper's own context: that
+       chain lets go first */
+    asyncgen_free_chain_on(agen->ctx);
+    kos_dyngen_free(gen);
     agen->gen = NULL;
   }
 
@@ -682,14 +704,13 @@ static int agen_iter_close(PyObject *self) {
    rather than when the object dies; the next step then reports
    exhaustion through the missing GEN.
 
-   The chain frees the GEN's chain reference, and the release below
-   the wrapper's own, which frees the GEN. A Koskari consumer's
-   completion leaves no chain on the
-   wrapper's context: its finish releases the wrapper's reference
-   alone, before the teardown releases the chain's or after it, and
-   agen->gen is cleared first, so a repeated finish releases nothing.
-   A context whose recycle is refused keeps its chain and the GEN on
-   it, both left for the teardown.
+   The recycle frees the chain, which lets go of the GEN, and the
+   wrapper then frees the node. A Koskari consumer's completion leaves
+   no chain on the wrapper's context: its finish is called once the
+   consumer's chain has let go, and frees the node alone; agen->gen is
+   cleared first, so a repeated finish frees nothing. A context whose
+   recycle is refused keeps its chain and the GEN on it, both left for
+   the teardown.
 */
 static void agen_iter_finish(PyObject *self, int exhausted) {
 
@@ -708,27 +729,26 @@ static void agen_iter_finish(PyObject *self, int exhausted) {
 
   if (gen && ! KosDynGen_ACTIVE(gen)) {
     agen->gen = NULL;
-    kos_dyngen_release(gen);
+    kos_dyngen_free(gen);
   }
 }
 
 
 /**
-   The wrapper's context, for a drive from Python: created on the first
-   such drive with the parameterize cells in force then, and kept for
+   The wrapper's context, for a step from Python: created on the first
+   such step with the parameterize cells in force then, and kept for
    the generator's life. A generator only ever spliced from
-   Koskari never has one. NULL on a creation failure, error cleared, so
-   the stepper falls back to a context of its own.
+   Koskari never has one. NULL with the error set on a creation
+   failure, and the step fails: the generator's span runs only on
+   this context or on a Koskari consumer's chain, both of which the
+   wrapper can free before it frees its GEN node.
 */
 static KosContext *agen_iter_pyctx(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (! agen->ctx) {
+  if (! agen->ctx)
     agen->ctx = KosContext_New(NULL, kos_tls_current());
-    if (! agen->ctx)
-      PyErr_Clear();
-  }
   return agen->ctx;
 }
 

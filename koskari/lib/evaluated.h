@@ -150,10 +150,14 @@ typedef int (*KosIterCloseFunc)(PyObject *self);
 typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
 
 /**
-   The provider's durable Python-boundary drive context, when it owns
-   one: context-level state (parameterize extents, the in-flight await
-   iterator) lives across steps there. NULL slot or NULL return means
-   the adapter owns its own drive context.
+   The provider's durable Python-boundary context, when it owns one:
+   context-level state (parameterize extents, the in-flight await
+   iterator) lives across steps there, and every Python adapter step
+   of the provider runs on it. A NULL slot means the adapter uses a
+   context of its own. A NULL return is a failure with the error set,
+   and the step fails: a provider with a durable context is never
+   stepped on a context it cannot name, since its state (a generator's
+   GEN node, for one) may be held by that context's chain.
 */
 typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 

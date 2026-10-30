@@ -321,7 +321,7 @@ static int test_dyngen_free_disposes_active(void) {
     TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
 
     KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
-    kos_dyngen_release(gen);
+    kos_dyngen_free(gen);
 
     return 0;
 }
@@ -343,12 +343,10 @@ static int test_dyngen_bootstrap_no_active(void) {
 
     ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    /* a bootstrap install by hand: the chain takes its hold as the
-       install would, and the birth count is the test's, as owner */
-    kos_dyngen_acquire(gen);
 
+    /* the context's chain lets go first; the test owns the node */
     Py_DECREF(ctx);
-    kos_dyngen_release(gen);
+    kos_dyngen_free(gen);
 
     return 0;
 }
