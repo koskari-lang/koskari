@@ -92,6 +92,170 @@ static void release_busy_map(PyObject *t, PyObject *adapter) {
 }
 
 
+/* === a provider whose context cannot be had === */
+
+
+static int failing_pyctx_calls = 0;
+static int failing_step_calls = 0;
+
+
+/* the durable context of the provider, never obtainable */
+static KosContext *failing_pyctx(PyObject *self) {
+
+  (void) self;
+  failing_pyctx_calls++;
+  PyErr_SetString(PyExc_RuntimeError, "no context for this provider");
+  return NULL;
+}
+
+
+/* a step the adapters must never reach */
+static KosIterStepResult failing_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  (void) ctx;
+  (void) self;
+  (void) send_val;
+  (void) out;
+  failing_step_calls++;
+  return KOS_ITER_EXHAUSTED;
+}
+
+
+static KosIterStepResult failing_throw(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out) {
+
+  (void) ctx;
+  (void) self;
+  (void) throw_typ;
+  (void) throw_exc;
+  (void) out;
+  failing_step_calls++;
+  return KOS_ITER_EXHAUSTED;
+}
+
+
+static int failing_close(PyObject *self) {
+
+  (void) self;
+  return 0;
+}
+
+
+static void failing_finish(PyObject *self, int exhausted) {
+
+  (void) self;
+  (void) exhausted;
+}
+
+
+/* the suite with a durable context: the adapters ask for it before
+   the drive begins */
+static KosEvaluatedTypeObject FailingDurableType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "test.failing_durable",
+    .tp_basicsize = sizeof(PyObject),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = failing_step,
+    .ki_throw = failing_throw,
+    .ki_close = failing_close,
+    .ki_finish = failing_finish,
+    .ki_pyctx = failing_pyctx,
+    .ki_busy = NULL,
+    .ki_pyctx_recyclable = 0,
+  },
+};
+
+
+/* the suite with a recyclable context: the adapters ask for it as
+   they acquire the step's context */
+static KosEvaluatedTypeObject FailingRecyclableType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "test.failing_recyclable",
+    .tp_basicsize = sizeof(PyObject),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = failing_step,
+    .ki_throw = failing_throw,
+    .ki_close = failing_close,
+    .ki_finish = failing_finish,
+    .ki_pyctx = failing_pyctx,
+    .ki_busy = NULL,
+    .ki_pyctx_recyclable = 1,
+  },
+};
+
+
+/* An instance of one of the failing provider types, readied on first
+   use. Returns a new reference, or NULL with an error set. */
+static PyObject *make_failing_provider(KosEvaluatedTypeObject *type) {
+
+  PyTypeObject *pytype = KOS_EVALUATED_PYTYPE(*type);
+
+  if (! (pytype->tp_flags & Py_TPFLAGS_READY) && PyType_Ready(pytype) < 0)
+    return NULL;
+  failing_pyctx_calls = 0;
+  failing_step_calls = 0;
+  return PyObject_CallNoArgs((PyObject *) pytype);
+}
+
+
+/* Drive the provider once through the async stepper's send. Returns 1
+   when the step failed with the provider's RuntimeError and the suite
+   step was never reached, 0 otherwise; clears the error. */
+static int stepper_send_fails_with_provider_error(PyObject *provider) {
+
+  PyObject *stepper = KosIterAdapt_Anext(provider);
+  PyObject *res;
+  int failed;
+
+  if (! stepper)
+    return 0;
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  failed = (! res && PyErr_ExceptionMatches(PyExc_RuntimeError)
+            && failing_pyctx_calls == 1 && failing_step_calls == 0);
+  Py_XDECREF(res);
+  PyErr_Clear();
+  Py_DECREF(stepper);
+  return failed;
+}
+
+
+/* The same through the sync adapter's next. */
+static int pyiter_next_fails_with_provider_error(PyObject *provider) {
+
+  PyObject *adapter = KosIterAdapt_PyIter(provider);
+  PyObject *res;
+  int failed;
+
+  if (! adapter)
+    return 0;
+  res = PyIter_Next(adapter);
+  failed = (! res && PyErr_ExceptionMatches(PyExc_RuntimeError)
+            && failing_pyctx_calls == 1 && failing_step_calls == 0);
+  Py_XDECREF(res);
+  PyErr_Clear();
+  Py_DECREF(adapter);
+  return failed;
+}
+
+
 /* === tests === */
 
 
@@ -148,12 +312,72 @@ static int test_busy_adapter_throw_leaves_context_untouched(void) {
 }
 
 
+static int test_durable_pyctx_failure_fails_stepper(void) {
+
+  PyObject *provider = make_failing_provider(&FailingDurableType);
+  int failed;
+
+  TEST_ASSERT_NOT_NULL(provider, "build the durable provider");
+  failed = stepper_send_fails_with_provider_error(provider);
+  Py_DECREF(provider);
+
+  TEST_ASSERT(failed, "the send fails with the provider's error, unstepped");
+  return 0;
+}
+
+
+static int test_durable_pyctx_failure_fails_pyiter(void) {
+
+  PyObject *provider = make_failing_provider(&FailingDurableType);
+  int failed;
+
+  TEST_ASSERT_NOT_NULL(provider, "build the durable provider");
+  failed = pyiter_next_fails_with_provider_error(provider);
+  Py_DECREF(provider);
+
+  TEST_ASSERT(failed, "the next fails with the provider's error, unstepped");
+  return 0;
+}
+
+
+static int test_recyclable_pyctx_failure_fails_stepper(void) {
+
+  PyObject *provider = make_failing_provider(&FailingRecyclableType);
+  int failed;
+
+  TEST_ASSERT_NOT_NULL(provider, "build the recyclable provider");
+  failed = stepper_send_fails_with_provider_error(provider);
+  Py_DECREF(provider);
+
+  TEST_ASSERT(failed, "the send fails with the provider's error, unstepped");
+  return 0;
+}
+
+
+static int test_recyclable_pyctx_failure_fails_pyiter(void) {
+
+  PyObject *provider = make_failing_provider(&FailingRecyclableType);
+  int failed;
+
+  TEST_ASSERT_NOT_NULL(provider, "build the recyclable provider");
+  failed = pyiter_next_fails_with_provider_error(provider);
+  Py_DECREF(provider);
+
+  TEST_ASSERT(failed, "the next fails with the provider's error, unstepped");
+  return 0;
+}
+
+
 int run_iterate_tests(void) {
 
   BEGIN_TEST_SUITE("Iterate Adapter Tests");
 
   RUN_TEST(test_busy_adapter_leaves_context_untouched);
   RUN_TEST(test_busy_adapter_throw_leaves_context_untouched);
+  RUN_TEST(test_durable_pyctx_failure_fails_stepper);
+  RUN_TEST(test_durable_pyctx_failure_fails_pyiter);
+  RUN_TEST(test_recyclable_pyctx_failure_fails_stepper);
+  RUN_TEST(test_recyclable_pyctx_failure_fails_pyiter);
 
   return 0;
 }
