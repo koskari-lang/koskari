@@ -146,7 +146,6 @@ chain and counts its elements.
 | Reflex | Error | Write |
 |---|---|---|
 | `#{1 2}` as a set literal | `ValueError`: `#{...}` is a dict | `(set #[1 2])` or `(#set 1 2)` |
-| `(map f xs ys)` | `TypeError`: `map` takes one iterable | `(map (lambda [p] (f *: p)) (zip xs ys))` |
 | `(apply f a b args)`, Scheme style | `TypeError`: `apply` is `(apply FUNC [ARGS [KWARGS]])` | `(apply f #[a b *: args])` |
 | `(map not xs)`, `(apply % ...)` | `NameError`: `%`, `~`, `not`, `truth`, `divmod`, `is`, and `is-not` are special forms with no runtime binding | a lambda, such as `(lambda [x] (not x))`; `is?` and `is-not?` for identity |
 | `(max xs key: (lambda ...))`, and `min` | `TypeError` comparing coroutines: `max` and `min` do not wrap the key | `key: (demand f)`; `sorted` wraps its key itself |

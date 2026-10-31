@@ -1815,9 +1815,7 @@ notes: "sorted is the documented exception: koskari's sorted demand-wraps a call
 ---
 id: iter-map-two-sources-005
 feature: builtin/map
-source: |-
-  (list (map + #[1 2 3] #[10 20 30]))
-  
+source: "(list (map + #[1 2 3] #[10 20 30]))"
 verify:
   read: (list (map + (#list 1 2 3) (#list 10 20 30)))
   eval: list:[11,22,33]

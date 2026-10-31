@@ -110,24 +110,6 @@ tags:
   - surface:sexpr
 notes: "corrective: await the task from async-hosted code"
 ---
-id: builtin-map-two-iterables-001
-feature: builtin/map
-source: "(map + #[1 2] #[10 20])"
-verify:
-  read: (map + (#list 1 2) (#list 10 20))
-  invalid: map takes one iterable; a second raises TypeError
-references:
-  - agents/native-builtins.md
-  - reference/runtime/map-and-filter.md
-stability: evolving
-tags:
-  - builtin
-  - iterate
-  - invalid
-  - pitfall
-  - surface:sexpr
-notes: "corrective: (map (lambda [p] (+ *: p)) (zip #[1 2] #[10 20]))"
----
 id: builtin-not-as-value-001
 feature: special/compile/not
 source: "(map not #[True])"
