@@ -128,7 +128,8 @@ def special_for_each(compiler, caps):
         fragment.merge(using_unpack_helper(compiler, lhs, src))
     else:
         binding_name = binding["name"].datum
-        fragment.declare_var(binding_name)
+        fragment.declare_var(
+            binding_name, position=binding["name"].position)
         fragment.instruction(OpCode.VAR_STORE, binding_name)
 
     # perform the loop body, then continue back up at the ITER_NEXT

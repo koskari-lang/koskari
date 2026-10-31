@@ -115,6 +115,57 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
         self.assert_located(err, 4)
 
 
+    async def test_global_then_import_conflict(self):
+        err = await self.error_for(
+            "def g []:\n"
+            "    define-global os 2\n"
+            "\n"
+            "    import os\n"
+            "    os\n")
+        self.assertIn("cannot be both local", str(err))
+        self.assertIn("declared global at line 2", str(err))
+        self.assert_located(err, 4)
+
+
+    async def test_import_then_global_conflict(self):
+        err = await self.error_for(
+            "def g []:\n"
+            "    import os\n"
+            "\n"
+            "    define-global os 2\n"
+            "    os\n")
+        self.assertIn("cannot be both local", str(err))
+        self.assertIn("declared local at line 2", str(err))
+        self.assert_located(err, 4)
+
+
+    async def test_global_then_loop_binding_conflict(self):
+        err = await self.error_for(
+            "def g []:\n"
+            "    define-global q 2\n"
+            "\n"
+            "    for-each [q #[1 2]]:\n"
+            "        q\n")
+        self.assertIn("cannot be both local", str(err))
+        self.assertIn("declared global at line 2", str(err))
+        self.assert_located(err, 4)
+
+
+    async def test_parameter_then_global_names_no_line(self):
+        """
+        a parameter records no position, so the conflict names the
+        earlier declaration without a line
+        """
+
+        err = await self.error_for(
+            "def g [q]:\n"
+            "    define-global q 2\n"
+            "    q\n")
+        self.assertIn("cannot be both local", str(err))
+        self.assertIn("declared local earlier in the same scope", str(err))
+        self.assert_located(err, 2)
+
+
     async def test_macro_expanded_write(self):
         err = await self.error_for(
             "define-syntax bump!:\n"

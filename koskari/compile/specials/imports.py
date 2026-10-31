@@ -336,7 +336,7 @@ def special_import(compiler, called_by, module):
 
     bind = binding_atom(compiler, bind)
     frag = compiler.fragment(called_by.datum)
-    frag.declare_var(bind)
+    frag.declare_var(bind, position=pos)
     frag.instruction(
         OpCode.IMPORT, (dotted, level, leaf, str(bind)))
     frag.instruction(OpCode.CONST, None)
@@ -380,7 +380,7 @@ def special_import_from(compiler, called_by, module, members):
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
-        frag.declare_var(bind)
+        frag.declare_var(bind, position=pos)
 
     attrs = tuple(attrs)
     binds = tuple(str(bind) for bind in binds)
@@ -477,10 +477,10 @@ def special_use(compiler, caps):
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
-        frag.declare_var(bind)
+        frag.declare_var(bind, position=pos)
         if not str(bind.base).startswith(_USE_FACET_PREFIXES):
             for prefix in _USE_FACET_PREFIXES:
-                frag.declare_var(_facet_name(prefix, bind))
+                frag.declare_var(_facet_name(prefix, bind), position=pos)
 
     stems = tuple(stems)
     binds = tuple(str(bind) for bind in binds)

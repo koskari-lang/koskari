@@ -85,10 +85,10 @@ def special_match(compiler, caps):
     done = gen_label()
 
     # each arm's pattern, lowered ahead of emission, and the names its
-    # captures bind in order
+    # captures bind in order, each with the first arm that binds it
     clauses = caps["clauses"]
     arms = []
-    bound = []
+    bound = {}
     remaining = len(clauses)
     for clause in clauses:
         remaining -= 1
@@ -133,16 +133,17 @@ def special_match(compiler, caps):
                 f"invalid match pattern: {exc}", pattern, position=clause_pos)
         # only the root scope's slots become variables; a name inside
         # a group or REPEAT is reached through its value
-        bound.extend(analysis.scopes[0].names)
+        for n in analysis.scopes[0].names:
+            bound.setdefault(symbol(n), clause_pos)
         atoms = extern_atoms(pattern, tables[1])
         arms.append((
             pattern, tables, analysis, atoms, guard_kw, guard_expr, body,
             clause_pos))
 
-    # ordered dedup: ONEOF branches and other arms may bind the same
-    # name
-    for name in dict.fromkeys(symbol(n) for n in bound):
-        fragment.declare_var(name)
+    # ONEOF branches and other arms may bind the same name; it is
+    # declared once, at the first arm
+    for name, pos in bound.items():
+        fragment.declare_var(name, position=pos)
 
     def gate_of(arm):
         """

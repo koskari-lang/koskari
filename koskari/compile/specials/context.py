@@ -131,7 +131,7 @@ def emit_with(compiler, called_by, binding, body, push_op, pop_op):
     fragment.merge(compiler.full_compile(expr))
 
     if name is not None:
-        fragment.declare_var(name)
+        fragment.declare_var(name, position=nc.position)
 
     fragment.position(called_by.position)
     fragment.instruction(push_op, None if name is None else str(name))

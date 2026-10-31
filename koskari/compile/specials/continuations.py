@@ -160,7 +160,7 @@ def special_shift(compiler, called_by, k, body):
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_SHIFT, 0)
-    fragment.declare_var(k_sym)
+    fragment.declare_var(k_sym, position=k.position)
     fragment.instruction(OpCode.VAR_STORE, k_sym)
     helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_SHIFT, 0)

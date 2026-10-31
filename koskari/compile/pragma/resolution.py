@@ -565,7 +565,7 @@ class PythonPragma(KoskariPragma):
         elif home is None or home is fragment:
             self.on_declare(fragment, name, position=position)
         else:
-            home.declare_var(name)
+            home.declare_var(name, position=position)
             super().on_write(fragment, name, position=position)
 
 
