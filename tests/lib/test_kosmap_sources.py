@@ -160,6 +160,57 @@ class TestKosMapSourcesSync(unittest.TestCase):
         del m
         self.assertIsNone(ref())
 
+    def test_elements_are_not_held_past_their_step(self):
+        import weakref
+
+        class Box:
+            pass
+
+        refs = []
+
+        class Boxes:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if len(refs) == 2:
+                    raise StopIteration
+                box = Box()
+                refs.append(weakref.ref(box))
+                return box
+
+        m = KosMap(lambda a, b: None, Boxes(), [1, 2])
+        it = iter(m)
+        next(it)
+        self.assertIsNone(refs[0]())
+        self.assertIsNone(next(it))
+
+    def test_partial_row_is_not_held_at_exhaustion(self):
+        import weakref
+
+        class Box:
+            pass
+
+        refs = []
+
+        class Boxes:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if len(refs) == 2:
+                    raise StopIteration
+                box = Box()
+                refs.append(weakref.ref(box))
+                return box
+
+        m = KosMap(lambda a, b: None, Boxes(), [1])
+        it = iter(m)
+        next(it)
+        with self.assertRaises(StopIteration):
+            next(it)
+        self.assertIsNone(refs[1]())
+
     def test_row_stays_visible_to_the_collector(self):
         """
         a collection while the row holds only atoms untracks it; the

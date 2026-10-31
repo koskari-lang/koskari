@@ -40,6 +40,33 @@
 */
 
 
+/* === the row === */
+
+
+/* Empty the row: the elements are borrowed by the call for its
+   duration alone, and a row left partial by a spent source is never
+   read, so nothing outlives its step through the row. */
+static void map_row_clear(KosTransformMulti *z) {
+
+  uint16_t i;
+
+  if (! z->row)
+    return;
+  for (i = 0; i < z->base.nsrc; i++)
+    kos_transform_row_set(z->row, (Py_ssize_t) i, NULL);
+}
+
+
+/* The map's finish: the shared one, and the row emptied, for a row
+   left partial when a driven source ended mid-row and the end
+   reached the consumer through the decline. */
+static void map_finish(PyObject *self, int exhausted) {
+
+  kos_transform_finish(self, exhausted);
+  map_row_clear((KosTransformMulti *) self);
+}
+
+
 /* === the step's CPS resumes ===
 
    No frame-carrying capture: replaying a captured step would
@@ -182,6 +209,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_fetch_row(
   r = KosContext_Call(
       ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(z->row),
       (Py_ssize_t) t->nsrc, NULL, 0, &map_resume_after_result_kind, z);
+  map_row_clear(z);
   RESULT_ENTRY(ctx, r, &map_resume_after_result_kind, z);
 }
 
@@ -218,9 +246,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_deliver_row(
    then apply func to it. The row fills here for as long as the
    sources answer without the evaluator; the first driven source
    defers the rest of the walk to map_resume_fetch_row, from its
-   position. A row that stops short at a spent source keeps the items
-   of the last complete row in its later slots until the map is
-   cleared; nothing reads them.
+   position. The row is emptied once the call has its arguments, and
+   when a spent source stops it short.
 */
 static KosIterStepResult map_step_row(
     KosContext *ctx,
@@ -243,12 +270,14 @@ static KosIterStepResult map_step_row(
         continue;
       case KOS_IREQ_EXHAUSTED:
         t->closed = 1;
+        map_row_clear(z);
         *out = NULL;
         return KOS_ITER_EXHAUSTED;
       case KOS_IREQ_CONTINUES:
         t->idx = i;
         return KOS_ITER_INSTALLED_VALUE;
       default:
+        map_row_clear(z);
         return kos_transform_step_abort(ctx, t, pre_top);
     }
   }
@@ -257,11 +286,12 @@ static KosIterStepResult map_step_row(
 
   /* A direct-delivery koskari function installs through the generic
      call entry with the row's items as the argument vector and no
-     helper frame; the row keeps the items alive until the next fill. */
+     helper frame; the install copies them into the callee's frame. */
   if (t->fn.cs_kind == KOS_CALL_SHAPE_FRAME && t->fn.cs_direct) {
     KosOpResult r = KosContext_Call(
         ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(row),
         (Py_ssize_t) t->nsrc, NULL, 0, NULL, NULL);
+    map_row_clear(z);
     if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
       return KOS_ITER_INSTALLED_VALUE;
     return kos_transform_step_abort(ctx, t, pre_top);
@@ -283,6 +313,7 @@ static KosIterStepResult map_step_row(
         t->fn.cs_callable, PySequence_Fast_ITEMS(row),
         (size_t) t->nsrc, NULL);
 
+    map_row_clear(z);
     if (! result)
       return KOS_ITER_ERROR;
 
@@ -491,7 +522,7 @@ KosEvaluatedTypeObject KosMapType = {
     .ki_step = map_iter_step,
     .ki_throw = kos_transform_throw,
     .ki_close = kos_transform_close,
-    .ki_finish = kos_transform_finish,
+    .ki_finish = map_finish,
     .ki_pyctx = kos_transform_pyctx,
     .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
