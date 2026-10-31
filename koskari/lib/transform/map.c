@@ -178,6 +178,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_fetch_row(
     RESULT_ENTRY(ctx, r, &map_resume_deliver_row_kind, z);
   }
 
+  kos_transform_row_retrack(z->row);
   r = KosContext_Call(
       ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(z->row),
       (Py_ssize_t) t->nsrc, NULL, 0, &map_resume_after_result_kind, z);
@@ -251,6 +252,8 @@ static KosIterStepResult map_step_row(
         return kos_transform_step_abort(ctx, t, pre_top);
     }
   }
+
+  kos_transform_row_retrack(row);
 
   /* A direct-delivery koskari function installs through the generic
      call entry with the row's items as the argument vector and no

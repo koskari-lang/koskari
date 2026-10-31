@@ -160,6 +160,29 @@ class TestKosMapSourcesSync(unittest.TestCase):
         del m
         self.assertIsNone(ref())
 
+    def test_row_stays_visible_to_the_collector(self):
+        """
+        a collection while the row holds only atoms untracks it; the
+        next fill tracks it again, so a cycle through the row is found
+        """
+        import gc
+        import weakref
+
+        class Box:
+            pass
+
+        box = Box()
+        ref = weakref.ref(box)
+        m = KosMap(lambda a, b: None, iter([1, box]), iter([2, 3]))
+        it = iter(m)
+        next(it)
+        gc.collect()
+        next(it)
+        box.m = m
+        del box, m, it
+        gc.collect()
+        self.assertIsNone(ref())
+
     def test_func_raising_stop_iteration_truncates(self):
         def stop_at(a, b):
             if a == 2:

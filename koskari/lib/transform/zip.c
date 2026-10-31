@@ -35,18 +35,6 @@
 */
 
 
-/* === the row === */
-
-
-/* A row about to be emitted: the collector may have untracked a reused
-   row whose items were all untrackable, and the refill can change
-   that, so it is tracked again as CPython's zip does. */
-static inline void zip_row_retrack(PyObject *row) {
-  if (! PyObject_GC_IsTracked(row))
-    PyObject_GC_Track(row);
-}
-
-
 /* === the step's CPS resumes ===
 
    No frame-carrying capture: replaying a captured step would
@@ -106,7 +94,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
-    zip_row_retrack(row);
+    kos_transform_row_retrack(row);
     RESULT_FRAME_RETURN(ctx, row, &t->cached_frame);
   }
 }
@@ -204,7 +192,7 @@ static KosIterStepResult zip_step_body(
       }
     }
 
-    zip_row_retrack(row);
+    kos_transform_row_retrack(row);
     *out = row;
     return KOS_ITER_VALUE;
   }

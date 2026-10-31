@@ -164,7 +164,8 @@ typedef struct KosTransformMulti {
   /* a tuple of nsrc elements, one per source, refilled in place for
      each step. zip: the last row emitted, reused while zip alone
      holds it, NULL before the first. map: the argument vector of the
-     call, private to the map, allocated at construction */
+     call, private to the map, allocated at construction when there is
+     more than one source and NULL otherwise */
   PyObject *row;
 } KosTransformMulti;
 
@@ -180,6 +181,15 @@ static inline void kos_transform_row_set(
 
   PyTuple_SET_ITEM(row, i, element);
   Py_XDECREF(old);
+}
+
+
+/* A row just completed: the collector may have untracked a reused row
+   whose items were all untrackable, and the refill can change that,
+   so it is tracked again as CPython's zip does. */
+static inline void kos_transform_row_retrack(PyObject *row) {
+  if (! PyObject_GC_IsTracked(row))
+    PyObject_GC_Track(row);
 }
 
 
