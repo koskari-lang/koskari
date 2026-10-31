@@ -366,12 +366,14 @@ int kos_transform_clear(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
+  /* the context goes first: a source generator stepped on it may still
+     have its node on the chain, which lets go before the source does.
+     A stepper mid-step on this context holds its own reference and
+     finishes its drive before letting go; the last holder frees. */
+  Py_CLEAR(t->ctx);
   KosCallShape_Clear(&t->fn);
   Py_CLEAR(t->src.iter);
   Py_CLEAR(t->pending);
-  /* a stepper mid-step on this context holds its own reference and
-     finishes its drive before letting go; the last holder frees */
-  Py_CLEAR(t->ctx);
   /* a cleared transform has nothing left to step; closed makes any
      later step report exhaustion instead of reading the freed fields */
   t->closed = 1;
@@ -384,10 +386,12 @@ void kos_transform_dealloc(PyObject *self) {
   KosTransform *t = (KosTransform *) self;
 
   PyObject_GC_UnTrack(self);
-  /* the context teardown runs first: a frame still on the chain that
-     KosNativeFrame_CacheOnFree flagged is stored into cached_frame,
-     and the free below reclaims it either way */
-  kos_transform_clear(self);
+  /* the type's clear, so a provider's own fields go in the one order
+     its tp_clear states. The context teardown runs first: a frame
+     still on the chain that KosNativeFrame_CacheOnFree flagged is
+     stored into cached_frame, and the free below reclaims it either
+     way */
+  Py_TYPE(self)->tp_clear(self);
   if (t->cached_frame) {
     kos_dynframe_free(t->cached_frame);
     t->cached_frame = NULL;
@@ -443,18 +447,6 @@ int kos_transform_multi_clear(PyObject *self) {
   Py_CLEAR(m->row);
 
   return kos_transform_clear(self);
-}
-
-
-void kos_transform_multi_dealloc(PyObject *self) {
-
-  KosTransformMulti *m = (KosTransformMulti *) self;
-
-  PyObject_GC_UnTrack(self);
-  multi_release_srcs(m);
-  Py_CLEAR(m->row);
-
-  kos_transform_dealloc(self);
 }
 
 

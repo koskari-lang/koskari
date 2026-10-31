@@ -329,17 +329,6 @@ static int koszip_longest_clear(PyObject *self) {
 }
 
 
-static void koszip_longest_dealloc(PyObject *self) {
-
-  KosZipLongest *z = (KosZipLongest *) self;
-
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(z->fill);
-
-  kos_transform_multi_dealloc(self);
-}
-
-
 KosEvaluatedTypeObject KosZipLongestType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -347,7 +336,7 @@ KosEvaluatedTypeObject KosZipLongestType = {
     .tp_name = "koskari.lib.zip-longest",
     .tp_basicsize = sizeof(KosZipLongest),
     .tp_itemsize = 0,
-    .tp_dealloc = koszip_longest_dealloc,
+    .tp_dealloc = kos_transform_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,

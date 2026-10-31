@@ -77,6 +77,30 @@ static void asyncgen_free_chain_on(KosContext *ctx) {
 
 
 /**
+   The wrapper lets go of a GEN node that holds no frozen span: spent,
+   still at the root of the wrapper's own context after a close the
+   eval could not honor, or still installed on another context's chain
+   when the record that stepped it there went first (a transform freed
+   after its stepper was abandoned mid-await). The installed node keeps
+   its parent, so the owner field is cleared and the chain frees the
+   node when it lets go; otherwise the chain of the wrapper's own
+   context goes first, then the node.
+*/
+static void asyncgen_drop_gen(KosPyAsyncGen *agen) {
+
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (KosDynNode_PARENT(gen)) {
+    KosDynGen_OWNER(gen) = NULL;
+  } else {
+    asyncgen_free_chain_on(agen->ctx);
+    kos_dyngen_free(gen);
+  }
+  agen->gen = NULL;
+}
+
+
+/**
    Teardown a frozen async generator: throw GeneratorExit, run to completion,
    or fall back to pure cleanup if the gen attempts to suspend (yield/await).
 
@@ -243,11 +267,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     }
 
   } else if (agen->gen) {
-    /* spent, or still at the root of the wrapper's own context after a
-       close the drive could not honor: that chain lets go first */
-    asyncgen_free_chain_on(agen->ctx);
-    kos_dyngen_free((KosDynGen *) agen->gen);
-    agen->gen = NULL;
+    asyncgen_drop_gen(agen);
   }
 
   Py_CLEAR(agen->ctx);
@@ -277,11 +297,7 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
   } else if (gen && KosDynGen_ACTIVE(gen)) {
     asyncgen_dissociate_chain(agen);
   } else if (gen) {
-    /* spent, or still at the root of the wrapper's own context: that
-       chain lets go first */
-    asyncgen_free_chain_on(agen->ctx);
-    kos_dyngen_free(gen);
-    agen->gen = NULL;
+    asyncgen_drop_gen(agen);
   }
 
   Py_CLEAR(agen->ctx);

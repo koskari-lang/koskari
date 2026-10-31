@@ -332,18 +332,6 @@ static int kosaccumulate_clear(PyObject *self) {
 }
 
 
-static void kosaccumulate_dealloc(PyObject *self) {
-
-  KosAccumulate *a = (KosAccumulate *) self;
-
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(a->total);
-  Py_CLEAR(a->initial);
-
-  kos_transform_dealloc(self);
-}
-
-
 KosEvaluatedTypeObject KosAccumulateType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -351,7 +339,7 @@ KosEvaluatedTypeObject KosAccumulateType = {
     .tp_name = "koskari.lib.accumulate",
     .tp_basicsize = sizeof(KosAccumulate),
     .tp_itemsize = 0,
-    .tp_dealloc = kosaccumulate_dealloc,
+    .tp_dealloc = kos_transform_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,

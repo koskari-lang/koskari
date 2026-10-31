@@ -71,11 +71,11 @@ static void kos_dyngen_dispose_active(KosDynGen *gen) {
 
 
 /**
-   The owner's free, the node's one: dispose of a frozen span, clear
-   the owner, return the node to the freelist. The owner calls it only
-   once every chain has let go, so the node has no parent here; a
-   span still at the root of the owner's own context is freed by the
-   owner first.
+   Dispose of a frozen span, clear the owner, return the node to the
+   freelist. The node has no parent here: the caller is the second of
+   its two holders to let go, the owner after every chain has, or the
+   chain through kos_dyngen_let_go after the owner has. A span still
+   at the root of the owner's own context is freed by the owner first.
 */
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
@@ -92,17 +92,23 @@ void kos_dyngen_free(KosDynGen *gen) {
 }
 
 
+void kos_dyngen_let_go(KosDynGen *gen) {
+
+  KosDynNode_PARENT(gen) = NULL;
+  if (! KosDynGen_OWNER(gen))
+    kos_dyngen_free(gen);
+}
+
+
 /**
    The owner is borrowed at every moment of the GEN's life. The record
    that steps the generator holds the owner for the installed span:
    the for-each request, the next request's resume state, the native
-   frame's record, the yield-from delegate slot, or a Python adapter;
-   the span sits above that record in the chain and a GEN refuses
-   continuation capture, so the record cannot go while the span is
-   live.
-
-   The chain lets go before the owner is told: the owner's exhausted
-   finish frees the node, so the parent link is cleared first.
+   frame's record, the yield-from delegate slot, or a Python adapter.
+   The chain lets go before the owner is told, since the owner's
+   exhausted finish frees the node; an owner that has already let go
+   (its record freed with the span still installed) leaves the free to
+   the let-go here, and gets no finish.
 */
 void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
 
@@ -113,7 +119,7 @@ void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
 
   PyErr_Fetch(&typ, &val, &tb);
   kos_dyn_commit_dyn_top(ctx, consumer);
-  KosDynNode_PARENT(gen) = NULL;
+  kos_dyngen_let_go(gen);
   PyErr_Restore(typ, val, tb);
   if (owner && KosIter_CheckSlots(owner, &islots))
     islots->ki_finish(owner, 1);
@@ -471,9 +477,9 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
      GEN are still allocated; the chain is freed only afterwards. */
   kos_dyn_commit_dyn_top(ctx, consumer);
   kos_dynchain_free(frame, (KosDynNode *) gen);
-  /* The dead GEN lives on until its owner frees it; it holds no
-     consumer link past the chain. */
-  KosDynNode_PARENT(gen) = NULL;
+  /* The dead GEN holds no consumer link past the chain; it lives on
+     until its owner frees it, unless the owner has already let go. */
+  kos_dyngen_let_go(gen);
   return 0;
 }
 

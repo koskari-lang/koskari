@@ -592,10 +592,11 @@ struct KosDynNode {
       uint32_t prompt_node_id;
     } shift;
     struct {
-      /* The owning generator object, borrowed, or NULL. The owner
-         frees the node (kos_dyngen_free) and no one else; a chain
-         borrows it from an install to the freeze or the teardown, and
-         every chain lets go before the owner does. */
+      /* The owning generator object, borrowed, or NULL. The node has
+         two holders, the owner and the chain it is installed on from
+         an install to the freeze or the teardown; each clears its link
+         (this field, the parent) when it lets go, and the second to
+         let go frees the node. */
       PyObject *owner;
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
       uint16_t nframes;    /* frames in the frozen span, counted at the
@@ -1136,11 +1137,21 @@ KosDynGen *kos_dyngen_new(PyObject *owner);
 
 
 /**
-   The owner's free of its GEN node, the only one. Called once every
-   chain has let go: the span is frozen into the node, spent, or the
-   owner has freed the chain of its own context first.
+   Free a GEN node. The owner calls it once every chain has let go: the
+   span is frozen into the node, spent, or the owner has freed the
+   chain of its own context first. An owner letting go of a node still
+   installed clears the owner field instead, and the chain's let-go
+   frees the node.
 */
 void kos_dyngen_free(KosDynGen *gen);
+
+
+/**
+   The chain's let-go of a GEN node, at the exhaustion teardown, the
+   flattened finish, and the chain free: clear the parent link, and
+   free a node whose owner has already let go.
+*/
+void kos_dyngen_let_go(KosDynGen *gen);
 
 
 /**

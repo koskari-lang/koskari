@@ -378,17 +378,6 @@ static int koschain_clear(PyObject *self) {
 }
 
 
-static void koschain_dealloc(PyObject *self) {
-
-  KosChain *c = (KosChain *) self;
-
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(c->series.iter);
-
-  kos_transform_dealloc(self);
-}
-
-
 KosEvaluatedTypeObject KosChainType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -396,7 +385,7 @@ KosEvaluatedTypeObject KosChainType = {
     .tp_name = "koskari.lib.chain",
     .tp_basicsize = sizeof(KosChain),
     .tp_itemsize = 0,
-    .tp_dealloc = koschain_dealloc,
+    .tp_dealloc = kos_transform_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,

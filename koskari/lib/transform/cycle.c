@@ -276,17 +276,6 @@ static int koscycle_clear(PyObject *self) {
 }
 
 
-static void koscycle_dealloc(PyObject *self) {
-
-  KosCycle *c = (KosCycle *) self;
-
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(c->buf);
-
-  kos_transform_dealloc(self);
-}
-
-
 KosEvaluatedTypeObject KosCycleType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -294,7 +283,7 @@ KosEvaluatedTypeObject KosCycleType = {
     .tp_name = "koskari.lib.cycle",
     .tp_basicsize = sizeof(KosCycle),
     .tp_itemsize = 0,
-    .tp_dealloc = koscycle_dealloc,
+    .tp_dealloc = kos_transform_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,

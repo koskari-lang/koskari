@@ -1133,8 +1133,10 @@ KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return) {
 
 /**
    Release kind-specific payload and PyObject refs, then return the struct to
-   the freelist or PyMem_Free. Does not walk parent links. Callers:
-   kos_dyn_uninstall_handler, kos_dynchain_free, error paths after failed push.
+   the freelist or PyMem_Free. A GEN node is the chain's letting go of it,
+   freed only when its owner has let go first. Does not walk parent links.
+   Callers: kos_dyn_uninstall_handler, kos_dynchain_free, error paths after
+   failed push.
 */
 void kos_dynnode_free(KosDynNode *node) {
   if (! node)
@@ -1182,8 +1184,7 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
 
     case KOS_DYN_GEN:
-      /* the chain lets go; the node is the owner's to free */
-      KosDynNode_PARENT(node) = NULL;
+      kos_dyngen_let_go((KosDynGen *) node);
       break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);

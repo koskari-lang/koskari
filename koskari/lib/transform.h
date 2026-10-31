@@ -196,13 +196,12 @@ int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables);
 
 
 
-/* The GC and dealloc of a multi-source provider: the view is
-   retracted before the storage it points into goes, since tp_clear
-   runs while the object is still alive and the base reads the view
-   whenever it closes. */
+/* The GC of a multi-source provider: the view is retracted before the
+   storage it points into goes, since tp_clear runs while the object
+   is still alive and the base reads the view whenever it closes. The
+   dealloc is kos_transform_dealloc, which clears through tp_clear. */
 int kos_transform_multi_traverse(PyObject *self, visitproc visit, void *arg);
 int kos_transform_multi_clear(PyObject *self);
-void kos_transform_multi_dealloc(PyObject *self);
 
 
 /**
