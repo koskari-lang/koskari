@@ -12,7 +12,7 @@ driven directly, with no wrapping, and may await.
 
 ## map
 
-**Syntax:** `(map FUNC ITERABLE ITERABLE...)`
+**Syntax:** `(map FUNC ITERABLE ...)`
 
 Return a lazy iterator producing `(FUNC element)` for each element of
 **`ITERABLE`**. Nothing is consumed until the map itself is iterated.

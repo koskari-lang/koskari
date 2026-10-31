@@ -25,12 +25,13 @@
    call entry with no helper frame. Anything else -- a driven source,
    a FRAME-shaped or awaitable-returning function without that
    guarantee -- runs under one CPS resume-carrying frame: FETCH
-   requests the next source element via KosContext_NextResume, INVOKE
-   applies the function via KosContext_Call, and completion delivers
-   the element to the consumer's step resume. The several-source walk
-   is carried by base.idx, one loop over the sources that leaves only
-   for a source that suspends and re-enters at the same position, so
-   there is no frame per source. Exhaustion and errors leave the frame
+   requests the next source element via KosContext_NextResumeBound,
+   INVOKE applies the function via KosContext_Call, and completion
+   delivers the element to the consumer's step resume. The
+   several-source walk is carried by base.idx, one loop over the
+   sources that leaves only for a driven source, one not stepped
+   synchronously, and re-enters at the same position, so there is no
+   frame per source. Exhaustion and errors leave the frame
    as exceptions; the consumer's step resume converts StopIteration
    per its own rules, which also gives a mapped function's
    StopIteration builtins.map truncation parity.
@@ -262,9 +263,9 @@ static KosIterStepResult map_step_row(
   for (i = 0; i < t->nsrc; i++) {
     PyObject *element;
 
-    switch (KosContext_NextOrDefer(ctx, &t->reqs[i],
-                                     &map_resume_fetch_row_kind, z,
-                                     &t->cached_frame, &element)) {
+    switch (KosContext_NextOrDefer(
+        ctx, &t->reqs[i], &map_resume_fetch_row_kind, z,
+        &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
         kos_transform_row_set(row, (Py_ssize_t) i, element);
         continue;
@@ -303,8 +304,8 @@ static KosIterStepResult map_step_row(
      call from the completed row. */
   if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN) {
     t->idx = t->nsrc;
-    return kos_transform_stage(ctx, t, NULL, &map_resume_fetch_row_kind,
-                               pre_top);
+    return kos_transform_stage(
+        ctx, t, NULL, &map_resume_fetch_row_kind, pre_top);
   }
 
   /* A plain python callable needs no evaluator at all. */
@@ -325,8 +326,8 @@ static KosIterStepResult map_step_row(
         /* Awaitable function result: stage it, unclassified, and
            defer to map_resume_after_result -- the await it needs must
            happen from inside koskari_eval's own dispatch. */
-        return kos_transform_stage(ctx, t, result,
-                                   &map_resume_after_result_kind, pre_top);
+        return kos_transform_stage(
+            ctx, t, result, &map_resume_after_result_kind, pre_top);
       default:
         Py_DECREF(result);
         return KOS_ITER_ERROR;
@@ -351,8 +352,9 @@ static KosIterStepResult map_step_body(
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(ctx, m, &m->src, &map_resume_start_fetch_kind, pre_top, out,
-                        element);
+    KOS_TRANSFORM_FETCH(
+        ctx, m, &m->src, &map_resume_start_fetch_kind, pre_top, out,
+        element);
 
     /* A direct-delivery koskari function (cs_direct: its install
        fills a frame whose return IS the element) installs through the
@@ -376,8 +378,8 @@ static KosIterStepResult map_step_body(
        or need an await -- must happen from inside that later dispatch,
        not here. */
     if (m->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-      return kos_transform_stage(ctx, m, element,
-                                 &map_resume_after_fetch_kind, pre_top);
+      return kos_transform_stage(
+          ctx, m, element, &map_resume_after_fetch_kind, pre_top);
 
     /* A plain python callable needs no evaluator at all. */
     {
@@ -395,8 +397,8 @@ static KosIterStepResult map_step_body(
              defer to map_resume_after_result the same way -- the
              await it needs must happen from inside koskari_eval's
              own dispatch, not from map_iter_step. */
-          return kos_transform_stage(ctx, m, result,
-                                     &map_resume_after_result_kind, pre_top);
+          return kos_transform_stage(
+              ctx, m, result, &map_resume_after_result_kind, pre_top);
         default:
           Py_DECREF(result);
           return KOS_ITER_ERROR;
@@ -443,7 +445,7 @@ static PyObject *kosmap_new(
 
   if (n < 2) {
     PyErr_SetString(PyExc_TypeError,
-                    "map() must have at least two arguments.");
+                    "map takes a function and at least one iterable");
     return NULL;
   }
 

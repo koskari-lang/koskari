@@ -25,7 +25,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import FormalsSpec, KosMap
+from koskari.lib import FormalsSpec, KosMap, KosPartial
 from tests.lib.opcode import build_expr
 
 
@@ -243,6 +243,15 @@ class TestKosMapSourcesSync(unittest.TestCase):
         self.assertEqual(list(KosMap(stop_at, [1, 2, 3], [10, 20, 30])),
                          [11])
 
+    def test_partial_over_two_sources(self):
+        """
+        a KosCallable that is not direct-delivery is staged and called
+        from the completed row
+        """
+
+        fn = KosPartial(add3, 100)
+        self.assertEqual(list(KosMap(fn, [1, 2], [10, 20])), [111, 122])
+
     def test_one_source_still_the_same_type(self):
         m = KosMap(abs, [-1, -2])
         self.assertIsInstance(m, KosMap)
@@ -316,6 +325,12 @@ class TestKosMapSourcesDriven(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.collect(KosMap(add3, agen([1, 2]),
                                                    agen([10, 20]),
                                                    agen([100, 200]))),
+                         [111, 222])
+
+    async def test_middle_async_source_of_three(self):
+        self.assertEqual(await self.collect(KosMap(add3, [1, 2],
+                                                   agen([10, 20]),
+                                                   [100, 200])),
                          [111, 222])
 
     async def test_async_source_ends_the_map(self):
