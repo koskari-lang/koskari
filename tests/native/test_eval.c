@@ -1800,7 +1800,15 @@ static int make_simple_ctx(
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
     *ctx_out = KosContext_New(frame, kos_tls_current());
-    if (! *ctx_out) { Py_DECREF(*code_obj_out); return -1; }
+    if (! *ctx_out) {
+        kos_dynframe_free(frame);
+        if (gen_out_opt && *gen_out_opt) {
+            kos_dyngen_free(*gen_out_opt);
+            *gen_out_opt = NULL;
+        }
+        Py_DECREF(*code_obj_out);
+        return -1;
+    }
     return 0;
 }
 

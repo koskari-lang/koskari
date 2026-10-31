@@ -53,7 +53,8 @@
   KOS_DYN_LOOP     - loop region
   KOS_DYN_FOREACH  - foreach region
   KOS_DYN_NS       - Namespace scope (PUSH_NS/POP_NS)
-  KOS_DYN_COLLECT  - Collector scope (PUSH_COLLECT/POP_COLLECT); push ns on pop
+  KOS_DYN_COLLECT  - Collector scope (PUSH_COLLECT/POP_COLLECT); push ns
+                     on pop
   KOS_DYN_CC       - Undelimited continuation block (call/cc)
   KOS_DYN_PARAM    - Parameter bindings (parameterize extent)
   KOS_DYN_WITH     - Context manager (with / dyn-with); multi vs single-shot
@@ -105,7 +106,7 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
                          no POP_PROMPT instruction pairs with it, so
                          delivery routes through the paired DELIM
   KOS_DYNF_GEN_INSTALLS - GEN: a node of the frozen span holds an
-                         effect the install puts back
+                          effect the install puts back
 */
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
@@ -142,13 +143,15 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 
 /**
-   Node participates in raise-walk dispatch (handle/restitch); the fast
-   first check before kos_dyn_handle.
+   A plain pop refuses to unlink the node (kos_dyn_unlink_top with
+   allow_barrier 0); the raise walk crosses it. Carried by PROMPT.
 */
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 
-/** Node participates in raise-walk dispatch (handle/restitch); the fast
-   first check before kos_dyn_handle. */
+/**
+   Node participates in raise-walk dispatch (handle/restitch); the fast
+   first check before kos_dyn_handle.
+*/
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
 /* The namespace in this node's ns field is its own: a scope the node
@@ -203,16 +206,15 @@ typedef struct KosLiveRegs {
    resume finishes it on delivery.
 */
 typedef struct KosIterRequest {
-  PyObject *iter;       /* stepped iterator; strong ref while the
-                           request is set */
-  struct KosIterSlots *islots; /* iter's provider suite when iter is a
-                                  KosIter provider, else NULL; bound with
-                                  iter through kos_dyn_iter_request_bind_iter,
-                                  so the step and delivery paths never
-                                  re-derive it */
-  uint8_t kind;         /* KOS_IREQ_KIND_*: how the step drives iter,
-                           classified once at bind so no step probes
-                           the type again */
+  /* stepped iterator; strong ref while the request is set */
+  PyObject *iter;
+  /* iter's provider suite when iter is a KosIter provider, else NULL;
+     bound with iter through kos_dyn_iter_request_bind_iter, so the
+     step and delivery paths never re-derive it */
+  struct KosIterSlots *islots;
+  /* KOS_IREQ_KIND_*: how the step drives iter, classified once at bind
+     so no step probes the type again */
+  uint8_t kind;
 } KosIterRequest;
 
 
@@ -237,10 +239,12 @@ void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted);
 typedef enum {
   KOS_IREQ_DELIVERED = 0, /* *out: the element (new ref) */
   KOS_IREQ_EXHAUSTED,     /* *out NULL; no exception set */
-  KOS_IREQ_CONTINUES,     /* the producer's frames installed; the
-                             element reaches the frame's resume */
-  KOS_IREQ_EXIT,          /* *out: the awaitable to suspend on (new
-                             ref); the element arrives at revive */
+  /* the producer's frames installed; the element reaches the frame's
+     resume */
+  KOS_IREQ_CONTINUES,
+  /* *out: the awaitable to suspend on (new ref); the element arrives
+     at revive */
+  KOS_IREQ_EXIT,
   KOS_IREQ_ERROR,         /* PyErr set */
 } KosIterRequestStatus;
 
@@ -281,9 +285,9 @@ typedef enum KosObligationKind {
   KOS_OB_VALUE,
   KOS_OB_EXCEPTION,
   KOS_OB_RETURN,
-  KOS_OB_SWALLOWED,  /* a with's __exit__ consumed the raise: None
-                        stands in for the body value, whatever event
-                        brought the raise */
+  /* a with's __exit__ consumed the raise: None stands in for the body
+     value, whatever event brought the raise */
+  KOS_OB_SWALLOWED,
 } KosObligationKind;
 
 
@@ -349,21 +353,19 @@ typedef struct KosResumeKind {
   void (*clear)(void *state);
   void *(*clone)(void *state);
   const struct KosResumeKind *throw_kind;
-  int settle;   /* the delivery is settled before fn sees it: 1 for a
-                   kind that takes a call's result, 0 for a kind whose
-                   delivery is data -- a for-each element, a next's
-                   element, a delegate's yielded value, a transform
-                   source's element -- which reaches fn as it is. A
-                   for-each step's region clears its kind from the
-                   frame when the region leaves the chain with the
-                   step in flight. */
+  /* the delivery is settled before fn sees it: 1 for a kind that takes
+     a call's result, 0 for a kind whose delivery is data -- a for-each
+     element, a next's element, a delegate's yielded value, a transform
+     source's element -- which reaches fn as it is. A for-each step's
+     region clears its kind from the frame when the region leaves the
+     chain with the step in flight. */
+  int settle;
+  /* GC traverse of the state, for a kind whose state owns a Python
+     object (a yield-from phase owns its delegate); NULL when the state
+     owns none. Every holder of a resume state -- a frame, a
+     delimiter's displaced resume, a transfer's restore record --
+     visits through it. */
   int (*traverse)(void *state, visitproc visit, void *arg);
-                /* GC traverse of the state, for a kind whose state owns
-                   a Python object (a yield-from phase owns its
-                   delegate); NULL when the state owns none. Every
-                   holder of a resume state -- a frame, a delimiter's
-                   displaced resume, a transfer's restore record --
-                   visits through it. */
 } KosResumeKind;
 
 /* A kind that takes a call's result: the delivery is settled first. */
@@ -502,10 +504,10 @@ struct KosDynNode {
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
       KosDynNode *chain;  /* owned when mode == INPLACE */
-      KosOp *pc;          /* where the return lands in frame; NULL with no
-                             frame, and for a code-less frame, whose
-                             resume takes the delivery. frame alone says
-                             whether there is a return site */
+      /* where the return lands in frame; NULL with no frame, and for a
+         code-less frame, whose resume takes the delivery. frame alone
+         says whether there is a return site */
+      KosOp *pc;
       /* The frame control lands in when the invoke comes back from
          the slice: the invoking frame, borrowed. For an INPLACE invoke
          it is the frame below the prompt, a frame of the stashed span
@@ -530,8 +532,9 @@ struct KosDynNode {
     struct {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
-      KosObligation ob;        /* the body result at POP_WIND, or what a
-                                  walk stored while the after-thunk runs */
+      /* the body result at POP_WIND, or what a walk stored while the
+         after-thunk runs */
+      KosObligation ob;
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
@@ -539,8 +542,9 @@ struct KosDynNode {
       KosOp *handler_pc;
       uint8_t enabled;
       uint8_t exc_saved;      /* consumed a raise: saved is what it displaced */
-      uint8_t exc_frozen;     /* in a frozen span: saved is the region's own
-                                 handled exception, taken off the thread */
+      /* in a frozen span: saved is the region's own handled exception,
+         taken off the thread */
+      uint8_t exc_frozen;
       KosExcState saved;      /* handler-visible state before this region */
     } try_;
     struct {
@@ -569,18 +573,20 @@ struct KosDynNode {
       PyObject *mgr;       /* context manager (owned) */
       PyObject *enter;     /* resolved enter callable (owned) */
       PyObject *exit;      /* resolved exit callable (owned) */
-      uint8_t self_bind;   /* KOS_WITH_SELF_*: which of enter/exit is a plain
-                              function kept unbound, called with mgr first */
+      /* KOS_WITH_SELF_*: which of enter/exit is a plain function kept
+         unbound, called with mgr first */
+      uint8_t self_bind;
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_* */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
-      PyObject *exit_done; /* KosRef shared across clones (owned); non-empty
-                              once the single-shot __exit__ has run. NULL for
-                              multi-shot */
+      /* KosRef shared across clones (owned); non-empty once the
+         single-shot __exit__ has run. NULL for multi-shot */
+      PyObject *exit_done;
       PyObject *name;      /* binding name or NULL (owned) */
       KosOp *resume_pc;    /* the instruction after the with body (pop + 1) */
-      KosObligation ob;    /* the exception __exit__ is handling, or what
-                              a walk stored while __exit__ runs */
+      /* the exception __exit__ is handling, or what a walk stored while
+         __exit__ runs */
+      KosObligation ob;
     } with;
     struct {
       /* shift: marker delimiting the handler body; owns no block, so
@@ -598,12 +604,14 @@ struct KosDynNode {
          (this field, the parent) when it lets go, and the second to
          let go frees the node. */
       PyObject *owner;
-      struct KosDynNode *active; /* suspended frame when released; NULL when running */
-      uint16_t nframes;    /* frames in the frozen span, counted at the
-                              freeze for the install's room check */
-      uint16_t base_depth; /* consumer depth the span's frames are
-                              numbered for; UINT16_MAX until the first
-                              frozen install */
+      /* the frozen span's top while frozen; NULL while running */
+      struct KosDynNode *active;
+      /* frames in the frozen span, counted at the freeze for the
+         install's room check */
+      uint16_t nframes;
+      /* consumer depth the span's frames are numbered for; UINT16_MAX
+         until the first frozen install */
+      uint16_t base_depth;
       /* Register snapshots for the flattened step cycle. host is the
          consumer's registers taken at install, restored at freeze while
          the GEN's parent is still host.top. frozen is the generator's
@@ -1774,14 +1782,11 @@ int kos_dyn_ob_store_return(
 
 
 /**
-  Generic dispatch functions over the node kinds.  Each
-  switches on the node's kind and invokes the appropriate per-type
-  implementation directly, allowing the compiler to emit a jump table
-  with inlined handlers rather than an indirect function-pointer call.
-
-  kos_dyn_clone: allocate a copy of the node; NULL return on error or if
-    the type forbids cloning.
+  Whether a live node is still in the phase its template clone recorded
+  at capture; the seam of an undelimited invoke stops below a node that
+  has moved on. Kinds without a phase match on identity.
 */
+int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl);
 
 /**
    Offer a control transit to a node.  Does not unlink; only decides
@@ -1790,17 +1795,9 @@ int kos_dyn_ob_store_return(
    :param ctx: context
    :param node: node to offer the event to
    :param event: transfer event (RETURN, RAISE, etc.)
-   :param out_ev: event output (for transformed events; may be NULL)
 
    :return: KOS_HANDLE_PASS (unwind then pop), KOS_HANDLE_CONSUMED
      (deliver to node, stop walk), or KOS_HANDLE_ERROR (-1)
-*/
-int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl);
-
-/**
-  Whether a live node is still in the phase its template clone recorded
-  at capture; the seam of an undelimited invoke stops below a node that
-  has moved on. Kinds without a phase match on identity.
 */
 KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
                                KosXferEvent event);
@@ -1829,8 +1826,9 @@ KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 /**
   Freeze gen at a yield: the span from dyn_top down to gen leaves the
-  live chain into gen's active slot, gen's parent becomes dyn_top, and
-  the live registers retarget to it. A yield is not an unwind: no node
+  live chain into gen's active slot, gen's parent link is cleared and
+  dyn_top returns to what that parent was, and the live registers
+  retarget to it. A yield is not an unwind: no node
   between the frame and its GEN acts on it (no finally, no __exit__),
   so the open extents freeze with the chain and return on the next
   install. A node whose effect lives outside itself takes it out
@@ -1843,6 +1841,14 @@ KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node);
 */
 int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen);
 
+
+/**
+  Generic dispatch over the node kinds: switches on the node's kind and
+  invokes the per-kind implementation directly, so the compiler emits
+  a jump table with inlined handlers rather than an indirect call.
+  Allocate a copy of the node; NULL on error or when the kind forbids
+  cloning.
+*/
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 
@@ -2101,7 +2107,8 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KOS_FRAME_CORO_ROOT       (1u << 1)
 
 /* a completing code-less frame: cache_slot is the holder's cache slot
-   and free offers the frame there, set only by KosNativeFrame_CacheOnFree */
+   and kos_dynframe_free offers the frame there through
+   kos_dynframe_cache_inert; set only by KosNativeFrame_CacheOnFree */
 #define KOS_FRAME_RETURN_TO_CACHE   (1u << 2)
 
 /* the frame's parent is a FRAME node: the fact the return path tests,

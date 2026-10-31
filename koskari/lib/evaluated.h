@@ -189,10 +189,9 @@ typedef struct KosIterSlots {
   KosIterFinishFunc ki_finish;
   KosIterPyCtxFunc ki_pyctx;
   KosIterBusyFunc ki_busy;
-  uint8_t ki_pyctx_recyclable;  /* the durable context holds no state
-                                   between completed steps; the adapters
-                                   recycle it at their reset points
-                                   exactly like an owned context */
+  /* the durable context holds no state between completed steps; the
+     adapters recycle it at their reset points like an owned context */
+  uint8_t ki_pyctx_recyclable;
 } KosIterSlots;
 
 

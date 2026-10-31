@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-churn_tail benchmark: self tail-call churn, one call per step.
+churn_tail benchmark: self tail-call churn, one call per step
 
 The depth stays under Python's default recursion limit, since the
 Python variant pays a real frame per step where the Koskari kernel

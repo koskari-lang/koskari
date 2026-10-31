@@ -454,7 +454,8 @@ int kos_dyn_gen_frozen_needs_install(KosContext *ctx, KosDynGen *g) {
    Unwind an exhausted gen from the consumer chain. Call when the gen's
    frame does RETURN and parent is GEN (top-level return of generator).
    Assumes ctx->dyn_top is the gen's frame, frame->parent is gen.
-   Frees the chain from frame down to gen, restores consumer, releases gen.
+   Frees the chain from frame down to gen, restores the consumer, and
+   lets go of the node.
 */
 int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
   KosDynNode *frame = KosContext_DYN_TOP(ctx);

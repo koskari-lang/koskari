@@ -37,8 +37,8 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen);
 
 /**
    Dissociate a frozen async generator from its context without running
-   the extent protocol: detach and free the frozen chain, release the
-   gen. Leaves ctx ready to be released.
+   the extent protocol: detach and free the frozen chain, then free the
+   node. Leaves ctx ready to be dropped.
 
    Safe at arbitrary points, including dealloc mid-unwind with a live
    exception: no Python calls, no evaluator re-entry, and the pending
@@ -118,8 +118,8 @@ static void asyncgen_drop_gen(KosPyAsyncGen *agen) {
    after), so the drive never observes it and the internal PyErr_Clear
    calls cannot destroy it.
 
-   On success (primary path): chain unwound, gen released, ctx ready for free.
-   On fallback: chain freed, gen released, ctx ready for free.
+   On success (primary path): chain unwound, node freed, ctx ready for
+   free. On fallback: chain freed, node freed, ctx ready for free.
    Does not free ctx; caller does that. For clear, caller also sets
    agen->gen = NULL and agen->ctx = NULL.
 */
@@ -275,7 +275,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
 
 
 /**
-   Release the generator's chain and context without driving the body:
+   Drop the generator's chain and context without driving the body:
    an unstarted chain is freed through the GEN node, a suspended one is
    dissociated, and the context is dropped. The close itself belongs
    to the finalizer, which has already run by the time clear or
