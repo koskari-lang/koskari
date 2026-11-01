@@ -27,7 +27,11 @@ stays a string and is not retried.
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
-for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers and
+for rest. A positional parameter takes a default as a `(name default)` cell,
+`[a (b 10)]`; such cells follow the required positionals, as in Python, and a
+required name after one is a compile error, as is a name that appears twice
+in one formals list. Supports `*` and `**` in formals
+(see `gather_formals` in helpers and
 [`koskari.matcher`](../api/koskari-matcher.md)).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).

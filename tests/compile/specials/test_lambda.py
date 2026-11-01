@@ -152,6 +152,48 @@ class TestLambdaNamed(SpecialsTestCase):
         self.assertIn("[(n :: int)]", str(cm.exception))
 
 
+    async def test_lambda_required_after_bracket_default_rejected(self):
+        """
+        A required positional after a (name default) cell is a compile
+        error rather than a silent reordering of the caller's arguments
+        """
+
+        src = "(lambda [a (b 10) c] #(a b c))"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src)
+        self.assertIn("'c'", str(cm.exception))
+        self.assertEqual((1, 18), cm.exception.position)
+
+
+    async def test_lambda_duplicate_formal_rejected_at_its_position(self):
+        """
+        A name declared twice in one formals list is a compile error
+        located at the second occurrence, whatever kind it is
+        """
+
+        cases = (
+            ("(lambda [a a] a)", (1, 11)),
+            ("(lambda [a (a 1)] a)", (1, 11)),
+            ("(lambda [a a: 1] a)", (1, 11)),
+            ("(lambda [a *: a] a)", (1, 14)),
+            ("(lambda [a **: a] a)", (1, 15)),
+            ("(lambda [a *: r r: 2] a)", (1, 16)),
+        )
+        for src, position in cases:
+            with self.assertRaises(SpecialError) as cm:
+                self.compile_expr(src)
+            self.assertIn("duplicate formal", str(cm.exception), src)
+            self.assertEqual(position, cm.exception.position, src)
+
+
+    async def test_lambda_trailing_bracket_defaults(self):
+        src = "(lambda [a (b 10) (c 20)] #(a b c))"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual((1, 2, 3), await fn(1, 2, 3))
+        self.assertEqual((1, 10, 20), await fn(1))
+
+
     async def test_lambda_bare_double_colon_after_star_rejected(self):
         src = "(lambda [n *: rest :: int] n)"
         with self.assertRaises(SpecialError) as cm:

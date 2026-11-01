@@ -1029,6 +1029,22 @@ def gather_formals(formals_group, source=None):
     defaults = []
     by_refs = []
     prev_name = None
+    seen = set()
+
+    def note(name, cell):
+        """
+        Record a formal's name; a name already recorded is an error at
+        the repeating formal's cell, since the binder would give one of
+        the two a caller's argument and lose the other. A hand-built
+        frame carries no position.
+        """
+
+        key = str(name)
+        if key in seen:
+            raise SpecialError(
+                f"duplicate formal {key!r}", source,
+                position=getattr(cell, 'position', None))
+        seen.add(key)
 
     for fr in formals_group.get('positionals', ()):
         if not isinstance(fr, dict):
@@ -1037,11 +1053,20 @@ def gather_formals(formals_group, source=None):
                 source)
         name, ann_bundle, default, by_ref = \
             _gather_one_positional_frame(fr, source)
+        note(name, fr)
         _merge_formal_annotations(annotations, name, ann_bundle)
         if by_ref:
             by_refs.append(str(name))
         if default is not NO_DEFAULT:
             defaults.append((keyword(str(name)), default))
+        elif defaults:
+            # the defaults bind after every positional, so a required
+            # name here would take a caller's argument meant for the
+            # defaulted one before it
+            raise SpecialError(
+                f"positional formal {str(name)!r} follows a defaulted"
+                f" formal {str(defaults[-1][0])!r}",
+                source, position=fr.position)
         else:
             positional.append(name)
         prev_name = name
@@ -1059,10 +1084,22 @@ def gather_formals(formals_group, source=None):
                 source)
         _reject_bare_annotation(kw, dflt, prev_name, source)
         kw, by_ref = _strip_byref_kw(kw)
+        note(kw, fr)
         if by_ref:
             by_refs.append(str(kw))
         defaults.append((kw, dflt))
         prev_name = kw
+
+    # the * name sits before the keyword-only names in the list, so it
+    # is recorded before them and a repeat is reported where it appears
+    star_cell = formals_group.get('star')
+    star = star_cell.datum if star_cell else None
+    if star is not None and not is_nil(star):
+        if not is_symbol(star):
+            raise SpecialError(
+                f"* keyword requires symbol binding, not {star!r}",
+                source)
+        note(star, star_cell)
 
     kwonly = []
     for fr in formals_group.get('kwonly', ()):
@@ -1073,6 +1110,7 @@ def gather_formals(formals_group, source=None):
         name = None if (v := fr.get('name')) is None else v.datum
         if name is not None and is_symbol(name):
             name, by_ref = _strip_byref_sym(name)
+            note(name, fr)
             if by_ref:
                 by_refs.append(str(name))
             kwonly.append((keyword(str(name)), NO_DEFAULT))
@@ -1083,6 +1121,7 @@ def gather_formals(formals_group, source=None):
         if kw is not None:
             _reject_bare_annotation(kw, dflt, prev_name, source)
             kw, by_ref = _strip_byref_kw(kw)
+            note(kw, fr)
             if by_ref:
                 by_refs.append(str(kw))
             kwonly.append((kw, dflt))
@@ -1092,21 +1131,14 @@ def gather_formals(formals_group, source=None):
                 f"invalid kw-only frame {fr!r}",
                 source)
 
-    star_cell = formals_group.get('star')
-    star = star_cell.datum if star_cell else None
-
     ss_cell = formals_group.get('starstar')
     starstar = ss_cell.datum if ss_cell else None
     if starstar and not is_symbol(starstar):
         raise SpecialError(
             f"** keyword requires symbol binding, not {starstar!r}",
             source)
-
-    if star is not None and not is_nil(star):
-        if not is_symbol(star):
-            raise SpecialError(
-                f"* keyword requires symbol binding, not {star!r}",
-                source)
+    if starstar:
+        note(starstar, ss_cell)
 
     return (positional, defaults, kwonly, star, starstar, annotations,
             tuple(by_refs))

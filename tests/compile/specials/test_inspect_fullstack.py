@@ -49,7 +49,7 @@ class TestInspectCompiledLambda(SpecialsTestCase):
         self.assertIs(sig.return_annotation, int)
 
     async def test_signature_annotation_with_default(self):
-        src = "(lambda [(a :: int value: 9) b] a)"
+        src = "(lambda [b (a :: int value: 9)] a)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         sig = inspect.signature(fn)
@@ -63,7 +63,7 @@ class TestInspectCompiledLambda(SpecialsTestCase):
         # value: None must register an optional default of None, not be
         # dropped as though no default were given (which made the parameter
         # required). None had doubled as the "no default" sentinel.
-        src = "(lambda [(a :: int value: None) b] a)"
+        src = "(lambda [b (a :: int value: None)] a)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         sig = inspect.signature(fn)
