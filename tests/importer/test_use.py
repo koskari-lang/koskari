@@ -330,4 +330,30 @@ class TestUseBare(UseCase):
         self.assertEqual(prov.__all__, ("compile/doubled",))
 
 
+class TestUseRenameEveryDialect(UseCase):
+    """
+    A rename follows a transformer of every rule dialect: the pattern
+    head binds the symbol the macro was invoked as, so an arm matches
+    under the new name
+    """
+
+    async def test_renamed_transformers_expand_under_the_new_name(self):
+        self.write_ki('ki_use_prov6', """
+        (declare-exports pm sr mm sm spm)
+        (syntax pm (macro-rules [] [(pm e) `(+ 10 ,e)]))
+        (syntax sr (special-rules [] [(c (sr x)) x.datum]))
+        (syntax mm (macro-match [(mm (VALUE e)) `(+ 1 ,e)]))
+        (syntax sm (syntax-match [(sm (VALUE e)) (+ 2 e)]))
+        (syntax spm (special-match [(c (spm (VALUE x))) x.datum]))
+        """)
+        self.write_ki('ki_use_user6', """
+        (use ki_use_prov6 [pm as: pm2] [sr as: sr2] [mm as: mm2]
+             [sm as: sm2] [spm as: spm2])
+        (var result #[(pm2 1) (sr2 42) (mm2 1) (sm2 1) (spm2 42)])
+        """)
+
+        mod = importlib.import_module('ki_use_user6')
+        self.assertEqual(mod.result, [11, 42, 2, 3, 42])
+
+
 # The end.

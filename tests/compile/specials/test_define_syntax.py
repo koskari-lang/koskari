@@ -585,6 +585,41 @@ class TestMatchIsAPlainPatternSymbol(DefineSyntaxCompileHelpers):
         self.assertEqual((1, 2), await expr())
 
 
+class TestHeadBindsTheInvokedSymbol(DefineSyntaxCompileHelpers):
+    """
+    The head of a rule pattern is a formal of a procedural arm, bound
+    to the symbol the macro was invoked as, in the RULE and the MATCH
+    dialect alike
+    """
+
+    async def test_macro_rules_head_formal(self):
+        src_str = """
+        (define m
+          (macro-rules m []
+            [(m x) `(quote ,m)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1)", **defn)
+        self.assertEqual(symbol('m'), await expr())
+
+
+    async def test_macro_match_head_formal(self):
+        src_str = """
+        (define m
+          (macro-match m
+            [(m (VALUE x)) `(quote ,m)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1)", **defn)
+        self.assertEqual(symbol('m'), await expr())
+
+
 class TestDottedRulePatterns(DefineSyntaxCompileHelpers):
     """
     A dotted RULE pattern binds its tail symbol to the remaining

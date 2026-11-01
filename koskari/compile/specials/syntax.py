@@ -36,7 +36,7 @@ from ...syntax import (
     _repeat_variables, parse_rule_pattern, parse_syntax_rules_pattern,
     special)
 from ...types import (
-    build_proper, is_pair, is_proper, is_symbol, unpack)
+    build_proper, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
 
 _sym_quote_syntax = symbol("quote-syntax")
@@ -273,7 +273,7 @@ def special_compile_macro_rules(compiler, called_by, name, literals, rules):
 
     rows = []
     for pattern, pattern_src, formals, body_forms in parse_macro_rules_rows(
-            namesym, literals_expr, raw_rules):
+            literals_expr, raw_rules):
         rows.append((
             pattern, pattern_src, lower_rule(pattern, pattern_src),
             cons(symbol("lambda"), build_proper(*formals), body_forms)))
@@ -308,7 +308,7 @@ def special_compile_syntax_match(compiler, called_by, name, rules):
         raw_rule = res["rule"].datum
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
-        pattern = parse_explicit_rule_pattern(pattern_src)
+        pattern = match_rule_pattern(pattern_src, namesym)
         rows.append((
             pattern, pattern_src, lower_rule(pattern, pattern_src),
             quoted(template_expr)))
@@ -342,7 +342,7 @@ def special_compile_macro_match(compiler, called_by, name, rules):
     for sub_res in rules:
         pattern_src = sub_res["pattern"].datum
         body_src = sub_res["body"].datum
-        pattern = parse_explicit_rule_pattern(pattern_src)
+        pattern = match_rule_pattern(pattern_src, namesym)
         lowered = lower_rule(pattern, pattern_src)
         rows.append((
             pattern, pattern_src, lowered,
@@ -374,14 +374,14 @@ def special_compile_special_rules(compiler, called_by, name, literals, rules):
     :func:`parse_syntax_rules_pattern` to a matcher function of this
     module. Lowers to a call of ``build-special`` with, per rule, the
     function, its repeat variables, the quoted pattern and
-    ``(lambda ...)``. The
-    built transformer is the value of the expression; use
-    ``(compile/define NAME ...)`` to bind it.
+    ``(lambda ...)``. The macro name is not a literal: the inner
+    pattern's head is a formal of the arm bound to the symbol the
+    special was invoked as. The built transformer is the value of the
+    expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum
     literal_set = set(unpack(literals.datum))
-    literal_set.add(namesym)
 
     rows = []
     for res in rules:
@@ -431,7 +431,7 @@ def special_compile_special_match(compiler, called_by, name, rules):
         body_src = res["body"].datum
         if is_symbol(inner):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
-        pattern = parse_explicit_rule_pattern(inner)
+        pattern = match_rule_pattern(inner, namesym)
         lowered = lower_rule(pattern, inner)
         rows.append((
             pattern, inner, lowered,
@@ -463,14 +463,42 @@ def slot_formals(slot_names):
     return out
 
 
-def parse_macro_rules_rows(name, literals_expr, raw_rules):
+def match_rule_pattern(pattern_src, namesym):
+    """
+    The MATCH-dialect pattern of one rule. A head spelling the macro's
+    own name lowers to a CALLEDBY capture under that name, a slot bound
+    to the symbol the macro was invoked as, with the rest of the spine
+    lowered cell by cell; any other pattern lowers whole through
+    parse_explicit_rule_pattern, a literal head included
+
+    :param pattern_src: the rule's pattern datum
+    :param namesym: the macro's name symbol
+    :return: Pattern instance
+    """
+
+    if is_pair(pattern_src) and not is_nil(pattern_src) \
+       and is_proper(pattern_src):
+        head, rest = pattern_src
+        if is_symbol(head) and strip_mark(head) == strip_mark(namesym):
+            specs = [CALLEDBY(str(head))]
+            while not is_nil(rest):
+                cell, rest = rest
+                specs.append(parse_explicit_rule_pattern(cell, pattern_src))
+            return MATCH(*specs)
+
+    return parse_explicit_rule_pattern(pattern_src)
+
+
+def parse_macro_rules_rows(literals_expr, raw_rules):
     """
     Parse macro-rules literals and rules tail into matchers and body datums
 
     No ``lambda`` or ``build-macro`` source is emitted here; compile
-    specials lower that from the returned rows.
+    specials lower that from the returned rows. The macro name is not a
+    literal: the pattern head lowers to a CALLEDBY capture under its own
+    name, a formal of the arm bound to the symbol the macro was invoked
+    as, the way syntax-rules binds it for a template.
 
-    :param name: macro name symbol (included in literals)
     :param literals_expr: literals list expression (same position as in
         ``(macro-rules LITERALS RULE ...)``)
     :param raw_rules: the rule row datums, in source order
@@ -480,7 +508,6 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
     """
 
     literals = set(unpack(literals_expr))
-    literals.add(name)
 
     rows = []
     for raw_rule in raw_rules:

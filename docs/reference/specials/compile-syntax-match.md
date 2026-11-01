@@ -10,7 +10,9 @@ takes **RULE**-dialect ones. The value is the transformer.
 that there is no `LITERALS` list and each pattern is written in explicit
 matcher declarations such as **`(VALUE x)`** or
 **`(REPEAT xs PATTERN min: 2)`**; the template refers to the pattern's
-slots. See
+slots. A pattern head spelling `NAME` is a slot bound to the symbol the
+macro was invoked as, so a renamed import still matches; any other head is
+a literal. See
 [Macros and hygiene](../../guide/macros-and-hygiene.md) and
 [`koskari.matcher`](../api/koskari-matcher.md) (surface heads).
 
