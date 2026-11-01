@@ -19,7 +19,9 @@ Install the dependencies with pip install -r requirements.txt, then
 koskari webapp.ki serves on 127.0.0.1:8000. With koskari -i webapp.ki
 the server runs in the background of the session: (GET "/healthz")
 queries it, and a define-route form at the prompt adds a route to the
-live application.
+live application. The background server needs the repl extra
+(prompt_toolkit); with the plain input() prompt it advances only while
+a form evaluates.
 """
 
 
