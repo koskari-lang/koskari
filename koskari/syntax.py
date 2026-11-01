@@ -798,9 +798,12 @@ def parse_syntax_rules_pattern(
         items, literals, source_ctx, owners, variables, scope, tail))
 
     # a pair sub-pattern's scope is its slot name, so the slot's
-    # variables are the names that scope owns
+    # variables are the names that scope owns, the ones its own
+    # ellipses and dotted tail bind included
     repeat_variables = {}
     for name, owner in owners.items():
+        if isinstance(owner, RepeatOwner):
+            owner = owner.scope
         if isinstance(owner, str):
             repeat_variables.setdefault(owner, []).append(name)
     return RulePattern(*specs, repeat_variables=repeat_variables)
@@ -831,16 +834,26 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     return parse_syntax_rules_pattern(pattern_expr, lit, source_ctx)
 
 
-# the owner recorded for a variable bound by ``x ...`` or a dotted
-# tail: a sequence of captures, which no later binding of the name
-# can be the same as
-_REPEAT_OWNER = object()
-
-
-def _claim_repeat_variable(sym, owners, variables, source_ctx):
+class RepeatOwner(object):
     """
-    Record a variable bound by an ellipsis or a dotted tail; a name
-    already bound anywhere in the pattern is refused
+    The owner recorded for a variable bound by ``x ...`` or a dotted
+    tail: a sequence of captures, which no later binding of the name
+    can be the same as. It carries the scope the binding sits in, so
+    a variable under a pair sub-pattern's slot is still one of that
+    slot's variables
+    """
+
+    __slots__ = ('scope',)
+
+    def __init__(self, scope):
+        self.scope = scope
+
+
+def claim_repeat_variable(sym, owners, variables, source_ctx, scope):
+    """
+    Record a variable bound by an ellipsis or a dotted tail in the
+    given scope; a name already bound anywhere in the pattern is
+    refused
     """
 
     name = str(sym)
@@ -848,7 +861,7 @@ def _claim_repeat_variable(sym, owners, variables, source_ctx):
         raise ValueError(
             f"pattern variable {name!r} is already bound at another"
             f" ellipsis depth (context {source_ctx!r})")
-    owners[name] = _REPEAT_OWNER
+    owners[name] = RepeatOwner(scope)
     variables[name] = sym
 
 
@@ -859,8 +872,8 @@ def _syntax_elem_pattern(
 
     :param owners: pattern-wide map from each bound variable name to
         the scope that bound it: the top level's token, the slot name
-        of one pair sub-pattern under an ellipsis, or _REPEAT_OWNER for
-        an ellipsis variable
+        of one pair sub-pattern under an ellipsis, or a RepeatOwner
+        over one of those for an ellipsis or dotted-tail variable
     :param variables: pattern-wide map from each bound variable name
         to its source symbol, in the order the variables are bound
     :param scope: the token of the scope being parsed
@@ -960,7 +973,8 @@ def _syntax_pattern_specs(
             pat = p_items[i]
             if is_symbol(pat) and strip_mark(pat) not in literals:
                 name = str(pat)
-                _claim_repeat_variable(pat, owners, variables, source_ctx)
+                claim_repeat_variable(
+                    pat, owners, variables, source_ctx, scope)
                 if i + 2 < len(p_items):
                     specs.append(REST(name))
                 else:
@@ -989,7 +1003,7 @@ def _syntax_pattern_specs(
                 f"dotted pattern tail must be a pattern variable, got"
                 f" {tail!r} (context {source_ctx!r})")
         name = str(tail)
-        _claim_repeat_variable(tail, owners, variables, source_ctx)
+        claim_repeat_variable(tail, owners, variables, source_ctx, scope)
         specs.append(REST(name))
 
     return specs

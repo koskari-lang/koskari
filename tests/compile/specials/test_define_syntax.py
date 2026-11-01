@@ -470,6 +470,33 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
         self.assertEqual([], list(result))
 
 
+    async def test_compile_macro_rules_nested_ellipsis_zero_times(self):
+        """
+        A variable under an inner ellipsis is a formal of the arm and
+        arrives as an empty list when the outer ellipsis matched zero
+        times
+        """
+
+        src_str = """
+        (define mb
+          (macro-rules mb []
+            [(mb (a b ...) ...)
+             `(#list ,(len a) ,(len b))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/mb': vars(mod)['mb'],
+            '#list': build_list,
+            'len': len,
+        }
+
+        expr, mod = self.compile_expr("(mb (1 2 3) (4 5))", **defn)
+        self.assertEqual([2, 2], list(await expr()))
+        expr, mod = self.compile_expr("(mb)", **defn)
+        self.assertEqual([0, 0], list(await expr()))
+
+
     async def test_compile_special_rules_pair_under_ellipsis_zero_times(self):
         """
         A special arm gets a pair sub-pattern's variables as empty lists

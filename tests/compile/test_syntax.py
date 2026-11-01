@@ -31,7 +31,7 @@ import pytest
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import (
-    Module, ModuleNamespace, car, cdr, demand, gensym, symbol)
+    Module, ModuleNamespace, car, cdr, cons, demand, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
     RulePattern, Syntax, SyntaxTransform, parse_syntax_rules_pattern)
@@ -207,6 +207,58 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         pat_m = parse_syntax_rules_pattern(flat, literals, flat)
         self.assertIsInstance(pat_m, RulePattern)
         self.assertEqual(pat_m.repeat_variables, {})
+
+
+    def test_nested_ellipsis_variable_belongs_to_its_slot(self):
+        """
+        A variable bound by an inner ellipsis, or by a dotted tail,
+        inside a pair sub-pattern under an ellipsis is one of that
+        slot's variables, so a zero-times match still gives it a column
+        """
+
+        name = symbol('pp')
+        literals = frozenset({name})
+        nested = build_proper(
+            name, build_proper(symbol('a'), symbol('b'), Ellipsis), Ellipsis)
+        pat_m = parse_syntax_rules_pattern(nested, literals, nested)
+        self.assertEqual(list(pat_m.repeat_variables.values()), [['a', 'b']])
+
+        dotted = build_proper(
+            name, cons(symbol('a'), symbol('b')), Ellipsis)
+        pat_m = parse_syntax_rules_pattern(dotted, literals, dotted)
+        self.assertEqual(list(pat_m.repeat_variables.values()), [['a', 'b']])
+
+
+    def test_nested_ellipsis_variable_expands_on_zero_groups(self):
+        transformer = rule(
+            'only-b',
+            build_proper(
+                symbol('only-b'),
+                build_proper(symbol('a'), symbol('b'), Ellipsis), Ellipsis),
+            build_proper(
+                symbol('quote'),
+                build_proper(build_proper(symbol('b'), Ellipsis), Ellipsis)))
+        expanded = expand(
+            transformer,
+            build_proper(symbol('only-b'), build_proper(1, 2, 3),
+                         build_proper(4, 5)))
+        assert_forms_equal(
+            self, expanded,
+            build_proper(symbol('quote'),
+                         build_proper(build_proper(2, 3), build_proper(5))))
+        expanded0 = expand(transformer, build_proper(symbol('only-b')))
+        assert_forms_equal(
+            self, expanded0, build_proper(symbol('quote'), build_proper()))
+
+
+    def test_nested_ellipsis_variable_cannot_rebind_outside(self):
+        name = symbol('m')
+        literals = frozenset({name})
+        pat_form = build_proper(
+            name, build_proper(symbol('a'), symbol('b'), Ellipsis), Ellipsis,
+            symbol('b'))
+        with self.assertRaises(ValueError):
+            parse_syntax_rules_pattern(pat_form, literals, pat_form)
 
 
     def test_single_var_pattern_binds_whole_form(self):
