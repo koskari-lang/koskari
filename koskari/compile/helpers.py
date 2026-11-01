@@ -220,6 +220,7 @@ def gather_parameters(args, source=None):
 
     args_seq = []
     kwds_seq = []
+    seen_kwds = set()
     pos_index = 0
     in_kwds_phase = False
 
@@ -257,7 +258,12 @@ def gather_parameters(args, source=None):
                     raise ParametersError(
                         f"missing value for keyword parameter {label}",
                         source)
-                kwds_seq.append((str(label), value))
+                name = str(label)
+                if name in seen_kwds:
+                    raise ParametersError(
+                        f"repeated keyword argument {name!r}", source)
+                seen_kwds.add(name)
+                kwds_seq.append((name, value))
 
         else:
             if in_kwds_phase:

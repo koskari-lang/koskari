@@ -122,6 +122,22 @@ class TestGatherParameters(unittest.TestCase):
             kwds_seq,
             [("x", xval), ("**", kw1), ("y", yval), ("**", kw2)])
 
+    def test_repeated_keyword_raises(self):
+        a = keyword("a")
+        args = cons(a, symbol("one"), a, symbol("two"), nil)
+        with self.assertRaises(ParametersError) as ctx:
+            gather_parameters(args)
+        self.assertIn("repeated keyword", str(ctx.exception))
+        self.assertIn("'a'", str(ctx.exception))
+
+    def test_repeated_keyword_across_starstar_raises(self):
+        a = keyword("a")
+        kk = keyword("**")
+        args = cons(a, symbol("one"), kk, symbol("d"), a, symbol("two"), nil)
+        with self.assertRaises(ParametersError) as ctx:
+            gather_parameters(args)
+        self.assertIn("repeated keyword", str(ctx.exception))
+
     def test_missing_value_for_keyword_raises(self):
         args = cons(keyword("a"), nil)
         with self.assertRaises(ParametersError) as ctx:
