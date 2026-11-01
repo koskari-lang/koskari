@@ -555,7 +555,7 @@ def _koskari_frame_summary(entry):
     source line via linecache and draws the PEP 657 caret from the
     column data.  Column data is only passed on Python 3.11+ (see
     _FRAME_SUMMARY_HAS_COLUMNS); earlier versions still render the
-    source line, without the caret.
+    source line, without the caret
 
     :param entry: dict of frame metadata (filename, name, line, col)
     :return: traceback.FrameSummary
@@ -639,7 +639,7 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb):
     in order: a native frame from its entry, with the source line and
     column caret, any other frame as the standard traceback does.  The
     frames of a raise that crossed Koskari, Python and Koskari again
-    therefore print in their true nesting.
+    therefore print in their true nesting
 
     :return: list[str], matching traceback.format_exception style
     """
@@ -648,7 +648,7 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb):
         return list(format_exception_only(exc_type, exc_val))
 
     walked = list(traceback.walk_tb(tb))
-    if not any(frame.f_globals.get('__koskari_trace__') is not None
+    if not any(isinstance(frame.f_globals.get('__koskari_trace__'), dict)
                for frame, _lineno in walked):
         return traceback.format_exception(exc_type, exc_val, tb)
 
@@ -706,23 +706,14 @@ def format_code_boundary_exception(
             exc_type, exc_val, tb))
         return lines, exc_type, exc_val, tb
 
-    tb_for_format = tb
-    tb_for_last = tb
     if infrastructure_modules:
-        tb_filtered = _filter_infrastructure_tb(tb, infrastructure_modules)
-        if tb_filtered is not None:
-            tb_for_format = tb_filtered
-            tb_for_last = tb_filtered
-        else:
-            # Every surviving frame was infrastructure: drop the traceback
-            # so only the exception line is shown.  Restoring the
-            # unfiltered traceback here would leak the eval boundary frame.
-            tb_for_format = None
-            tb_for_last = None
+        # None when every frame was infrastructure: the traceback is
+        # dropped so only the exception line is shown, since restoring
+        # the unfiltered one would leak the eval boundary frame
+        tb = _filter_infrastructure_tb(tb, infrastructure_modules)
 
-    lines = format_exception_with_koskari_trace(
-        exc_type, exc_val, tb_for_format)
-    return lines, exc_type, exc_val, tb_for_last
+    lines = format_exception_with_koskari_trace(exc_type, exc_val, tb)
+    return lines, exc_type, exc_val, tb
 
 
 RUN_INFRASTRUCTURE_MODULES = frozenset((
@@ -745,16 +736,16 @@ def format_run_exception(
         full_trace=False,
         infrastructure_modules=RUN_INFRASTRUCTURE_MODULES):
     """
-    Format an uncaught exception from a non-interactive CLI run.
+    Format an uncaught exception from a non-interactive CLI run
 
     Mirrors the boundary cleaning the REPL applies per form, but for a
     single top-level run (a file, ``-c`` command, or ``.kio``).  Reader and
     compile errors render their own source-annotated explanation; runtime
     errors have infrastructure frames stripped (per infrastructure_modules)
-    and their koskari frames rendered where they sit.
+    and their koskari frames rendered where they sit
 
     When full_trace is True the raw traceback is kept and no filtering is
-    applied, for debugging the runtime itself.
+    applied, for debugging the runtime itself
 
     :param exc_val: the uncaught exception instance
     :param full_trace: when True, keep infrastructure frames

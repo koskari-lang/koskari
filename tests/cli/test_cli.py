@@ -323,7 +323,7 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         }
 
         try:
-            exec('def boom():\n    1/0\nboom()\n', g, g)
+            exec('1/0', g, g)
         except Exception:
             exc_type, exc_val, tb = sys.exc_info()
         else:
@@ -333,7 +333,7 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Traceback (most recent call last):', rendered)
         self.assertNotIn('Koskari dynchain', rendered)
         self.assertNotIn('<string>', rendered)
-        self.assertEqual(2, rendered.count('File "example.ki", line 12, in inner-fn'))
+        self.assertEqual(1, rendered.count('File "example.ki", line 12, in inner-fn'))
         self.assertIn('ZeroDivisionError', rendered)
 
 

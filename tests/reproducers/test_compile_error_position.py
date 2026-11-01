@@ -162,7 +162,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
             "    define-global q 2\n"
             "    q\n")
         self.assertIn("cannot be both local", str(err))
-        self.assertIn("declared local earlier in the same scope", str(err))
+        self.assertIn("declared local earlier", str(err))
         self.assert_located(err, 2)
 
 

@@ -71,7 +71,7 @@ def _conflict_message(fragment, name, earlier_kind):
 
     earlier = fragment.declare_positions.get(name)
     where = (f"at line {earlier[0]}" if earlier is not None
-             else "earlier in the same scope")
+             else "earlier")
     return (f"{str(name)!r} cannot be both local and global in the"
             f" same scope: declared {earlier_kind} {where}")
 
@@ -233,7 +233,7 @@ class KoskariPragma:
         Record explicit global (global var) of name, a symbol. A name
         the fragment already declares is the local-or-global conflict,
         raised at this declaration and naming the line of the local
-        one, except at module scope; removes from requests buckets.
+        one, except at module scope; removes from requests buckets
         """
 
         if name in fragment.declares and not _in_module_scope(fragment):

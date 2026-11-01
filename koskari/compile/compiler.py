@@ -441,7 +441,8 @@ class ByteCodeFragment:
             # the scope can reach it.
             for name in child.resolution.closure_names(child):
                 if name not in self.declares:
-                    self.request_var(name)
+                    self.request_var(
+                        name, position=child.request_positions.get(name))
 
             if names:
                 self.merge(valfrag)
@@ -481,7 +482,8 @@ class ByteCodeFragment:
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
             for name in child.resolution.closure_names(child):
                 if name not in self.declares:
-                    self.request_var(name)
+                    self.request_var(
+                        name, position=child.request_positions.get(name))
 
             self.instruction(OpCode.PUSH_COLLECT, nspec)
             if child.marked:
