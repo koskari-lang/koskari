@@ -246,9 +246,9 @@ Consumers do their last step only:
   running frame rather than acquiring one, and is the one arm outside
   the core.
 - The Python entries build the coroutine (E).
-- Yielding code from either boundary goes under a GEN through
-  `KosAsyncGen_NewFromFrame`, its tag kept, so a generator's frame
-  returns to the cache at exhaustion.
+- Yielding code from either boundary becomes a generator's resting
+  span through `KosAsyncGen_NewFromFrame`, its tag kept, so a
+  generator's frame returns to the cache at exhaustion.
 
 A cached frame's namespace is reset to the template at cache time
 (`KosNamespace_ResetToTemplate`: raw slots NULL, template refs kept),

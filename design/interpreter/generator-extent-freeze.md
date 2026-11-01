@@ -29,7 +29,8 @@ install (`dynchain.c`). Two kinds have a body. PARAM: the freeze
 restores the cells it displaced, innermost first; the install re-enters
 them outermost first over the table as it is at that resume, so the
 record each node keeps of what sits beneath it is current. A failed
-install restores what it had re-entered and the GEN stays frozen.
+install restores what it had re-entered and the span stays resting in
+the generator's state.
 
 TRY and FINALLY are the same shape over the thread's handler-visible
 exception (`sys.exc_info`). A region that consumed a raise has its

@@ -884,8 +884,9 @@ lifecycle vocabulary and a two-phase transit model: **handle** then **unwind**
 - **unwind(node, event)** -- Leave the extent semantically; event records *why*.
   Used for after-thunks, teardown, and walking the chain during transits.
 - **pop(node)** -- Structural unlink (usually after unwind).
-- **free(node)** -- Destroy storage when ownership allows (generator nodes may
-  defer until the generator object dies).
+- **free(node)** -- Destroy storage. The chain frees every node it holds,
+  the generator node included; a span a yield has taken off the chain is
+  the generator object's to free.
 
 ### 5.2 Construct entry
 
@@ -935,8 +936,9 @@ There is no single unwind entry. Four walks, each over the running context, tear
 | SHIFT | handle(SHIFT) offered to each node while locating the nearest matching prompt, in one walk; prompt consumes; generator node denies crossing | the capture walk in `kos_shift_capture` |
 
 **YIELD details:** The span from dyn_top down to the GEN leaves the live
-chain into the GEN's active slot with its open extents intact (no `finally`,
-no `__exit__` runs at a yield; they return with the next install). **Top-level**
+chain into the generator object's state with its open extents intact (no
+`finally`, no `__exit__` runs at a yield; they return with the next install);
+the GEN leaves the chain with it and rests in the same state. **Top-level**
 generator (a GEN at the chain root): suspend and return the yield value.
 **Flattened** iterator stepping (**NEXT** / **FOREACH** / **YIELD_FROM**
 node, `KosDynGen_IS_FLATTENED`): **`op_YIELD`** runs the freeze and the
@@ -949,9 +951,10 @@ RAISE transit), not a separate inbound channel.
 
 ### 5.7 Generator node
 
-`KOS_DYN_GEN` marks the generator node. It is pushed when a generator or coroutine is **installed** (e.g. when Python steps a Koskari generator via `send`/`throw`); the frame's parent is then the GEN node.
+`KOS_DYN_GEN` marks a generator's span on the chain while it is **installed** (when Python steps a Koskari generator via `send`/`throw`, or a Koskari consumer steps it on its own chain); the generator's root frame has the GEN as its parent, and the GEN's parent is the consumer's top or NULL at the context root. The node is a marker: it names the generator object, borrowed, and the object's state record. Everything the generator keeps between steps lives in that record on the object: the resting span, its bottom frame, the frame count and consumer depth the span is numbered for, the two register snapshots of the flattened step cycle, and the started, installs and busy flags. The node itself rests there between installs too, so a step reuses it rather than the freelist. A generator object is created with its unstarted frame alone as the span; the first install creates the node.
 
-- **YIELD**: no node is offered the event. **`kos_dyn_find_gen`** walks outward from the running frame to its GEN, and **`eval_event_yield`** freezes it through **`kos_dyn_gen_freeze`**: the span from dyn_top down to the GEN is stored in the GEN's active slot, the GEN's parent becomes dyn_top, and the live registers retarget to it. Resumption is via **`revive_yield`**, which pushes **`send_val`** onto the stack and continues at the next instruction.
+- **YIELD**: no node is offered the event. **`kos_dyn_find_gen`** walks outward from the running frame to its GEN, and **`eval_event_yield`** freezes it through **`kos_dyn_gen_freeze`**: the span from dyn_top down to the generator's root frame leaves the chain into the object's state, the GEN unlinks and rests there, the GEN's old parent becomes dyn_top, and the live registers retarget to it. Resumption is via **`revive_yield`**, which pushes **`send_val`** onto the stack and continues at the next instruction.
+- **Lifetime**: an installed GEN is the chain's, freed with it like any other node; a chain free that reaches a GEN ends the step in flight and clears the object's busy flag. The borrowed object is alive for as long as the node is installed: the record stepping it (a for-each request, a next request's resume, a yield-from delegate slot, a native frame's record, a Python adapter) sits below the node on the chain or releases its context before the object, and the object clears its own context in its dealloc. The node holds no reference, so a generator dropped by Python dies at its last reference and its close runs there, as CPython's finalizer does; the collector is involved only when user references form a cycle.
 
 Whether control returns to the caller depends on evaluator flattening:
 - In the regular case (a GEN at the chain root), `kos_yield_deliver` runs **`eval_event_yield`**, which freezes, calls **`KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD)`**, marks the result terminal, and returns `EVAL_YIELD(val)`; the caller resumes via **`revive_yield`**.
@@ -974,8 +977,8 @@ Whether control returns to the caller depends on evaluator flattening:
   phase's kind on the frame; the delivery step runs it. May **handle** for
   delegation.
 - **Generator node (`KOS_DYN_GEN`)**: intercepts RETURN/RAISE, and is
-  the node a YIELD freezes, as documented in §5.7; **denies** SHIFT across the generator node. The generator object
-  owns the node; the chain borrows it during execution.
+  the node a YIELD freezes, as documented in §5.7; **denies** SHIFT across the generator node. The chain owns the
+  node while it is installed; the node borrows the generator object.
 
 **Boundaries:** When a rule would be violated, the responsible node **denies**
 in **handle** (e.g. SHIFT at GEN). **BREAK** / **CONTINUE** targeting fails in
@@ -1308,14 +1311,15 @@ sees a half-bound frame. The frame is ready for
 `kos_dyn_push_ready_frame`: parent NULL, depth 1, pc at the code's
 entry, stack empty. What it becomes is the caller's last step: pushed
 (the call core, `KosFunction_Install`), swapped for the live frame (a
-tail call), held by a `KosCoroutine` (the Python entries), or parented
-under a GEN (`KosAsyncGen_NewFromFrame`) when the code yields.
+tail call), held by a `KosCoroutine` (the Python entries), or held as
+the resting span of a new `AsyncGenerator` (`KosAsyncGen_NewFromFrame`)
+when the code yields.
 
 | Path | What is pushed where | Threads or bounces |
 | ---- | ---------------- | ------------------ |
 | **Koskari function, plain call** | The ready frame above the caller; the caller's return address is its own saved pc. A simple call with its arguments in the window (`kos_call_simple_install` in the CALL_FAST handlers, the window arm of `kos_call_invoke_impl`, `kos_call_invoke_self_steal` for an out-of-band receiver) steal-binds them off the block (`KosFunction_ReadyFrameBlock`); every other shape binds from the vector in `KosFunction_Install` (`KosFunction_ReadyFrameVector`). | Threads into the callee's first instruction. Bounces only when the eval breaker is up (`kos_call_installed`, §1.6). |
 | **Koskari function, tail call** | Extents above the live frame are torn down first. A self-tail at simple arity rebinds the live namespace in place; any other tail call swaps the callee's ready frame, steal-bound from the window at the install arity and bound from the vector otherwise, for the live frame (`kos_dyn_swap_frame_for_tail`), which goes to its own function's cache. | Threads, the same cooperation point. |
-| **Koskari generator function** | No frame on the chain: the ready frame goes under a new GEN (`KosAsyncGen_NewFromFrame`) and the `AsyncGenerator` is the call's value on the caller's block. The frame keeps its tag and returns to the cache at exhaustion. The generator check runs ahead of every install arm. | Threads. |
+| **Koskari generator function** | No frame on the chain: the ready frame becomes the resting span of a new `AsyncGenerator` (`KosAsyncGen_NewFromFrame`), which is the call's value on the caller's block; the GEN node appears at the first install. The frame keeps its tag and returns to the cache at exhaustion. The generator check runs ahead of every install arm. | Threads. |
 | **Python callable, sync result** | The result on the caller's block. A future is pushed as a plain value; only an explicit `AWAIT` awaits it. | Threads. |
 | **Python callable, awaitable result** | The eager step runs `send(None)` once. Immediate completion pushes the value; a yield stores the iterator on the context. | Immediate completion threads. A yield is not a bounce: `koskari_eval` returns `AWAIT`, the coroutine yields to the event loop, and the revive delivers the awaited value through the Python resume slot into the prologue (§8.1). |
 | **Native KosCallable** (`partial`, `demand`, the koscallable natives) | The window is spilled so the legacy steal-first ordering holds, then `KosContext_Call` resolves the call suite and runs the install slot (§7.1, §7.2). | Threads when the install left no resume set and no goal active. Bounces when it set a resume or pushed a transfer goal, since the prologue is where those are delivered. |
@@ -1655,7 +1659,7 @@ Tests: `TestDelimitedTransferNested` in `tests/compile/specials/test_continuatio
 ### 9.6 Scenario: YIELD Suspend and Resume
 
 1. Generator is running; frame's parent is GEN. Plain `YIELD` or `YIELD_FROM` returns **`EVAL_YIELD(val)`** from the opcode.
-2. **`op_YIELD`** tails into **`kos_yield_deliver`**, which asks **`kos_dyn_find_gen`** for the frame's GEN and runs **`eval_event_yield`** → **`kos_dyn_gen_freeze`**: the dynchain above the GEN is frozen into it. A flattened GEN (one with a parent) delivers to its consumer and threads on; a root GEN's result is marked terminal and returned as `EVAL_YIELD(val)`.
+2. **`op_YIELD`** tails into **`kos_yield_deliver`**, which asks **`kos_dyn_find_gen`** for the frame's GEN and runs **`eval_event_yield`** → **`kos_dyn_gen_freeze`**: the dynchain above the GEN leaves the chain into the generator object's state, and the GEN rests there with it. A flattened GEN (one with a parent) delivers to its consumer and threads on; a root GEN's result is marked terminal and returned as `EVAL_YIELD(val)`.
 3. If the live frame carries a resume (a for-each step, a next request, a yield-from waiting on its delegate): **`eval_event_yield`** hands the value to it via **`iter_deliver_to_resume`** and ends in **`kos_eval_delivery_done`**: `EVAL_DISPATCH()` when the consumer is a plain bytecode frame, which `op_YIELD` threads into directly, else `EVAL_REPROLOGUE()` -- every consumer hands off uniformly, no external stop. Yield-from's emit kind re-emits the value as its own yield (a fresh YIELD event that freezes the delegating GEN and delivers onward), so nested stacks compose to arbitrary depth. Otherwise (the caller of `koskari_eval` consumes the generator) **`KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD)`** and return `EVAL_YIELD(val)`.
 4. The caller (e.g. Python generator `send`) receives `KOS_RES_YIELD` and `val` in the root case; later calls `koskari_eval(ctx, NULL, send_val, NULL, NULL)`.
 5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
