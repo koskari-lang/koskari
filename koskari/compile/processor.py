@@ -527,7 +527,7 @@ def merge_function_constant_needs(fragment, instructions):
             reso.cpool_merge(fragment, nspec, request_for_write_syms)
 
 
-def fuckup_namespace_spec(nspec):
+def stringify_namespace_spec(nspec):
     """
     The NamespaceSpec with every name munged to a str
 
@@ -542,7 +542,7 @@ def fuckup_namespace_spec(nspec):
         tuple(map(str, nspec.global_syms)))
 
 
-def fuckup_operands(rows):
+def stringify_operands(rows):
     """
     The rows with every variable operand and inline scope's names
     lowered to their final forms, which is mostly str conversion from
@@ -558,10 +558,10 @@ def fuckup_operands(rows):
             nspec, names = arg[0], arg[1]
             if names is not None:
                 names = tuple(map(str, names))
-            arg = (fuckup_namespace_spec(nspec), names, *arg[2:])
+            arg = (stringify_namespace_spec(nspec), names, *arg[2:])
 
         elif op == OpCode.PUSH_COLLECT:
-            arg = fuckup_namespace_spec(arg)
+            arg = stringify_namespace_spec(arg)
 
         elif op.style == OpStyle.VAR:
             arg = str(arg)
@@ -596,7 +596,7 @@ class ByteCodeProcessor:
         """
 
         self.fragment = fragment
-        self.instructions = fuckup_operands(fragment.instructions)
+        self.instructions = stringify_operands(fragment.instructions)
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction
@@ -1885,7 +1885,7 @@ class ByteCodeProcessor:
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
         self.cpool_scan_merge()
-        self.base_nspec = fuckup_namespace_spec(
+        self.base_nspec = stringify_namespace_spec(
             self.fragment.resolution.build_namespace_spec(self.fragment))
 
         if compiler.convert_fast_enabled and function_body:

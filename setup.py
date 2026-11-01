@@ -319,8 +319,8 @@ class kos_build_py(build_py):
         # build_lib directory we'll use below
         super().run()
 
-        # the fact that pyproject.toml cannot do this, even as the vaunted
-        # next generation of python packaging, is a goddamned joke.
+        # pyproject.toml has no way to install a .pth file, so setup.py
+        # copies it into the build
         self.copy_file('koskari.pth', self.build_lib, preserve_mode=False)
 
 
