@@ -47,7 +47,7 @@ From a repository checkout:
 make venv          # creates .venv and installs koskari (editable, with repl extra)
 make venv-koslife  # optional: adds the koslife demo
 uv run koskari     # interactive REPL
-uv run koskari hello.ki
+uv run koskari examples/hello.ki
 ```
 
 ### Install
