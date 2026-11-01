@@ -31,8 +31,7 @@ import unittest
 
 import pytest
 
-from koskari.importer import (
-    KoskariPathFinder, import_module_async, install, uninstall)
+from koskari.importer import import_module_async, install, uninstall
 
 
 pytestmark = pytest.mark.phase_importer
@@ -59,7 +58,6 @@ class TestImportModuleAsyncFailure(unittest.IsolatedAsyncioTestCase):
         with open(path, 'w', encoding='utf-8') as fh:
             fh.write(source)
         importlib.invalidate_caches()
-        KoskariPathFinder.invalidate_caches()
 
     async def test_failed_load_leaves_no_module_behind(self):
         self.write('(var before 1)\n(raise (RuntimeError "body failed"))\n')

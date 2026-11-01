@@ -535,8 +535,6 @@ class TestKioImporterParity(unittest.TestCase):
 
     def _import(self, modname):
         importlib.invalidate_caches()
-        from koskari.importer import KoskariPathFinder
-        KoskariPathFinder.invalidate_caches()
         return importlib.import_module(modname)
 
 

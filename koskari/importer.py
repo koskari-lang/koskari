@@ -24,68 +24,22 @@ kio files via Python's importlib machinery.
 
 import importlib.util
 import sys
-from importlib.machinery import FileFinder, PathFinder, SourceFileLoader
-from os import getcwd, stat
+from importlib.machinery import (
+    BYTECODE_SUFFIXES, EXTENSION_SUFFIXES, SOURCE_SUFFIXES,
+    ExtensionFileLoader, FileFinder, SourceFileLoader,
+    SourcelessFileLoader)
+from os import stat
 from os.path import basename, exists
 
 
 __all__ = (
-    'KoskariPathFinder',
     'KoskariSourceFileLoader',
-    'KoskariFileFinder',
     'import_module_async',
     'install',
     'source_for_stale_kio',
     'is_installed',
     'uninstall',
 )
-
-
-path_importer_cache = {}
-path_hooks = []
-
-
-class KoskariPathFinder(PathFinder):
-    """
-    A PathFinder subclass that hunts for .ki and .kio files on sys.path.
-
-    Uses module-local path_hooks and path_importer_cache so that koskari
-    finder instances do not pollute Python's own importer cache.
-    """
-
-    # importlib.metadata asks every meta path finder for distributions
-    # and skips a None; the inherited PathFinder scan would report every
-    # distribution a second time on top of Python's own finder
-    find_distributions = None
-
-    @classmethod
-    def invalidate_caches(cls):
-        for finder in path_importer_cache.values():
-            if hasattr(finder, 'invalidate_caches'):
-                finder.invalidate_caches()
-
-    @classmethod
-    def _path_hooks(cls, path):
-        for hook in path_hooks:
-            try:
-                return hook(path)
-            except ImportError:
-                continue
-        return None
-
-    @classmethod
-    def _path_importer_cache(cls, path):
-        if path == '':
-            try:
-                path = getcwd()
-            except FileNotFoundError:
-                return None
-        try:
-            finder = path_importer_cache[path]
-        except KeyError:
-            finder = cls._path_hooks(path)
-            path_importer_cache[path] = finder
-        return finder
 
 
 def source_for_stale_kio(kio_path):
@@ -232,24 +186,36 @@ class KoskariSourceFileLoader(SourceFileLoader):
         return self.exec_module_demand(module)
 
 
-class KoskariFileFinder(FileFinder):
+def _directory_hook():
     """
-    A FileFinder that refuses to return namespace-package specs.
-
-    Python's FileFinder can return a namespace spec when a directory
-    contains no __init__ file, which would shadow our __init__.ki.
-    We override find_spec to return None in that case, allowing the
-    search to continue to the next entry on sys.meta_path.
+    The path hook install registers: a FileFinder for a directory that
+    knows Python's own loaders and then the Koskari one, so a directory
+    is served by one finder and a module name resolves by Python's
+    rules. sys.path order decides between directories, builtins and
+    frozen modules come first, and within a directory Python's suffixes
+    are tried before .kio and then .ki.
     """
 
-    def find_spec(self, fullname, target=None):
-        result = super().find_spec(fullname, target)
-        return result if (result and result.loader) else None
+    return FileFinder.path_hook(
+        (ExtensionFileLoader, EXTENSION_SUFFIXES),
+        (SourceFileLoader, SOURCE_SUFFIXES),
+        (SourcelessFileLoader, BYTECODE_SUFFIXES),
+        (KoskariSourceFileLoader, ['.kio', '.ki']))
 
 
-path_hooks.append(
-    KoskariFileFinder.path_hook((KoskariSourceFileLoader, ('.kio', '.ki')))
-)
+_hook = None
+
+
+def _python_directory_hook_index():
+    """
+    The position of Python's own FileFinder hook in sys.path_hooks, or
+    the end when it is absent
+    """
+
+    for i, hook in enumerate(sys.path_hooks):
+        if getattr(hook, '__name__', '') == 'path_hook_for_FileFinder':
+            return i
+    return len(sys.path_hooks)
 
 
 def _importer_suppressed():
@@ -262,28 +228,26 @@ def _importer_suppressed():
 
 def is_installed():
     """
-    Return True if KoskariPathFinder is currently in sys.meta_path.
-
-    KoskariPathFinder is inserted as a class (like Python's own PathFinder),
-    so we check for the class object itself, not instances of it.
+    Return True if the Koskari directory hook is in sys.path_hooks.
 
     :return: bool
     """
 
-    return KoskariPathFinder in sys.meta_path
+    return _hook is not None and _hook in sys.path_hooks
 
 
 def install():
     """
-    Insert KoskariPathFinder at the front of sys.meta_path.
-
-    KoskariPathFinder is inserted as a class object, following the same
-    convention as Python's own PathFinder.  Calling install() when the
-    finder is already present is a no-op.
+    Register the Koskari directory hook on sys.path_hooks, just ahead
+    of Python's own FileFinder hook, and drop the cached per-directory
+    finders so every directory is re-resolved through it. Calling
+    install() when the hook is already present is a no-op.
 
     Suppressed when the environment variable KOSKARI_NOIMPORTER is set to a
     non-zero value, or when the -X KOSKARI_NOIMPORTER Python xoption is set.
     """
+
+    global _hook
 
     if _importer_suppressed():
         return
@@ -291,19 +255,26 @@ def install():
     if is_installed():
         return
 
-    sys.meta_path.insert(0, KoskariPathFinder)
+    if _hook is None:
+        _hook = _directory_hook()
+
+    sys.path_hooks.insert(_python_directory_hook_index(), _hook)
+    sys.path_importer_cache.clear()
 
 
 def uninstall():
     """
-    Remove KoskariPathFinder from sys.meta_path.
+    Remove the Koskari directory hook from sys.path_hooks and drop the
+    cached per-directory finders built through it.
 
-    Calling uninstall() when the finder is not present is a no-op.
+    Calling uninstall() when the hook is not present is a no-op.
     """
 
-    sys.meta_path[:] = [
-        f for f in sys.meta_path if f is not KoskariPathFinder
-    ]
+    if not is_installed():
+        return
+
+    sys.path_hooks[:] = [h for h in sys.path_hooks if h is not _hook]
+    sys.path_importer_cache.clear()
 
 
 async def import_module_async(fullname):
