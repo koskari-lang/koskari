@@ -7,8 +7,8 @@ gains a real test suite and standalone docs).
 ## Why
 
 The concrete goal is a "micro-jenkins": a small, self-hostable job runner that
-can replace a UMB + Jenkins setup at work, while introducing Koskari quietly
-and at low risk. That framing drives every constraint below.
+can stand in for a message-bus-plus-CI setup, and a low-risk place to put
+Koskari to work. That framing drives every constraint below.
 
 Operating assumptions:
 

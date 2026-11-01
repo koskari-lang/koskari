@@ -134,7 +134,7 @@ jobset workload:
     ;; reachable. The destination is the trigger key, and the sub-items are
     ;; the same three flavours kafka uses. This handler returns None, so
     ;; nothing is published back -- a plain event consumer.
-    job umb builds "/topic/VirtualTopic.eng.brew.build.complete":
+    job umb builds "/topic/VirtualTopic.eng.builds.complete":
         config:
             disabled: True
         on-error [err msg]:
