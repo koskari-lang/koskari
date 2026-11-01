@@ -6,6 +6,8 @@ and links to the page that covers it.
 
 ## 0.2.0
 
+In development. Published as weekly `0.2.0.devYYYYMMDD` snapshots.
+
 The binding forms are realigned. Source written for 0.1.0 needs
 migrating. Most old spellings raise errors; two change meaning, because
 both shapes are valid under the new forms: `(define [x] value)` is now a
@@ -55,7 +57,8 @@ the value, and `(class NAME SUPERS body ...)` as an expression now binds
 
 ## 0.1.0
 
-The first public release.
+Published as weekly `0.1.0.devYYYYMMDD` snapshots; no final 0.1.0 was
+released.
 
 - S-expressions and an indentation layout that reads to the same forms:
   a line with more than one element is a call, and a line ending in a

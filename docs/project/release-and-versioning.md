@@ -1,7 +1,7 @@
 # Release and versioning
 
-Koskari 0.1.0 is the first public release, a beta. Versions follow
-`major.minor.patch`. Through the `0.x` series the language surface may
+Koskari is pre-alpha software published as weekly development snapshots;
+no final release has been made yet. Versions follow `major.minor.patch`. Through the `0.x` series the language surface may
 change between minor versions, and the [changelog](../changelog.md)
 records each change for readers before anything else.
 

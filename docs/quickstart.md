@@ -8,9 +8,10 @@ Koskari publishes to PyPI with wheels for Linux and macOS:
 pip install "koskari[repl]"
 ```
 
-The `repl` extra adds syntax highlighting to the REPL. Weekly development
-snapshots also publish as pre-releases; `pip install --pre` selects the
-latest one. To build from a source checkout instead, see
+The `repl` extra adds syntax highlighting to the REPL. Every release so
+far is a weekly development snapshot, a pre-release, so `pip install
+koskari` resolves to the newest one; once a final release exists, `--pre`
+keeps selecting snapshots. To build from a source checkout instead, see
 [Build and test](project/build-test.md).
 
 ## First session

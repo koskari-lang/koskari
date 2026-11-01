@@ -40,9 +40,10 @@ pip install koskari
 pip install "koskari[repl]"   # syntax-highlighted REPL input via prompt_toolkit
 ```
 
-Development snapshots publish as pre-releases; `pip install --pre koskari`
-selects the latest one. Koskari supports CPython 3.9 through 3.14 and ships
-wheels for Linux and macOS.
+Every release so far is a weekly development snapshot, a pre-release, so
+`pip install koskari` resolves to the newest one; once a final release
+exists, `--pre` keeps selecting snapshots. Koskari supports CPython 3.9
+through 3.14 and ships wheels for Linux and macOS.
 
 
 ## Links
