@@ -10,7 +10,12 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
 
 **Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
 `VAR_STORE K` (binds the captured delimited continuation), compiles body with
-`helper_begin`, emits `POP_SHIFT 0`. Calling `K` packs its arguments the way
+`helper_begin`, emits `POP_SHIFT 0`. `K` is a binding in the enclosing scope,
+as a loop variable or a `with` name is: it stays bound after the form, it
+rebinds an existing `K`, and a later `shift` in the slice that reuses the
+name rebinds it again. A handler that invokes its continuation more than
+once therefore takes a name no later `shift` in the slice uses, since each
+shot runs the slice against the same scope. Calling `K` packs its arguments the way
 `return` does: `(k)` resumes with `None`, `(k v)` with `v`, `(k a b)` with the
 tuple `(a, b)`, and a call with keywords, `(k a x: 1)`, with a `values`
 instance over all of them. The resumed slice is the body of `K`: a `return`
@@ -44,4 +49,11 @@ translate them into its own vocabulary, as `koskari.solve` does with
 (reset
   (shift k
     (k "value")))
+
+;; Two shifts in one slice, each shot of k reaching j: distinct names,
+;; since both bind in the same scope
+(reset
+  (#tuple (shift k (#tuple (k 1) (k 2)))
+          (shift j (#tuple (j 10) (j 20)))))
+;; => (((1, 10), (1, 20)), ((2, 10), (2, 20)))
 ```
