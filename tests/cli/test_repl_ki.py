@@ -142,6 +142,35 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('99', out)
 
 
+    async def test_exit_and_quit_names_show_how_to_leave(self):
+        out, err = await self._run_repl(['exit', 'quit'])
+        self.assertEqual(2, out.count('Use (exit), (quit) or Ctrl-D'), out)
+        self.assertNotIn('NameError', err)
+
+
+    async def test_calling_exit_ends_the_session_with_its_status(self):
+        with self.assertRaises(SystemExit) as ctx:
+            await self._run_repl(['(exit 3)', '(print "after")'])
+        self.assertEqual(3, ctx.exception.code)
+
+
+    async def test_calling_quit_ends_the_session(self):
+        with self.assertRaises(SystemExit) as ctx:
+            await self._run_repl(['(quit)'])
+        self.assertIsNone(ctx.exception.code)
+
+
+    async def test_session_keeps_the_modules_own_exit_binding(self):
+        mod = new_module('__main__')
+        init_module(mod, '<string>')
+        await load_module_source_async(
+            mod, '(var exit 7)', detach=False, layout=False)
+        out, err = await self._run_repl(['exit', 'quit'], mod=mod)
+        self.assertIn('7', out)
+        self.assertEqual(1, out.count('Use (exit), (quit) or Ctrl-D'), out)
+        self.assertNotIn('Error', err)
+
+
     async def test_underscore_stores_last_result(self):
         out, _ = await self._run_repl(['(+ 1 2)', '(+ _ 10)'])
         self.assertIn('13', out)

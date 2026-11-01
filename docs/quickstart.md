@@ -40,6 +40,8 @@ A form left open at the end of a line continues on the next, under a
 3
 ```
 
+Leave with `(exit)` or Ctrl-D.
+
 ## A file
 
 Save this as `hello.ki`:
