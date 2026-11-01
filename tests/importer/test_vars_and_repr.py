@@ -22,7 +22,7 @@ from textwrap import dedent
 
 import pytest
 
-from koskari.lib import demand_call, koskari_vars
+from koskari.lib import demand_call, kos_repr, koskari_vars
 from koskari.module import load_module_source_async, new_module
 
 
@@ -158,12 +158,47 @@ class TestNamespaceRepr(VarsCase):
 
 
     async def test_module_namespace(self):
+        """
+        The name, then the bindings as the mapping Python's repr would
+        print for a dict of them
+        """
+
         ns = await self.load("""
         var k 3
+        var xs #[1 2]
         """)
         text = repr(ns)
-        self.assertTrue(text.startswith("<ModuleNamespace varsreprtest"))
-        self.assertIn("k=3", text)
+        self.assertTrue(text.startswith("<ModuleNamespace 'varsreprtest' {"))
+        self.assertTrue(text.endswith("}>"))
+        self.assertIn("'k': 3", text)
+        self.assertIn("'xs': [1, 2]", text)
+
+
+    async def test_module_namespace_kos_repr(self):
+        """
+        The same frame with the name and the bindings as Koskari reprs,
+        the bindings as a Koskari dict literal
+        """
+
+        ns = await self.load("""
+        var k 3
+        var xs #[1 2]
+        var s "text"
+        """)
+        text = kos_repr(ns)
+        self.assertTrue(text.startswith('<ModuleNamespace "varsreprtest" #{'))
+        self.assertTrue(text.endswith("}>"))
+        self.assertIn('"k": 3', text)
+        self.assertIn('"xs": #[1 2]', text)
+        self.assertIn('"s": "text"', text)
+
+
+    async def test_module_namespace_holding_itself(self):
+        ns = await self.load("""
+        var me (vars)
+        """)
+        self.assertIn("'me': <ModuleNamespace ...>", repr(ns))
+        self.assertIn('"me": <ModuleNamespace ...>', kos_repr(ns))
 
 
 # The end.
