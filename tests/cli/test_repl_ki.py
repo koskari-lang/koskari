@@ -191,6 +191,12 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertIn('3', out)
 
 
+    async def test_incomplete_dotted_list_continues_on_next_line(self):
+        out, err = await self._run_repl(["'(a . b", ')'])
+        self.assertNotIn('Error', err)
+        self.assertIn('(a . b)', out)
+
+
     async def test_multiple_expressions_accumulate_state(self):
         out, _ = await self._run_repl(['(var x 5)', '(* x x)'])
         self.assertIn('25', out)

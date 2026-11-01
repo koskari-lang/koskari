@@ -1016,14 +1016,13 @@ class Reader:
 
     def form_eof(self, stream, form):
         """
-        The error for input ending inside an open list
+        The error for input ending inside an open list: EOF at the
+        opener whatever the form's state, since a list that has read
+        its dot, or its dot and its tail, is completed by more input
+        as any open list is. A misplaced dot is an error where it
+        sits, raised by form_dot and the value step, never here.
         """
 
-        if form.state is FORM_TAIL_WANTED:
-            return stream.error("invalid list syntax", stream.position())
-        if form.state is FORM_TAIL_SET:
-            return stream.error("invalid use of dot in list",
-                                form.dot_position)
         return stream.reader_eof(opened_at=form.open.opened_at,
                                  context=f"{form.open.char!r} form")
 

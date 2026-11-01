@@ -72,6 +72,26 @@ class TestReaderEOF(TestCase):
             default_reader.read(source_str("( 1 2 ]", "<t>"))
 
 
+    def test_unclosed_dotted_list_raises_reader_eof(self):
+        """
+        Input ending after the dot, or after the tail value, can still be
+        completed, so it is EOF at the opener and not a dot error
+        """
+
+        for src in ("'(a .", "'(a . b", "(a . b"):
+            with self.assertRaises(ReaderEOF) as ctx:
+                default_reader.read(source_str(src, "<t>"))
+            self.assertNotIsInstance(ctx.exception, ReaderSyntaxError)
+            self.assertEqual((1, len(src) - len(src.lstrip("'"))),
+                             ctx.exception.location, src)
+
+
+    def test_misplaced_dot_stays_syntax_error(self):
+        for src in ("(a . b c)", "(a . . b)", "(. a)"):
+            with self.assertRaises(ReaderSyntaxError):
+                default_reader.read(source_str(src, "<t>"))
+
+
 class TestLayoutReaderEOF(TestCase):
 
     def _reader(self):
