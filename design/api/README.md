@@ -10,6 +10,7 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **defer-coroutine.md**: DeferCoroutine (`defer`) — single-shot await-handle, excluded from implicit auto-await
 - **async-form.md**: **`async`** macro — concurrent fan-out/join on the asyncio loop (`defer` + `create-task` + `gather`; streaming **`each`** variant)
 - **runtime.md**: Runtime system and module loading
+- **repr-detail.md**: Proposal: `kos_repr` with an identity level and a detail level, and the hand-off rule between them
 - **demand-sync-await-violation-at-site.md** (archived): Historical proposal superseded by [archive/demand-evalex-phase1.md](../archive/demand-evalex-phase1.md)
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
 - **inspect-interop-kos-callables.md** (archived): Python `inspect` interop for `KosFunction` / `KosBoundMethod` — see [archive/inspect-interop-kos-callables.md](../archive/inspect-interop-kos-callables.md)
