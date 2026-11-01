@@ -1,7 +1,7 @@
 # date: 2026-09-05
 # sha: 7e939544
 # trace: design/trace/trace-20260904-0851.json
-# extension: /home/siege/koskari/.tox/perf-opcodes/lib64/python3.12/site-packages/koskari/lib.cpython-312-x86_64-linux-gnu.so
+# extension: lib.cpython-312-x86_64-linux-gnu.so
 # clock: cycle-counter
 # ns_per_tick: 0.40075546038282245
 # step_overhead_ns: 7.213598286890804
