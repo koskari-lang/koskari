@@ -98,22 +98,15 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 
   KOS_DYNF_NONE        - No flags set
   KOS_DYNF_CLONED      - Node was cloned for continuation capture
-  KOS_DYNF_GEN_STARTED - GEN: the bootstrap install has entered the
-                         frame once; a resting GEN resumes a yield
-                         rather than entering fresh code
   KOS_DYNF_INVOCATION  - PROMPT: instance created by a k-invocation
                          (graft instantiation or in-place invoke);
                          no POP_PROMPT instruction pairs with it, so
                          delivery routes through the paired DELIM
-  KOS_DYNF_GEN_INSTALLS - GEN: a node of the frozen span holds an
-                          effect the install puts back
 */
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,
-  KOS_DYNF_GEN_STARTED = 0x04,
   KOS_DYNF_INVOCATION  = 0x08,
-  KOS_DYNF_GEN_INSTALLS = 0x20,
 } KosDynFlags;
 
 
@@ -188,8 +181,8 @@ typedef enum KosDynWindPhase {
    A snapshot of the live registers at one chain top: the frame, the
    owning stack slot, and the namespace that a resync would derive by
    walking from top. Borrowed pointers, valid while the chain below
-   top is unchanged. The GEN node keeps two, one per end of the
-   flattened step cycle (see KosDynGen_HOST / KosDynGen_FROZEN).
+   top is unchanged. A generator's state keeps two, one per end of the
+   flattened step cycle (see KosGenState).
 */
 typedef struct KosLiveRegs {
   struct KosDynNode *top;
@@ -197,6 +190,46 @@ typedef struct KosLiveRegs {
   KosSegment **block;
   PyObject *ns;
 } KosLiveRegs;
+
+
+/**
+   A generator's state between installs, held by the generator object:
+   the span resting out of any chain and what the next install needs
+   to put it back. The span is the unstarted frame until the first
+   install, then the chain from the yield's top down to the bottom
+   node, the generator's root frame, whose parent is NULL while it
+   rests. A GEN node marks the span on a chain only while it is
+   installed, and refers back here; between installs it rests here
+   too, with its reference to the owner dropped, so the next install
+   reuses it.
+
+   host is the consumer's registers taken at install, restored at the
+   freeze while the GEN's parent is still host.top. frozen is the
+   generator's registers taken at the freeze, applied at install while
+   active is still frozen.top. A guard mismatch falls back to the chain
+   rebuild.
+*/
+typedef struct KosGenState {
+  struct KosDynNode *active;   /* the resting span's top; NULL while
+                                  installed or spent */
+  struct KosDynNode *bottom;   /* the span's bottom node, the root frame */
+  struct KosDynNode *node;     /* the GEN node resting between installs,
+                                  or NULL */
+  uint16_t nframes;            /* frames in the span, counted at the
+                                  freeze for the install's room check */
+  uint16_t base_depth;         /* consumer depth the span's frames are
+                                  numbered for; UINT16_MAX until the
+                                  first frozen install */
+  uint8_t started;             /* the first install has entered the frame;
+                                  a resting span resumes a yield rather
+                                  than entering fresh code */
+  uint8_t installs;            /* a node of the resting span holds an
+                                  effect the install puts back */
+  uint8_t busy;                /* a step is in flight, from the drive's
+                                  start to the owner's finish */
+  KosLiveRegs host;
+  KosLiveRegs frozen;
+} KosGenState;
 
 
 /**
@@ -598,28 +631,13 @@ struct KosDynNode {
       uint32_t prompt_node_id;
     } shift;
     struct {
-      /* The owning generator object, borrowed, or NULL. The node has
-         two holders, the owner and the chain it is installed on from
-         an install to the freeze or the teardown; each clears its link
-         (this field, the parent) when it lets go, and the second to
-         let go frees the node. */
+      /* The generator object whose span this node marks, a reference
+         of the node's own: the object outlives every chain its span is
+         installed on. The node exists from an install to the freeze
+         or the teardown, and the chain frees it like any other. */
       PyObject *owner;
-      /* the frozen span's top while frozen; NULL while running */
-      struct KosDynNode *active;
-      /* frames in the frozen span, counted at the freeze for the
-         install's room check */
-      uint16_t nframes;
-      /* consumer depth the span's frames are numbered for; UINT16_MAX
-         until the first frozen install */
-      uint16_t base_depth;
-      /* Register snapshots for the flattened step cycle. host is the
-         consumer's registers taken at install, restored at freeze while
-         the GEN's parent is still host.top. frozen is the generator's
-         registers taken at freeze, applied at install while active is
-         still frozen.top. A guard mismatch falls back to the chain
-         rebuild. */
-      KosLiveRegs host;
-      KosLiveRegs frozen;
+      /* the owner's state record, borrowed; valid while owner is */
+      KosGenState *state;
     } gen;
   } u;
 
@@ -1133,84 +1151,92 @@ int kos_dyn_teardown_extents_to_frame(KosContext *ctx, KosDynFrame *frame);
 
 
 /**
-   Create a generator node.  The generator object owns the node;
-   the dynchain borrows it during execution.  Caller links the frame under
-   it (frame->parent = gen) before passing the frame to KosContext_New.
-
-   :param owner: owning generator object (borrowed) or NULL
-
-   :return: new GEN node with parent=NULL, or NULL on error
+   Ready a generator's state record for an unstarted generator resting
+   on frame: the span is the frame alone, its parent NULL.
 */
-KosDynGen *kos_dyngen_new(PyObject *owner);
+void kos_gen_state_init(KosGenState *state, KosDynFrame *frame);
 
 
 /**
-   Free a GEN node. The owner calls it once every chain has let go: the
-   span is frozen into the node, spent, or the owner has freed the
-   chain of its own context first. An owner letting go of a node still
-   installed clears the owner field instead, and the chain's let-go
-   frees the node.
+   Free what a generator's state holds: the resting span and the
+   resting GEN node. A span installed on a chain is that chain's.
+*/
+void kos_gen_state_clear(KosGenState *state);
+
+
+/**
+   The GEN node marking owner's span on a chain, with a reference to
+   owner of its own: the one resting in the state, or a new one. The
+   install links it under the consumer and the span above it.
+
+   :param owner: the generator object
+   :param state: the owner's state record (borrowed)
+
+   :return: a GEN node with parent=NULL, or NULL on error
+*/
+KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state);
+
+
+/**
+   Rest a GEN node in its state once the span has left the chain: the
+   reference to the owner is dropped and the node waits for the next
+   install. The freeze and a refused install call it.
+*/
+void kos_dyngen_rest(KosDynGen *gen);
+
+
+/**
+   Free a GEN node: drop its reference to the owner and return the node
+   to the freelist. The chain free reaches it through kos_dynnode_free,
+   where a node freed with its chain is the end of a step in flight;
+   the state's clear frees a resting one.
 */
 void kos_dyngen_free(KosDynGen *gen);
 
 
 /**
-   The chain's let-go of a GEN node, at the exhaustion teardown, the
-   flattened finish, and the chain free: clear the parent link, and
-   free a node whose owner has already let go.
-*/
-void kos_dyngen_let_go(KosDynGen *gen);
-
-
-/**
    Finish a flattened generator whose frame has already left the chain
-   and which is now dyn_top: mark its owner closed, unlink it, and drop
-   its chain references. The raise walk and a transfer's leave both
-   cross a flattened generator this way. PyErr is preserved across it.
+   and which is now dyn_top: unlink and free its GEN node, then mark
+   its owner closed. The raise walk and a transfer's leave both cross a
+   flattened generator this way. PyErr is preserved across it.
 */
 void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen);
 
 
 /**
-   Install GEN's active frame onto the context's chain for execution.
-
-   Takes frame from GEN.active, links GEN and frame into the chain
-   (caller_chain -> GEN -> frame), pushes Py_None for YIELD resume, and
-   sets frame as the execution top. Requires GEN.active != NULL.
+   Install a resting, started span onto the context's chain: a new GEN
+   node under the chain's top, the span above it, the live registers
+   retargeted to the span's top, and Py_None pushed as the suspended
+   yield's placeholder. Requires state->active and state->started.
 
    :param ctx: execution context (may have empty or non-empty chain)
-   :param gen: GEN node with active frame set
+   :param owner: the generator object the GEN node refers to
+   :param state: the owner's state record
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen);
+int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
 
 
 /**
-   Bootstrap install: graft GEN and the chain ending at it, headed by
-   chain_head, onto the consumer ctx. The caller has taken chain_head
-   out of its resting place (the GEN's active slot, or a context's
-   dyn top).
+   Bootstrap install: graft the chain headed by chain_head onto the
+   consumer ctx. A chain whose root is a bare frame, the unstarted
+   generator's, gets a new GEN node under it and marks the state
+   started; a chain already rooted on a GEN node, one in flight moved
+   from a context's dyn top, is relinked under the consumer. The
+   caller has taken chain_head out of its resting place.
 */
 int kos_dyn_gen_install_bootstrap(
     KosContext *ctx,
-    KosDynGen *gen,
+    PyObject *owner,
+    KosGenState *state,
     KosDynNode *chain_head);
 
 
 /**
-   True when GEN should be passed to kos_dyn_gen_install before the next
-   koskari_eval on eval_ctx: GEN.active holds the chain but GEN is not
-   under eval_ctx->dyn_top (yield freeze, or first run while still linked).
-
-   If GEN.active is NULL, returns 0 (already installed or exhausted).
-*/
-int kos_dyn_gen_frozen_needs_install(KosContext *ctx, KosDynGen *gen);
-
-
-/**
    Unwind an exhausted gen from the chain. Call when gen's frame returns
-   (parent is GEN). Frees frame and restores consumer.
+   (parent is GEN). Frees the frame and the GEN node, and restores the
+   consumer.
 */
 int kos_dyn_teardown_gen_exhausted(KosContext *ctx);
 
@@ -1826,14 +1852,14 @@ KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 /**
   Freeze gen at a yield: the span from dyn_top down to gen leaves the
-  live chain into gen's active slot, gen's parent link is cleared and
-  dyn_top returns to what that parent was, and the live registers
-  retarget to it. A yield is not an unwind: no node
-  between the frame and its GEN acts on it (no finally, no __exit__),
-  so the open extents freeze with the chain and return on the next
-  install. A node whose effect lives outside itself takes it out
-  (kos_dyn_extent_freeze) and puts it back at the install. gen is the
-  node kos_dyn_find_gen returned for the running frame.
+  live chain into the owner's state record, gen is unlinked and freed,
+  dyn_top returns to what gen's parent was, and the live registers
+  retarget to it. A yield is not an unwind: no node between the frame
+  and its GEN acts on it (no finally, no __exit__), so the open extents
+  freeze with the chain and return on the next install. A node whose
+  effect lives outside itself takes it out (kos_dyn_extent_freeze) and
+  puts it back at the install. gen is the node kos_dyn_find_gen
+  returned for the running frame.
 
   Callers: eval.c eval_event_yield.
 
@@ -2073,11 +2099,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
-#define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
-#define KosDynGen_NFRAMES(n)      (((KosDynNode *)(n))->u.gen.nframes)
-#define KosDynGen_BASE_DEPTH(n)   (((KosDynNode *)(n))->u.gen.base_depth)
-#define KosDynGen_HOST(n)         (&((KosDynNode *)(n))->u.gen.host)
-#define KosDynGen_FROZEN(n)       (&((KosDynNode *)(n))->u.gen.frozen)
+#define KosDynGen_STATE(n)        (((KosDynNode *)(n))->u.gen.state)
 
 /** a GEN with a parent is flattened: its yields deliver to a consumer
     on this chain; a GEN at the chain root surfaces them to an adapter */

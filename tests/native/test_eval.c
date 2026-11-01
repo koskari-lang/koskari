@@ -67,16 +67,18 @@ static PyObject *make_instr_int(int op, int arg) {
 }
 
 
-static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
+static int install_frozen_gen(KosContext *ctx, PyObject *agen) {
 
+    KosGenState *state;
     int r;
 
-    KosContext_EvalEnter(ctx, NULL);
-    if (! gen || ! kos_dyn_gen_frozen_needs_install(ctx, gen)) {
-        KosContext_EvalExit(ctx);
+    if (! agen)
         return 0;
-    }
-    r = kos_dyn_gen_install(ctx, gen);
+    state = &((KosPyAsyncGen *) agen)->state;
+    if (! state->active)
+        return 0;
+    KosContext_EvalEnter(ctx, NULL);
+    r = kos_dyn_gen_install(ctx, agen, state);
     KosContext_EvalExit(ctx);
     return r;
 }
@@ -1756,13 +1758,13 @@ static int test_eval_build_function_no_defaults(void) {
   For yielding code (KosCode_YIELDS), the frame is created under a KosDynGen
   (Generator node) with owner NULL (standalone). After YIELD freeze, the
   caller must install the frozen generator before next koskari_eval;
-  if gen_out_opt is non-NULL, *gen_out_opt receives the KosDynGen * for that.
+  if agen_out_opt is non-NULL, *agen_out_opt receives the generator wrapper.
 */
 static int make_simple_ctx(
     PyObject *instr,
     PyObject **code_obj_out,
     KosContext **ctx_out,
-    KosDynGen **gen_out_opt)
+    PyObject **agen_out_opt)
 {
     PyObject *nspec = create_test_nspec();
     if (! nspec) return -1;
@@ -1774,41 +1776,50 @@ static int make_simple_ctx(
     PyObject *ns = PyDict_New();
     if (! ns) { Py_DECREF(*code_obj_out); return -1; }
 
-    KosDynFrame *frame;
+    if (agen_out_opt)
+        *agen_out_opt = NULL;
+
     if (KosCode_YIELDS((KosCode *) *code_obj_out)) {
-        KosDynGen *gen = kos_dyngen_new(NULL);
-        if (! gen) { Py_DECREF(*code_obj_out); return -1; }
-        frame = kos_dynframe_new(
-            (KosDynNode *) gen, (KosCode *) *code_obj_out, ns);
-        if (! frame) {
-            kos_dyngen_free(gen);
+        /* a generator: its wrapper holds the resting frame, and a
+           bootstrap install by hand puts it on the context's chain
+           under a GEN node, as the first drive from Python would */
+        PyObject *agen = KosAsyncGen_NewFromCodeAndNs(
+            (KosCode *) *code_obj_out, ns);
+        KosGenState *state;
+        int rc;
+
+        if (! agen) { Py_DECREF(*code_obj_out); return -1; }
+        state = &((KosPyAsyncGen *) agen)->state;
+
+        *ctx_out = KosContext_New(NULL, kos_tls_current());
+        if (! *ctx_out) {
+            Py_DECREF(agen);
             Py_DECREF(*code_obj_out);
             return -1;
         }
-        /* the frame under the gen becomes the context's chain below,
-           a bootstrap install by hand; the node has no owner, so the
-           chain frees it when it lets go, at the generator's exhaustion
-           or with the context */
-        if (gen_out_opt)
-            *gen_out_opt = gen;
+        KosContext_EvalEnter(*ctx_out, NULL);
+        rc = kos_dyn_gen_install_bootstrap(*ctx_out, agen, state,
+                                           state->active);
+        KosContext_EvalExit(*ctx_out);
+        if (rc < 0) {
+            Py_DECREF(*ctx_out);
+            Py_DECREF(agen);
+            Py_DECREF(*code_obj_out);
+            return -1;
+        }
+        state->active = NULL;
+        if (agen_out_opt)
+            *agen_out_opt = agen;
+        else
+            Py_DECREF(agen);
+        return 0;
     }
-    else {
-        frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns);
-        if (gen_out_opt)
-            *gen_out_opt = NULL;
-    }
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns);
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
     *ctx_out = KosContext_New(frame, kos_tls_current());
-    if (! *ctx_out) {
-        kos_dynframe_free(frame);
-        if (gen_out_opt && *gen_out_opt) {
-            kos_dyngen_free(*gen_out_opt);
-            *gen_out_opt = NULL;
-        }
-        Py_DECREF(*code_obj_out);
-        return -1;
-    }
+    if (! *ctx_out) { Py_DECREF(*code_obj_out); return -1; }
     return 0;
 }
 
@@ -1816,7 +1827,7 @@ static int make_simple_ctx(
 /* === Test: YIELD empty resume (NULL/NULL) => RETURN with next CONST === */
 /*
   These yield tests use the GEN-based path: make_simple_ctx builds a context
-  with a KosDynGen (owner NULL). On YIELD, walk_handle_yield freezes the GEN
+  over an async generator wrapper. On YIELD, walk_handle_yield freezes the GEN
   and sets SUSPENSION_EVENT; before the next koskari_eval, kos_dyn_gen_install
   restores the chain; revive_yield pops the install placeholder and pushes
   the resume value (Py_None here), then execution continues.
@@ -1844,7 +1855,7 @@ static int test_eval_yield_empty_resume(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    KosDynGen *dyn_gen = NULL;
+    PyObject *dyn_gen = NULL;
     int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
@@ -1864,6 +1875,7 @@ static int test_eval_yield_empty_resume(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1891,7 +1903,7 @@ static int test_eval_yield_send_resume(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    KosDynGen *dyn_gen = NULL;
+    PyObject *dyn_gen = NULL;
     int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
@@ -1912,6 +1924,7 @@ static int test_eval_yield_send_resume(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2096,7 +2109,7 @@ static int test_eval_yield_throw_resume(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    KosDynGen *dyn_gen = NULL;
+    PyObject *dyn_gen = NULL;
     int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
@@ -2120,6 +2133,7 @@ static int test_eval_yield_throw_resume(void) {
     PyErr_Clear();
 
     Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2170,7 +2184,7 @@ static int test_eval_yield_throw_caught(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    KosDynGen *dyn_gen = NULL;
+    PyObject *dyn_gen = NULL;
     int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
@@ -2196,6 +2210,7 @@ static int test_eval_yield_throw_caught(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2245,7 +2260,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    KosDynGen *dyn_gen = NULL;
+    PyObject *dyn_gen = NULL;
     int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
@@ -2259,6 +2274,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
     Py_XDECREF(ev.val);
     Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -2281,7 +2297,6 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
     PyObject *ns;
     PyObject *agen_obj;
     KosPyAsyncGen *agen;
-    KosDynGen *gen;
     PyObject *step;
     PyObject *got;
     PyObject *typ, *exc, *tb;
@@ -2304,8 +2319,7 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
     TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
 
     agen = (KosPyAsyncGen *) agen_obj;
-    gen = (KosDynGen *) agen->gen;
-    TEST_ASSERT_NOT_NULL(gen, "agen owns gen");
+    TEST_ASSERT_NOT_NULL(agen->state.active, "the frame rests in the state");
 
     /* the generator has no context until a drive from Python; step it
        as a Python caller would, through __anext__'s awaitable */
@@ -2329,12 +2343,12 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(yielded), 42, "yielded 42");
     Py_DECREF(yielded);
 
-    TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE(gen), "gen frozen with active chain");
+    TEST_ASSERT_NOT_NULL(agen->state.active, "the span rests after the yield");
     TEST_ASSERT_NOT_NULL(agen->ctx, "the drive created the context");
     TEST_ASSERT_NULL(KosContext_DYN_TOP(agen->ctx), "ctx dyn_top cleared on freeze");
 
     KosPyAsyncGen_Teardown(agen);
-    TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+    TEST_ASSERT_NULL(agen->state.active, "teardown freed the span");
     TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
 
     Py_DECREF(agen_obj);
@@ -2359,8 +2373,8 @@ static int test_gen_return_into_frame_without_resume_is_fatal(void) {
   PyObject *code_obj;
   PyObject *ns;
   PyObject *bottom_ns;
-  KosDynGen *gen;
-  KosDynFrame *frame;
+  PyObject *agen_obj;
+  KosGenState *state;
   KosDynFrame *bottom;
   KosContext *ctx;
   KosOpResult ev;
@@ -2382,10 +2396,9 @@ static int test_gen_return_into_frame_without_resume_is_fatal(void) {
   ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-  gen = kos_dyngen_new(NULL);
-  TEST_ASSERT_NOT_NULL(gen, "create gen");
-  frame = kos_dynframe_new((KosDynNode *) gen, (KosCode *) code_obj, ns);
-  TEST_ASSERT_NOT_NULL(frame, "create the generator's frame");
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  TEST_ASSERT_NOT_NULL(agen_obj, "create the generator");
+  state = &((KosPyAsyncGen *) agen_obj)->state;
 
   ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
@@ -2396,9 +2409,11 @@ static int test_gen_return_into_frame_without_resume_is_fatal(void) {
   KosContext_EvalEnter(ctx, NULL);
   bottom = kos_dyn_push_frame(ctx, NULL, bottom_ns);
   rc = bottom
-      ? kos_dyn_gen_install_bootstrap(ctx, gen, (KosDynNode *) frame)
+      ? kos_dyn_gen_install_bootstrap(ctx, agen_obj, state, state->active)
       : -1;
   KosContext_EvalExit(ctx);
+  if (rc == 0)
+    state->active = NULL;
   TEST_ASSERT(! PyErr_Occurred(), "the setup raised no exception");
   TEST_ASSERT_NOT_NULL(bottom, "push code-less frame");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(bottom),
@@ -2424,8 +2439,8 @@ static int test_gen_return_into_frame_without_resume_is_fatal(void) {
   Py_XDECREF(exc);
   Py_XDECREF(tb);
   Py_XDECREF(ev.val);
-  /* the node has no owner: the chain frees it as the context lets go */
   Py_DECREF(ctx);
+  Py_DECREF(agen_obj);
   Py_DECREF(code_obj);
 
   TEST_ASSERT_EQ(ev.kind, KOS_RES_FATAL, "the return is fatal");
@@ -2478,7 +2493,7 @@ static int test_agen_flatten_clears_wrapper_registers(void) {
   TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
 
   agen = (KosPyAsyncGen *) agen_obj;
-  TEST_ASSERT_NOT_NULL(agen->gen, "agen owns gen");
+  TEST_ASSERT_NOT_NULL(agen->state.active, "the frame rests in the state");
   TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
 
   /* the wrapper's context, made as the Python-drive path makes it */
@@ -2511,11 +2526,10 @@ static int test_agen_flatten_clears_wrapper_registers(void) {
   Py_XDECREF(res.val);
   islots->ki_finish(agen_obj, 0);
 
-  TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE((KosDynGen *) agen->gen),
-                       "gen frozen with active chain");
+  TEST_ASSERT_NOT_NULL(agen->state.active, "the span rests after the yield");
 
   KosPyAsyncGen_Teardown(agen);
-  TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+  TEST_ASSERT_NULL(agen->state.active, "teardown freed the span");
   TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
 
   Py_DECREF(agen_obj);
@@ -2542,7 +2556,6 @@ static int test_agen_flatten_from_wrapper_chain_clears_registers(void) {
   PyObject *ns;
   PyObject *agen_obj;
   KosPyAsyncGen *agen;
-  KosDynGen *gen;
   KosDynNode *head;
   KosContext *consumer;
   KosIterStepResult r;
@@ -2567,24 +2580,23 @@ static int test_agen_flatten_from_wrapper_chain_clears_registers(void) {
   TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
 
   agen = (KosPyAsyncGen *) agen_obj;
-  gen = (KosDynGen *) agen->gen;
-  TEST_ASSERT_NOT_NULL(gen, "agen owns gen");
+  TEST_ASSERT_NOT_NULL(agen->state.active, "the frame rests in the state");
   TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
 
   /* the wrapper's context, made as the Python-drive path makes it */
   agen->ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(agen->ctx, "create wrapper context");
 
-  /* move the resting chain out of the GEN's slot onto the wrapper's
+  /* move the resting frame out of the state onto the wrapper's
      context, so the step finds it at the wrapper's dyn top */
-  head = (KosDynNode *) KosDynGen_ACTIVE(gen);
-  TEST_ASSERT_NOT_NULL(head, "the unstarted frame rests in the slot");
+  head = agen->state.active;
+  TEST_ASSERT_NOT_NULL(head, "the unstarted frame rests in the state");
   KosContext_EvalEnter(agen->ctx, NULL);
-  rc = kos_dyn_gen_install_bootstrap(agen->ctx, gen, head);
+  rc = kos_dyn_gen_install_bootstrap(agen->ctx, agen_obj, &agen->state, head);
   KosContext_EvalExit(agen->ctx);
   TEST_ASSERT(! PyErr_Occurred(), "the move raised no exception");
   TEST_ASSERT_EQ(rc, 0, "move the chain onto the wrapper context");
-  KosDynGen_ACTIVE(gen) = NULL;
+  agen->state.active = NULL;
 
   TEST_ASSERT_NOT_NULL(KosContext_DYN_TOP(agen->ctx),
                        "the chain is on the wrapper's dyn top");
@@ -2620,11 +2632,10 @@ static int test_agen_flatten_from_wrapper_chain_clears_registers(void) {
   Py_XDECREF(res.val);
   islots->ki_finish(agen_obj, 0);
 
-  TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE((KosDynGen *) agen->gen),
-                       "gen frozen with active chain");
+  TEST_ASSERT_NOT_NULL(agen->state.active, "the span rests after the yield");
 
   KosPyAsyncGen_Teardown(agen);
-  TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+  TEST_ASSERT_NULL(agen->state.active, "teardown freed the span");
   TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
 
   Py_DECREF(agen_obj);
@@ -2693,7 +2704,7 @@ static int make_busy_agen(
   }
 
   *out_saved = KosContext_BREAKER(agen->ctx);
-  agen->in_progress = 1;
+  agen->state.busy = 1;
   KosContext_BREAKER(agen->ctx) = &agen_sentinel_breaker;
 
   *out_agen = agen_obj;
@@ -2708,7 +2719,7 @@ static void release_busy_agen(
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) agen_obj;
 
-  agen->in_progress = 0;
+  agen->state.busy = 0;
   KosContext_BREAKER(agen->ctx) = saved;
   Py_DECREF(adapter);
   Py_DECREF(agen_obj);

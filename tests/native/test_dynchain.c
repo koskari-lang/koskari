@@ -305,100 +305,60 @@ static int test_continuation_free_null(void) {
 }
 
 
-/* === GEN cleanup tests === */
+/* === GEN node tests === */
 
 
-static int test_dyngen_free_disposes_active(void) {
+static int test_dyngen_free_drops_owner(void) {
 
-    KosDynGen *gen = kos_dyngen_new(NULL);
-    PyObject *ns = PyDict_New();
-    KosDynFrame *frame;
+    PyObject *owner = PyList_New(0);
+    KosGenState state;
+    KosDynGen *gen;
 
-    TEST_ASSERT_NOT_NULL(gen, "create gen");
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    kos_gen_state_init(&state, NULL);
 
-    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
+    gen = kos_dyngen_new(owner, &state);
+    TEST_ASSERT_NOT_NULL(gen, "create the GEN node");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), 2, "the node holds the owner");
+    TEST_ASSERT_SAME(KosDynGen_STATE(gen), &state, "the node names the state");
 
-    KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
     kos_dyngen_free(gen);
+    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the free drops the owner");
 
+    Py_DECREF(owner);
     return 0;
 }
 
 
-static int test_dyngen_bootstrap_no_active(void) {
+static int test_dyngen_chain_free_ends_the_step(void) {
 
-    KosDynGen *gen = kos_dyngen_new(NULL);
+    PyObject *owner = PyList_New(0);
     PyObject *ns = PyDict_New();
+    KosGenState state;
+    KosDynGen *gen;
     KosDynFrame *frame;
     KosContext *ctx;
 
-    TEST_ASSERT_NOT_NULL(gen, "create gen");
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
     TEST_ASSERT_NOT_NULL(ns, "create ns");
+    kos_gen_state_init(&state, NULL);
 
-    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
-    TEST_ASSERT_NULL(KosDynGen_ACTIVE(gen), "ACTIVE unset at bootstrap");
-
-    ctx = KosContext_New(frame, kos_tls_current());
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    /* no owner: the context's chain frees the node as it lets go */
-    Py_DECREF(ctx);
-
-    return 0;
-}
-
-
-static int test_dyngen_owner_frees_after_chain(void) {
-
-    KosDynGen *gen = kos_dyngen_new(Py_None);
-    PyObject *ns = PyDict_New();
-    KosDynFrame *frame;
-    KosContext *ctx;
-
-    TEST_ASSERT_NOT_NULL(gen, "create gen");
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-
+    gen = kos_dyngen_new(owner, &state);
+    TEST_ASSERT_NOT_NULL(gen, "create the GEN node");
     frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
 
     ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
+    state.busy = 1;
 
-    /* the chain lets go of an owned node and leaves it; the owner frees */
+    /* the chain frees the node like any other: the step is over and
+       the owner is let go */
     Py_DECREF(ctx);
-    TEST_ASSERT_NULL(KosDynNode_PARENT(gen), "the chain let go");
-    TEST_ASSERT(KosDynGen_OWNER(gen) == Py_None, "the owner still holds");
-    kos_dyngen_free(gen);
+    TEST_ASSERT_EQ(state.busy, 0, "the chain free ends the step");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the chain free drops the owner");
 
-    return 0;
-}
-
-
-static int test_dyngen_chain_frees_after_owner(void) {
-
-    KosDynGen *gen = kos_dyngen_new(Py_None);
-    PyObject *ns = PyDict_New();
-    KosDynFrame *frame;
-    KosContext *ctx;
-
-    TEST_ASSERT_NOT_NULL(gen, "create gen");
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-
-    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
-
-    ctx = KosContext_New(frame, kos_tls_current());
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    /* the owner lets go of an installed node by clearing its field;
-       the chain frees the node when it lets go */
-    TEST_ASSERT_NOT_NULL(KosDynNode_PARENT(frame), "the node is installed");
-    KosDynGen_OWNER(gen) = NULL;
-    Py_DECREF(ctx);
-
+    Py_DECREF(owner);
     return 0;
 }
 
@@ -556,10 +516,8 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_continuation_free_null);
 
     /* GEN and payload cleanup tests */
-    RUN_TEST(test_dyngen_free_disposes_active);
-    RUN_TEST(test_dyngen_bootstrap_no_active);
-    RUN_TEST(test_dyngen_owner_frees_after_chain);
-    RUN_TEST(test_dyngen_chain_frees_after_owner);
+    RUN_TEST(test_dyngen_free_drops_owner);
+    RUN_TEST(test_dyngen_chain_free_ends_the_step);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dyndelim_clone_owns_chain_copy);
     RUN_TEST(test_dynforeach_free_with_iter);

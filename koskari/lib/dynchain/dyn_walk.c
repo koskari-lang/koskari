@@ -25,8 +25,10 @@
 /* === Dynamic chain walk and pop primitives === */
 
 int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
+  KosGenState *state = KosDynGen_STATE(gen);
   KosDynNode *saved_parent;
   KosDynNode *ctx_active;
+  KosDynNode *bottom;
 
   SAYF("[gen] freeze ENTER ctx=%p gen=%p dyn_top=%p (%s) gen_parent=%p\n",
        (void *) ctx, (void *) gen,
@@ -46,38 +48,32 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
 #endif
 
-  if (! KosContext_DYN_TOP(ctx)) {
+  ctx_active = KosContext_DYN_TOP(ctx);
+  if (! ctx_active) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_freeze: no dyn_top");
     return -1;
   }
 
+  /* The span's bottom node is the generator's root frame, whose parent
+     is the GEN: gen came from kos_dyn_find_gen on the running frame,
+     which sits on dyn_top's path. */
+  bottom = state->bottom;
 #if KOS_EVAL_SAFETYNET
-  {
-    /* gen came from kos_dyn_find_gen on the running frame, which sits
-       on dyn_top's path; the span from dyn_top must reach it. */
-    KosDynNode *node;
-    for (node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
-      if (node == (KosDynNode *) gen)
-        break;
-    }
-    if (! node) {
-      PyErr_SetString(PyExc_SystemError,
-                      "kos_dyn_gen_freeze: gen not in chain from dyn_top");
-      return -1;
-    }
+  if (! bottom || KosDynNode_PARENT(bottom) != (KosDynNode *) gen) {
+    PyErr_SetString(PyExc_SystemError,
+                    "kos_dyn_gen_freeze: the span's bottom is not under gen");
+    return -1;
   }
 #endif
 
-  /* 1. Record GEN's parent, then remove the GEN->parent link */
+  /* 1. The span leaves the chain into the state: its bottom rests
+     with no parent, and the live registers the next install of this
+     head applies directly go with it. */
   saved_parent = KosDynNode_PARENT(gen);
-  KosDynNode_PARENT(gen) = NULL;
-
-  /* 2. Remove ctx's active node and store it in GEN, with the live
-     registers the next install of this head applies directly. */
-  ctx_active = KosContext_DYN_TOP(ctx);
-  KosDynGen_ACTIVE(gen) = ctx_active;
-  kos_live_regs_capture(ctx, KosDynGen_FROZEN(gen));
+  KosDynNode_PARENT(bottom) = NULL;
+  state->active = ctx_active;
+  kos_live_regs_capture(ctx, &state->frozen);
 
   /* An effect a node holds outside itself leaves with it, innermost
      first; the install puts it back, and only when one left. The
@@ -91,48 +87,48 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
       nframes += KosDynNode_IS_FRAME(n) ? 1u : 0u;
       installs |= kos_dyn_extent_freeze(ctx, n);
     }
-    KosDynGen_NFRAMES(gen) = (uint16_t) nframes;
-    if (installs)
-      KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_INSTALLS;
-    else
-      KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_INSTALLS;
+    state->nframes = (uint16_t) nframes;
+    state->installs = installs ? 1 : 0;
   }
 
 #if VERBOSE_DEBUG
   {
     KosDynNode *n;
-    SAY("[gen] freeze storing in gen->active: chain ");
+    SAY("[gen] freeze storing in state->active: chain ");
     for (n = ctx_active; n; n = KosDynNode_PARENT(n))
       SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
   }
 #endif
 
-  /* 3. Put GEN's old parent onto ctx's active. The consumer below the
-     GEN has not run since the install recorded its registers, so they
-     are restored as recorded when the GEN still sits where it was
+  /* 2. The GEN marked the span while it was installed; it rests in the
+     state for the next install, its reference to the owner dropped. */
+  kos_dyngen_rest(gen);
+
+  /* 3. Put the GEN's old parent onto ctx's active. The consumer below
+     the GEN has not run since the install recorded its registers, so
+     they are restored as recorded when the GEN still sat where it was
      installed; anything else rebuilds from the chain. */
   /* host.top always equals saved_parent here: both installs record the
      host and set the GEN's parent from the same dyn_top, and nothing
      re-parents a running GEN. The compare is kept for the same reason
      as the frozen.top compare in kos_dyn_gen_install. */
-  if (saved_parent && saved_parent == KosDynGen_HOST(gen)->top
-      && KosDynGen_HOST(gen)->frame) {
-    kos_live_regs_apply(ctx, KosDynGen_HOST(gen));
+  if (saved_parent && saved_parent == state->host.top
+      && state->host.frame) {
+    kos_live_regs_apply(ctx, &state->host);
   } else {
     KosContext_DYN_TOP(ctx) = saved_parent;
     kos_dyn_resync_chain(ctx);
   }
-  KosDynGen_HOST(gen)->top = NULL;
+  state->host.top = NULL;
 
-  SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p owner=%p gen=%p\n",
+  SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p state=%p\n",
        (void *) KosContext_DYN_TOP(ctx),
        KosContext_DYN_TOP(ctx)
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosContext_FRAME(ctx),
-       (void *) KosDynGen_OWNER(gen),
-       (void *) gen);
+       (void *) state);
   return 0;
 }
 
@@ -556,12 +552,12 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
              generator is finished by the exception: record its frame in
              the trace, unlink frame+GEN (the chain state here -- frame
              on top, GEN parent, consumer below -- is exactly the
-             exhaustion shape), then mark the owner closed, whose
-             finish frees the node once the chain has let go, and
-             continue the walk so the consumer's regions can catch. */
+             exhaustion shape, and the teardown frees both), then mark
+             the owner closed, and continue the walk so the consumer's
+             regions can catch. */
           kos_eval_note_crossed_frame(ctx);
           {
-            PyObject *owner = KosDynGen_OWNER(parent);
+            PyObject *owner = Py_NewRef(KosDynGen_OWNER(parent));
             KosIterSlots *islots;
             PyObject *typ = NULL, *val = NULL, *tb = NULL;
 
@@ -570,11 +566,13 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
               Py_XDECREF(typ);
               Py_XDECREF(val);
               Py_XDECREF(tb);
+              Py_DECREF(owner);
               return EVAL_FATAL();
             }
             PyErr_Restore(typ, val, tb);
-            if (owner && KosIter_CheckSlots(owner, &islots))
+            if (KosIter_CheckSlots(owner, &islots))
               islots->ki_finish(owner, 1);
+            Py_DECREF(owner);
           }
           continue;
         }

@@ -38,34 +38,21 @@ static PyObject *coro_str_close = NULL;
 PyObject *KosAsyncGen_NewFromFrame(PyObject *fn, KosDynFrame *frame) {
 
   KosCode *code = KosDynFrame_CODE(frame);
-  KosDynGen *gen = kos_dyngen_new(NULL);
   PyObject *agen;
 
-  if (! gen) {
-    kos_dynframe_free(frame);
+  /* An unstarted generator rests in the state's span as a suspended
+     one does; the started flag, clear until the bootstrap install,
+     tells the first drive to enter fresh code rather than resume. No
+     context: the splice from Koskari never needs one, and a drive from
+     Python creates the wrapper's at that moment. The frame keeps its
+     fn tag, so its release at exhaustion offers it to the function's
+     cache. */
+  agen = KosPyAsyncGen_New(NULL, frame, fn);
+  if (! agen)
     return NULL;
-  }
-
-  /* An unstarted generator rests in the same slot a suspended one does;
-     the GEN's STARTED flag, clear until the bootstrap install, tells
-     the first drive to enter fresh code rather than resume. No context:
-     the splice from Koskari never needs one, and a drive from Python
-     creates the wrapper's at that moment. The frame keeps its fn tag,
-     so its release at exhaustion offers it to the function's cache. */
-  KosDynNode_PARENT(frame) = (KosDynNode *) gen;
-  kos_dynframe_note_parent(frame);
-  KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
-
-  agen = KosPyAsyncGen_New(NULL, gen, fn);
-  if (! agen) {
-    kos_dyngen_free(gen);
-    return NULL;
-  }
 
   Py_XINCREF(KosCode_NAME(code));
   ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);
-  /* the node is the wrapper's to free */
-  KosDynGen_OWNER(gen) = (PyObject *) agen;
   return agen;
 }
 

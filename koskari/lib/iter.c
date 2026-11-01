@@ -36,36 +36,23 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen);
 
 
 /**
-   Dissociate a frozen async generator from its context without running
-   the extent protocol: detach and free the frozen chain, then free the
-   node. Leaves ctx ready to be dropped.
-
-   Safe at arbitrary points, including dealloc mid-unwind with a live
-   exception: no Python calls, no evaluator re-entry, and the pending
-   PyErr is never touched.
+   Free the resting span without running the extent protocol, the
+   unstarted frame or the chain a yield left suspended, and the resting
+   GEN node with it. Safe at arbitrary points, including dealloc
+   mid-unwind with a live exception: no Python calls, no evaluator
+   re-entry, and the pending PyErr is never touched.
 */
-static void asyncgen_dissociate_chain(KosPyAsyncGen *agen) {
+static void asyncgen_free_span(KosPyAsyncGen *agen) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-  KosDynNode *active;
-
-  if (! gen)
-    return;
-  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
-  KosDynGen_ACTIVE(gen) = NULL;
-  if (active)
-    kos_dynchain_free(active, (KosDynNode *) gen);
-  kos_dyngen_free(gen);
-  agen->gen = NULL;
+  kos_gen_state_clear(&agen->state);
 }
 
 
 /**
    Free the chain on a context the wrapper stepped its generator on, if
-   one is there: a span the GEN still roots after a close the eval
-   could not honor. The chain lets go of the node this way before the
-   wrapper frees it. The same two steps the context's clear takes;
-   nothing refuses them.
+   one is there: a span left installed after a close the eval could
+   not honor. The same two steps the context's clear takes; nothing
+   refuses them.
 */
 static void asyncgen_free_chain_on(KosContext *ctx) {
 
@@ -77,35 +64,11 @@ static void asyncgen_free_chain_on(KosContext *ctx) {
 
 
 /**
-   The wrapper lets go of a GEN node that holds no frozen span: spent,
-   still at the root of the wrapper's own context after a close the
-   eval could not honor, or still installed on another context's chain
-   when the record that stepped it there went first (a transform freed
-   after its stepper was abandoned mid-await). The installed node keeps
-   its parent, so the owner field is cleared and the chain frees the
-   node when it lets go; otherwise the chain of the wrapper's own
-   context goes first, then the node.
-*/
-static void asyncgen_drop_gen(KosPyAsyncGen *agen) {
+   Teardown a suspended async generator: install its span on ctx, throw
+   GeneratorExit, run to completion, or fall back to freeing the span
+   if the body attempts to suspend (yield/await).
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-
-  if (KosDynNode_PARENT(gen)) {
-    KosDynGen_OWNER(gen) = NULL;
-  } else {
-    asyncgen_free_chain_on(agen->ctx);
-    kos_dyngen_free(gen);
-  }
-  agen->gen = NULL;
-}
-
-
-/**
-   Teardown a frozen async generator: throw GeneratorExit, run to completion,
-   or fall back to pure cleanup if the gen attempts to suspend (yield/await).
-
-   Assumes agen is frozen: agen->gen set, GEN.active holds chain,
-   KosContext_DYN_TOP(agen->ctx) == NULL.
+   Assumes a started span resting in the state and ctx's chain empty.
 
    This is the demand-path close: the GeneratorExit drive runs
    synchronously to completion, and a suspend attempt during close takes
@@ -118,25 +81,16 @@ static void asyncgen_drop_gen(KosPyAsyncGen *agen) {
    after), so the drive never observes it and the internal PyErr_Clear
    calls cannot destroy it.
 
-   On success (primary path): chain unwound, node freed, ctx ready for
-   free. On fallback: chain freed, node freed, ctx ready for free.
-   Does not free ctx; caller does that. For clear, caller also sets
-   agen->gen = NULL and agen->ctx = NULL.
+   On success (primary path): chain unwound, GEN node freed with it,
+   ctx ready for free. On fallback: chain and span freed, ctx ready for
+   free. Does not free ctx; caller does that.
 */
 static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
   PyObject *throw_exc = NULL;
   PyObject *fence_typ = NULL;
   PyObject *fence_val = NULL;
   PyObject *fence_tb = NULL;
-
-  if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    /* No active chain; free the node and let caller free ctx */
-    kos_dyngen_free(gen);
-    agen->gen = NULL;
-    return;
-  }
 
   PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
 
@@ -146,10 +100,11 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
     goto fallback;
   }
 
-  /* Install gen onto ctx so chain is restored before eval; in flatten path
-     the chain lived in GEN->active and agen->ctx was never the running ctx. */
+  /* Install the span onto ctx so the chain is restored before eval; in
+     the flatten path the chain rests in the state and agen->ctx was
+     never the running ctx. */
   KosContext_EvalEnter(ctx, NULL);
-  if (kos_dyn_gen_install(ctx, gen) < 0) {
+  if (kos_dyn_gen_install(ctx, (PyObject *) agen, &agen->state) < 0) {
     KosContext_EvalExit(ctx);
     PyErr_Clear();
     Py_DECREF(throw_exc);
@@ -196,33 +151,30 @@ primary_success:
     goto fallback;
   }
   KosContext_EvalExit(ctx);
-
-  /* The teardown took the node off the chain; the wrapper frees it
-     now that the gen is consumed, matching the fallback path and the
-     non-frozen branch in the callers. */
-  kos_dyngen_free(gen);
-  agen->gen = NULL;
   PyErr_Restore(fence_typ, fence_val, fence_tb);
   return;
 
 fallback:
   PyErr_Clear();
-  /* an install that went through left the span on ctx; a refused one
-     left it in ACTIVE, and the chain here is empty */
+  /* an install that went through left the span on ctx, GEN node and
+     all; a refused one, or a yield's freeze, left it resting */
   asyncgen_free_chain_on(ctx);
-  asyncgen_dissociate_chain(agen);
+  asyncgen_free_span(agen);
   PyErr_Restore(fence_typ, fence_val, fence_tb);
 }
 
 
 void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
 
+  KosGenState *state;
+
   if (! agen)
     return;
+  state = &agen->state;
 
-  if (agen->ctx && KosContext_DYN_TOP(agen->ctx) && ! agen->in_progress) {
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx) && ! state->busy) {
     /* Live chain: the generator was abandoned mid-await, where the
-       frozen-chain teardown below cannot reach it. Demand-drive the
+       resting-span teardown below cannot reach it. Demand-drive the
        close through the suspended context, exception-fenced --
        teardown runs from dealloc, so every outcome of the drive is
        swallowed and cleared. */
@@ -233,19 +185,11 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     PyErr_Restore(fence_typ, fence_val, fence_tb);
   }
 
-  if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
-      && ! (KosDynNode_FLAGS(agen->gen) & KOS_DYNF_GEN_STARTED)) {
-    /* never driven: nothing entered, nothing to unwind. The unstarted
-       frame hangs under the GEN node, so the chain is freed through
-       the node, and the node after it. */
-    KosDynGen *gen = (KosDynGen *) agen->gen;
-    KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
-    KosDynGen_ACTIVE(gen) = NULL;
-    kos_dynchain_free(active, NULL);
-    kos_dyngen_free(gen);
-    agen->gen = NULL;
+  if (state->active && ! state->started) {
+    /* never driven: nothing entered, nothing to unwind */
+    asyncgen_free_span(agen);
 
-  } else if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
+  } else if (state->active) {
     /* suspended: the GeneratorExit drive needs a context; one spliced
        only from Koskari has none, so it gets one here, and falls back
        to the pure cleanup when even that cannot be had */
@@ -263,43 +207,26 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
       if (ctx != agen->ctx)
         Py_DECREF(ctx);
     } else {
-      asyncgen_dissociate_chain(agen);
+      asyncgen_free_span(agen);
     }
-
-  } else if (agen->gen) {
-    asyncgen_drop_gen(agen);
   }
 
+  /* a chain still on the wrapper's context, with its GEN node, goes
+     with the context; the node's reference to the wrapper is one the
+     caller's own outlives */
   Py_CLEAR(agen->ctx);
 }
 
 
 /**
-   Drop the generator's chain and context without driving the body:
-   an unstarted chain is freed through the GEN node, a suspended one is
-   dissociated, and the context is dropped. The close itself belongs
-   to the finalizer, which has already run by the time clear or
-   dealloc reaches here.
+   Drop the generator's resting span and context without driving the
+   body. The close itself belongs to the finalizer, which has already
+   run by the time clear or dealloc reaches here; a span installed on
+   a chain keeps the wrapper alive and is never met here.
 */
 static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-
-  if (gen && KosDynGen_ACTIVE(gen)
-      && ! (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_STARTED)) {
-    /* never driven: the unstarted frame hangs under the GEN node, so
-       the chain is freed through the node, and the node after it */
-    KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
-    KosDynGen_ACTIVE(gen) = NULL;
-    kos_dynchain_free(active, NULL);
-    kos_dyngen_free(gen);
-    agen->gen = NULL;
-  } else if (gen && KosDynGen_ACTIVE(gen)) {
-    asyncgen_dissociate_chain(agen);
-  } else if (gen) {
-    asyncgen_drop_gen(agen);
-  }
-
+  asyncgen_free_span(agen);
   Py_CLEAR(agen->ctx);
 }
 
@@ -317,14 +244,13 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 static void asyncgen_finalize(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  KosGenState *state = &agen->state;
 
-  if (agen->in_progress || agen->closed)
+  if (state->busy || agen->closed)
     return;
-  if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
-      && ! (KosDynNode_FLAGS(agen->gen) & KOS_DYNF_GEN_STARTED))
+  if (state->active && ! state->started)
     return;
-  if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx))
-      && ! (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)))
+  if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx)) && ! state->active)
     return;
 
   KosPyAsyncGen_Teardown(agen);
@@ -378,8 +304,8 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(agen->code_name);
   Py_VISIT(agen->fn);
 
-  if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
-    res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
+  if (agen->state.active) {
+    res = kos_dynchain_traverse(agen->state.active, NULL, visit, arg);
     if (res)
       return res;
   }
@@ -533,7 +459,7 @@ static int agen_iter_busy(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (! agen->in_progress)
+  if (! agen->state.busy)
     return 0;
 
   PyErr_SetString(PyExc_RuntimeError,
@@ -550,9 +476,9 @@ static int agen_iter_busy(PyObject *self) {
    replaces the install placeholder on TOS as the value of the
    suspended yield expression.
 
-   The GEN's slot holds the unstarted frame or a suspended chain, told
-   apart by the GEN's STARTED flag; an empty slot with a chain live on
-   the wrapper's context is a drive mid-await, grafted onto a consumer
+   The state's span is the unstarted frame or a suspended chain, told
+   apart by the started flag; no span with a chain live on the
+   wrapper's context is a drive mid-await, grafted onto a consumer
    context other than the wrapper's own. Nothing in either place is a
    spent generator.
 */
@@ -563,20 +489,20 @@ static KosIterStepResult agen_iter_drive(
     int throwing,
     PyObject **out) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
+  KosGenState *state = &agen->state;
   KosDynNode *active;
   int started;
 
   if (agen_iter_busy((PyObject *) agen))
     return KOS_ITER_ERROR;
 
-  if (agen->closed || ! gen) {
+  if (agen->closed) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
 
-  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
-  started = KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_STARTED;
+  active = state->active;
+  started = state->started;
 
   if (send_val && send_val != Py_None && ! started) {
     PyErr_SetString(PyExc_TypeError,
@@ -590,12 +516,13 @@ static KosIterStepResult agen_iter_drive(
     return KOS_ITER_EXHAUSTED;
   }
 
-  agen->in_progress = 1;
+  state->busy = 1;
 
   if (! active) {
     if (ctx != agen->ctx) {
       if (kos_dyn_gen_install_bootstrap(
-              ctx, gen, KosContext_DYN_TOP(agen->ctx)) < 0)
+              ctx, (PyObject *) agen, state,
+              KosContext_DYN_TOP(agen->ctx)) < 0)
         goto drive_error;
       KosContext_ClearLiveRegs(agen->ctx);
     }
@@ -610,14 +537,15 @@ static KosIterStepResult agen_iter_drive(
   if (! started) {
     /* the first install enters fresh code with an empty stack: no
        placeholder to swap, nothing to throw into. A refusal (no frame
-       room) leaves the frame in the slot. */
-    if (kos_dyn_gen_install_bootstrap(ctx, gen, active) < 0)
+       room) leaves the frame resting. */
+    if (kos_dyn_gen_install_bootstrap(ctx, (PyObject *) agen, state,
+                                      active) < 0)
       goto drive_error;
-    KosDynGen_ACTIVE(gen) = NULL;
+    state->active = NULL;
     return KOS_ITER_INSTALLED;
   }
 
-  if (kos_dyn_gen_install(ctx, gen) < 0)
+  if (kos_dyn_gen_install(ctx, (PyObject *) agen, state) < 0)
     goto drive_error;
 
   /* A throw ingress primed the exception: a frame waiting on a
@@ -648,9 +576,9 @@ static KosIterStepResult agen_iter_drive(
   return KOS_ITER_INSTALLED;
 
 drive_error:
-  /* Every failed drive releases the busy mark; a wedged in_progress
-     would refuse all further iteration of a still-live generator. */
-  agen->in_progress = 0;
+  /* Every failed drive releases the busy mark; a wedged one would
+     refuse all further iteration of a still-live generator. */
+  state->busy = 0;
   return KOS_ITER_ERROR;
 }
 
@@ -677,7 +605,7 @@ static KosIterStepResult agen_iter_throw(
   if (agen_iter_busy(self))
     return KOS_ITER_ERROR;
 
-  if (agen->closed || ! agen->gen) {
+  if (agen->closed) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
@@ -703,7 +631,7 @@ static int agen_iter_close(PyObject *self) {
 
   /* Declined while another site is driving; that drive's completion
      owns the state. */
-  if (agen->in_progress)
+  if (agen->state.busy)
     return 0;
 
   KosPyAsyncGen_Teardown(agen);
@@ -715,38 +643,25 @@ static int agen_iter_close(PyObject *self) {
 /**
    The suite's ki_finish: the step is over, and the generator is closed
    when it was the end. An exhausted finish from the Python-driven
-   completion frees the completed chain on the wrapper's context and
-   the wrapper's GEN, so the generator's locals go when it finishes
-   rather than when the object dies; the next step then reports
-   exhaustion through the missing GEN.
-
-   The recycle frees the chain, which lets go of the GEN, and the
-   wrapper then frees the node. A Koskari consumer's completion leaves
-   no chain on the wrapper's context: its finish is called once the
-   consumer's chain has let go, and frees the node alone; agen->gen is
-   cleared first, so a repeated finish frees nothing. A context whose
-   recycle is refused keeps its chain and the GEN on it, both left for
-   the teardown.
+   completion frees the completed chain on the wrapper's context, the
+   GEN node with it, so the generator's locals go when it finishes
+   rather than when the object dies. A Koskari consumer's completion
+   left nothing on the wrapper's context: the teardown freed the span
+   and the node from the consumer's chain. A context whose recycle is
+   refused keeps its chain, left for the teardown.
 */
 static void agen_iter_finish(PyObject *self, int exhausted) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
-  KosDynGen *gen = (KosDynGen *) agen->gen;
 
-  agen->in_progress = 0;
+  agen->state.busy = 0;
   if (! exhausted)
     return;
 
   agen->closed = 1;
 
-  if (agen->ctx && KosContext_DYN_TOP(agen->ctx)
-      && KosContext_Recycle(agen->ctx) < 0)
-    return;
-
-  if (gen && ! KosDynGen_ACTIVE(gen)) {
-    agen->gen = NULL;
-    kos_dyngen_free(gen);
-  }
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
+    (void) KosContext_Recycle(agen->ctx);
 }
 
 
@@ -756,8 +671,8 @@ static void agen_iter_finish(PyObject *self, int exhausted) {
    the generator's life. A generator only ever spliced from
    Koskari never has one. NULL with the error set on a creation
    failure, and the step fails: the generator's span runs only on
-   this context or on a Koskari consumer's chain, both of which the
-   wrapper can free before it frees its GEN node.
+   this context or on a Koskari consumer's chain, and the GEN node
+   marking it there keeps the wrapper alive.
 */
 static KosContext *agen_iter_pyctx(PyObject *self) {
 
@@ -800,7 +715,10 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
 };
 
 
-PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen, PyObject *fn) {
+PyObject *KosPyAsyncGen_New(
+    KosContext *ctx,
+    KosDynFrame *frame,
+    PyObject *fn) {
 
   KosPyAsyncGen *agen;
 
@@ -816,15 +734,15 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen, PyObject *fn) {
                            KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
     if (! agen) {
       Py_XDECREF(ctx);
+      kos_dynframe_free(frame);
       return NULL;
     }
   }
 
   agen->ctx = ctx;
-  agen->gen = (void *) gen;
+  kos_gen_state_init(&agen->state, frame);
   agen->code_name = NULL;
   agen->fn = Py_XNewRef(fn);
-  agen->in_progress = 0;
   agen->closed = 0;
 
   PyObject_GC_Track((PyObject *) agen);
