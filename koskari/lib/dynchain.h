@@ -200,8 +200,7 @@ typedef struct KosLiveRegs {
    node, the generator's root frame, whose parent is NULL while it
    rests. A GEN node marks the span on a chain only while it is
    installed, and refers back here; between installs it rests here
-   too, with its reference to the owner dropped, so the next install
-   reuses it.
+   too, so the next install reuses it.
 
    host is the consumer's registers taken at install, restored at the
    freeze while the GEN's parent is still host.top. frozen is the
@@ -631,10 +630,12 @@ struct KosDynNode {
       uint32_t prompt_node_id;
     } shift;
     struct {
-      /* The generator object whose span this node marks, a reference
-         of the node's own: the object outlives every chain its span is
-         installed on. The node exists from an install to the freeze
-         or the teardown, and the chain frees it like any other. */
+      /* The generator object whose span this node marks, borrowed. It
+         is alive while the node is installed: the record stepping it
+         sits below the node on the chain or releases its context
+         first, and the object's own context is cleared in its dealloc.
+         The node exists from an install to the freeze or the teardown,
+         and the chain frees it like any other. */
       PyObject *owner;
       /* the owner's state record, borrowed; valid while owner is */
       KosGenState *state;
@@ -1165,11 +1166,11 @@ void kos_gen_state_clear(KosGenState *state);
 
 
 /**
-   The GEN node marking owner's span on a chain, with a reference to
-   owner of its own: the one resting in the state, or a new one. The
-   install links it under the consumer and the span above it.
+   The GEN node marking owner's span on a chain: the one resting in
+   the state, or a new one. The install links it under the consumer
+   and the span above it.
 
-   :param owner: the generator object
+   :param owner: the generator object (borrowed)
    :param state: the owner's state record (borrowed)
 
    :return: a GEN node with parent=NULL, or NULL on error
@@ -1179,17 +1180,16 @@ KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state);
 
 /**
    Rest a GEN node in its state once the span has left the chain: the
-   reference to the owner is dropped and the node waits for the next
-   install. The freeze and a refused install call it.
+   node waits there for the next install. The freeze and a refused
+   install call it.
 */
 void kos_dyngen_rest(KosDynGen *gen);
 
 
 /**
-   Free a GEN node: drop its reference to the owner and return the node
-   to the freelist. The chain free reaches it through kos_dynnode_free,
-   where a node freed with its chain is the end of a step in flight;
-   the state's clear frees a resting one.
+   Free a GEN node: return it to the freelist. The chain free reaches
+   it through kos_dynnode_free, where a node freed with its chain is
+   the end of a step in flight; the state's clear frees a resting one.
 */
 void kos_dyngen_free(KosDynGen *gen);
 

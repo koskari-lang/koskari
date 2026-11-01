@@ -106,6 +106,15 @@ def g-slow [col]:
         (yield 2)
     finally:
         (col.append "cleaned")
+
+def g-slow-cleanup [col]:
+    try:
+        (yield 1)
+        (await (sleep 60))
+        (yield 2)
+    finally:
+        (await (sleep 0.001))
+        (col.append "cleaned")
 """
 
 
@@ -657,6 +666,62 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
         gc.collect()
 
         self.assertEqual(col, ["cleaned"])
+
+
+    async def test_drop_midflight_closes_at_the_drop(self):
+        """
+        the cleanup of a generator dropped mid-await runs when the
+        last reference goes, as CPython's does, with no collector pass
+        """
+
+        import gc
+
+        col = []
+        agen = self.kos("g-slow", col)
+        self.assertEqual(await agen.__anext__(), 1)
+
+        stepper = agen.__anext__()
+        pending = stepper.send(None)
+        self.assertIsNotNone(pending)
+
+        gc.disable()
+        try:
+            del pending
+            del stepper
+            del agen
+            self.assertEqual(col, ["cleaned"])
+        finally:
+            gc.enable()
+
+
+    async def test_drop_midflight_finally_await_dies_at_the_drop(self):
+        """
+        a finally that awaits during the synchronous close of a
+        generator dropped mid-await cannot complete, as under CPython,
+        and a collector pass afterwards finds no cleanup left to run
+        """
+
+        import gc
+
+        col = []
+        agen = self.kos("g-slow-cleanup", col)
+        self.assertEqual(await agen.__anext__(), 1)
+
+        stepper = agen.__anext__()
+        pending = stepper.send(None)
+        self.assertIsNotNone(pending)
+
+        gc.disable()
+        try:
+            del pending
+            del stepper
+            del agen
+            self.assertEqual(col, [])
+        finally:
+            gc.enable()
+
+        gc.collect()
+        self.assertEqual(col, [])
 
 
 class TestDemandGenParity(unittest.TestCase):

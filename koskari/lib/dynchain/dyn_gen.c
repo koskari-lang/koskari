@@ -57,14 +57,14 @@ KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state) {
     KosDynNode_NS(gen) = Py_NewRef(KosNamespace_Empty());
     KosDynGen_STATE(gen) = state;
   }
-  KosDynGen_OWNER(gen) = Py_NewRef(owner);
+  KosDynGen_OWNER(gen) = owner;  /* borrowed */
   return gen;
 }
 
 
 void kos_dyngen_rest(KosDynGen *gen) {
 
-  Py_CLEAR(KosDynGen_OWNER(gen));
+  KosDynGen_OWNER(gen) = NULL;
   KosDynNode_PARENT(gen) = NULL;
   KosDynGen_STATE(gen)->node = (KosDynNode *) gen;
 }
@@ -76,7 +76,6 @@ void kos_dyngen_free(KosDynGen *gen) {
 
   if (state->node == (KosDynNode *) gen)
     state->node = NULL;
-  Py_CLEAR(KosDynGen_OWNER(gen));
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
 
@@ -97,8 +96,8 @@ void kos_gen_state_clear(KosGenState *state) {
    The owner is held by the record that steps the generator for the
    installed span: the for-each request, the next request's resume
    state, the native frame's record, the yield-from delegate slot, or
-   a Python adapter; the node's own reference keeps it through the
-   free here either way.
+   a Python adapter. The reference taken here keeps it through the
+   free and the finish, whose side effects may release the record.
 */
 void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
 
@@ -432,11 +431,13 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
 
 
 /**
-   GC traverse a KOS_DYN_GEN: the owner, a reference of the node's own.
-   The resting span is the owner's to traverse.
+   GC traverse a KOS_DYN_GEN: nothing. The owner is borrowed, and the
+   resting span is the owner's to traverse.
 */
 static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
-  Py_VISIT(KosDynGen_OWNER(node));
+  (void) node;
+  (void) visit;
+  (void) arg;
   return 0;
 }
 

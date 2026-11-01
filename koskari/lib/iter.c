@@ -212,8 +212,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
   }
 
   /* a chain still on the wrapper's context, with its GEN node, goes
-     with the context; the node's reference to the wrapper is one the
-     caller's own outlives */
+     with the context, before the wrapper's memory does */
   Py_CLEAR(agen->ctx);
 }
 
@@ -221,8 +220,10 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
 /**
    Drop the generator's resting span and context without driving the
    body. The close itself belongs to the finalizer, which has already
-   run by the time clear or dealloc reaches here; a span installed on
-   a chain keeps the wrapper alive and is never met here.
+   run by the time clear or dealloc reaches here. A span installed on
+   a consumer's chain is held there by the record stepping it, which
+   holds the wrapper too, so it is never met here; one on the
+   wrapper's own context goes with the context.
 */
 static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 
@@ -671,8 +672,9 @@ static void agen_iter_finish(PyObject *self, int exhausted) {
    the generator's life. A generator only ever spliced from
    Koskari never has one. NULL with the error set on a creation
    failure, and the step fails: the generator's span runs only on
-   this context or on a Koskari consumer's chain, and the GEN node
-   marking it there keeps the wrapper alive.
+   this context or on a Koskari consumer's chain. The Python adapter
+   that borrows this context holds the wrapper, and releases the
+   context first.
 */
 static KosContext *agen_iter_pyctx(PyObject *self) {
 

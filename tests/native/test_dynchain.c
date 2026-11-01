@@ -308,7 +308,7 @@ static int test_continuation_free_null(void) {
 /* === GEN node tests === */
 
 
-static int test_dyngen_free_drops_owner(void) {
+static int test_dyngen_borrows_owner(void) {
 
     PyObject *owner = PyList_New(0);
     KosGenState state;
@@ -319,11 +319,18 @@ static int test_dyngen_free_drops_owner(void) {
 
     gen = kos_dyngen_new(owner, &state);
     TEST_ASSERT_NOT_NULL(gen, "create the GEN node");
-    TEST_ASSERT_EQ(Py_REFCNT(owner), 2, "the node holds the owner");
+    TEST_ASSERT_SAME(KosDynGen_OWNER(gen), owner, "the node names the owner");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the node borrows the owner");
     TEST_ASSERT_SAME(KosDynGen_STATE(gen), &state, "the node names the state");
 
+    kos_dyngen_rest(gen);
+    TEST_ASSERT_SAME(state.node, (KosDynNode *) gen,
+                     "the node rests in the state");
+    TEST_ASSERT_NULL(KosDynGen_OWNER(gen), "a resting node names no owner");
+
     kos_dyngen_free(gen);
-    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the free drops the owner");
+    TEST_ASSERT_NULL(state.node, "the free leaves the state");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the free touches no reference");
 
     Py_DECREF(owner);
     return 0;
@@ -352,11 +359,10 @@ static int test_dyngen_chain_free_ends_the_step(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
     state.busy = 1;
 
-    /* the chain frees the node like any other: the step is over and
-       the owner is let go */
+    /* the chain frees the node like any other: the step is over */
     Py_DECREF(ctx);
     TEST_ASSERT_EQ(state.busy, 0, "the chain free ends the step");
-    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the chain free drops the owner");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the chain free touches no reference");
 
     Py_DECREF(owner);
     return 0;
@@ -516,7 +522,7 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_continuation_free_null);
 
     /* GEN and payload cleanup tests */
-    RUN_TEST(test_dyngen_free_drops_owner);
+    RUN_TEST(test_dyngen_borrows_owner);
     RUN_TEST(test_dyngen_chain_free_ends_the_step);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dyndelim_clone_owns_chain_copy);

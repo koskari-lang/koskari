@@ -102,7 +102,7 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
 #endif
 
   /* 2. The GEN marked the span while it was installed; it rests in the
-     state for the next install, its reference to the owner dropped. */
+     state for the next install. */
   kos_dyngen_rest(gen);
 
   /* 3. Put the GEN's old parent onto ctx's active. The consumer below
