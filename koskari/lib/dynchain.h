@@ -611,6 +611,10 @@ struct KosDynNode {
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_* */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
+      /* __exit__ runs as a handler of the obligation's exception: saved
+         is the handler-visible state that displaced, given back when
+         __exit__ is done */
+      uint8_t exc_saved;
       /* KosRef shared across clones (owned); non-empty once the
          single-shot __exit__ has run. NULL for multi-shot */
       PyObject *exit_done;
@@ -619,6 +623,7 @@ struct KosDynNode {
       /* the exception __exit__ is handling, or what a walk stored while
          __exit__ runs */
       KosObligation ob;
+      KosExcState saved;
     } with;
     struct {
       /* shift: marker delimiting the handler body; owns no block, so
@@ -2292,6 +2297,8 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)
+#define KosDynWith_EXC_SAVED(n)    (((KosDynNode *)(n))->u.with.exc_saved)
+#define KosDynWith_SAVED(n)        (&((KosDynNode *)(n))->u.with.saved)
 
 
 /**

@@ -18,6 +18,8 @@ Multi-shot context manager: enter runs before body, exit runs after (or on
 exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
 """
 
+import sys
+
 import pytest
 
 from . import Suspend, SpecialsTestCase
@@ -49,10 +51,35 @@ class SimpleMgr:
         return False
 
 
+class SeeingMgr:
+    """
+    Records the handler-visible exception while __exit__ runs
+    """
+
+    def __init__(self):
+        self.seen = "unset"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, typ, val, tb):
+        self.seen = sys.exc_info()[1]
+        return True
+
+
 class TestDynWithSpecial(SpecialsTestCase):
     """
     Tests for dyn-with special form
     """
+
+    async def test_exit_sees_the_body_exception(self):
+        mgr = SeeingMgr()
+        src = "(dyn-with [(call make_mgr)] (raise (ValueError \"body\")))"
+        expr, mod = self.compile_expr(
+            src, make_mgr=lambda: mgr, ValueError=ValueError)
+        await expr()
+        self.assertIsInstance(mgr.seen, ValueError)
+
 
     async def test_normal_enter_exit_expression_returns_none(self):
         """
