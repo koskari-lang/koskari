@@ -1,7 +1,8 @@
-# <img src="koskari/assets/koskari-icon.svg" height="42" align="top" alt=""> Koskari
+# <img src="https://koskari.org/_static/koskari-icon.svg" height="42" align="top" alt=""> Koskari
 
-Koskari is a Lisp dialect for Python -- indent-based layout syntax, macros, and a
-custom bytecode evaluator that runs on CPython.
+Koskari is a Lisp that lives inside Python: its modules import and are
+imported like any other, its values are Python objects, and its programs run
+on a bytecode evaluator written to run alongside CPython's own.
 
 ```koskari
 def greet [name]:
@@ -17,15 +18,19 @@ koskari hello.ki
 # Hello, world!
 ```
 
-
-## Overview
-
-Koskari is the fourth iteration of the Sibilant idea, learning from the experiences of:
-- **[spexy](https://github.com/obriencj/python-spexy)**: S-expressions compiled to Python expression strings, with `let`, `cond`, and multi-expression `lambda` grafted on. Where the reader and s-expression representation began.
-- **[python-sibilant](https://github.com/obriencj/python-sibilant)**: CPython bytecode target (abandoned due to version churn)
-- **[sibilant-ceval](https://github.com/obriencj/sibilant-ceval)**: Custom bytecode evaluator (blocked on call/cc implementation)
-
-This version aims to be a perfect playground -- a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code a joyous expression of will upon the computer.
+- **Layout or parentheses.** Indented blocks read as forms, so a program looks
+  like Python; full s-expressions are there whenever you want them.
+- **Python interop in both directions.** A `.ki` file sits beside `.py` files
+  and imports through the ordinary import system; Python code imports it
+  back and calls into it.
+- **Hygienic macros**, `syntax-rules` style, with quasiquote and reader
+  fences for foreign literals.
+- **Async without the keywords.** The evaluator awaits awaitable values in
+  place, so code that uses asyncio reads as straight-line code.
+- **Control flow from Scheme.** Tail calls, delimited continuations, `call/cc`,
+  dynamic wind and parameterize, alongside Python's exceptions and `with`.
+- **Pattern matching** over Python objects and Koskari data.
+- **A REPL, a disassembler, and cached compiled modules.**
 
 
 ## Quick Start
@@ -39,6 +44,7 @@ calls, and the build picks clang when it is on the PATH or honors `CC`), and
 The wheels cover Linux x86_64 and aarch64 and macOS arm64 and x86_64; a
 source build on anything else is untested.
 
+
 ### Virtual environment
 
 From a repository checkout:
@@ -49,6 +55,7 @@ make venv-koslife  # optional: adds the koslife demo
 uv run koskari     # interactive REPL
 uv run koskari examples/hello.ki
 ```
+
 
 ### Install
 
@@ -68,8 +75,8 @@ See the [quickstart](docs/quickstart.md) for the full first-session walkthrough.
 
 ## Documentation
 
-User documentation lives in [docs/](docs/) and builds into a Sphinx site with
-`make docs`:
+User documentation is published at [docs.koskari.org](https://docs.koskari.org/)
+and lives in [docs/](docs/), where `make docs` builds it:
 
 - **[Quickstart](docs/quickstart.md)** -- install, a first session, a first
   program.
@@ -94,6 +101,16 @@ A container-based **MCP server** exposes the corpus and the documentation to AI
 coding assistants (Cursor, Claude Desktop, VS Code, and similar) so they can
 search and author idiomatic Koskari. See
 [tools/mcp/README.md](tools/mcp/README.md) for build and client setup.
+
+
+## History
+
+Koskari is the fourth iteration of the Sibilant idea, learning from the experiences of:
+- **[spexy](https://github.com/obriencj/python-spexy)**: S-expressions compiled to Python expression strings, with `let`, `cond`, and multi-expression `lambda` grafted on. Where the reader and s-expression representation began.
+- **[python-sibilant](https://github.com/obriencj/python-sibilant)**: CPython bytecode target (abandoned due to version churn)
+- **[sibilant-ceval](https://github.com/obriencj/sibilant-ceval)**: Custom bytecode evaluator (blocked on call/cc implementation)
+
+This version aims to be a perfect playground -- a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code a joyous expression of will upon the computer.
 
 
 ## Project status
@@ -149,13 +166,15 @@ The repository root is the Koskari project. Import symbols from the submodule th
 ```
 .
 ├── design/                  # Design documentation (see design/README.md)
-├── editors/                 # Editor syntax assets (emacs, helix, textmate)
+├── docs/                    # User documentation (Sphinx) and the example corpus
+├── editors/                 # Editor syntax assets (emacs, helix, textmate, tree-sitter, zed)
 ├── examples/                # Example koskari programs (.ki files)
 ├── koskari/                 # Main Python package
 ├── koskari.pth              # Imports koskari on startup to install the .ki/.kio hooks
 ├── tests/                   # Test suite (mirrors package layout)
 ├── tools/                   # Opcode/editor regen, corpus tooling, and the MCP server
 ├── setup.py, setup.cfg      # Package build and tox configuration
+├── pyproject.toml           # Build-system declaration
 ├── Makefile                 # Build, test, and lint targets
 └── Containerfile            # Runtime container image
 ```
@@ -170,13 +189,19 @@ koskari/
 ├── types.py                 # Value types from lib + Python predicates/helpers
 ├── syntax.py                # Syntax form definitions
 ├── hygiene.py               # Macro hygiene
-├── matcher.py               # Pattern matching for special forms (Python layer)
+├── pragma.py                # Module pragma object (immutable setting mapping)
 ├── builtins.py              # Builtins module placeholder (filled by bootstrap)
+├── asyncio.py               # asyncio compatibility support
+├── launcher.py              # Runtime host for koskari_scripts commands and programmatic entry
+├── itertools.ki             # Iterator combinators over sync and async sources
+├── solve.ki                 # Nondeterministic choice (amb) on delimited continuations
+├── assets/                  # Packaged assets (icon)
 ├── cli/                     # Console entry: Python stub, host, launchpad, and REPL
 │   ├── __init__.py          # Sync entry; main() boots launch.ki via hosted_run
 │   ├── host.py              # Python REPL host (prompter, eval boundary, banners)
 │   ├── launch.ki            # CLI launchpad: argparse, file/command load, dispatch
-│   └── repl.ki              # Interactive REPL loop
+│   ├── repl.ki              # Interactive REPL loop
+│   └── term_graphics.ki     # Terminal graphics detection for the REPL banner
 ├── module.py                # Module lifecycle for .ki source files
 ├── importer.py              # Import hook and loader for .ki/.kio modules
 ├── dis.ki                   # Self-hosted disassembler for Code objects
@@ -185,27 +210,36 @@ koskari/
 │   └── __init__.py          # Bootstrap loader
 ├── reader/                  # S-expression parser and layout block syntax
 │   ├── parser.py            # Reader, SourceStream, LayoutReader
+│   ├── stream.py            # Source streams over files and strings
+│   ├── layout.py            # Layout block reading
+│   ├── pragma.py            # Reader-side pragma settings
 │   └── layouts/             # Layout handlers (conditionals, try, class, ...)
+├── matcher/                 # Pattern compiler for match forms (Python layer)
+├── fences/                  # Fence handlers for fenced foreign literals
 ├── lexer/                   # Token lexer and prompt_toolkit REPL
 │   ├── tokens.py, parser.py, discovery.py, highlight.py
 │   └── prompt_toolkit/      # REPL integration
 ├── extras/                  # Optional integrations (namespace; no __init__.py)
 │   ├── pygments/            # Syntax highlighting lexer
 │   ├── sphinx/              # Sphinx extension and autodocumenters
+│   ├── setuptools/          # Build-time helpers for koskari_scripts packaging
 │   └── lsp/                 # koskari-lsp language server
 ├── help/                    # In-REPL help for syntax, layouts, and tools
 ├── compile/                 # Compiler, bytecode fragments, special forms
 │   ├── compiler.py
 │   ├── helpers.py
+│   ├── processor.py         # Bytecode post-processing passes
 │   ├── pragma/              # Compile-time pragma resolution
 │   └── specials/            # Special form handlers
 ├── serialize/               # Code serialization (codex format)
 └── lib/                     # C extension (native types, bytecode, evaluator)
     ├── atom.c, pair.c, namespace.c, formals.c, ref.c, values.c, ...
-    ├── bytecode.c, eval.c, cont.c, dynchain.c, matcher.c, ...
+    ├── bytecode.c, eval.c, cont.c, dynchain.c, matcher.c, transform.c, ...
     ├── dynchain/            # Dynamic extent handlers (with, wind, try, ...)
     ├── eval/                # Evaluator state machine
-    └── opcode/              # Per-opcode implementations
+    ├── matcher/             # Native pattern-matching steps
+    ├── opcode/              # Per-opcode implementations
+    └── transform/           # Lazy transform providers (map, filter, zip, ...)
 ```
 
 ### tests
@@ -230,10 +264,15 @@ tests/
 ├── exceptions/              # Exception hierarchy tests
 ├── serialize/               # Serialization tests
 ├── cli/                     # CLI tests
+├── corpus/                  # Corpus record conformance (phase_corpus)
+├── itertools/               # Lazy transform provider tests
+├── solve/                   # Solver library tests
+├── tools/                   # Maintainer tool tests
 ├── reproducers/             # Regression reproducers
 ├── extras/                  # Optional integration tests (phase_extras)
 │   ├── pygments/
 │   ├── sphinx/
+│   ├── setuptools/
 │   └── lsp/
 └── native/                  # C harness and container memory tests
 ```
