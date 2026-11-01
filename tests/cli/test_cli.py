@@ -676,6 +676,32 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertIn('42', out)
 
 
+    async def test_main_script_is_the_main_module(self):
+        """
+        The program a script run executes is sys.modules['__main__']
+        while it runs, as under python, so import __main__, pickling
+        and unittest.main find it
+        """
+
+        code, out = await self._capture_main(_script('main_identity.ki'))
+        self.assertEqual(0, code)
+        self.assertEqual('42', out.strip())
+
+
+    async def test_main_restores_the_previous_main_module(self):
+        before = sys.modules['__main__']
+        await self._capture_main(_script('main_identity.ki'))
+        self.assertIs(before, sys.modules['__main__'])
+
+
+    async def test_main_command_is_the_main_module(self):
+        code, out = await self._capture_main(
+            '-c', '(import sys) (var marker 7) '
+            '(print (getattr (item sys.modules "__main__") "marker" None))')
+        self.assertEqual(0, code)
+        self.assertEqual('7', out.strip())
+
+
     async def test_main_script_directory_on_path(self):
         """
         A script run from elsewhere imports the .ki beside it: its own

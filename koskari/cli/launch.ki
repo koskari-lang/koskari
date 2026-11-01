@@ -475,54 +475,66 @@ def run []:
 
   var package_entry (and spec (not (None? spec.submodule_search_locations)))
 
-  var mod None
-  if package_entry:
-    ; a package with no __main__ runs its own entry point: imported
-    ; under its real name, as any import would, so its relative imports
-    ; resolve and it loads once
-    set! mod (import_module_async spec.name)
-    unless (in? "__entry__" (vars mod)):
-      print f"{(basename name)}: No module named {spec.name}.__main__; '{spec.name}' is a package without an entry point and cannot be directly executed" file: sys.stderr
-      return 1
+  ; the program is sys.modules["__main__"] while it runs, as under
+  ; python, so import __main__, pickling and unittest.main find it; the
+  ; entry a host had there comes back when the run returns, as runpy
+  ; restores it, which keeps an in-process run from leaving the swap
+  var previous_main (sys.modules.get "__main__")
+  try:
+    var mod None
+    if package_entry:
+      ; a package with no __main__ runs its own entry point: imported
+      ; under its real name, as any import would, so its relative imports
+      ; resolve and it loads once
+      set! mod (import_module_async spec.name)
+      unless (in? "__entry__" (vars mod)):
+        print f"{(basename name)}: No module named {spec.name}.__main__; '{spec.name}' is a package without an entry point and cannot be directly executed" file: sys.stderr
+        return 1
 
-  else:
-    set! mod (new_module "__main__" package: (if spec spec.parent None))
+    else:
+      set! mod (new_module "__main__" package: (if spec spec.parent None) system: True)
 
-    if command:
-      (run_command mod command
-        interactive: options.interactive)
+      if command:
+        (run_command mod command
+          interactive: options.interactive)
 
-    elif (equal? filename "-"):
-      (run_command mod (sys.stdin.read)
-        filename: "<stdin>"
-        layout: True
-        interactive: options.interactive)
+      elif (equal? filename "-"):
+        (run_command mod (sys.stdin.read)
+          filename: "<stdin>"
+          layout: True
+          interactive: options.interactive)
 
-    elif filename:
-      (run_file mod filename
-        execute_kio: options.execute_kio
-        interactive: options.interactive
-        spec: spec)
+      elif filename:
+        (run_file mod filename
+          execute_kio: options.execute_kio
+          interactive: options.interactive
+          spec: spec)
 
-  ; a program's declared entry runs once its module has loaded and
-  ; sealed; an interactive session goes on to the REPL afterward
-  when (or command filename):
-    var status (run_entry mod)
-    unless options.interactive:
-      return status
+    ; a program's declared entry runs once its module has loaded and
+    ; sealed; an interactive session goes on to the REPL afterward
+    when (or command filename):
+      var status (run_entry mod)
+      unless options.interactive:
+        return status
 
-  ; the package run for its entry point stays the importable package;
-  ; the session opens in a __main__ of its own, as a bare session does
-  when package_entry:
-    set! mod (new_module "__main__")
+    ; the package run for its entry point stays the importable package;
+    ; the session opens in a __main__ of its own, as a bare session does
+    when package_entry:
+      set! mod (new_module "__main__" system: True)
 
-  ; the session module is read and compiled only for a session: a
-  ; script, -c, -m and the kio options never reach it
-  import-from .repl repl
-  (repl mod
-    histfile: options.histfile
-    full_trace: options.repl_full_trace
-    quiet: options.quiet)
+    ; the session module is read and compiled only for a session: a
+    ; script, -c, -m and the kio options never reach it
+    import-from .repl repl
+    (repl mod
+      histfile: options.histfile
+      full_trace: options.repl_full_trace
+      quiet: options.quiet)
+
+  finally:
+    if (None? previous_main):
+      (sys.modules.pop "__main__" None)
+    else:
+      set! sys.modules["__main__"] previous_main
 
 
 ; The end.
