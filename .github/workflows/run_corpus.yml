@@ -1,13 +1,28 @@
 # Reusable corpus-conformance workflow for koskari.
 # Runs only the corpus phase (phase_corpus): every corpus YAML record is
 # checked against the real read/expand/eval pipeline. Invoke via
-# workflow_call, workflow_dispatch, or from ci-corpus.yml.
+# workflow_call, workflow_dispatch, or from ci-corpus.yml. The job runs
+# on the `runner` input, defaulting to GitHub-hosted, so a pull request
+# from a fork never reaches the maintainer's runner.
 
 name: Run corpus tests
 
 on:
   workflow_call:
+    inputs:
+      runner:
+        description: Runner label for the job
+        type: string
+        default: ubuntu-latest
   workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label for the job
+        type: choice
+        options:
+          - ubuntu-latest
+          - self-hosted
+        default: ubuntu-latest
 
 concurrency:
   group: run-corpus-${{ github.workflow }}-${{ github.ref }}
@@ -15,7 +30,7 @@ concurrency:
 
 jobs:
   corpus:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.runner }}
     container:
       image: docker.io/library/python:3.12-bookworm
     steps:
