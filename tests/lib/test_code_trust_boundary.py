@@ -196,7 +196,7 @@ class TestOperandRanges(unittest.TestCase):
 class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
 
     async def test_formals_that_dedup_leave_too_few_slots(self):
-        spec = NamespaceSpec(None, ("a",) * 2001, ())
+        spec = NamespaceSpec(None, ("x",) + ("a",) * 2000, ())
         code = Code(spec, [[OpCode.CONST, "x"], [OpCode.FAST_STORE, 2000],
                            [OpCode.CONST, 1], [OpCode.RETURN, 1]], "t")
         fn = Function(code, NamespaceSpec(None, (), ()).get_namespace(None),
@@ -214,7 +214,7 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, await Expression(code, spec.get_namespace(None))())
 
     async def test_dedup_formals_in_tail_position_raise_cleanly(self):
-        spec = NamespaceSpec(None, ("a",) * 2001, ())
+        spec = NamespaceSpec(None, ("x",) + ("a",) * 2000, ())
         code = Code(spec, [[OpCode.CONST, "x"], [OpCode.FAST_STORE, 2000],
                            [OpCode.CONST, 1], [OpCode.RETURN, 1]], "t")
         callee = Function(code,

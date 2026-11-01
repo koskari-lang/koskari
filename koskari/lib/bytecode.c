@@ -924,6 +924,8 @@ static PyObject *code_m_function(PyObject *self, PyObject *args) {
                  " not %R", parent_ns);
     return NULL;
   }
+  if (KosFunction_CheckFormalsLayout(formals, self) < 0)
+    return NULL;
   return KosFunction_NewFromFormals(self, formals, parent_ns);
 }
 
