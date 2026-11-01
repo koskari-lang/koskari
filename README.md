@@ -7,7 +7,8 @@ custom bytecode evaluator that runs on CPython.
 def greet [name]:
   print f"Hello, {name}!"
 
-when-main:
+@entry-point
+def main []:
   greet "world"
 ```
 
