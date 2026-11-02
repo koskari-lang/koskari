@@ -48,6 +48,10 @@ SRC = """
       (yield "caught"))
     (finally:
       (log.append "inner finally"))))
+
+(def knext [g] (next g))
+(def kforeach1 [g] (for-each [x g] (return x)))
+(def kthrow [g] (await (g.athrow (ValueError "boom"))))
 """
 
 
@@ -149,6 +153,47 @@ class TestYieldFromThrow(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await agen.athrow(ValueError("boom"))
         self.assertEqual(log, ["sync finally"])
+
+
+class TestThrowAfterAKoskariStep(unittest.IsolatedAsyncioTestCase):
+    """
+    A relay first stepped from Koskari, by next or by a for-each step,
+    forwards a later throw to its delegate the same as one first
+    stepped from Python; the Koskari-side athrow does too
+    """
+
+    async def load(self):
+        module = new_module("yield_from_throw_kstep")
+        vars(module)["__file__"] = "<yield_from_throw_kstep>"
+        await load_module_source_async(module, SRC)
+        return vars(module)
+
+    async def test_koskari_next_then_python_athrow(self):
+        v = await self.load()
+        log = []
+        agen = v["relay"](v["inner"](log))
+        self.assertEqual(await v["knext"](agen), 1)
+        self.assertEqual(await agen.athrow(ValueError("boom")), "caught")
+        self.assertEqual(log, ["inner caught"])
+        await agen.aclose()
+
+    async def test_koskari_foreach_step_then_python_athrow(self):
+        v = await self.load()
+        log = []
+        agen = v["relay"](v["inner"](log))
+        self.assertEqual(await v["kforeach1"](agen), 1)
+        self.assertEqual(await agen.athrow(ValueError("boom")), "caught")
+        self.assertEqual(log, ["inner caught"])
+        await agen.aclose()
+
+    async def test_koskari_next_then_koskari_athrow(self):
+        v = await self.load()
+        log = []
+        agen = v["relay"](v["inner"](log))
+        self.assertEqual(await v["knext"](agen), 1)
+        self.assertEqual(await v["kthrow"](agen), "caught")
+        self.assertEqual(log, ["inner caught"])
+        await agen.aclose()
 
 
 # The end.

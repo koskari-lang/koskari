@@ -549,6 +549,15 @@ static KosIterStepResult agen_iter_drive(
   if (kos_dyn_gen_install(ctx, (PyObject *) agen, state) < 0)
     goto drive_error;
 
+  /* The installed frame sits at a yield, whichever context it last
+     yielded on. A context that is not running enters the evaluator
+     next and dispatches its send or throw on the suspension event, so
+     the event says yield here: a span frozen by a flattened consumer
+     never left an evaluator, and the context it lands on may never
+     have run. A running consumer threads into the frame directly. */
+  if (! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
+    KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD);
+
   /* A throw ingress primed the exception: a frame waiting on a
      resume takes it there and throws it into its delegate; any
      other frame raises it at the resume point as before. */
