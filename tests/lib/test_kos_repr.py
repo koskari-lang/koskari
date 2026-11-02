@@ -554,9 +554,12 @@ class TestKosReprRegistry(unittest.TestCase):
 
 class TestKosReprDepth(unittest.TestCase):
     """
-    A nest deeper than the C stack can walk raises RecursionError, as
-    repr of Python's own containers does; a cycle is abbreviated, not
-    recursed into
+    A deep nest is bounded by the recursion gate, as repr of Python's
+    own containers is: the call returns a string or raises
+    RecursionError, and never takes the process down. Which of the two
+    depends on the interpreter; from 3.14 the gate measures the C stack
+    itself, so a large stack walks the whole nest. A cycle is
+    abbreviated, not recursed into
     """
 
     def nested(self, make, depth):
@@ -565,20 +568,24 @@ class TestKosReprDepth(unittest.TestCase):
             value = make((value,))
         return value
 
-    def test_deep_list_raises_recursion_error(self):
-        with self.assertRaises(RecursionError):
-            kos_repr(self.nested(list, 100000))
+    def assert_bounded(self, value):
+        try:
+            got = kos_repr(value)
+        except RecursionError:
+            return
+        self.assertIsInstance(got, str)
 
-    def test_deep_tuple_raises_recursion_error(self):
-        with self.assertRaises(RecursionError):
-            kos_repr(self.nested(tuple, 100000))
+    def test_deep_list_is_bounded(self):
+        self.assert_bounded(self.nested(list, 100000))
 
-    def test_deep_dict_raises_recursion_error(self):
+    def test_deep_tuple_is_bounded(self):
+        self.assert_bounded(self.nested(tuple, 100000))
+
+    def test_deep_dict_is_bounded(self):
         value = {}
         for _ in range(100000):
             value = {"k": value}
-        with self.assertRaises(RecursionError):
-            kos_repr(value)
+        self.assert_bounded(value)
 
     def test_shallow_nest_and_cycle_still_render(self):
         self.assertEqual("#[#[#[]]]", kos_repr(self.nested(list, 2)))
