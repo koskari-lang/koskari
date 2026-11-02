@@ -1387,6 +1387,133 @@ static int test_drive_restores_thread_exc_info(void) {
 }
 
 
+/* === a transform step kind's traverse === */
+
+
+static PyObject *traverse_target = NULL;
+static int traverse_visits = 0;
+
+
+static int count_target_visit(PyObject *obj, void *arg) {
+
+  (void) arg;
+  if (obj == traverse_target)
+    traverse_visits++;
+  return 0;
+}
+
+
+/**
+   A callable answering every element with an awaitable that suspends
+   once, yielding 'tick', and then returns 1. Returns the callable, or
+   NULL with an error set.
+*/
+static PyObject *resume_ticking_callable(void) {
+
+  PyObject *globals = PyDict_New();
+  PyObject *ran, *fn;
+
+  if (! globals)
+    return NULL;
+
+  ran = PyRun_String(
+      "class Tick:\n"
+      "    def __await__(self):\n"
+      "        yield 'tick'\n"
+      "        return 1\n"
+      "def tick(x):\n"
+      "    return Tick()\n",
+      Py_file_input, globals, globals);
+  if (! ran) {
+    Py_DECREF(globals);
+    return NULL;
+  }
+  Py_DECREF(ran);
+
+  fn = PyDict_GetItemString(globals, "tick");
+  Py_XINCREF(fn);
+  Py_DECREF(globals);
+  if (! fn)
+    PyErr_SetString(PyExc_RuntimeError, "the prelude defined no tick");
+  return fn;
+}
+
+
+/**
+   A map's step suspended on its callable's awaitable leaves the step
+   frame on top of the map's context, naming the map as its state. The
+   stage holds one reference to the map, which the kind's traverse
+   visits once; the step's finish releases it, and the traverse then
+   visits nothing.
+*/
+static int test_staged_transform_step_traverses_its_transform(void) {
+
+  PyObject *tick = resume_ticking_callable();
+  PyObject *items, *t, *stepper, *res;
+  KosDynNode *top;
+  const KosResumeKind *kind = NULL;
+  void *state = NULL;
+  Py_ssize_t unheld, baseline, staged_refs, finished_refs;
+  int staged_visits, finished_visits, delivered;
+
+  TEST_ASSERT_NOT_NULL(tick, "build the ticking callable");
+  items = Py_BuildValue("[i]", 1);
+  TEST_ASSERT_NOT_NULL(items, "build the source list");
+
+  t = PyObject_CallFunction((PyObject *) &KosMapType, "OO", tick, items);
+  Py_DECREF(tick);
+  Py_DECREF(items);
+  TEST_ASSERT_NOT_NULL(t, "build the map");
+  unheld = Py_REFCNT(t);
+
+  stepper = PyObject_CallMethod(t, "__anext__", NULL);
+  TEST_ASSERT_NOT_NULL(stepper, "take the map's __anext__");
+  baseline = Py_REFCNT(t);
+
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  TEST_ASSERT_NOT_NULL(res, "the step suspends on the awaitable");
+  Py_DECREF(res);
+
+  top = KosContext_DYN_TOP(kos_transform_pyctx(t));
+  if (top && KosDynNode_IS_FRAME(top)) {
+    kind = KosDynFrame_RESUME_KIND((KosDynFrame *) top);
+    state = KosDynFrame_RESUME_STATE((KosDynFrame *) top);
+  }
+  staged_refs = Py_REFCNT(t);
+
+  traverse_target = t;
+  traverse_visits = 0;
+  (void) kos_resume_traverse(kind, state, count_target_visit, NULL);
+  staged_visits = traverse_visits;
+
+  /* the awaitable returns: the element is delivered and the step
+     finished */
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  delivered = (! res && PyErr_ExceptionMatches(PyExc_StopIteration));
+  Py_XDECREF(res);
+  PyErr_Clear();
+
+  traverse_visits = 0;
+  (void) kos_resume_traverse(kind, t, count_target_visit, NULL);
+  finished_visits = traverse_visits;
+  finished_refs = Py_REFCNT(t);
+  traverse_target = NULL;
+
+  Py_DECREF(stepper);
+  Py_DECREF(t);
+
+  TEST_ASSERT_NOT_NULL(kind, "the suspended top frame carries a resume");
+  TEST_ASSERT_SAME(state, t, "the step frame's state is the map");
+  TEST_ASSERT_EQ(staged_refs, baseline + 1, "the stage holds the map");
+  TEST_ASSERT_EQ(staged_visits, 1, "the kind's traverse visits the map");
+  TEST_ASSERT(delivered, "the second send delivers the element");
+  TEST_ASSERT_EQ(finished_visits, 0, "a finished step visits nothing");
+  /* the step ended, so the spent stepper let go of the map as well */
+  TEST_ASSERT_EQ(finished_refs, unheld, "the finish releases the map");
+  return 0;
+}
+
+
 /* === Suite === */
 
 
@@ -1419,6 +1546,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_returns_value_in_hand);
   RUN_TEST(test_drive_restores_thread_exc_info);
+  RUN_TEST(test_staged_transform_step_traverses_its_transform);
 
   return 0;
 }

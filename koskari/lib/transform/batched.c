@@ -77,10 +77,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(batched_resume_deliver_kind, "batched-step",
-                batched_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(batched_resume_fill_kind, "batched-step",
-                batched_resume_fill, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(batched_resume_deliver_kind, "batched-step",
+    batched_resume_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(batched_resume_fill_kind, "batched-step",
+    batched_resume_fill);
 
 
 /**
@@ -178,9 +178,8 @@ static KosIterStepResult batched_step_body(
     for (i = 0; i < b->n; i++) {
       PyObject *element;
 
-      switch (KosContext_NextOrDefer(ctx, &t->src,
-                                       &batched_resume_fill_kind, b,
-                                       &t->cached_frame, &element)) {
+      switch (kos_transform_next_or_defer(
+          ctx, t, &t->src, &batched_resume_fill_kind, &element)) {
         case KOS_IREQ_DELIVERED:
           PyTuple_SET_ITEM(batch, i, element);
           continue;

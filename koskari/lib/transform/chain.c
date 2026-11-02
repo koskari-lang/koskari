@@ -82,12 +82,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(chain_resume_deliver_kind, "chain-step",
-                chain_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(chain_resume_fetch_kind, "chain-step",
-                chain_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(chain_resume_series_kind, "chain-step",
-                chain_resume_series, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(chain_resume_deliver_kind, "chain-step",
+    chain_resume_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(chain_resume_fetch_kind, "chain-step",
+    chain_resume_fetch);
+KOS_TRANSFORM_STEP_KIND_AS_IS(chain_resume_series_kind, "chain-step",
+    chain_resume_series);
 
 
 /**
@@ -219,9 +219,8 @@ static KosIterStepResult chain_step_body(
         *out = NULL;
         return KOS_ITER_EXHAUSTED;
       }
-      switch (KosContext_NextOrDefer(ctx, &c->series,
-                                       &chain_resume_fetch_kind, t,
-                                       &t->cached_frame, &iterable)) {
+      switch (kos_transform_next_or_defer(
+          ctx, t, &c->series, &chain_resume_fetch_kind, &iterable)) {
         case KOS_IREQ_DELIVERED:
           break;
         case KOS_IREQ_EXHAUSTED:
@@ -241,9 +240,8 @@ static KosIterStepResult chain_step_body(
       continue;
     }
 
-    switch (KosContext_NextOrDefer(ctx, &t->src,
-                                     &chain_resume_fetch_kind, t,
-                                     &t->cached_frame, &element)) {
+    switch (kos_transform_next_or_defer(
+        ctx, t, &t->src, &chain_resume_fetch_kind, &element)) {
       case KOS_IREQ_DELIVERED:
         *out = element;
         return KOS_ITER_VALUE;

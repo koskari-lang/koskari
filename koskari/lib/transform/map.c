@@ -91,16 +91,16 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_fetch_row(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_deliver_row(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(map_resume_after_fetch_kind, "map-step",
-                map_resume_after_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(map_resume_after_result_kind, "map-step",
-                map_resume_after_result, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(map_resume_start_fetch_kind, "map-step",
-                map_resume_start_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(map_resume_fetch_row_kind, "map-step",
-                map_resume_fetch_row, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(map_resume_deliver_row_kind, "map-step",
-                map_resume_deliver_row, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(map_resume_after_fetch_kind, "map-step",
+    map_resume_after_fetch);
+KOS_TRANSFORM_STEP_KIND(map_resume_after_result_kind, "map-step",
+    map_resume_after_result);
+KOS_TRANSFORM_STEP_KIND_AS_IS(map_resume_start_fetch_kind, "map-step",
+    map_resume_start_fetch);
+KOS_TRANSFORM_STEP_KIND_AS_IS(map_resume_fetch_row_kind, "map-step",
+    map_resume_fetch_row);
+KOS_TRANSFORM_STEP_KIND_AS_IS(map_resume_deliver_row_kind, "map-step",
+    map_resume_deliver_row);
 
 
 /**
@@ -263,9 +263,8 @@ static KosIterStepResult map_step_row(
   for (i = 0; i < t->nsrc; i++) {
     PyObject *element;
 
-    switch (KosContext_NextOrDefer(
-        ctx, &t->reqs[i], &map_resume_fetch_row_kind, z,
-        &t->cached_frame, &element)) {
+    switch (kos_transform_next_or_defer(
+        ctx, t, &t->reqs[i], &map_resume_fetch_row_kind, &element)) {
       case KOS_IREQ_DELIVERED:
         kos_transform_row_set(row, (Py_ssize_t) i, element);
         continue;

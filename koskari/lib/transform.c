@@ -103,7 +103,7 @@ int kos_transform_init_one(
   t->cached_frame = NULL;
   t->ctx = NULL;
   t->closed = 0;
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   return 0;
 }
 
@@ -127,7 +127,7 @@ void kos_transform_init_view(
   t->cached_frame = NULL;
   t->ctx = NULL;
   t->closed = 0;
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
 }
 
 
@@ -225,6 +225,9 @@ KosIterStepResult kos_transform_stage(
     Py_XDECREF(value);
     return kos_transform_step_abort(ctx, t, pre_top);
   }
+  /* the frame names t from here: the stage holds t until the step's
+     finish or clear */
+  kos_transform_staged(t);
   /* the frame carries the kind and the record from here; an abort
      below tears it down through the kind's clear */
   if (value) {
@@ -281,7 +284,7 @@ KosIterStepResult kos_transform_throw(
     /* Generator close semantics: run the source's cleanup, mark
        closed, and let GeneratorExit propagate as the success shape. */
     t->closed = 1;
-    t->busy = 0;
+    t->busy = KOS_TF_IDLE;
     close_sources(t);
   }
 
@@ -303,7 +306,7 @@ int kos_transform_close(PyObject *self) {
     return 0;
 
   t->closed = 1;
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   close_sources(t);
 
   return 0;
@@ -313,20 +316,38 @@ int kos_transform_close(PyObject *self) {
 void kos_transform_finish(PyObject *self, int exhausted) {
 
   KosTransform *t = (KosTransform *) self;
+  int staged = (t->busy == KOS_TF_STAGED);
 
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   Py_CLEAR(t->pending);
   if (exhausted)
     t->closed = 1;
+  /* last: the stage's reference may be the transform's last */
+  if (staged)
+    Py_DECREF(self);
 }
 
 
 void kos_transform_step_clear(void *state) {
 
   KosTransform *t = (KosTransform *) state;
+  int staged = (t->busy == KOS_TF_STAGED);
 
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   Py_CLEAR(t->pending);
+  /* last: the stage's reference may be the transform's last */
+  if (staged)
+    Py_DECREF((PyObject *) t);
+}
+
+
+int kos_transform_step_traverse(void *state, visitproc visit, void *arg) {
+
+  KosTransform *t = (KosTransform *) state;
+
+  if (t->busy == KOS_TF_STAGED)
+    Py_VISIT((PyObject *) t);
+  return 0;
 }
 
 
@@ -368,8 +389,9 @@ int kos_transform_clear(PyObject *self) {
 
   /* the context goes first: a source generator stepped on it may still
      have its node on the chain, which lets go before the source does.
-     A stepper mid-step on this context holds its own reference and
-     finishes its drive before letting go; the last holder frees. */
+     A source with a step in flight is held by that step's stage
+     reference, so dropping it here frees nothing a live frame names;
+     the last holder frees. */
   Py_CLEAR(t->ctx);
   KosCallShape_Clear(&t->fn);
   Py_CLEAR(t->src.iter);

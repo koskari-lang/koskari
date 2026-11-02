@@ -373,6 +373,45 @@ static PyObject *make_stepped_owning_adapter(void) {
 }
 
 
+/* === a source transform with its step in flight === */
+
+
+/**
+   A callable answering every element with an awaitable that suspends
+   once, yielding 'tick', and then returns 1. Returns the callable, or
+   NULL with an error set.
+*/
+static PyObject *make_ticking_callable(void) {
+
+  PyObject *globals = PyDict_New();
+  PyObject *ran, *fn;
+
+  if (! globals)
+    return NULL;
+
+  ran = PyRun_String(
+      "class Tick:\n"
+      "    def __await__(self):\n"
+      "        yield 'tick'\n"
+      "        return 1\n"
+      "def tick(x):\n"
+      "    return Tick()\n",
+      Py_file_input, globals, globals);
+  if (! ran) {
+    Py_DECREF(globals);
+    return NULL;
+  }
+  Py_DECREF(ran);
+
+  fn = PyDict_GetItemString(globals, "tick");
+  Py_XINCREF(fn);
+  Py_DECREF(globals);
+  if (! fn)
+    PyErr_SetString(PyExc_RuntimeError, "the prelude defined no tick");
+  return fn;
+}
+
+
 /* === tests === */
 
 
@@ -534,6 +573,69 @@ static int test_pyiter_exhaustion_releases_context_first(void) {
 }
 
 
+/**
+   A map over a map, its step suspended on the inner map's awaitable,
+   so the inner step's frame sits on the outer's context. The outer
+   map's clear drops its source, the inner map, while that frame is
+   still on the chain; the inner map stays alive until the context's
+   clear frees the frame, which is seen through the inner map's source
+   list, held by the inner map's iterator over it.
+*/
+static int test_staged_source_survives_containing_clear(void) {
+
+  PyObject *tick = make_ticking_callable();
+  PyObject *items, *inner, *outer, *stepper, *res;
+  KosContext *ctx;
+  Py_ssize_t held_after_clear, held_at_end;
+  int ticked;
+
+  TEST_ASSERT_NOT_NULL(tick, "build the ticking callable");
+  items = Py_BuildValue("[ii]", 1, 2);
+  TEST_ASSERT_NOT_NULL(items, "build the source list");
+
+  inner = PyObject_CallFunction((PyObject *) &KosMapType, "OO", tick, items);
+  Py_DECREF(tick);
+  TEST_ASSERT_NOT_NULL(inner, "build the inner map");
+
+  outer = PyObject_CallFunction((PyObject *) &KosMapType, "OO",
+                                (PyObject *) &PyLong_Type, inner);
+  /* the outer map holds the only reference to the inner one */
+  Py_DECREF(inner);
+  TEST_ASSERT_NOT_NULL(outer, "build the outer map");
+
+  stepper = PyObject_CallMethod(outer, "__anext__", NULL);
+  TEST_ASSERT_NOT_NULL(stepper, "take the outer map's __anext__");
+
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  TEST_ASSERT_NOT_NULL(res, "the step suspends on the awaitable");
+  ticked = (PyUnicode_Check(res)
+            && PyUnicode_CompareWithASCIIString(res, "tick") == 0);
+  Py_DECREF(res);
+  TEST_ASSERT(ticked, "the suspension yields the awaitable's tick");
+
+  ctx = kos_transform_pyctx(outer);
+  TEST_ASSERT_NOT_NULL(ctx, "the outer map's durable context");
+  Py_INCREF(ctx);
+
+  (void) Py_TYPE(outer)->tp_clear(outer);
+  held_after_clear = Py_REFCNT(items);
+
+  (void) Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
+  held_at_end = Py_REFCNT(items);
+
+  Py_DECREF(stepper);
+  Py_DECREF(ctx);
+  Py_DECREF(outer);
+  Py_DECREF(items);
+
+  TEST_ASSERT_EQ(held_after_clear, 2,
+                 "the inner map outlives its holder's clear");
+  TEST_ASSERT_EQ(held_at_end, 1,
+                 "the inner map goes with its step's frame");
+  return 0;
+}
+
+
 int run_iterate_tests(void) {
 
   BEGIN_TEST_SUITE("Iterate Adapter Tests");
@@ -547,6 +649,7 @@ int run_iterate_tests(void) {
   RUN_TEST(test_pyiter_dealloc_releases_context_first);
   RUN_TEST(test_pyiter_clear_releases_context_first);
   RUN_TEST(test_pyiter_exhaustion_releases_context_first);
+  RUN_TEST(test_staged_source_survives_containing_clear);
 
   return 0;
 }
