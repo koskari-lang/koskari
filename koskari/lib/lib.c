@@ -166,29 +166,23 @@ int koskari_lib_init(PyObject *mod) {
 }
 
 
-/* The first module object PyInit_lib made, whose statics these are. A
-   single-phase module has one set of statics for the process, while a
+/* A single-phase module has one set of statics for the process. A
    re-import after a collection or an import from a legacy
-   subinterpreter runs PyInit_lib again over them: the guarded unit
-   inits rebuild only what a clear emptied, and the newcomer shares the
-   statics without taking them over. Only the owner's teardown, through
-   m_clear on a cycle or m_free on a plain dealloc, clears them; on a
-   cycle both slots run, and the second call is a no-op. A host that
-   fills a module of its own, as the native test harness does, names
-   no owner and clears as it always did. Borrowed: the owner is the
-   module being cleared. */
-static PyObject *lib_owner = NULL;
-
+   subinterpreter runs PyInit_lib again over them, and the guarded unit
+   inits leave what stands in place while filling the new module dict.
+   No module slot clears the statics: the static types and their
+   instances hold no reference to the module object, so they outlive
+   it, and a finalizer that runs after the module's collection at
+   interpreter shutdown still interns a symbol or renders a pair. The
+   clear is for a host that fills a module of its own and tears it down
+   itself, as the native test harness does. */
 int koskari_lib_clear(PyObject *mod) {
   if (! mod)
     return -1;
 
-  if (lib_owner && mod != lib_owner)
-    return 0;
   if (lib_cleared)
     return 0;
   lib_cleared = 1;
-  lib_owner = NULL;
 
   PyObject *const dict = PyModule_GetDict(mod);
   if (! dict)
@@ -294,14 +288,6 @@ int koskari_lib_clear(PyObject *mod) {
 }
 
 
-static void koskari_lib_free(void *mod) {
-  /* A dealloc outside a cycle never ran m_clear; the error state of a
-     failed clear has nowhere to go from a destructor. */
-  if (koskari_lib_clear((PyObject *) mod) < 0)
-    PyErr_WriteUnraisable((PyObject *) mod);
-}
-
-
 /* === module definition === */
 
 
@@ -315,8 +301,8 @@ static struct PyModuleDef libmod = {
   .m_methods = libmod_methods,
   .m_slots = NULL,
   .m_traverse = NULL,
-  .m_clear = koskari_lib_clear,
-  .m_free = koskari_lib_free,
+  .m_clear = NULL,
+  .m_free = NULL,
 };
 
 
@@ -330,8 +316,6 @@ PyMODINIT_FUNC PyInit_lib(void) {
     return NULL;
   }
 
-  if (! lib_owner)
-    lib_owner = mod;
   return mod;
 }
 

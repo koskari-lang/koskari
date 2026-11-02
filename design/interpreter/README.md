@@ -17,7 +17,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 ## Contents
 
 - **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`): the 32-byte instruction record and the resolved extras row -- design record [archive/resolved-operands.md](../archive/resolved-operands.md); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
-- **lib-lifecycle.md**: The `koskari.lib` module lifecycle: process statics, a re-runnable init, one owner, owner-only teardown through `m_clear` and `m_free`
+- **lib-lifecycle.md**: The `koskari.lib` module lifecycle: process statics, a re-runnable init, no teardown from the module slots, an explicit clear for a host of its own
 - **electors.md**: Electors — handlers elected once for a site's operands (cache slot) or an extent's fixed fact (dyn node) and tail-called thereafter; built on YIELD_FROM (node-style) and on OBJECT_OPERAND and the in-place families (cache-style, int bodies); float and string bodies, the compare family, FOREACH, and the return arm remain
 - **[archive/bytecode-finalization.md](../archive/bytecode-finalization.md)** (archived): Final form phase design — collect/size/allocate/emit pipeline, identity-based cpool dedup, unified block with extra table; implemented in `bytecode.c`
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
