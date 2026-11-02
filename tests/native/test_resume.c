@@ -914,6 +914,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
    clear runs: a clear can run code that reaches the frame, so the
    frame must already have let go of the resume it is releasing. */
 static KosDynFrame *observed_frame = NULL;
+static KosDynDelim *observed_delim = NULL;
 static int observed_clear_calls = 0;
 static void *observed_clear_in = NULL;
 static const KosResumeKind *observed_kind_seen = NULL;
@@ -923,6 +924,11 @@ static void observing_clear(void *state) {
 
   observed_clear_calls++;
   observed_clear_in = state;
+  if (observed_delim) {
+    observed_kind_seen = KosDynDelim_SAVED_RESUME_KIND(observed_delim);
+    observed_state_seen = KosDynDelim_SAVED_RESUME_STATE(observed_delim);
+    return;
+  }
   observed_kind_seen = KosDynFrame_RESUME_KIND(observed_frame);
   observed_state_seen = KosDynFrame_RESUME_STATE(observed_frame);
 }
@@ -933,10 +939,17 @@ KOS_RESUME_KIND(resume_observing_kind, "observing", resume_probe,
 static void observing_reset(KosDynFrame *frame) {
 
   observed_frame = frame;
+  observed_delim = NULL;
   observed_clear_calls = 0;
   observed_clear_in = NULL;
   observed_kind_seen = &resume_observing_kind;
   observed_state_seen = &observed_clear_calls;
+}
+
+static void observing_delim_reset(KosDynDelim *delim) {
+
+  observing_reset(NULL);
+  observed_delim = delim;
 }
 
 
@@ -1068,6 +1081,48 @@ static int test_capture_restore_apply_unnames_prior_before_clear(void) {
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
+}
+
+
+/* A delim freed with a displaced resume still saved runs the clear
+   with both saved fields already NULL, freed directly or through
+   kos_dynchain_free. */
+static int check_delim_free_unnames_saved_resume(int through_chain) {
+
+  KosDynDelim *delim = kos_dyndelim_new(
+      NULL, KOS_DYN_DELIM_MODE_INPLACE, NULL, NULL, NULL, NULL);
+  TEST_ASSERT_NOT_NULL(delim, "create delim");
+
+  int marker = 0;
+  observing_delim_reset(delim);
+  KosDynDelim_SAVED_RESUME_KIND(delim) = &resume_observing_kind;
+  KosDynDelim_SAVED_RESUME_STATE(delim) = &marker;
+
+  if (through_chain)
+    kos_dynchain_free((KosDynNode *) delim, NULL);
+  else
+    kos_dyndelim_free(delim);
+  observed_delim = NULL;
+  TEST_ASSERT_EQ(observed_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(observed_clear_in, &marker,
+                   "the clear was handed the delim's saved state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the delim named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the delim named no state while the clear ran");
+  return 0;
+}
+
+
+static int test_dyndelim_free_unnames_saved_resume_before_clear(void) {
+
+  return check_delim_free_unnames_saved_resume(0);
+}
+
+
+static int test_dynchain_free_unnames_delim_saved_resume_before_clear(void) {
+
+  return check_delim_free_unnames_saved_resume(1);
 }
 
 
@@ -1540,6 +1595,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_clear_resume_unnames_state_before_clear);
   RUN_TEST(test_free_unnames_resume_before_clear);
   RUN_TEST(test_capture_restore_apply_unnames_prior_before_clear);
+  RUN_TEST(test_dyndelim_free_unnames_saved_resume_before_clear);
+  RUN_TEST(test_dynchain_free_unnames_delim_saved_resume_before_clear);
   RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_cache_inert_clears_resume_triple);
