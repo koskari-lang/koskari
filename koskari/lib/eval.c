@@ -280,12 +280,16 @@ static KosOpResult revive_await(
       PyObject *val = throw_exc;
       PyObject *tb = Py_None;
       PyObject *res = NULL;
+      PyObject *await_iter = KosContext_PythonAwaitIter(ctx);
       PySendResult step;
       Py_INCREF(typ);
       Py_INCREF(val);
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
-      step = kos_iter_throw(KosContext_PythonAwaitIter(ctx), val, &res);
+      /* the iterator is held across the throw, which can run user code */
+      Py_INCREF(await_iter);
+      step = kos_iter_throw(await_iter, val, &res);
+      Py_DECREF(await_iter);
       Py_DECREF(typ);
       Py_DECREF(val);
       Py_XDECREF(tb);

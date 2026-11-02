@@ -400,7 +400,9 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen) {
 
   PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
   if (it) {
+    Py_INCREF(it);
     kos_iter_close(it);
+    Py_DECREF(it);
     Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
   }
 

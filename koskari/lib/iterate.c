@@ -260,7 +260,9 @@ static void stepper_abandon_drive(KosIterStepper *st) {
   {
     PyObject *it = KosContext_PY_AWAIT_ITER(st->ctx);
     if (it) {
+      Py_INCREF(it);
       kos_iter_close(it);
+      Py_DECREF(it);
       Py_CLEAR(KosContext_PY_AWAIT_ITER(st->ctx));
     }
   }
@@ -436,9 +438,11 @@ static int stepper_resume_await(
 
     /* the awaitable runs on the provider's behalf: its context is the
        active one for the step */
+    Py_INCREF(it);
     kos_domain_push_scope(st->ctx);
     r = kos_iter_send(it, send_val ? send_val : Py_None, &step);
     kos_domain_pop_scope(st->ctx);
+    Py_DECREF(it);
     Py_XDECREF(send_val);
 
     if (r == PYGEN_NEXT) {
