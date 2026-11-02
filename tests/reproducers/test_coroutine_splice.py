@@ -84,15 +84,22 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
             coro.send(None)
 
 
-    async def test_started_coroutine_still_completes(self):
+    async def test_started_coroutine_refuses_a_second_awaiter(self):
         """
-        A coroutine Python already started keeps the Python drive
+        A coroutine Python already started owes its next reply to the
+        party that received its yield; a Koskari await of it is a second
+        awaiter and is refused, as CPython refuses one, rather than
+        taken fresh onto the chain or driven in the first party's place
         """
 
         mod = await self.load_module()
         coro = mod.sleeper()
         coro.send(None)
-        self.assertEqual(await mod.await_object(coro), "woke")
+        with self.assertRaises(RuntimeError) as caught:
+            await mod.await_object(coro)
+        self.assertEqual(
+            str(caught.exception), "coroutine is being awaited already")
+        coro.close()
 
 
     async def test_demand_denies_a_wrapped_suspension(self):

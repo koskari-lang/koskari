@@ -343,6 +343,18 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args);
 
 static PyObject *coroutine_await(PyObject *self) {
 
+  KosCoroutine *coro = (KosCoroutine *) self;
+
+  /* A coroutine suspended under one awaiter, on a Python awaitable or
+     at a yield, is that awaiter's to advance: a second await is refused
+     here, as CPython refuses one, rather than sending into the first
+     awaiter's inner awaitable from another task. */
+  if (coro->state == KOS_CORO_WAITING_PY || coro->state == KOS_CORO_YIELDED) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "coroutine is being awaited already");
+    return NULL;
+  }
+
   Py_INCREF(self);
   return self;
 }
