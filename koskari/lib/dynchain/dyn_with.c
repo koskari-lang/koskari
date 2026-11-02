@@ -109,9 +109,10 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
      template can carry; nor can what was stored for its completion. */
   if (KosDynWith_ENTER_PENDING(src) || KosDynWith_EXIT_PENDING(src)
       || KosDynWith_OB(src)->kind != KOS_OB_NONE) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "cannot capture a continuation across a with whose"
-                    " __enter__ or __exit__ is in flight");
+    kos_raise_prompt_unreachable(
+        NULL, KosDynWith_ENTER_PENDING(src) ? "enter" : "exit",
+        "cannot capture a continuation from inside a with whose %s is"
+        " in flight");
     return NULL;
   }
 

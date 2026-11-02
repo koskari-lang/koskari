@@ -28,6 +28,16 @@ of a [`with`](with.md) and the after thunk of a
 [`dyn-wind`](compile-dyn-wind.md) all run, innermost first, before the
 continuation's body resumes.
 
+**Errors:** A `with` or `dyn-wind` inside the captured region is captured
+with it, and its `__exit__` or after thunk runs on transfer as above. A
+capture taken from inside one of their calls while it runs, the body of
+`__enter__` or `__exit__` or a before or after thunk, is refused, as is a
+capture that would cross a generator: `KoskariPromptUnreachable`, with the
+`boundary` attribute naming what refused (`enter`, `exit`, `before`,
+`after` or `generator`) and `operation` set to `call/cc`. The same applies
+to [`let/cc`](compile-let-cc.md) and [`capture/cc`](compile-capture-cc.md).
+See [Error codes](../error-codes.md).
+
 **Examples:**
 
 ```koskari

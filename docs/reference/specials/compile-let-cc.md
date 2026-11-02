@@ -26,3 +26,8 @@ namespace. `K` is not visible after the `compile/let/cc` form.
     (k "done")
     (never-reached)))
 ```
+
+**Errors:** As for [`call/cc`](compile-call-cc.md): a capture from inside a
+running `__enter__`, `__exit__`, before thunk or after thunk, or one that
+would cross a generator, raises `KoskariPromptUnreachable` naming the
+boundary.
