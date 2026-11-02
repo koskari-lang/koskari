@@ -83,7 +83,20 @@ typedef struct {
 } KosPairIterator;
 
 
+static int piter_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(((KosPairIterator *) self)->pair);
+  return 0;
+}
+
+
+static int piter_clear(PyObject *self) {
+  Py_CLEAR(((KosPairIterator *) self)->pair);
+  return 0;
+}
+
+
 static void piter_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(((KosPairIterator *) self)->pair);
   Py_TYPE(self)->tp_free(self);
 }
@@ -125,8 +138,10 @@ PyTypeObject KosPairIteratorType = {
   sizeof(KosPairIterator),
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_dealloc = piter_dealloc,
+  .tp_traverse = piter_traverse,
+  .tp_clear = piter_clear,
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = piter_iternext,
 };
@@ -146,7 +161,22 @@ typedef struct {
 } KosPairFollower;
 
 
+static int pfoll_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(((KosPairFollower *) self)->current);
+  Py_VISIT(((KosPairFollower *) self)->seen);
+  return 0;
+}
+
+
+static int pfoll_clear(PyObject *self) {
+  Py_CLEAR(((KosPairFollower *) self)->current);
+  Py_CLEAR(((KosPairFollower *) self)->seen);
+  return 0;
+}
+
+
 static void pfoll_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(((KosPairFollower *) self)->current);
   Py_CLEAR(((KosPairFollower *) self)->seen);
   Py_TYPE(self)->tp_free(self);
@@ -224,8 +254,10 @@ PyTypeObject KosPairFollowerType = {
   sizeof(KosPairFollower),
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_dealloc = pfoll_dealloc,
+  .tp_traverse = pfoll_traverse,
+  .tp_clear = pfoll_clear,
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = pfoll_iternext,
 };
@@ -300,13 +332,14 @@ static int pair_setitem(PyObject *self, Py_ssize_t index, PyObject *val) {
 
 
 static PyObject *pair_iter(PyObject *self) {
-  KosPairIterator *i = PyObject_New(KosPairIterator, &KosPairIteratorType);
+  KosPairIterator *i = PyObject_GC_New(KosPairIterator, &KosPairIteratorType);
   if(! i)
     return NULL;
 
   Py_INCREF(self);
   i->pair = self;
   i->index = 0;
+  PyObject_GC_Track((PyObject *) i);
 
   return (PyObject *) i;
 }
@@ -909,7 +942,7 @@ static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
    :return: new follower, or NULL on error
 */
 static PyObject *pair_follower_new(PyObject *head, long just_items) {
-  KosPairFollower *i = PyObject_New(KosPairFollower, &KosPairFollowerType);
+  KosPairFollower *i = PyObject_GC_New(KosPairFollower, &KosPairFollowerType);
   Py_ssize_t mu, lambda;
 
   if (! i)
@@ -919,6 +952,9 @@ static PyObject *pair_follower_new(PyObject *head, long just_items) {
   i->current = head;
   i->seen = NULL;
   i->just_items = just_items;
+  /* tracked once every field is valid, so the failure below releases
+     a tracked object */
+  PyObject_GC_Track((PyObject *) i);
 
   if (pair_spine_cycle(head, &mu, &lambda, NULL)) {
     i->seen = PySet_New(NULL);
@@ -1820,12 +1856,13 @@ static PyObject *nil_kos_repr(PyObject *self, PyObject *Py_UNUSED(_unused)) {
 
 
 static PyObject *nil_iter(PyObject *self) {
-  KosPairIterator *i = PyObject_New(KosPairIterator, &KosPairIteratorType);
+  KosPairIterator *i = PyObject_GC_New(KosPairIterator, &KosPairIteratorType);
   if(! i)
     return NULL;
 
   i->index = 0;
   i->pair = NULL;
+  PyObject_GC_Track((PyObject *) i);
 
   return (PyObject *) i;
 }
