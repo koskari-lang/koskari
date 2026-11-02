@@ -1084,10 +1084,13 @@ static KosEvaluatedTypeObject KosPyIterType;
 */
 static void pyiter_drop_state(KosPyIter *gen) {
 
-  Py_CLEAR(gen->provider);
-
+  /* the context before the provider: a chain left on it names the
+     provider through its GEN node and must go while the provider is
+     alive */
   Py_CLEAR(gen->ctx);
   gen->ctx_owned = 0;
+
+  Py_CLEAR(gen->provider);
 }
 
 
@@ -1105,11 +1108,13 @@ static void pyiter_release_state(KosPyIter *gen) {
       PyErr_Clear();
       PyErr_Restore(ftyp, fval, ftb);
     }
-    Py_CLEAR(gen->provider);
   }
 
+  /* the context before the provider, as in pyiter_drop_state */
   Py_CLEAR(gen->ctx);
   gen->ctx_owned = 0;
+
+  Py_CLEAR(gen->provider);
 }
 
 

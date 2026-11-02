@@ -256,6 +256,123 @@ static int pyiter_next_fails_with_provider_error(PyObject *provider) {
 }
 
 
+/* === a provider that records its context at its death === */
+
+
+/**
+   A durable provider owning its context, as the async generator does.
+   Its dealloc records how many references its context still has: an
+   adapter that releases the context before the provider leaves only
+   the provider's own.
+*/
+typedef struct {
+  PyObject_HEAD
+  KosContext *ctx;
+  int steps;
+} OwningProvider;
+
+
+static Py_ssize_t owning_ctx_refs_at_dealloc = -1;
+
+
+static KosContext *owning_pyctx(PyObject *self) {
+
+  OwningProvider *p = (OwningProvider *) self;
+
+  if (! p->ctx)
+    p->ctx = KosContext_New(NULL, kos_tls_current());
+  return p->ctx;
+}
+
+
+/* one element, then exhaustion */
+static KosIterStepResult owning_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  OwningProvider *p = (OwningProvider *) self;
+
+  (void) ctx;
+  (void) send_val;
+  if (p->steps++) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
+  *out = Py_NewRef(Py_None);
+  return KOS_ITER_VALUE;
+}
+
+
+static void owning_dealloc(PyObject *self) {
+
+  OwningProvider *p = (OwningProvider *) self;
+
+  owning_ctx_refs_at_dealloc = p->ctx ? Py_REFCNT(p->ctx) : 0;
+  Py_CLEAR(p->ctx);
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static KosEvaluatedTypeObject OwningDurableType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "test.owning_durable",
+    .tp_basicsize = sizeof(OwningProvider),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+    .tp_dealloc = owning_dealloc,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = owning_step,
+    .ki_throw = failing_throw,
+    .ki_close = failing_close,
+    .ki_finish = failing_finish,
+    .ki_pyctx = owning_pyctx,
+    .ki_busy = NULL,
+    .ki_pyctx_recyclable = 0,
+  },
+};
+
+
+/**
+   An owning provider and its sync adapter, stepped once so the
+   adapter holds the provider's context, with the caller's reference
+   to the provider dropped: the adapter holds the only one. Returns
+   the adapter, or NULL with an error set.
+*/
+static PyObject *make_stepped_owning_adapter(void) {
+
+  PyTypeObject *pytype = KOS_EVALUATED_PYTYPE(OwningDurableType);
+  PyObject *provider, *adapter, *res;
+
+  if (! (pytype->tp_flags & Py_TPFLAGS_READY) && PyType_Ready(pytype) < 0)
+    return NULL;
+  owning_ctx_refs_at_dealloc = -1;
+
+  provider = PyObject_CallNoArgs((PyObject *) pytype);
+  if (! provider)
+    return NULL;
+
+  adapter = KosIterAdapt_PyIter(provider);
+  Py_DECREF(provider);
+  if (! adapter)
+    return NULL;
+
+  res = PyIter_Next(adapter);
+  if (! res) {
+    Py_DECREF(adapter);
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError, "the first step yielded nothing");
+    return NULL;
+  }
+  Py_DECREF(res);
+  return adapter;
+}
+
+
 /* === tests === */
 
 
@@ -368,6 +485,55 @@ static int test_recyclable_pyctx_failure_fails_pyiter(void) {
 }
 
 
+static int test_pyiter_dealloc_releases_context_first(void) {
+
+  PyObject *adapter = make_stepped_owning_adapter();
+
+  TEST_ASSERT_NOT_NULL(adapter, "step the owning provider once");
+  Py_DECREF(adapter);
+
+  TEST_ASSERT_EQ(owning_ctx_refs_at_dealloc, 1,
+                 "the adapter's dealloc drops the context first");
+  return 0;
+}
+
+
+static int test_pyiter_clear_releases_context_first(void) {
+
+  PyObject *adapter = make_stepped_owning_adapter();
+  Py_ssize_t refs;
+
+  TEST_ASSERT_NOT_NULL(adapter, "step the owning provider once");
+  (void) Py_TYPE(adapter)->tp_clear(adapter);
+  refs = owning_ctx_refs_at_dealloc;
+  Py_DECREF(adapter);
+
+  TEST_ASSERT_EQ(refs, 1, "the adapter's clear drops the context first");
+  return 0;
+}
+
+
+static int test_pyiter_exhaustion_releases_context_first(void) {
+
+  PyObject *adapter = make_stepped_owning_adapter();
+  PyObject *res;
+  Py_ssize_t refs;
+  int exhausted;
+
+  TEST_ASSERT_NOT_NULL(adapter, "step the owning provider once");
+  res = PyIter_Next(adapter);
+  exhausted = (! res && ! PyErr_Occurred());
+  Py_XDECREF(res);
+  PyErr_Clear();
+  refs = owning_ctx_refs_at_dealloc;
+  Py_DECREF(adapter);
+
+  TEST_ASSERT(exhausted, "the second step exhausts the adapter");
+  TEST_ASSERT_EQ(refs, 1, "the adapter's release drops the context first");
+  return 0;
+}
+
+
 int run_iterate_tests(void) {
 
   BEGIN_TEST_SUITE("Iterate Adapter Tests");
@@ -378,6 +544,9 @@ int run_iterate_tests(void) {
   RUN_TEST(test_durable_pyctx_failure_fails_pyiter);
   RUN_TEST(test_recyclable_pyctx_failure_fails_stepper);
   RUN_TEST(test_recyclable_pyctx_failure_fails_pyiter);
+  RUN_TEST(test_pyiter_dealloc_releases_context_first);
+  RUN_TEST(test_pyiter_clear_releases_context_first);
+  RUN_TEST(test_pyiter_exhaustion_releases_context_first);
 
   return 0;
 }
