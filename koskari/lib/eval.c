@@ -244,16 +244,18 @@ static KosOpResult iter_deliver_to_resume(
 
 
 /**
-   Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
-   when set (driver pre-stored await result, e.g. coro.c
-   throw-into-awaitable), else send_val. Complete pending WITH exit if
-   applicable.
+   Revive from AWAIT: push the await result, or deliver a throw. The
+   result is PY_RESUME_INJECT when a driver stored one (coroutine_throw_pair
+   after its throw into the awaitable returned), else send_val. Completes a
+   pending WITH exit when applicable.
 
-   When throw_exc is set and py_await_iter is non-NULL, resolves a callable
-   throw and forwards with single-arg throw(exc) before the VM exception path
-   (align with coroutine_throw WAITING_PY). On StopIteration, completes the
-   await like a normal resume. On non-NULL throw result, returns EVAL_AWAIT
-   with the next awaitable (re-suspend).
+   A throw with py_await_iter set comes from a stepper's throw into a
+   mid-work await (stepper_drive); the coroutine wrapper forwards its own
+   throws before entering the eval. The throw is forwarded to the stored
+   iterator, held across the call, under the drive's active context. A
+   return completes the await like a normal resume; a yield re-suspends
+   with EVAL_AWAIT; a failure clears the iterator and raises at the await.
+   With no iterator stored, the throw raises at the await.
 
    :return: EVAL_NORMAL, EVAL_AWAIT (with re-suspend value), or EVAL_RAISE
 */
