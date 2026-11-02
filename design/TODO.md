@@ -411,6 +411,17 @@ association semantics are deliberately open for deliberation.
 
 Ref: [language/define-matcher.md](language/define-matcher.md).
 
+### Adopt abort-first delimited continuations pattern
+
+A shift captures its segment and aborts to the prompt before the handler
+runs, standing where the region stood; every application lands a copy on
+a DELIM at the application site. Prompts are found by tag, nearest first;
+no instance ids, no stored return-frame pointers, no in-place path. Tags
+become language: `reset-at TAG`, `shift-at TAG K`. Ruled 2026-11-02; one
+question open (a local transfer whose target the abort left).
+
+Ref: [interpreter/delimited-continuations.md](interpreter/delimited-continuations.md).
+
 ### `RETURN` frame-only; `return-shift` for delim continuations
 
 Split ordinary return from delimited-continuation rebound: `RETURN`
