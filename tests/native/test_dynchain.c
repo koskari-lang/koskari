@@ -467,6 +467,83 @@ static int test_dyndelim_clone_owns_chain_copy(void) {
 }
 
 
+static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
+  /*
+    A shift bound at an invocation prompt takes a clone of the frame
+    below the prompt as the template's bottom. A delim of the segment
+    returning into that live frame, in place or as a graft's return,
+    names the clone instead: every delim of the template has a return
+    frame of the template, never a node of the capturing chain.
+  */
+
+  PyObject *ns;
+  KosDynFrame *frame;
+  KosContext *ctx;
+  KosDynPrompt *invocation;
+  KosContinuation *k = NULL;
+  KosDynNode *node;
+  int delims = 0;
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  frame = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create frame");
+  ctx = KosContext_New(frame, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+  KosContext_EvalEnter(ctx, NULL);
+
+  /* frame <- invoke's delim <- invocation prompt (tag 1) <- prompt
+     (tag 0) <- in-place delim <- graft return delim; the last two
+     return into frame */
+  TEST_ASSERT_NOT_NULL(
+      kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT, NULL,
+                         FAKE_INSN(1), frame, NULL),
+      "push the invoke's delim");
+  invocation = kos_dyn_push_prompt(ctx, 1, NULL);
+  TEST_ASSERT_NOT_NULL(invocation, "push the invocation prompt");
+  KosDynNode_FLAGS((KosDynNode *) invocation) |= KOS_DYNF_INVOCATION;
+  TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, 0, FAKE_INSN(2)),
+                       "push a tag 0 prompt");
+  TEST_ASSERT_NOT_NULL(
+      kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_INPLACE, NULL,
+                         FAKE_INSN(1), frame, NULL),
+      "push an in-place delim returning into frame");
+  TEST_ASSERT_NOT_NULL(
+      kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT, NULL,
+                         FAKE_INSN(1), frame, NULL),
+      "push a graft return delim returning into frame");
+
+  TEST_ASSERT_EQ(kos_shift_capture(ctx, 1, FAKE_INSN(0), &k), 0,
+                 "the shift binds at the invocation prompt");
+  TEST_ASSERT_NOT_NULL(k, "a continuation is captured");
+
+  for (node = KosContinuation_CAPTURED_CHAIN(k); node;
+       node = KosDynNode_PARENT(node)) {
+    KosDynNode *want;
+    KosDynNode *cand;
+
+    if (! KosDynNode_IS_DELIM(node))
+      continue;
+    delims++;
+    want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
+    if (! want)
+      continue;
+    for (cand = KosContinuation_CAPTURED_CHAIN(k); cand && cand != want;
+         cand = KosDynNode_PARENT(cand))
+      ;
+    TEST_ASSERT(cand && KosDynNode_IS_FRAME(cand),
+                "a template delim returns into a frame of the template");
+  }
+  TEST_ASSERT_EQ(delims, 2, "the template holds both delims");
+
+  kos_continuation_free(k);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+
+  return 0;
+}
+
+
 static int test_dynforeach_free_with_iter(void) {
 
     KosDynForeach *node;
@@ -526,6 +603,7 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dyngen_chain_free_ends_the_step);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dyndelim_clone_owns_chain_copy);
+    RUN_TEST(test_shift_capture_at_invocation_prompt_frames_inside);
     RUN_TEST(test_dynforeach_free_with_iter);
 
     return 0;

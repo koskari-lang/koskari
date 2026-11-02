@@ -2538,6 +2538,21 @@ static KosContinuation *kos_continuation_capture_segment(
     } else {
       captured_chain = (KosDynNode *) base;
     }
+
+    /* A delim of the segment returning into the frame below the bound
+       names baseline_src, which the segment's own remap could not
+       find. base is that frame's clone; point the delim at it, so the
+       template refers only to its own nodes and never into the live
+       chain. */
+    for (KosDynNode *node = captured_chain;
+         node && node != (KosDynNode *) base;
+         node = KosDynNode_PARENT(node)) {
+      if (KosDynNode_IS_DELIM(node)
+          && KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node)
+             == (KosDynNode *) baseline_src)
+        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) =
+            (KosDynNode *) base;
+    }
   }
 
   resume_frame = kos_chain_first_frame(captured_chain);
