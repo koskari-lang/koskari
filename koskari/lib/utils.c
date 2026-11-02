@@ -530,14 +530,16 @@ static int kos_utils_repr_registry_dispatch(
 }
 
 
-PyObject *KosUtils_Repr(PyObject *obj) {
+/**
+   The repr of obj below the recursion gate: the registry's handler
+   for its type, else its __kos_repr__, else Python's repr. New
+   reference; NULL with an exception set.
+*/
+static PyObject *kos_utils_repr_dispatch(PyObject *obj) {
 
   PyObject *meth = NULL;
   PyObject *out = NULL;
   int r;
-
-  if (PyUnicode_CheckExact(obj))
-    return KosUtils_QuoteStr(obj);
 
   r = kos_utils_repr_registry_dispatch(obj, &out);
   if (r != 1) {
@@ -572,6 +574,26 @@ PyObject *KosUtils_Repr(PyObject *obj) {
     return NULL;
   }
 
+  return out;
+}
+
+
+PyObject *KosUtils_Repr(PyObject *obj) {
+
+  PyObject *out;
+
+  if (PyUnicode_CheckExact(obj))
+    return KosUtils_QuoteStr(obj);
+
+  /* A container's handler calls back in for each element, so a deep
+     nest recurses here once per level; the gate turns the depth that
+     would exhaust the C stack into RecursionError, as every repr of
+     Python's own containers does. A cycle never reaches it: each
+     container handler abbreviates a repeat through Py_ReprEnter. */
+  if (Py_EnterRecursiveCall(" while getting the kos_repr of an object"))
+    return NULL;
+  out = kos_utils_repr_dispatch(obj);
+  Py_LeaveRecursiveCall();
   return out;
 }
 

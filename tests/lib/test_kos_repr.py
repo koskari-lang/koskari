@@ -552,4 +552,39 @@ class TestKosReprRegistry(unittest.TestCase):
             kos_repr_unregister(Both)
 
 
+class TestKosReprDepth(unittest.TestCase):
+    """
+    A nest deeper than the C stack can walk raises RecursionError, as
+    repr of Python's own containers does; a cycle is abbreviated, not
+    recursed into
+    """
+
+    def nested(self, make, depth):
+        value = make(())
+        for _ in range(depth):
+            value = make((value,))
+        return value
+
+    def test_deep_list_raises_recursion_error(self):
+        with self.assertRaises(RecursionError):
+            kos_repr(self.nested(list, 100000))
+
+    def test_deep_tuple_raises_recursion_error(self):
+        with self.assertRaises(RecursionError):
+            kos_repr(self.nested(tuple, 100000))
+
+    def test_deep_dict_raises_recursion_error(self):
+        value = {}
+        for _ in range(100000):
+            value = {"k": value}
+        with self.assertRaises(RecursionError):
+            kos_repr(value)
+
+    def test_shallow_nest_and_cycle_still_render(self):
+        self.assertEqual("#[#[#[]]]", kos_repr(self.nested(list, 2)))
+        cycle = [1, 2]
+        cycle.append(cycle)
+        self.assertEqual("#[1 2 #[...]]", kos_repr(cycle))
+
+
 # The end.
