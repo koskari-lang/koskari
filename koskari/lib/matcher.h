@@ -228,6 +228,36 @@ PyObject *KosMatchCursor_CopyAt(
 
 
 /**
+   Whether a position of kind over seq is one over cursor's own
+   subject, the precondition of a sync and a reset: the kinds agree,
+   and for a sequence or a single value the subject is the one object,
+   so seq is the cursor's own. A spine cursor's seq is its current
+   cell, which differs along one spine, and a spine step reads cells
+   as pairs, so the kind alone keeps it within bounds. The cursor's
+   length, reserve and kind stay with it across a move, which is why
+   a position over another subject cannot be adopted.
+ */
+static inline int KosMatchCursor_SameSubject(
+    KosMatchCursor *c,
+    unsigned char kind,
+    PyObject *seq) {
+
+  if (c->kind != kind)
+    return 0;
+  return kind == KOS_MATCH_SPINE || c->seq == seq;
+}
+
+
+/* The SystemError a sync or reset raises for a position over another
+   subject: only a hand-built Code or a .kio names one. NULL. */
+static inline PyObject *KosMatchCursor_OtherSubject(void) {
+  PyErr_SetString(PyExc_SystemError,
+                  "match cursor moved to a position over another subject");
+  return NULL;
+}
+
+
+/**
    cursor moved to seq and index (see held above). NULL with an
    exception set.
  */
@@ -327,8 +357,11 @@ static inline PyObject *KosMatchCursor_Sync(
     PyObject *to,
     Py_ssize_t held) {
 
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
   KosMatchCursor *t = (KosMatchCursor *) to;
 
+  if (unlikely(! KosMatchCursor_SameSubject(c, t->kind, t->seq)))
+    return KosMatchCursor_OtherSubject();
   return KosMatchCursor_MoveTo(cursor, t->seq, t->index, held);
 }
 
@@ -464,8 +497,11 @@ static inline PyObject *KosMatchMark_Reset(
     PyObject *mark,
     Py_ssize_t held) {
 
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
   KosMatchMark *m = (KosMatchMark *) mark;
 
+  if (unlikely(! KosMatchCursor_SameSubject(c, m->kind, m->seq)))
+    return KosMatchCursor_OtherSubject();
   return KosMatchCursor_MoveTo(cursor, m->seq, m->index, held);
 }
 
