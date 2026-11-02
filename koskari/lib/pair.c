@@ -1130,24 +1130,30 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
 }
 
 
-static void pair_splice_at_last(KosPair *last, PyObject *last_cdr,
-                                PyObject *splice_head) {
+static int pair_splice_at_last(
+    KosPair *last,
+    PyObject *last_cdr,
+    PyObject *splice_head) {
+
   PyObject *bridge;
 
   if (KosNilP(last_cdr)) {
     KosPair_SETCDR(last, splice_head);
-  } else {
-    /* the last cell is the spine's own reference; the allocation can
-       run a collection on 3.9-3.11, where a finalizer can cut the
-       spine, so the cell is held across it */
-    Py_INCREF(last);
-    bridge = KosPair_New(last_cdr, splice_head);
-    if (bridge) {
-      KosPair_SETCDR(last, bridge);
-      Py_DECREF(bridge);
-    }
-    Py_DECREF(last);
+    return 0;
   }
+
+  /* the last cell is the spine's own reference; the allocation can
+     run a collection on 3.9-3.11, where a finalizer can cut the
+     spine, so the cell is held across it */
+  Py_INCREF(last);
+  bridge = KosPair_New(last_cdr, splice_head);
+  if (bridge) {
+    KosPair_SETCDR(last, bridge);
+    Py_DECREF(bridge);
+  }
+  Py_DECREF(last);
+
+  return bridge ? 0 : -1;
 }
 
 
@@ -1155,6 +1161,7 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
   PyObject *last_cdr;
   KosPair *last;
   PyObject *splice_head = NULL;
+  int rc;
 
   if (KosNilP(self)) {
     PyErr_SetString(PyExc_TypeError, "cannot extend nil");
@@ -1178,8 +1185,11 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  pair_splice_at_last(last, last_cdr, splice_head);
+  rc = pair_splice_at_last(last, last_cdr, splice_head);
   Py_DECREF(splice_head);
+
+  if (rc < 0)
+    return NULL;
   Py_RETURN_NONE;
 }
 
@@ -1188,6 +1198,7 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
   PyObject *last_cdr;
   KosPair *last;
   PyObject *splice_head = NULL;
+  int rc;
 
   if (KosNilP(self)) {
     PyErr_SetString(PyExc_TypeError, "cannot splice nil");
@@ -1212,8 +1223,11 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  pair_splice_at_last(last, last_cdr, splice_head);
+  rc = pair_splice_at_last(last, last_cdr, splice_head);
   Py_DECREF(splice_head);
+
+  if (rc < 0)
+    return NULL;
   Py_RETURN_NONE;
 }
 
