@@ -312,14 +312,8 @@ FORCE:
 
 venv: .venv/bin/koskari .venv/.tools-built ## Create virtual environment
 	@echo "Virtual environment ready"
-	@echo "   'make venv-activate' to activate it"
-	@echo "   'uv run koskari' to run the REPL"
-
-
-venv-activate: venv  ## Activate virtual environment
-	@echo "Activating virtual environment..."
-	@source .venv/bin/activate
-	@echo "Virtual environment activated"
+	@echo "   'source .venv/bin/activate' to activate it, or"
+	@echo "   'uv run koskari' to run the REPL without activating"
 
 
 venv-koslife: .venv/bin/koslife ## Install koslife example

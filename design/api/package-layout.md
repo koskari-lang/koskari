@@ -19,7 +19,7 @@ koskari/
 │   ├── compiler.py   # Compiler, ByteCodeFragment
 │   ├── helpers.py # gather_formals, gather_parameters, helper_begin, …
 │   └── specials/     # Special form handlers (conditionals, imports, etc.)
-├── importer.py       # KoskariPathFinder, KoskariSourceFileLoader, install
+├── importer.py       # the directory hook, KoskariSourceFileLoader, install
 ├── module.py         # new_module, load_module_async, load_module_demand
 ├── builtins.py       # The assembled builtins module
 ├── bootstrap/        # make_bootstrap (__init__.py) plus the .ki builtin sources

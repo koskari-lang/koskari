@@ -24,6 +24,7 @@ That matches deferring evaluation of those forms (e.g. ``{foo}`` as
 import pytest
 
 from koskari.exceptions import SpecialError
+from koskari.lib import bracket_nil, bracket_pair, cons, symbol
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -108,6 +109,57 @@ class TestGensymPartial(SpecialsTestCase):
         fn = await expr()
         self.assertEqual(await fn(10, 1, 2, 3), 16)
         self.assertEqual(got[0], (10, (1, 2, 3)))
+
+
+class TestThunkBodyShape(SpecialsTestCase):
+    """
+    The rewrite touches placeholders and ... only: a dotted tail is
+    kept, a placeholder tail gets its binding, and cells keep their
+    delimiter style
+    """
+
+    async def test_dotted_quoted_pair(self):
+        expr, mod = self.compile_expr("{ '(1 . 2) }")
+        fn = await expr()
+        self.assertEqual(cons(1, 2), await fn())
+
+
+    async def test_dotted_placeholder_tail_as_in_a_lambda(self):
+        expr, mod = self.compile_expr("{(tup . %1)}", tup=tuple)
+        fn = await expr()
+        expr, mod = self.compile_expr("(lambda [x] (tup . x))", tup=tuple)
+        plain = await expr()
+        self.assertEqual(await plain((1, 2)), await fn((1, 2)))
+
+
+    async def test_dotted_quasiquote_tail(self):
+        expr, mod = self.compile_expr("{`(a ,@%1 . b)}")
+        fn = await expr()
+        got = await fn([1, 2])
+        self.assertEqual(
+            cons(symbol('a'), 1, 2, symbol('b')), got)
+
+
+    async def test_quoted_bracket_list_keeps_its_brackets(self):
+        expr, mod = self.compile_expr("{ '[a b] }")
+        fn = await expr()
+        got = await fn()
+        self.assertIsInstance(got, bracket_pair)
+        self.assertEqual("[a b]", str(got))
+
+
+    async def test_bracket_nil_stays_bracket_nil(self):
+        expr, mod = self.compile_expr("{ [] }")
+        fn = await expr()
+        self.assertIs(bracket_nil, await fn())
+
+
+    async def test_quasiquoted_bracket_with_placeholder(self):
+        expr, mod = self.compile_expr("{`[a ,%1]}")
+        fn = await expr()
+        got = await fn(5)
+        self.assertIsInstance(got, bracket_pair)
+        self.assertEqual("[a 5]", str(got))
 
 
 # The end.

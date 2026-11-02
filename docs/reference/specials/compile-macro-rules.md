@@ -9,7 +9,9 @@ procedures. Bind the result with **`compile/define`**.
 **Behaviour:** Each rule row is **`(PATTERN BODY ...)`**, with the literals
 and pattern variables of **`compile/syntax-rules`**. The body of the first
 rule whose pattern matches runs with each pattern variable bound to what it
-matched. An arm's body returns the expansion; `None` is a valid expansion and compiles
+matched; the pattern head is one of them, bound to the symbol the macro was
+invoked as, so a renamed import still matches. An arm's body returns the
+expansion; `None` is a valid expansion and compiles
 to the constant `None`, so an arm that has nothing to say returns `None`
 rather than an empty `(begin)`. An arm builds its output with a backtick,
 which is data; a `macro-rules` transformer that a template defines builds

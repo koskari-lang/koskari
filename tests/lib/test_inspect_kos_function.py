@@ -89,7 +89,8 @@ class TestInspectKosFunction(unittest.TestCase):
 
     def test_annotations_str_forward_ref_resolves(self):
         code, base_ns = build_expr(
-            [["CONST", 42], ["RETURN", 1]], values={'MyType': int})
+            [["CONST", 42], ["RETURN", 1]], local_syms=('a',),
+            values={'MyType': int})
         fspec = FormalsSpec(('a',), None, ())
         fn = Function(code, base_ns, fspec, {'a': 'MyType'})
         self.assertIs(fn.__annotations__['a'], int)
@@ -97,7 +98,8 @@ class TestInspectKosFunction(unittest.TestCase):
 
     def test_annotations_str_forward_ref_dotted(self):
         code, base_ns = build_expr(
-            [["CONST", 42], ["RETURN", 1]], values={'MyType': int})
+            [["CONST", 42], ["RETURN", 1]], local_syms=('a',),
+            values={'MyType': int})
         fspec = FormalsSpec(('a',), None, ())
         fn = Function(code, base_ns, fspec, {'a': 'MyType.__name__'})
         self.assertEqual(fn.__annotations__['a'], 'int')
@@ -113,7 +115,7 @@ class TestInspectKosFunction(unittest.TestCase):
         # skips the empty slot, the annotation stays a string, and a
         # later binding does not upgrade the cached result
         code, base_ns = build_expr(
-            [["CONST", 42], ["RETURN", 1]], local_syms=('Late',))
+            [["CONST", 42], ["RETURN", 1]], local_syms=('a', 'Late'))
         fspec = FormalsSpec(('a',), None, ())
         fn = Function(code, base_ns, fspec, {'a': 'Late'})
         self.assertEqual(fn.__annotations__, {'a': 'Late'})
@@ -128,7 +130,8 @@ class TestInspectKosFunction(unittest.TestCase):
 
     def test_annotations_creation_dict_not_mutated(self):
         code, base_ns = build_expr(
-            [["CONST", 42], ["RETURN", 1]], values={'MyType': int})
+            [["CONST", 42], ["RETURN", 1]], local_syms=('a',),
+            values={'MyType': int})
         fspec = FormalsSpec(('a',), None, ())
         creation = {'a': 'MyType'}
         fn = Function(code, base_ns, fspec, creation)
@@ -282,7 +285,8 @@ class TestInspectCacheReentrancy(unittest.TestCase):
             pass
 
         code, base_ns = build_expr(
-            [["CONST", 42], ["RETURN", 1]], values={'Probe': Probe})
+            [["CONST", 42], ["RETURN", 1]], local_syms=('a',),
+            values={'Probe': Probe})
         fspec = FormalsSpec(('a',), None, ())
         fn = Function(code, base_ns, fspec, {'a': 'Probe.attr'})
         holder.append(fn)

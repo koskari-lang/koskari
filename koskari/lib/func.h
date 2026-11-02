@@ -354,6 +354,20 @@ PyObject *KosFunction_NewFromFormals(
 
 
 /**
+   Check that the names formals lays out agree with the code's local
+   names over their common prefix, which the fast rows of code require
+   of any namespace it runs in. For the constructors that pair a
+   Formals with a Code from Python; a FunctionSpec checks its own
+   pairing once at construction.
+
+   :param formals: KosFormals instance
+   :param code: KosCode instance
+   :return: 0 when they agree, -1 with TypeError set otherwise
+*/
+int KosFunction_CheckFormalsLayout(PyObject *formals, PyObject *code);
+
+
+/**
    Call the function with no arguments.
 */
 PyObject *KosFunction_CallNoArgs(PyObject *func);

@@ -622,10 +622,84 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Hello, koskari!', out)
 
 
+    async def _capture_main_stderr(self, *argv):
+        """
+        Call main() with the given arguments in a thread, capturing stderr.
+
+        Returns (exit_code, stderr_text).
+        """
+
+        def run():
+            captured = io.StringIO()
+            orig = sys.stderr
+            sys.stderr = captured
+            try:
+                return main(['koskari'] + list(argv)), captured.getvalue()
+            finally:
+                sys.stderr = orig
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, run)
+
+
+    async def test_main_missing_script_exits_two(self):
+        """
+        A script path that cannot be opened reports as python does: one
+        line naming the file, status 2, no traceback
+        """
+
+        missing = _script('no_such_script.ki')
+        code, err = await self._capture_main_stderr(missing)
+        self.assertEqual(2, code, err)
+        self.assertIn("can't open file", err)
+        self.assertIn(missing, err)
+        self.assertIn('No such file or directory', err)
+        self.assertNotIn('Traceback', err)
+
+
+    async def test_main_compile_kio_missing_source_exits_two(self):
+        missing = _script('no_such_script.ki')
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'out.kio')
+            code, err = await self._capture_main_stderr(
+                '--compile-kio', out, missing)
+            self.assertFalse(os.path.exists(out))
+        self.assertEqual(2, code, err)
+        self.assertIn("can't open file", err)
+        self.assertIn(missing, err)
+        self.assertNotIn('Traceback', err)
+
+
     async def test_main_run_define_and_print(self):
         code, out = await self._capture_main(_script('define_and_print.ki'))
         self.assertEqual(0, code)
         self.assertIn('42', out)
+
+
+    async def test_main_script_is_the_main_module(self):
+        """
+        The program a script run executes is sys.modules['__main__']
+        while it runs, as under python, so import __main__, pickling
+        and unittest.main find it
+        """
+
+        code, out = await self._capture_main(_script('main_identity.ki'))
+        self.assertEqual(0, code)
+        self.assertEqual('42', out.strip())
+
+
+    async def test_main_restores_the_previous_main_module(self):
+        before = sys.modules['__main__']
+        await self._capture_main(_script('main_identity.ki'))
+        self.assertIs(before, sys.modules['__main__'])
+
+
+    async def test_main_command_is_the_main_module(self):
+        code, out = await self._capture_main(
+            '-c', '(import sys) (var marker 7) '
+            '(print (getattr (item sys.modules "__main__") "marker" None))')
+        self.assertEqual(0, code)
+        self.assertEqual('7', out.strip())
 
 
     async def test_main_script_directory_on_path(self):

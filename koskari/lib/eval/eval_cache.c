@@ -360,14 +360,16 @@ static int method_slot_hit(
     PyObject **out) {
 
   PyObject *descr = slot->u.method.resolved;
+  uint8_t mode = slot->u.method.mode;
 
-  switch (slot->u.method.mode) {
+  switch (mode) {
   case KOS_METHOD_DIRECT_OBJECT_GUARDED:
   case KOS_METHOD_DIRECT_METHOD_GUARDED: {
     /* An instance attribute may shadow the class attribute. The probe
        can run a key's __eq__, and one that re-runs this site with a
-       receiver of another type clears the slot: the slot's descr is
-       held before the probe. */
+       receiver of another type refills the slot: the slot's descr is
+       held and its mode read before the probe, and the answer is made
+       from those, never from the slot as the probe left it. */
     int shadowed;
     Py_INCREF(descr);
 
@@ -398,7 +400,7 @@ static int method_slot_hit(
        class attribute as is (cached DIRECT never holds a __get__
        descr). The reference taken above is the caller's. */
     *out = descr;
-    return slot->u.method.mode == KOS_METHOD_DIRECT_METHOD_GUARDED ? 0 : 1;
+    return mode == KOS_METHOD_DIRECT_METHOD_GUARDED ? 0 : 1;
   }
   case KOS_METHOD_INSTANCE_DICT: {
     PyObject *val;

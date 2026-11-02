@@ -19,6 +19,8 @@ exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
 (auto-await).
 """
 
+import sys
+
 import pytest
 
 from tests.dis.dis import dis
@@ -488,6 +490,113 @@ class TestWithSpecial(SpecialsTestCase):
         self.assertEqual(result, 99)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
+
+class SeeingMgr:
+    """
+    Records the handler-visible exception while __exit__ runs
+    """
+
+    def __init__(self, swallow=True):
+        self.swallow = swallow
+        self.seen = "unset"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, typ, val, tb):
+        self.seen = sys.exc_info()[1]
+        return self.swallow
+
+
+class AsyncSeeingMgr(SeeingMgr):
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, typ, val, tb):
+        self.seen = sys.exc_info()[1]
+        return self.swallow
+
+
+class ReraisingMgr:
+    """
+    A bare raise in __exit__ re-raises the exception being handled
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, typ, val, tb):
+        raise
+
+
+class TestExitSeesTheHandledException(SpecialsTestCase):
+    """
+    __exit__ and __aexit__ run as a handler of the body's exception:
+    sys.exc_info() shows it while they run and shows what it showed
+    before once they return
+    """
+
+    async def test_exit_sees_the_body_exception(self):
+        mgr = SeeingMgr()
+        src = "(with [(call make_mgr)] (raise (ValueError \"body\")))"
+        expr, mod = self.compile_expr(
+            src, make_mgr=lambda: mgr, ValueError=ValueError)
+        await expr()
+        self.assertIsInstance(mgr.seen, ValueError)
+        self.assertEqual(("body",), mgr.seen.args)
+
+
+    async def test_aexit_sees_the_body_exception(self):
+        mgr = AsyncSeeingMgr()
+        src = "(with [(call make_mgr)] (raise (ValueError \"body\")))"
+        expr, mod = self.compile_expr(
+            src, make_mgr=lambda: mgr, ValueError=ValueError)
+        await expr()
+        self.assertIsInstance(mgr.seen, ValueError)
+
+
+    async def test_normal_exit_sees_nothing(self):
+        mgr = SeeingMgr()
+        src = "(with [(call make_mgr)] 1)"
+        expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
+        await expr()
+        self.assertIsNone(mgr.seen)
+
+
+    async def test_outer_handler_state_restored_after_exit(self):
+        seen = []
+
+        def note():
+            seen.append(sys.exc_info()[1])
+
+        for swallow in (True, False):
+            mgr = SeeingMgr(swallow)
+            src = """
+            (try
+              (raise (KeyError "outer"))
+              [[e KeyError]
+               (try
+                 (with [(call make_mgr)] (raise (ValueError "body")))
+                 [[v ValueError] None])
+               (call note)])
+            """
+            expr, mod = self.compile_expr(
+                src, make_mgr=lambda: mgr, note=note,
+                KeyError=KeyError, ValueError=ValueError)
+            await expr()
+            self.assertIsInstance(mgr.seen, ValueError)
+            self.assertIsInstance(seen[-1], KeyError, swallow)
+
+
+    async def test_bare_raise_in_exit_reraises_the_body_exception(self):
+        src = "(with [(call make_mgr)] (raise (ValueError \"body\")))"
+        expr, mod = self.compile_expr(
+            src, make_mgr=ReraisingMgr, ValueError=ValueError)
+        with self.assertRaises(ValueError) as caught:
+            await expr()
+        self.assertEqual(("body",), caught.exception.args)
 
 
 # The end.

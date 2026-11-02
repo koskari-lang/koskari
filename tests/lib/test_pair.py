@@ -1452,4 +1452,37 @@ class TestPairNilDistinct(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pair_type.__name__, "pair")
 
 
+class TestPairIteratorsCollect(unittest.TestCase):
+    """
+    The pair iterator and the follower hold their pair; a cycle that
+    runs through one is the collector's to find, so it is reclaimed
+    like any other
+    """
+
+    def cycle_through(self, make_iterator):
+        import gc
+        import weakref
+
+        class Box:
+            pass
+
+        box = Box()
+        ref = weakref.ref(box)
+        p = cons(box, nil)
+        it = make_iterator(p)
+        setcdr(p, it)
+        del p, it, box
+        gc.collect()
+        return ref
+
+    def test_pair_iterator_cycle_collects(self):
+        self.assertIsNone(self.cycle_through(iter)())
+
+    def test_pair_follower_cycle_collects(self):
+        self.assertIsNone(self.cycle_through(lambda p: p.follow())())
+
+    def test_pair_unpack_cycle_collects(self):
+        self.assertIsNone(self.cycle_through(lambda p: p.unpack())())
+
+
 # The end.

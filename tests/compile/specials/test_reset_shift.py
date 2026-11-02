@@ -678,9 +678,10 @@ class TestShiftCaptureErrors(SpecialsTestCase):
           (with [(call make_mgr)] 1))
         """
         expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
-        with self.assertRaises(RuntimeError) as caught:
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
             await expr()
         self.assertIn("in flight", str(caught.exception))
+        self.assertEqual("enter", caught.exception.boundary)
 
 
     async def test_shift_across_generator_raises_prompt_unreachable(self):

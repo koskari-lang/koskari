@@ -22,7 +22,12 @@ design/cli-repl-rework.md.
 
 import asyncio
 import io
+import os
+import select
+import signal
+import subprocess
 import sys
+import time
 import unittest
 
 import pytest
@@ -142,6 +147,35 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('99', out)
 
 
+    async def test_exit_and_quit_names_show_how_to_leave(self):
+        out, err = await self._run_repl(['exit', 'quit'])
+        self.assertEqual(2, out.count('Use (exit), (quit) or Ctrl-D'), out)
+        self.assertNotIn('NameError', err)
+
+
+    async def test_calling_exit_ends_the_session_with_its_status(self):
+        with self.assertRaises(SystemExit) as ctx:
+            await self._run_repl(['(exit 3)', '(print "after")'])
+        self.assertEqual(3, ctx.exception.code)
+
+
+    async def test_calling_quit_ends_the_session(self):
+        with self.assertRaises(SystemExit) as ctx:
+            await self._run_repl(['(quit)'])
+        self.assertIsNone(ctx.exception.code)
+
+
+    async def test_session_keeps_the_modules_own_exit_binding(self):
+        mod = new_module('__main__')
+        init_module(mod, '<string>')
+        await load_module_source_async(
+            mod, '(var exit 7)', detach=False, layout=False)
+        out, err = await self._run_repl(['exit', 'quit'], mod=mod)
+        self.assertIn('7', out)
+        self.assertEqual(1, out.count('Use (exit), (quit) or Ctrl-D'), out)
+        self.assertNotIn('Error', err)
+
+
     async def test_underscore_stores_last_result(self):
         out, _ = await self._run_repl(['(+ 1 2)', '(+ _ 10)'])
         self.assertIn('13', out)
@@ -155,6 +189,12 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
     async def test_incomplete_form_continues_on_next_line(self):
         out, _ = await self._run_repl(['(+ 1', '   2)'])
         self.assertIn('3', out)
+
+
+    async def test_incomplete_dotted_list_continues_on_next_line(self):
+        out, err = await self._run_repl(["'(a . b", ')'])
+        self.assertNotIn('Error', err)
+        self.assertIn('(a . b)', out)
 
 
     async def test_multiple_expressions_accumulate_state(self):
@@ -432,6 +472,76 @@ class TestReplKiDriver(unittest.TestCase):
                 drive_async_loop(_driver())
 
         self.assertIn('42', stdout.getvalue())
+
+
+class TestFallbackPromptInterrupt(unittest.TestCase):
+    """
+    The input() prompt, used when prompt_toolkit is absent, is driven on
+    a pseudo-terminal in a child process so a real SIGINT reaches it
+    """
+
+    CHILD = (
+        "import sys\n"
+        "sys.modules['prompt_toolkit'] = None\n"
+        "from koskari.cli import main\n"
+        "sys.exit(main(['koskari', '-q', '--no-tweak-path']))\n")
+
+    def _read_until(self, fd, marker, timeout):
+        """
+        Bytes read from fd until marker appears or timeout elapses
+        """
+
+        got = b''
+        deadline = time.monotonic() + timeout
+        while marker not in got:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            ready, _, _ = select.select([fd], [], [], remaining)
+            if not ready:
+                break
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            got += chunk
+        return got
+
+    def test_sigint_at_the_prompt_reports_and_prompts_again(self):
+        try:
+            import pty
+        except ImportError:
+            self.skipTest('pty not available')
+
+        master, slave = pty.openpty()
+        child = subprocess.Popen(
+            [sys.executable, '-c', self.CHILD],
+            stdin=slave, stdout=slave, stderr=slave,
+            start_new_session=True)
+        os.close(slave)
+
+        try:
+            first = self._read_until(master, b'>>> ', 20)
+            self.assertIn(b'>>> ', first)
+
+            child.send_signal(signal.SIGINT)
+            after = self._read_until(master, b'>>> ', 5)
+            self.assertIn(b'KeyboardInterrupt', after)
+            self.assertIn(b'>>> ', after)
+
+            os.write(master, b'(+ 1 2)\r')
+            answer = self._read_until(master, b'3\r\n', 5)
+            self.assertIn(b'3', answer)
+
+            os.write(master, b'\x04')
+            self.assertEqual(0, child.wait(timeout=10))
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+            os.close(master)
 
 
 # The end.

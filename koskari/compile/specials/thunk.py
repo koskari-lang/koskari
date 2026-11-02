@@ -25,7 +25,7 @@ import re
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import cons, gensym, keyword, nil, symbol
+from ...lib import bracket_pair, cons, gensym, keyword, nil, symbol
 from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
 from ...types import is_nil, is_pair, is_symbol, strip_mark
@@ -43,70 +43,73 @@ _GENSYM_THUNK_PATTERNS = [
 ]
 
 
+def placeholder_gensym(pos_map, key, label):
+    """
+    The gensym a placeholder maps to, made on first sight: the same
+    key gives the same gensym for the whole thunk body
+    """
+
+    found = pos_map.get(key)
+    if found is None:
+        found = gensym(label)
+        pos_map[key] = found
+    return found
+
+
+def rewrite_atom(pos_map, atom):
+    """
+    An atom of the thunk body with a placeholder symbol replaced by its
+    gensym; any other atom is returned as it is
+    """
+
+    if is_symbol(atom):
+        # a placeholder is a label: %1 written by a template is the
+        # same slot as %1 written by hand, so it is read stripped
+        bare = atom.base
+        if _thunksym(str(bare)):
+            return placeholder_gensym(pos_map, bare, str(bare))
+    return atom
+
+
 def _transform(pos_map, form):
     """
-    Copy form with %N and Ellipsis rewritten; skip nested gensym-thunk forms
+    Copy form with %N and Ellipsis rewritten; skip nested gensym-thunk
+    forms. Cells keep their delimiter style and positions, a nil of
+    either kind is kept, and a dotted tail is kept, rewritten when it is
+    a placeholder
     """
 
-    if is_nil(form):
-        return form
+    cells = []
+    tail = form
+    while is_pair(tail) and not is_nil(tail):
+        cells.append(tail)
+        tail = tail.cdr
 
-    result = nil
-    end = nil
+    out = rewrite_atom(pos_map, tail)
+    for cell in reversed(cells):
+        head = cell.car
+        make = bracket_pair if isinstance(cell, bracket_pair) else cons
 
-    def append(obj):
-        nonlocal result
-        nonlocal end
-
-        if is_nil(result):
-            result = obj
-        else:
-            end[1] = obj
-        end = obj
-
-    while not is_nil(form):
-        head, tail = form
-
-        if is_nil(head):
-            val = cons(nil, nil)
-
-        elif is_pair(head):
-            if strip_mark(head[0]) in _monitor:
+        if is_pair(head) and not is_nil(head):
+            if strip_mark(head.car) in _monitor:
                 # don't descend into gensym-thunk forms
-                val = cons(head, nil)
+                val = head
             else:
-                val = cons(_transform(pos_map, head), nil)
-
-        elif is_symbol(head):
-            # a placeholder is a label: %1 written by a template is the
-            # same slot as %1 written by hand, so it is read stripped
-            bare = head.base
-            if _thunksym(str(bare)):
-                if bare in pos_map:
-                    head = pos_map[bare]
-                else:
-                    pos_map[bare] = gensym(str(bare))
-                    head = pos_map[bare]
-            val = cons(head, nil)
+                val = _transform(pos_map, head)
 
         elif head is Ellipsis:
-            if head in pos_map:
-                head = pos_map[head]
-            else:
-                pos_map[head] = gensym("star")
-                head = pos_map[head]
-
-            append(cons(_keyword_star, nil))
-            val = cons(head, nil)
+            # ... is the two cells *: and the rest binding
+            out = make(placeholder_gensym(pos_map, Ellipsis, "star"), out)
+            out.set_position(cell.get_position())
+            val = _keyword_star
 
         else:
-            val = cons(head, nil)
+            val = rewrite_atom(pos_map, head)
 
-        val.set_position(form.get_position())
-        append(val)
-        form = tail
+        out = make(val, out)
+        out.set_position(cell.get_position())
 
-    return result
+    return out
 
 
 def _build_formals(pos_map, source):

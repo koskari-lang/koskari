@@ -100,7 +100,7 @@ and Koskari runtime exceptions.
 | `NotYetImplemented` | A placeholder for a feature that is not implemented yet. | Use a documented form or report the missing case. |
 | `KoskariContinuationError` | Base class for continuation capture and transfer failures. It is not a `RuntimeError` subclass, so an `except RuntimeError` around a continuation-using call will not swallow it. | Read the specific subclass; the two below need different fixes. |
 | `KoskariPromptNotFound` | A `shift` found no enclosing delimiter on the dynamic chain. | Establish one: `reset`, or for searches `solve` / `solve-first`. |
-| `KoskariPromptUnreachable` | A delimiter exists but a crossed boundary (`boundary` attribute, e.g. a generator) denied the capture. | Restructure so the capture does not cross the boundary; adding a delimiter will not help. |
+| `KoskariPromptUnreachable` | A boundary denied the capture (`boundary` attribute): a generator, or a running `enter`, `exit`, `before` or `after` call of a `with` or `dyn-wind`. For `shift` a delimiter exists beyond it; `operation` says which construct was capturing. | Restructure so the capture does not cross the boundary; adding a delimiter will not help. |
 | Python exceptions such as `ZeroDivisionError`, `NameError`, `ValueError` | A called operation failed at runtime. | Fix the value, missing name, or failing Python call. |
 
 ### Koskari errors that subclass a Python type

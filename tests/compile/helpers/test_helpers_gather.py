@@ -122,6 +122,22 @@ class TestGatherParameters(unittest.TestCase):
             kwds_seq,
             [("x", xval), ("**", kw1), ("y", yval), ("**", kw2)])
 
+    def test_repeated_keyword_raises(self):
+        a = keyword("a")
+        args = cons(a, symbol("one"), a, symbol("two"), nil)
+        with self.assertRaises(ParametersError) as ctx:
+            gather_parameters(args)
+        self.assertIn("repeated keyword", str(ctx.exception))
+        self.assertIn("'a'", str(ctx.exception))
+
+    def test_repeated_keyword_across_starstar_raises(self):
+        a = keyword("a")
+        kk = keyword("**")
+        args = cons(a, symbol("one"), kk, symbol("d"), a, symbol("two"), nil)
+        with self.assertRaises(ParametersError) as ctx:
+            gather_parameters(args)
+        self.assertIn("repeated keyword", str(ctx.exception))
+
     def test_missing_value_for_keyword_raises(self):
         args = cons(keyword("a"), nil)
         with self.assertRaises(ParametersError) as ctx:
@@ -199,6 +215,48 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
         self.assertIsNone(star)
         self.assertIsNone(starstar)
         self.assertEqual(ann, {})
+
+    def test_required_positional_after_a_bracket_default_raises(self):
+        """
+        [a (b 10) c] would otherwise bind c as the second positional and
+        b as a trailing default, reordering a caller's arguments
+        """
+
+        spine = cons(
+            symbol("a"), cons(symbol("b"), 10, nil), symbol("c"), nil)
+        grp = _match_formals_group(spine)
+        with self.assertRaises(SpecialError) as ctx:
+            gather_formals(grp)
+        self.assertIn("'c'", str(ctx.exception))
+        self.assertIn("defaulted", str(ctx.exception))
+
+    def test_duplicate_formal_name_raises(self):
+        kstar = keyword("*")
+        spines = (
+            cons(symbol("a"), symbol("a"), nil),
+            cons(symbol("a"), cons(symbol("a"), 1, nil), nil),
+            cons(symbol("a"), keyword("a"), 1, nil),
+            cons(symbol("a"), kstar, symbol("a"), nil),
+            cons(symbol("a"), keyword("**"), symbol("a"), nil),
+        )
+        for spine in spines:
+            grp = _match_formals_group(spine)
+            with self.assertRaises(SpecialError) as ctx:
+                gather_formals(grp)
+            self.assertIn("duplicate formal 'a'", str(ctx.exception))
+
+    def test_bracket_defaults_trailing_gather(self):
+        spine = cons(
+            symbol("a"),
+            cons(symbol("b"), 10, nil),
+            cons(symbol("c"), 20, nil),
+            nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertEqual(pos, [symbol("a")])
+        self.assertEqual(
+            defaults, [(keyword("b"), 10), (keyword("c"), 20)])
 
     def test_star_then_kwonly(self):
         kstar = keyword("*")

@@ -28,8 +28,11 @@ name, its own name, ` in ` and the parent namespace's name, then
 `name=value` for each name the scope declares. A declared name with no
 value yet shows `name=<unbound>`, and a namespace that holds itself shows
 `<Namespace ...>` at the inner occurrence. An empty scope omits the colon.
-Python's `repr` of a module namespace is `<ModuleNamespace NAME: ...>`, with
-no parent; Koskari's `repr` prints a module namespace as a dict literal.
+A module namespace prints as its type, its name and its bindings as a
+mapping, each in the language of the caller: Python's `repr` gives
+`<ModuleNamespace 'NAME' {'k': 3}>` and Koskari's gives
+`<ModuleNamespace "NAME" #{"k": 3}>`. A binding that holds the namespace
+itself shows `<ModuleNamespace ...>` at the inner occurrence.
 
 ```koskari
 >>> (def f1 [a] (var scale 2) (vars))

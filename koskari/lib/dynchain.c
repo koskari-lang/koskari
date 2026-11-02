@@ -419,27 +419,41 @@ static int kos_raise_prompt_not_found(uint32_t prompt_id) {
 
 
 /**
-   Raise KoskariPromptUnreachable at a node that denied handle(SHIFT).
-   The deny site does not know which prompt the walk was seeking, so
-   prompt_id is left None; kos_capture_note_prompt_id fills it in when
-   the walk owner regains control.
+   Raise KoskariPromptUnreachable at a node that refused a capture: a
+   node that denied handle(SHIFT), or one whose clone refused because
+   its call is in flight. fmt takes the boundary word once. The refuse
+   site does not know which prompt the walk was seeking, and a clone
+   site does not know which construct is capturing, so prompt_id is
+   left None and operation may be NULL for None; kos_capture_note
+   fills them in when the capture owner regains control.
 */
-static void kos_raise_prompt_unreachable(const char *boundary) {
+static void kos_raise_prompt_unreachable(
+    const char *operation,
+    const char *boundary,
+    const char *fmt) {
+
   PyObject *msg;
+  PyObject *op;
   PyObject *exc;
 
   if (kos_load_capture_excs())
     return;
 
-  msg = PyUnicode_FromFormat(
-      "shift cannot capture across a %s boundary", boundary);
+  msg = PyUnicode_FromFormat(fmt, boundary);
   if (! msg)
     return;
 
+  op = operation ? PyUnicode_FromString(operation) : Py_NewRef(Py_None);
+  if (! op) {
+    Py_DECREF(msg);
+    return;
+  }
+
   exc = PyObject_CallFunction(
-      exc_prompt_unreachable, "OOss",
-      msg, Py_None, "shift", boundary);
+      exc_prompt_unreachable, "OOOs",
+      msg, Py_None, op, boundary);
   Py_DECREF(msg);
+  Py_DECREF(op);
   if (! exc)
     return;
   PyErr_SetObject(exc_prompt_unreachable, exc);
@@ -448,14 +462,15 @@ static void kos_raise_prompt_unreachable(const char *boundary) {
 
 
 /**
-   Note the seeking prompt id on an in-flight KoskariPromptUnreachable.
-   Any other in-flight exception is left untouched.
+   Note the seeking prompt id and the capturing construct on an
+   in-flight KoskariPromptUnreachable: the prompt id when the capture
+   is delimited, the operation when the refuse site left it None. Any
+   other in-flight exception is left untouched.
 */
-static void kos_capture_note_prompt_id(uint32_t prompt_id) {
+static void kos_capture_note(uint32_t prompt_id, const char *operation) {
   PyObject *typ;
   PyObject *val;
   PyObject *tb;
-  PyObject *pid;
 
   if (! exc_prompt_unreachable
       || ! PyErr_ExceptionMatches(exc_prompt_unreachable))
@@ -463,12 +478,36 @@ static void kos_capture_note_prompt_id(uint32_t prompt_id) {
 
   PyErr_Fetch(&typ, &val, &tb);
   PyErr_NormalizeException(&typ, &val, &tb);
-  pid = PyLong_FromUnsignedLong(prompt_id);
-  if (pid) {
-    if (PyObject_SetAttrString(val, "prompt_id", pid))
-      PyErr_Clear();
-    Py_DECREF(pid);
+
+  if (prompt_id != KOS_PROMPT_ID_UNDELIMITED) {
+    PyObject *pid = PyLong_FromUnsignedLong(prompt_id);
+
+    if (pid) {
+      if (PyObject_SetAttrString(val, "prompt_id", pid))
+        PyErr_Clear();
+      Py_DECREF(pid);
+    }
   }
+
+  {
+    PyObject *have = PyObject_GetAttrString(val, "operation");
+
+    if (! have) {
+      PyErr_Clear();
+    } else {
+      if (have == Py_None) {
+        PyObject *op = PyUnicode_FromString(operation);
+
+        if (op) {
+          if (PyObject_SetAttrString(val, "operation", op))
+            PyErr_Clear();
+          Py_DECREF(op);
+        }
+      }
+      Py_DECREF(have);
+    }
+  }
+
   PyErr_Restore(typ, val, tb);
 }
 
@@ -2128,7 +2167,9 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
           || event == KOS_XFER_EVENT_RAISE)
         return KOS_HANDLE_CONSUMED;
       if (event == KOS_XFER_EVENT_SHIFT) {
-        kos_raise_prompt_unreachable("generator");
+        kos_raise_prompt_unreachable(
+            "shift", "generator",
+            "shift cannot capture across a %s boundary");
         return KOS_HANDLE_ERROR;
       }
       return KOS_HANDLE_PASS;
@@ -2214,8 +2255,9 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
       return (KosDynNode *) kos_dynshift_clone((KosDynShift *) node);
 
     case KOS_DYN_GEN:
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot clone generator node");
+      kos_raise_prompt_unreachable(
+          NULL, "generator",
+          "cannot capture a continuation across a %s boundary");
       return NULL;
     case KOS_DYN_COLLECT:
       return (KosDynNode *) kos_dyncollect_clone((KosDynCollect *) node);
@@ -2462,8 +2504,13 @@ static KosContinuation *kos_continuation_capture_segment(
   PyObject *token;
 
   captured_chain = kos_dyn_clone_segment(segment_top, stop);
-  if (! captured_chain && segment_top != stop)
+  if (! captured_chain && segment_top != stop) {
+    /* a clone that refused names the boundary; the construct and the
+       prompt are known here */
+    kos_capture_note(prompt_id, prompt_id == KOS_PROMPT_ID_UNDELIMITED
+                     ? "call/cc" : "shift");
     return NULL;
+  }
   if (captured_chain)
     kos_chain_detach_template(captured_chain, stop);
 
@@ -2550,7 +2597,7 @@ int kos_shift_capture(
       KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_SHIFT);
 
       if (hr == KOS_HANDLE_ERROR) {
-        kos_capture_note_prompt_id(prompt_id);
+        kos_capture_note(prompt_id, "shift");
         return -1;
       }
       if (hr == KOS_HANDLE_CONSUMED) {

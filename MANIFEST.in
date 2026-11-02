@@ -1,3 +1,4 @@
+include PYPI.md
 include koskari.pth
 include koskari/_version.py
 recursive-include koskari/lib *.c *.h *.incl

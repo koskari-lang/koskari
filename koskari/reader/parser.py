@@ -141,19 +141,21 @@ _decimal_re = _patterns.DECIMAL_RE.match
 _fraction_re = _patterns.FRACTION_RE.match
 _complex_re = _patterns.COMPLEX_RE.match
 _keyword_re = _patterns.KEYWORD_RE.match
-# deliberately wider than the well-formed shape: a trailing segment that
-# is empty or not an identifier still matches, so _as_dotted_attr_atom can
-# reject it by name rather than letting `foo.` fall through to a symbol.
-# The leading identifier anchor is what keeps floats and ellipsis out.
-_dotted_attr_atom_re = regex(
-    r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z0-9/_-]*)+$").match
-_attr_name_re = regex(r"^[a-zA-Z_][a-zA-Z0-9/_-]*$").match
+# an attribute name is a Python identifier, Unicode letters included,
+# plus the / and - that Koskari names carry: a head that is a word
+# character other than a digit, then word characters, / and -.
+# _dotted_attr_atom_re is deliberately wider than the well-formed shape:
+# a trailing segment that is empty or not an identifier still matches, so
+# _as_dotted_attr_atom can reject it by name rather than letting `foo.`
+# fall through to a symbol. The leading identifier anchor is what keeps
+# floats and ellipsis out.
+_dotted_attr_atom_re = regex(r"^[^\W\d][\w/-]*(\.[\w/-]*)+$").match
+_attr_name_re = regex(r"^[^\W\d][\w/-]*$").match
 
-# the same name shape as _attr_name_re, as character sets, for the reader's
-# `.` suffix macro to scan with
-_ATTR_NAME_HEAD = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_")
-_ATTR_NAME_REST = _ATTR_NAME_HEAD | frozenset("0123456789/-")
+# the same name shape, one character at a time, for the reader's `.`
+# suffix macro to scan with
+_attr_name_head = regex(r"[^\W\d]").match
+_attr_name_rest = regex(r"[\w/-]").match
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
 
@@ -1014,14 +1016,13 @@ class Reader:
 
     def form_eof(self, stream, form):
         """
-        The error for input ending inside an open list
+        The error for input ending inside an open list: EOF at the
+        opener whatever the form's state, since a list that has read
+        its dot, or its dot and its tail, is completed by more input
+        as any open list is. A misplaced dot is an error where it
+        sits, raised by form_dot and the value step, never here.
         """
 
-        if form.state is FORM_TAIL_WANTED:
-            return stream.error("invalid list syntax", stream.position())
-        if form.state is FORM_TAIL_SET:
-            return stream.error("invalid use of dot in list",
-                                form.dot_position)
         return stream.reader_eof(opened_at=form.open.opened_at,
                                  context=f"{form.open.char!r} form")
 
@@ -1239,13 +1240,13 @@ class Reader:
         # is then obliged to reject
         dot_at = stream.position()
         char = stream.peek(1)
-        if not char or char not in _ATTR_NAME_HEAD:
+        if not char or not _attr_name_head(char):
             raise stream.error("attribute name expected after '.'", dot_at)
 
         name = [stream.read(1)]
         while True:
             char = stream.peek(1)
-            if not char or char not in _ATTR_NAME_REST:
+            if not char or not _attr_name_rest(char):
                 break
             name.append(stream.read(1))
 

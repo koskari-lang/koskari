@@ -52,18 +52,22 @@ Koskari cannot read the program and says so:
 
 ```koskari
 >>> ( 1 2 ]
-ReaderSyntaxError: mismatched open and close characters
+  File "<stdin>", line 1
+    ( 1 2 ]
+          ^
+koskari.exceptions.ReaderSyntaxError: mismatched open and close characters
 ```
 
-At the prompt the message is that one line: the name of the error and
-what went wrong. Running the same text from a file adds the file, the
-line number, and a caret under the character that stopped the reader.
+The last line is the name of the error and what went wrong. The lines
+above show where: the line you typed, with a caret under the character
+that stopped the reader. From a file the first line names the file
+instead of `<stdin>`.
 :::
 
 :::{dialogue}
 What should we do with it?
 +++
-Read the first line of the message. Look back at what you typed and
+Read the last line of the message. Look back at what you typed and
 count the `(` and `)`. Fix one thing and run again.
 :::
 
@@ -90,7 +94,8 @@ So there are two kinds of error?
 +++
 Two kinds. A syntax error means Koskari could not understand the text.
 A runtime error means it understood the text and something went wrong
-doing it. The first line of the message tells you which.
+doing it. The last line of the message tells you which: a reader error
+ends in `ReaderSyntaxError`, a runtime error in the name of what failed.
 :::
 
 ## Lines that continue

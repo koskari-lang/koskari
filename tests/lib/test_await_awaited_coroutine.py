@@ -75,6 +75,32 @@ class TestAwaitAwaitedCoroutine(unittest.IsolatedAsyncioTestCase):
             first.send(None)
         self.assertEqual(done.exception.value, "woken")
 
+    async def test_second_python_awaiter_of_a_koskari_coroutine_is_refused(self):
+        """
+        A Koskari coroutine suspended under one awaiter refuses a second
+        at its __await__, as a Python coroutine does, rather than
+        letting the second advance it
+        """
+
+        mod = await self.load()
+        c = mod["waiter"](Suspender())
+
+        async def outer(c):
+            return await c
+
+        first = outer(c)
+        self.assertEqual(first.send(None), "suspended")
+
+        second = outer(c)
+        with self.assertRaises(RuntimeError) as caught:
+            second.send(None)
+        self.assertEqual(
+            str(caught.exception), "coroutine is being awaited already")
+
+        with self.assertRaises(StopIteration) as done:
+            first.send(None)
+        self.assertEqual(done.exception.value, "woken")
+
     async def test_unawaited_coroutine_is_stepped(self):
         mod = await self.load()
 

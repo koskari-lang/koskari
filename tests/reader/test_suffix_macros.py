@@ -407,6 +407,17 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
         self.assertEqual(kos_repr(self.read("(f x).a/b")),
                          "(attr (f x) a/b)")
 
+    def test_attribute_names_admit_unicode_letters(self):
+        """
+        An attribute name is a Python identifier, not an ASCII one, in
+        both the atom rule and the suffix
+        """
+
+        self.assertEqual(kos_repr(self.read("ns.café")),
+                         "(attr ns café)")
+        self.assertEqual(kos_repr(self.read("(f x).日本")),
+                         "(attr (f x) 日本)")
+
     def test_whitespace_breaks_the_attachment(self):
         """
         A space leaves .bar an ordinary symbol

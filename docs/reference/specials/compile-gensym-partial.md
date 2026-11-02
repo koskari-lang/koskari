@@ -23,6 +23,9 @@ fresh gensyms; repeated `%n` shares one binding. `...` is replaced by `*:`
 list segments (`keyword("*")` and the rest gensym) for interop with
 `compile/call`. Subtrees whose head is `gensym-thunk` or
 `compile/gensym-thunk` are left unchanged (no recursion into the cdr).
+Nothing else changes: cells keep their delimiter style, so a quoted `[a b]`
+or `[]` reads back as written, and a dotted tail is kept, rewritten when it
+is a placeholder, so `{(f . %1)}` means what `(lambda [x] (f . x))` means.
 After rewriting, placeholders must be contiguous `%1` ... `%N`; otherwise
 `SpecialError`. Builds inferred **formals** for `compile/lambda` (positionals in
 order, then `*` and rest if `...` appeared) and returns the source form

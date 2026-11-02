@@ -5,9 +5,14 @@ files transparently via Python's standard `import` machinery.
 
 ## Overview
 
-- **Finder**: `KoskariPathFinder` is inserted at the front of `sys.meta_path` so
-  `.ki` files are discovered before Python's PathFinder can claim a directory as
-  a namespace package.
+- **Finder**: `install()` registers one path hook on `sys.path_hooks`, just
+  ahead of Python's own FileFinder hook. The FileFinder it builds for a
+  directory carries Python's loaders (extension, `.py`, `.pyc`) and then
+  `KoskariSourceFileLoader` for `.kio` and `.ki`, so a directory is served by
+  one finder and a module name resolves by Python's precedence: builtins and
+  frozen modules first, `sys.path` order between directories, Python's
+  suffixes before Koskari's within one. Nothing of Koskari's sits on
+  `sys.meta_path`.
 - **Loader**: `KoskariSourceFileLoader` drives the read-compile-execute loop for
   `.ki` files. The synchronous `exec_module` entry point uses `exec_module_demand`
   (demand path). An async `exec_module_async` path exists for callers that run an
@@ -19,9 +24,9 @@ files transparently via Python's standard `import` machinery.
 
 ## Installation
 
-- **install()**: Insert `KoskariPathFinder` at the front of `sys.meta_path`.
-  Idempotent.
-- **uninstall()**: Remove `KoskariPathFinder` from `sys.meta_path`.
+- **install()**: Register the directory hook on `sys.path_hooks` and clear
+  `sys.path_importer_cache` so directories re-resolve through it. Idempotent.
+- **uninstall()**: Remove the hook and clear `sys.path_importer_cache`.
 - **Auto-install**: `koskari/__init__.py` calls `install()` at package import
   time. Suppressed when the `KOSKARI_NOIMPORTER` environment variable or the
   `-X KOSKARI_NOIMPORTER` xoption is set to a non-zero value.
@@ -62,8 +67,8 @@ assembles from the Python registry plus basics.ki.
 | Component | Module | Notes |
 |-----------|--------|-------|
 | install / uninstall | `koskari.importer` | `install()`, `uninstall()`, `is_installed()` |
-| PathFinder | `koskari.importer` | `KoskariPathFinder` (class in `sys.meta_path`) |
-| Loader | `koskari.importer` | `KoskariSourceFileLoader`, `KoskariFileFinder` |
+| Directory hook | `koskari.importer` | a `FileFinder.path_hook` on `sys.path_hooks` carrying Python's loaders and the Koskari one |
+| Loader | `koskari.importer` | `KoskariSourceFileLoader` |
 | Module lifecycle | `koskari.module` | `new_module`, `init_module`, `load_module_async`, `load_module_demand`, `materialize_exports` |
 | Builtins | `koskari.builtins` | the assembled builtins module `new_module` copies from; built by `koskari.bootstrap` (`make_bootstrap()` plus the `.ki` sources) |
 

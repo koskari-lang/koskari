@@ -385,6 +385,16 @@ Ref: [interpreter/yield-from-close.md](interpreter/yield-from-close.md).
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
 
+### Two levels of `kos_repr`: identity and detail
+
+`kos_repr` gains an optional `detail` flag, default true. A detail repr
+prints identity plus contents and renders every opt-in object inside it
+at the identity level; plain containers pass the level through. Opt-in
+types to start: `ModuleNamespace`, `Namespace`, `ModulePragma`. Python's
+`repr` stays the detail form; `str` is not given a second meaning.
+
+Ref: [api/repr-detail.md](api/repr-detail.md).
+
 ### Seq-values kwargs (in-scope formals apply)
 
 Specify bytecode and runtime surfaces for kwargs-capable seq-values /

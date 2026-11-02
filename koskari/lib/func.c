@@ -323,6 +323,53 @@ KosEvaluatedTypeObject KosExpressionType = {
 /* === KosFunctionSpec: (name, formals_spec, code) for BUILD_FUNCTION === */
 
 
+/**
+  A function's namespace lays the formals out first and the code's
+  fast rows index the code's own local order, so the two name
+  sequences must agree over their common prefix; either may be the
+  longer. layout is the formals' own NamespaceSpec, built with no base.
+  Returns 0 when they agree, -1 with TypeError set when they do not.
+*/
+static int formals_layout_fits_code(PyObject *layout, PyObject *code) {
+
+  PyObject *formal_names = KosNamespaceSpec_LOCAL_SYMS(layout);
+  PyObject *local_names = KosNamespaceSpec_LOCAL_SYMS(KosCode_NSPEC(code));
+  Py_ssize_t count = PyTuple_GET_SIZE(formal_names);
+
+  if (PyTuple_GET_SIZE(local_names) < count)
+    count = PyTuple_GET_SIZE(local_names);
+
+  for (Py_ssize_t i = 0; i < count; i++) {
+    PyObject *formal = PyTuple_GET_ITEM(formal_names, i);
+    PyObject *local = PyTuple_GET_ITEM(local_names, i);
+    int same = PyObject_RichCompareBool(formal, local, Py_EQ);
+
+    if (same < 0)
+      return -1;
+    if (! same) {
+      PyErr_Format(PyExc_TypeError,
+                   "formal %R at slot %zd disagrees with local %R of code"
+                   " %R", formal, i, local, KosCode_NAME(code));
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+
+int KosFunction_CheckFormalsLayout(PyObject *formals, PyObject *code) {
+
+  PyObject *layout = KosFormals_NamespaceSpec(formals, NULL);
+  if (! layout)
+    return -1;
+
+  int res = formals_layout_fits_code(layout, code);
+  Py_DECREF(layout);
+  return res;
+}
+
+
 static PyMemberDef function_spec_members[] = {
   { "name", T_OBJECT,
     offsetof(KosFunctionSpec, name), READONLY,
@@ -447,6 +494,14 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
     );
     return NULL;
   }
+
+  PyObject *layout = KosFormalsSpec_NamespaceSpec(formals_spec, NULL);
+  if (! layout)
+    return NULL;
+  int fits = formals_layout_fits_code(layout, code);
+  Py_DECREF(layout);
+  if (fits < 0)
+    return NULL;
 
   PyObject *self = PyType_GenericNew(&KosFunctionSpecType, NULL, NULL);
   if (! self)
@@ -1166,9 +1221,19 @@ static PyObject *function_new(
     return NULL;
   }
 
+  if (! KosCode_Check(code)) {
+    PyErr_Format(PyExc_TypeError, "Function code must be Code, not %R", code);
+    return NULL;
+  }
+
   formals = KosFormals_New(formals_spec, NULL);
   if (! formals)
     return NULL;
+
+  if (KosFunction_CheckFormalsLayout(formals, code) < 0) {
+    Py_DECREF(formals);
+    return NULL;
+  }
 
   self = function_construct(type, code, formals, base_ns);
   Py_DECREF(formals);

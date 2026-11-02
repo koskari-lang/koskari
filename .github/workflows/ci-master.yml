@@ -47,6 +47,8 @@ concurrency:
 jobs:
   tests:
     uses: ./.github/workflows/run_tests.yml
+    with:
+      runner: self-hosted
 
   detect:
     runs-on: ubuntu-latest

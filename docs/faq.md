@@ -20,9 +20,9 @@ one call at a time.
 
 ## Is it stable?
 
-Koskari is a beta, and 0.2.0 is the current release. The language surface
-may change before 1.0, and the [changelog](changelog.md) records what
-did. [Release and versioning](project/release-and-versioning.md)
+Koskari is pre-alpha software; 0.2.0 is in development and publishes as
+weekly snapshots. The language surface may change before 1.0, and the
+[changelog](changelog.md) records what did. [Release and versioning](project/release-and-versioning.md)
 says what kinds of change to expect.
 
 ## Which Python versions and platforms?

@@ -22,6 +22,7 @@ keyword, star; evaluation order; end-to-end.
 import pytest
 
 from koskari.compile.processor import YIELD_OPS
+from koskari.exceptions import ParametersError
 from koskari.lib import OpCode
 from tests.dis.dis import dis
 
@@ -603,6 +604,40 @@ class TestStarStarArgNonMapping(SpecialsTestCase):
             "(f **: proxy)", f=dict,
             proxy=types.MappingProxyType({"a": 1}))
         self.assertEqual({"a": 1}, await expr())
+
+
+class TestRepeatedKeyword(SpecialsTestCase):
+    """
+    A keyword label written twice in one call is a compile error; a
+    keyword and a **: splat naming the same key still merge at run
+    time, the later one winning
+    """
+
+    async def test_repeated_keyword_rejected_at_compile_time(self):
+        with self.assertRaises(ParametersError) as ctx:
+            self.compile_expr("(f a: 1 a: 2)", f=dict)
+        self.assertIn("repeated keyword argument 'a'", str(ctx.exception))
+        self.assertEqual((1, 3), ctx.exception.position)
+
+
+    async def test_repeated_keyword_rejected_for_builtin_callee(self):
+        with self.assertRaises(ParametersError):
+            self.compile_expr('(int "11" base: 2 base: 10)', int=int)
+
+
+    async def test_distinct_keywords_still_compile(self):
+        expr, mod = self.compile_expr("(f a: 1 b: 2)", f=dict)
+        self.assertEqual({"a": 1, "b": 2}, await expr())
+
+
+    async def test_keyword_and_starstar_merge_last_wins(self):
+        expr, mod = self.compile_expr(
+            "(f a: 1 **: d)", f=dict, d={"a": 2, "b": 3})
+        self.assertEqual({"a": 2, "b": 3}, await expr())
+
+        expr, mod = self.compile_expr(
+            "(f **: d a: 7)", f=dict, d={"a": 2, "b": 3})
+        self.assertEqual({"a": 7, "b": 3}, await expr())
 
 
 # The end.

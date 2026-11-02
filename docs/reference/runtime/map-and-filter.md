@@ -78,10 +78,11 @@ Like map, the predicate may be a koskari function and may await.
 
 Both are lazy single-pass iterators, usable from either surface:
 
-- synchronously: `(list ...)`, `for-each`, or python `list()` /
-  `next()`. A source or function that genuinely suspends on an
-  awaitable cannot be driven this way and raises
-  **`KoskariSyncViolation`**.
+- synchronously: `(list ...)`, `(next ...)`, `for-each`, or python
+  `list()`, `for` and `next(iter(m))`. A map or filter is an iterable,
+  not an iterator, so python `next()` needs the `iter()` step. A source
+  or function that genuinely suspends on an awaitable cannot be driven
+  this way and raises **`KoskariSyncViolation`**.
 - asynchronously: `for-each` in an asynchronous context, or python
   `async for`. Awaits in the function, the predicate, or the source
   pass through transparently.

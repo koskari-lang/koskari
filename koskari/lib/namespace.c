@@ -2932,8 +2932,8 @@ static int mdl_ns_init(PyObject *self, PyObject *args, PyObject *kwds) {
 }
 
 
-/* Identity hash and comparison, and the shared namespace repr; the
-   dict base would refuse the hash and print the scratch dict. */
+/* Identity hash and comparison; the dict base would refuse the hash
+   and compare the scratch dict. */
 static Py_hash_t mdl_ns_hash(PyObject *self) {
   return PyBaseObject_Type.tp_hash(self);
 }
@@ -2966,6 +2966,62 @@ static PyObject *mdl_ns_m_copy(PyObject *self) {
     return NULL;
   }
   return out;
+}
+
+
+/* <ModuleNamespace NAME BINDINGS> with the name and a dict of the
+   bindings each shown through reprfn, so repr and __kos_repr__ print
+   the same frame around their own language's dict. The namespace is
+   held in the repr-enter set across the dict's repr: a binding that
+   holds the namespace would otherwise build and print a fresh copy
+   without end. */
+static PyObject *mdl_ns_render(
+    PyObject *self,
+    PyObject *(*reprfn)(PyObject *)) {
+
+  const char *tname = strrchr(Py_TYPE(self)->tp_name, '.');
+  tname = tname ? tname + 1 : Py_TYPE(self)->tp_name;
+
+  int busy = Py_ReprEnter(self);
+  if (busy != 0)
+    return busy > 0
+        ? PyUnicode_FromFormat("<%s ...>", tname)
+        : NULL;
+
+  PyObject *result = NULL;
+  PyObject *name = NULL;
+  PyObject *binds = NULL;
+  PyObject *copy = mdl_ns_m_copy(self);
+  if (! copy)
+    goto done;
+
+  name = reprfn(KosNamespace_CORE(self)->name);
+  if (! name)
+    goto done;
+
+  binds = reprfn(copy);
+  if (! binds)
+    goto done;
+
+  result = PyUnicode_FromFormat("<%s %U %U>", tname, name, binds);
+
+ done:
+  Py_XDECREF(binds);
+  Py_XDECREF(name);
+  Py_XDECREF(copy);
+  Py_ReprLeave(self);
+  return result;
+}
+
+
+static PyObject *mdl_ns_repr(PyObject *self) {
+  return mdl_ns_render(self, PyObject_Repr);
+}
+
+
+static PyObject *mdl_ns_kos_repr(PyObject *self, PyObject *_unused) {
+  (void) _unused;
+  return mdl_ns_render(self, KosUtils_Repr);
 }
 
 
@@ -3260,6 +3316,11 @@ static PyMethodDef mdl_ns_methods[] = {
     "NS.copy() => dict\n"
     "a plain dict of the names holding a value and their values" },
 
+  { "__kos_repr__", (PyCFunction) mdl_ns_kos_repr, METH_NOARGS,
+    "NS.__kos_repr__() -> str\n"
+    "the Koskari repr: the type, the module name and the bindings as a"
+    " dict literal, each in Koskari form" },
+
   { "__reversed__", (PyCFunction) mdl_ns_m_reversed, METH_NOARGS,
     "reversed(NS) => iterator over the names holding a value, last first" },
 
@@ -3312,7 +3373,7 @@ PyTypeObject KosModuleNamespaceType = {
   .tp_iter = ns_mapping_iter,
   .tp_hash = mdl_ns_hash,
   .tp_richcompare = mdl_ns_richcompare,
-  .tp_repr = ns_repr,
+  .tp_repr = mdl_ns_repr,
   .tp_new = mdl_ns_new,
   .tp_init = mdl_ns_init,
   .tp_dealloc = mdl_ns_dealloc,
@@ -3606,6 +3667,9 @@ int koskari_namespace_init(PyObject *mod) {
       PyType_Ready(&KosModuleNamespaceType) ||
       PyType_Ready(&KosModuleType) ||
       PyType_Ready(&KosNamespaceRefsType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosModuleNamespaceType))
     return -1;
 
   STR_CONST(_namespace_str, "<namespace>");

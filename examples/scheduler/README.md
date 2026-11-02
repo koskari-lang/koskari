@@ -410,7 +410,7 @@ config umb:
     ssl_keyfile: (reqenv "UMB_KEY")
     ssl_cafile: "/etc/pki/umb/ca.crt"
 
-job umb builds "/topic/VirtualTopic.eng.brew.build.complete":
+job umb builds "/topic/VirtualTopic.eng.builds.complete":
     on-error [err msg]:
         (print f"build event dropped {msg}: {err}")
     handler [msg]:

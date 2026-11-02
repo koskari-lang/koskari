@@ -1,0 +1,10 @@
+;; Prints the marker as seen through sys.modules["__main__"]: the
+;; program's own module when it is published there, None otherwise.
+
+import sys
+
+(var marker 42)
+
+(print (getattr (item sys.modules "__main__") "marker" None))
+
+;; The end.

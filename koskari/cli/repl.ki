@@ -44,6 +44,33 @@ import-from ..lib kos_repr
 (declare-exports repl)
 
 
+; === Session names ===
+
+
+class Quitter []:
+  """
+  The value bound to exit and quit in a session: shown at the prompt it
+  says how to leave, and called it leaves with the given status
+  """
+
+  def __repr__ [self]:
+    "Use (exit), (quit) or Ctrl-D to leave"
+
+  def __call__ [self (code None)]:
+    raise (SystemExit code)
+
+
+def bind_session_names [ns]:
+  """
+  Bind exit and quit in a session namespace that lacks them. A module
+  continuing into a session keeps its own bindings of either name.
+  """
+
+  for-each [name #["exit" "quit"]]:
+    unless (in? name ns):
+      set! ns[name] (Quitter)
+
+
 ; === Continuation heuristics ===
 
 
@@ -194,6 +221,7 @@ def repl [
     set! compiler facets[0]
 
   var ns (vars mod)
+  bind_session_names ns
   when (None? prompter):
     set! prompter (_make_repl_prompter histfile ns)
 

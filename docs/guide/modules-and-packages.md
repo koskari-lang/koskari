@@ -162,9 +162,12 @@ Python's dot rules (each leading dot climbs one package); see
 ## The `.py` / `.ki` same-name trap
 
 A `foo.py` and a `foo.ki` in the same directory both claim the module name
-`foo`. That is an import conflict with undefined behavior -- which finder wins
-is unspecified, and it can change with build state or import order. Do not rely
-on it.
+`foo`. The resolution follows Python's rules: builtin and frozen modules come
+first, then `sys.path` entries in order, and within one directory Python's
+own suffixes (an extension module, `.py`, `.pyc`) are tried before `.kio`
+and then `.ki`. So the `.py` wins here, as a `.py` anywhere earlier on
+`sys.path` would. A layout that leans on that ordering is hard to read; do
+not rely on it.
 
 Two ways to keep two-language layouts unambiguous:
 

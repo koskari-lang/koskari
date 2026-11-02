@@ -32,7 +32,7 @@ import pytest
 
 from koskari.lib import (
     Code, Compare, Expression, FormalsSpec, Function, NamespaceSpec, OpCode,
-    Operand, Ref)
+    Operand, Ref, cons, nil)
 from koskari.module import load_module_source_async, new_module
 from tests.lib.opcode import opcount
 
@@ -196,7 +196,7 @@ class TestOperandRanges(unittest.TestCase):
 class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
 
     async def test_formals_that_dedup_leave_too_few_slots(self):
-        spec = NamespaceSpec(None, ("a",) * 2001, ())
+        spec = NamespaceSpec(None, ("x",) + ("a",) * 2000, ())
         code = Code(spec, [[OpCode.CONST, "x"], [OpCode.FAST_STORE, 2000],
                            [OpCode.CONST, 1], [OpCode.RETURN, 1]], "t")
         fn = Function(code, NamespaceSpec(None, (), ()).get_namespace(None),
@@ -214,7 +214,7 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, await Expression(code, spec.get_namespace(None))())
 
     async def test_dedup_formals_in_tail_position_raise_cleanly(self):
-        spec = NamespaceSpec(None, ("a",) * 2001, ())
+        spec = NamespaceSpec(None, ("x",) + ("a",) * 2000, ())
         code = Code(spec, [[OpCode.CONST, "x"], [OpCode.FAST_STORE, 2000],
                            [OpCode.CONST, 1], [OpCode.RETURN, 1]], "t")
         callee = Function(code,
@@ -304,6 +304,73 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
                      [OpCode.POP_FINALLY, 0],
                      [OpCode.RETURN, 1]])
         self.assertIsInstance(code, Code)
+
+
+class TestMatchCursorMoves(unittest.IsolatedAsyncioTestCase):
+    """
+    MATCH_SYNC and MATCH_RESET move a cursor to a position over its
+    own subject. A hand-built Code can name a cursor or mark over
+    another subject, or of another kind; the move is refused rather
+    than carrying the cursor's bounds onto a subject they do not fit
+    """
+
+    def spec(self):
+        return NamespaceSpec(None, (), ())
+
+    async def run_code(self, instrs):
+        spec = self.spec()
+        code = Code(spec, instrs, "t")
+        return await Expression(code, spec.get_namespace(None))()
+
+    def two_cursors(self, first, second):
+        return [[OpCode.CONST, first],
+                [OpCode.MATCH_DESCEND, "miss"],
+                [OpCode.CONST, second],
+                [OpCode.MATCH_DESCEND, "miss"]]
+
+    def walk(self, steps):
+        body = []
+        for _ in range(steps):
+            body += [[OpCode.MATCH_NEXT, ("miss", 0, 0, 0)], [OpCode.POP, 1]]
+        return body + [[OpCode.MATCH_NEXT, ("miss", 0, 0, 0)],
+                       [OpCode.RETURN, 1],
+                       [OpCode.LABEL, "miss"],
+                       [OpCode.CONST, "missed"], [OpCode.RETURN, 1]]
+
+    async def test_sync_onto_another_subject_is_refused(self):
+        instrs = (self.two_cursors(tuple(range(1000)), (7,))
+                  + [[OpCode.MATCH_SYNC, (1, 0, 0, 0)], [OpCode.POP, 1]]
+                  + self.walk(200))
+        with self.assertRaises(SystemError):
+            await self.run_code(instrs)
+
+    async def test_reset_onto_a_mark_over_another_subject_is_refused(self):
+        instrs = (self.two_cursors(tuple(range(1000)), (7,))
+                  + [[OpCode.MATCH_SCOPE, (0, 0, 0, 0)],
+                     [OpCode.MATCH_RESET, (2, 0, 0, 0)],
+                     [OpCode.POP, 1], [OpCode.POP, 1]]
+                  + self.walk(200))
+        with self.assertRaises(SystemError):
+            await self.run_code(instrs)
+
+    async def test_sync_onto_a_cursor_of_another_kind_is_refused(self):
+        instrs = (self.two_cursors((1, 2, 3), cons(1, 2, 3, nil))
+                  + [[OpCode.MATCH_SYNC, (1, 0, 0, 0)], [OpCode.POP, 1]]
+                  + self.walk(1))
+        with self.assertRaises(SystemError):
+            await self.run_code(instrs)
+
+    async def test_sync_and_reset_over_one_subject_still_move(self):
+        subject = (10, 20, 30)
+        instrs = ([[OpCode.CONST, subject],
+                   [OpCode.MATCH_DESCEND, "miss"],
+                   [OpCode.MATCH_NEXT, ("miss", 0, 0, 0)], [OpCode.POP, 1],
+                   [OpCode.MATCH_SCOPE, (0, 0, 0, 0)],
+                   [OpCode.MATCH_NEXT, ("miss", 1, 0, 0)], [OpCode.POP, 1],
+                   [OpCode.MATCH_RESET, (1, 0, 0, 0)],
+                   [OpCode.POP, 1]]
+                  + self.walk(0))
+        self.assertEqual(20, await self.run_code(instrs))
 
 
 # The end.

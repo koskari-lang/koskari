@@ -291,22 +291,40 @@ static int defer_traverse(PyObject *self, visitproc visit, void *arg) {
 }
 
 
+/**
+   Take the payload the current state holds, leaving the slot NULL: the
+   inner, the value or the iterator, or NULL for a state holding none.
+   The state itself is the caller's to write before it releases what
+   it took, since the release can run code that reaches this defer.
+*/
+static PyObject *defer_take_payload(KosDefer *self) {
+  PyObject *payload;
+
+  switch (self->state) {
+    case KOS_DEFER_DELEGATING:
+      payload = self->u.inner;
+      self->u.inner = NULL;
+      return payload;
+    case KOS_DEFER_DONE:
+      payload = self->u.value;
+      self->u.value = NULL;
+      return payload;
+    case KOS_DEFER_ITERATING:
+      payload = self->u.iter;
+      self->u.iter = NULL;
+      return payload;
+    default:
+      return NULL;
+  }
+}
+
+
 static int defer_clear(PyObject *self) {
   KosDefer *d = (KosDefer *) self;
-  switch (d->state) {
-    case KOS_DEFER_DELEGATING:
-      Py_CLEAR(d->u.inner);
-      break;
-    case KOS_DEFER_DONE:
-      Py_CLEAR(d->u.value);
-      break;
-    case KOS_DEFER_ITERATING:
-      Py_CLEAR(d->u.iter);
-      break;
-    case KOS_DEFER_SPENT:
-    case KOS_DEFER_MOVED_FROM:
-      break;
-  }
+  PyObject *payload = defer_take_payload(d);
+
+  d->state = KOS_DEFER_SPENT;
+  Py_XDECREF(payload);
   return 0;
 }
 
@@ -401,12 +419,17 @@ static void defer_set_dead_error(KosDefer *self) {
    error propagates.
 */
 static int defer_start_iterating(KosDefer *self) {
-  PyObject *it = kos_get_awaitable(self->u.inner);
+  PyObject *inner = self->u.inner;
+  PyObject *it = kos_get_awaitable(inner);
+
   if (! it)
     return -1;
-  Py_CLEAR(self->u.inner);
+  /* The new state is written before the old payload goes: releasing
+     the inner can run a __del__ that reaches this defer, which must
+     meet it iterating, never delegating with nothing to delegate to. */
   self->u.iter = it;
   self->state = KOS_DEFER_ITERATING;
+  Py_DECREF(inner);
   return 0;
 }
 
@@ -415,20 +438,12 @@ static int defer_start_iterating(KosDefer *self) {
    Consume the payload (whatever the state holds) and transition SPENT.
 */
 static void defer_spend(KosDefer *self) {
-  switch (self->state) {
-    case KOS_DEFER_DELEGATING:
-      Py_CLEAR(self->u.inner);
-      break;
-    case KOS_DEFER_DONE:
-      Py_CLEAR(self->u.value);
-      break;
-    case KOS_DEFER_ITERATING:
-      Py_CLEAR(self->u.iter);
-      break;
-    default:
-      break;
-  }
+  PyObject *payload = defer_take_payload(self);
+
+  /* spent before the payload is released, so a __del__ it runs that
+     reaches this defer meets the reuse refusal */
   self->state = KOS_DEFER_SPENT;
+  Py_XDECREF(payload);
 }
 
 

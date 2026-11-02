@@ -22,3 +22,8 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
     (do-work k)
     (k 0)))
 ```
+
+**Errors:** As for [`call/cc`](compile-call-cc.md): a capture from inside a
+running `__enter__`, `__exit__`, before thunk or after thunk, or one that
+would cross a generator, raises `KoskariPromptUnreachable` naming the
+boundary.

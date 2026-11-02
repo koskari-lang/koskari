@@ -30,8 +30,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    BoundMethod, Code, Expression, FormalsSpec, Function, NamespaceSpec,
-    OpCode)
+    BoundMethod, Code, Expression, FormalsSpec, Function, FunctionSpec,
+    NamespaceSpec, OpCode)
 from tests import make_callable
 from tests.lib.opcode import _lower_instr
 
@@ -80,7 +80,10 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
     """
 
     if values:
-        syms = set(local_syms or ()) | set(values.keys())
+        # ordered dedup, declared locals first: slot order is part of
+        # the code's contract with its formals
+        syms = list(local_syms or ())
+        syms.extend(k for k in values if k not in syms)
         local_syms = tuple(syms)
 
     c = build_code(code, local_syms=local_syms, name=name)
@@ -495,6 +498,63 @@ class TestConstruction(unittest.IsolatedAsyncioTestCase):
         fn.__init__(other, other_ns, fspec)
         self.assertIs(fn.code, code)
         self.assertEqual(await fn(), 42)
+
+
+class TestFormalsAgainstCodeLocals(unittest.IsolatedAsyncioTestCase):
+    """
+    A function's formals are laid out first in its namespace and the
+    code's fast rows index the code's own local order, so the two must
+    agree on their common prefix. Either may be the longer one. A
+    disagreement is refused at construction by every constructor that
+    pairs formals with code
+    """
+
+    def two_locals(self):
+        return build_expr([
+            ["VAR", "a"],
+            ["VAR", "b"],
+            ["RETURN", 2],
+        ], local_syms=("a", "b"))
+
+
+    async def test_function_refuses_reordered_formals(self):
+        code, ns = self.two_locals()
+        with self.assertRaises(TypeError) as cm:
+            Function(code, ns, FormalsSpec(("b", "a"), None, ()))
+        self.assertIn("'b'", str(cm.exception))
+        self.assertIn("'a'", str(cm.exception))
+
+
+    async def test_code_function_refuses_foreign_formal(self):
+        code, ns = self.two_locals()
+        with self.assertRaises(TypeError):
+            code.function(FormalsSpec(("t", "a"), None, ())(), ns)
+
+
+    async def test_function_spec_refuses_reordered_formals(self):
+        code, ns = self.two_locals()
+        with self.assertRaises(TypeError):
+            FunctionSpec("f", FormalsSpec(("b", "a"), None, ()), code)
+
+
+    async def test_formals_shorter_than_locals_construct(self):
+        code, ns = self.two_locals()
+        fn = Function(code, ns, FormalsSpec(("a",), None, ()))
+        self.assertIsInstance(fn, Function)
+
+
+    async def test_formals_longer_than_locals_bind_by_slot(self):
+        code, ns = self.two_locals()
+        fn = Function(code, ns, FormalsSpec(("a", "b", "c"), None, ()))
+        self.assertEqual((1, 2), await fn(1, 2, 3))
+
+
+    async def test_matching_formals_bind_by_slot(self):
+        code, ns = self.two_locals()
+        fn = Function(code, ns, FormalsSpec(("a", "b"), None, ()))
+        self.assertEqual((1, 2), await fn(1, 2))
+        spec = FunctionSpec("f", FormalsSpec(("a", "b"), None, ()), code)
+        self.assertEqual((1, 2), await spec({}, ns)(1, 2))
 
 
 # The end.

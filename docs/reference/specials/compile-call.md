@@ -14,7 +14,10 @@ Argument specifiers (order matters; analogous to Python 3.5+):
 
 Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:` (star kwargs). All positionals and `*:` must come before any keywords or
-`**:`; a keyword cannot be followed by `*:` or a positional. Full form examples:
+`**:`; a keyword cannot be followed by `*:` or a positional. A keyword label
+written twice in one call is a compile error; a keyword and a `**:` mapping
+that name the same key merge at run time, the later one winning. Full form
+examples:
 
 ```koskari
 (fn a b *: more x: xval y: yval **: kwargs)

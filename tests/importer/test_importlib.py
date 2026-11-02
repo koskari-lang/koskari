@@ -31,8 +31,7 @@ import unittest
 import pytest
 
 from koskari.importer import (
-    KoskariPathFinder, KoskariSourceFileLoader, install, is_installed,
-    uninstall)
+    KoskariSourceFileLoader, install, is_installed, uninstall)
 
 
 pytestmark = pytest.mark.phase_importer
@@ -65,16 +64,23 @@ class TestInstallUninstall(unittest.IsolatedAsyncioTestCase):
             d.metadata['Name'] for d in importlib.metadata.distributions())
         self.assertEqual(before, after)
 
-    async def test_install_at_front_of_meta_path(self):
-        install()
-        self.assertIs(sys.meta_path[0], KoskariPathFinder)
+    async def test_install_adds_nothing_to_meta_path(self):
+        """
+        Koskari modules are found by the per-directory finder Python's
+        own PathFinder consults, so builtins, frozen modules and
+        sys.path order keep Python's precedence
+        """
 
-    async def test_double_install_is_noop(self):
+        before = list(sys.meta_path)
         install()
-        count_before = sys.meta_path.count(KoskariPathFinder)
+        self.assertEqual(before, sys.meta_path)
+
+    async def test_install_adds_one_path_hook(self):
+        before = len(sys.path_hooks)
         install()
-        count_after = sys.meta_path.count(KoskariPathFinder)
-        self.assertEqual(count_before, count_after)
+        self.assertEqual(before + 1, len(sys.path_hooks))
+        install()
+        self.assertEqual(before + 1, len(sys.path_hooks))
 
     async def test_uninstall_removes_finder(self):
         install()
@@ -82,10 +88,75 @@ class TestInstallUninstall(unittest.IsolatedAsyncioTestCase):
         uninstall()
         self.assertFalse(is_installed())
 
-    async def test_loader_class(self):
+    async def test_directory_finder_knows_both_languages(self):
+        """
+        One finder serves a directory: it answers for .py and for .ki,
+        with the Koskari loader on the .ki spec
+        """
+
         install()
-        finder = sys.meta_path[0]
-        self.assertIs(finder, KoskariPathFinder)
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, 'both_py.py'), 'w') as fh:
+                fh.write('x = 1\n')
+            with open(os.path.join(tmp, 'both_ki.ki'), 'w') as fh:
+                fh.write('(var x 2)\n')
+            finder = importlib.import_module('importlib.machinery') \
+                .PathFinder._path_importer_cache(tmp)
+            py_spec = finder.find_spec('both_py')
+            ki_spec = finder.find_spec('both_ki')
+        self.assertIsNotNone(py_spec)
+        self.assertIsNotNone(ki_spec)
+        self.assertIsInstance(ki_spec.loader, KoskariSourceFileLoader)
+        self.assertNotIsInstance(py_spec.loader, KoskariSourceFileLoader)
+
+
+class TestPrecedence(unittest.IsolatedAsyncioTestCase):
+    """
+    A .ki module obeys Python's import precedence: sys.path order
+    between directories, builtins ahead of every directory
+    """
+
+    def setUp(self):
+        uninstall()
+        install()
+        self._prev_path = sys.path[:]
+        self._tmpdir = tempfile.mkdtemp(prefix='koskari_prec_')
+
+    def tearDown(self):
+        sys.path[:] = self._prev_path
+        for name in ('prec_order', 'pwd'):
+            sys.modules.pop(name, None)
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+        uninstall()
+        install()
+        importlib.invalidate_caches()
+
+    async def test_earlier_py_beats_later_ki(self):
+        first = os.path.join(self._tmpdir, 'first')
+        second = os.path.join(self._tmpdir, 'second')
+        os.makedirs(first)
+        os.makedirs(second)
+        with open(os.path.join(first, 'prec_order.py'), 'w') as fh:
+            fh.write("which = 'py'\n")
+        with open(os.path.join(second, 'prec_order.ki'), 'w') as fh:
+            fh.write('(var which "ki")\n')
+        sys.path[:0] = [first, second]
+        importlib.invalidate_caches()
+
+        mod = importlib.import_module('prec_order')
+        self.assertEqual('py', mod.which)
+
+    async def test_ki_does_not_shadow_a_builtin(self):
+        with open(os.path.join(self._tmpdir, 'pwd.ki'), 'w') as fh:
+            fh.write('(var shadowed True)\n')
+        sys.path.insert(0, self._tmpdir)
+        sys.modules.pop('pwd', None)
+        importlib.invalidate_caches()
+
+        mod = importlib.import_module('pwd')
+        self.assertEqual('built-in', mod.__spec__.origin)
+        self.assertFalse(hasattr(mod, 'shadowed'))
 
 
 class TestKiImport(unittest.IsolatedAsyncioTestCase):

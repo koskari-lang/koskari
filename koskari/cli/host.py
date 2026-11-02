@@ -23,7 +23,6 @@ REPL prompt backend, eval boundary shim, and banner helpers.
 """
 
 
-import asyncio
 import platform
 import sys
 
@@ -98,9 +97,13 @@ def _make_repl_prompter(histfile, ns):
     Returns an async callable ``await prompter(prompt, default='')``.  The
     prompt_toolkit backend uses ``prompt_async``, so it runs cooperatively
     on the REPL's own event loop -- no worker thread and no nested
-    ``asyncio.run``.  The plain ``input()`` fallback is blocking, so it is
-    offloaded to a worker thread.  EOFError / KeyboardInterrupt propagate to
-    the caller; the Koskari REPL loop catches them at the await point.
+    ``asyncio.run``.  The plain ``input()`` fallback reads on the main
+    thread, as Python's own REPL does: SIGINT raises KeyboardInterrupt
+    inside the read and EOF raises EOFError, both at the REPL's await
+    point, and nothing is left blocked in a thread at exit.  The loop does
+    not advance while that prompt waits, so a background task started in
+    a session runs only while a form evaluates until prompt_toolkit is
+    installed.
 
     :param histfile: history file path, or None
     :param ns: REPL module namespace, for completion
@@ -174,8 +177,7 @@ def _make_repl_prompter(histfile, ns):
             readline.set_startup_hook(None)
 
     async def _input_prompt(prompt, default=''):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _read_line, prompt, default)
+        return _read_line(prompt, default)
 
     return _input_prompt
 

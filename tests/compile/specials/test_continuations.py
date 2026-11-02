@@ -25,6 +25,8 @@ import asyncio
 import gc
 import weakref
 
+from koskari.exceptions import KoskariPromptUnreachable
+
 from . import SpecialsTestCase
 
 
@@ -500,6 +502,80 @@ class TestWaitingGoalThunkDeliveries(SpecialsTestCase):
         del expr, mod, m
         gc.collect()
         self.assertIsNone(ref())
+
+
+class TestCaptureRefusalsAreTyped(SpecialsTestCase):
+    """
+    A capture that cannot be taken raises KoskariPromptUnreachable
+    naming what stood in the way: a generator, or a with or dyn-wind
+    whose call is in flight. A with or dyn-wind at rest inside the
+    region is captured. Never a bare RuntimeError
+    """
+
+    async def test_let_cc_inside_a_generator(self):
+        expr, mod = self.compile_expr("((lambda [] (yield (let/cc k 2))))")
+        gen = await expr()
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
+            await gen.__anext__()
+        self.assertEqual("generator", caught.exception.boundary)
+        self.assertEqual("call/cc", caught.exception.operation)
+        self.assertIsNone(caught.exception.prompt_id)
+        self.assertNotIsInstance(caught.exception, RuntimeError)
+
+
+    async def test_call_cc_inside_a_running_exit(self):
+        exit_expr, _ = self.compile_expr(
+            "(lambda [self t v tb] (call/cc (lambda [k] (k 1))) False)")
+        exit_fn = await exit_expr()
+
+        class Mgr:
+
+            def __enter__(self):
+                return self
+
+            __exit__ = exit_fn
+
+        expr, mod = self.compile_expr(
+            "(with [(call make_mgr)] 1)", make_mgr=Mgr)
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
+            await expr()
+        self.assertEqual("exit", caught.exception.boundary)
+        self.assertEqual("call/cc", caught.exception.operation)
+
+
+    async def test_call_cc_inside_a_running_after_thunk(self):
+        src = """
+        (dyn-wind
+          nil
+          4
+          (call/cc (lambda [k] (k 1))))
+        """
+        expr, mod = self.compile_expr(src)
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
+            await expr()
+        self.assertEqual("after", caught.exception.boundary)
+        self.assertEqual("call/cc", caught.exception.operation)
+
+
+    async def test_shift_inside_a_running_exit_under_reset(self):
+        exit_expr, _ = self.compile_expr(
+            "(lambda [self t v tb] (shift k k) False)")
+        exit_fn = await exit_expr()
+
+        class Mgr:
+
+            def __enter__(self):
+                return self
+
+            __exit__ = exit_fn
+
+        expr, mod = self.compile_expr(
+            "(reset (with [(call make_mgr)] 5))", make_mgr=Mgr)
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
+            await expr()
+        self.assertEqual("exit", caught.exception.boundary)
+        self.assertEqual("shift", caught.exception.operation)
+        self.assertEqual(0, caught.exception.prompt_id)
 
 
 # The end.

@@ -65,9 +65,11 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
       || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER
       || KosDynWind_OB(wind)->kind != KOS_OB_NONE) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "cannot capture a continuation across a dyn-wind whose"
-                    " thunk is in flight");
+    kos_raise_prompt_unreachable(
+        NULL, KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
+                  ? "before" : "after",
+        "cannot capture a continuation from inside a dyn-wind whose %s"
+        " thunk is in flight");
     return NULL;
   }
 

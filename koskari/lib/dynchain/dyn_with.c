@@ -64,6 +64,8 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
+  KosDynWith_EXC_SAVED(node) = 0;
+  KosExc_Init(KosDynWith_SAVED(node));
 
   /* Single-shot: the exit-done bit lives in the node's own shot field
      until a continuation clones the node; the clone then makes the
@@ -107,9 +109,10 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
      template can carry; nor can what was stored for its completion. */
   if (KosDynWith_ENTER_PENDING(src) || KosDynWith_EXIT_PENDING(src)
       || KosDynWith_OB(src)->kind != KOS_OB_NONE) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "cannot capture a continuation across a with whose"
-                    " __enter__ or __exit__ is in flight");
+    kos_raise_prompt_unreachable(
+        NULL, KosDynWith_ENTER_PENDING(src) ? "enter" : "exit",
+        "cannot capture a continuation from inside a with whose %s is"
+        " in flight");
     return NULL;
   }
 
@@ -149,6 +152,8 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
     Py_INCREF(KosDynWith_NAME(node));
   KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
+  KosDynWith_EXC_SAVED(node) = 0;
+  KosExc_Init(KosDynWith_SAVED(node));
   return node;
 }
 
@@ -169,6 +174,7 @@ static void kos_dynwith_free(KosDynWith *node) {
   Py_XDECREF(KosDynWith_NAME(node));
   KosDynWith_NAME(node) = NULL;
   kos_dyn_ob_clear(KosDynWith_OB(node));
+  KosExc_Clear(KosDynWith_SAVED(node));
   Py_XDECREF(KosDynWith_EXIT_DONE(node));
   KosDynWith_EXIT_DONE(node) = NULL;
 
@@ -304,6 +310,18 @@ static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
 
 
 /**
+   __exit__ is done, by any route: give back the handler-visible state
+   it displaced. A call that handled nothing displaced nothing.
+*/
+static void kos_dyn_with_exit_done_exc(KosDynWith *node) {
+  if (KosDynWith_EXC_SAVED(node)) {
+    KosExc_Install(KosDynWith_SAVED(node));
+    KosDynWith_EXC_SAVED(node) = 0;
+  }
+}
+
+
+/**
    Classify __exit__'s result against the triple stored on the node. A
    truthy result against an exception swallows it: the triple is
    released and the node now owes None in its place. Any other outcome
@@ -318,6 +336,8 @@ static int kos_dyn_with_classify_exit(
   KosObligation *ob = KosDynWith_OB(node);
   int handling = (ob->kind == KOS_OB_EXCEPTION);
   int swallow = 0;
+
+  kos_dyn_with_exit_done_exc(node);
 
   if (handling) {
     swallow = PyObject_IsTrue(result);
@@ -439,6 +459,20 @@ static KosOpResult kos_dyn_with_leave(
       return EVAL_RAISE();
   }
 
+  /* __exit__ runs as a handler of that exception, as CPython runs it
+     inside the except block: sys.exc_info(), a bare raise and
+     logging.exception in it see the exception. The state displaced is
+     given back when __exit__ is done, by any route. */
+  if (ob->kind == KOS_OB_EXCEPTION) {
+    KosExcState handling;
+
+    KosExc_Init(&handling);
+    KosExc_Copy(&handling, &ob->u.exc);
+    KosExc_Fetch(KosDynWith_SAVED(node));
+    KosDynWith_EXC_SAVED(node) = 1;
+    KosExc_Install(&handling);
+  }
+
   /* The exception triple as a vector, with the manager in front when
      __exit__ is a plain function resolved on the type. */
   PyObject *argv[4];
@@ -519,6 +553,7 @@ static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
 */
 static void kos_dyn_with_abort_impl(KosDynWith *node) {
   /* what was stored stays for the unlink to chain or discard */
+  kos_dyn_with_exit_done_exc(node);
   kos_dyn_with_shot_after_exit_done(node);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
 }
@@ -544,6 +579,8 @@ static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynWith_EXIT(with_node));
   Py_VISIT(KosDynWith_EXIT_DONE(with_node));
   Py_VISIT(KosDynWith_NAME(with_node));
+  if (KosExc_Traverse(KosDynWith_SAVED(with_node), visit, arg) < 0)
+    return -1;
   return kos_dyn_ob_traverse(KosDynWith_OB(with_node), visit, arg);
 }
 

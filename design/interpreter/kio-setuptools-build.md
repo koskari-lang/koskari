@@ -212,8 +212,8 @@ while building `.kio`). The wheel does not need pre-existing `.kio` to build
 
 ## Loader preference: `.kio` over `.ki`
 
-Today the import hook already registers **`.kio` before `.ki`** on
-`KoskariFileFinder`, so a sibling `foo.kio` wins over `foo.ki` when both exist.
+Today the directory hook already lists **`.kio` before `.ki`** on the
+Koskari loader, so a sibling `foo.kio` wins over `foo.ki` when both exist.
 
 Gaps to close when both `.kio` and `.ki` are installed (wheel layout):
 
@@ -260,7 +260,7 @@ Apply consistently in:
 | Concern | Detail |
 | ------- | ------ |
 | **Not Python bytecode** | `__pycache__` is defined for **PEP 3147** `.pyc` tied to `.py` imports. `.kio` is a Koskari codex cache with its own header, pool, and `META` section ([kio-format.md](kio-format.md)). |
-| **Finder contract** | `KoskariPathFinder` discovers `*.kio` on `sys.path` next to package modules, same as `*.ki`. Nothing searches `__pycache__` for koskari artifacts today. |
+| **Finder contract** | The directory hook discovers `*.kio` on `sys.path` next to package modules, same as `*.ki`. Nothing searches `__pycache__` for koskari artifacts today. |
 | **Packaging** | Many manifests and tools treat `__pycache__` as disposable / excluded. Wheels that relied on `__pycache__` would fight setuptools `package_data` and user expectations. |
 | **Naming** | PEP 3147 uses `module.cpython-39.pyc`. `.kio` has no parallel tag convention inside `__pycache__` without inventing a new scheme (`module.koskari-0.1.kio`?). |
 | **Tracebacks** | `get_source` maps `.kio` → sibling `.ki`. A cache dir breaks the simple sibling mapping unless loader logic grows path-rewrite rules. |
