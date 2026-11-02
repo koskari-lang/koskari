@@ -763,4 +763,87 @@ class TestDeferCoroutineProtocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await d2, 11)
 
 
+class TestDeferReentryFromRelease(unittest.TestCase):
+    """
+    A defer's state transitions release the payload of the state they
+    leave. That release can run a __del__ that reaches the same defer,
+    so the new state is written before the old payload goes; the
+    re-entry then meets a consistent defer instead of a NULL payload
+    """
+
+    def test_inner_del_reentering_during_start(self):
+        holder = {}
+        seen = []
+
+        def it_gen():
+            yield 1
+            return 2
+
+        class Inner:
+            def __await__(self):
+                return it_gen()
+
+            def __del__(self):
+                d = holder.get("d")
+                if d is not None:
+                    try:
+                        seen.append(("sent", d.send(None)))
+                    except BaseException as e:
+                        seen.append(("raised", type(e).__name__))
+
+        d = lib.defer(lambda: Inner())
+        holder["d"] = d
+        outcomes = []
+        for _ in range(3):
+            try:
+                outcomes.append(("sent", d.send(None)))
+            except StopIteration as e:
+                outcomes.append(("stop", e.value))
+                break
+            except RuntimeError as e:
+                outcomes.append(("runtime", str(e)))
+                break
+        holder.clear()
+        self.assertTrue(seen, "the inner's __del__ never re-entered")
+        self.assertIn(("stop", 2), outcomes + seen)
+
+    def test_iterator_del_reentering_during_spend(self):
+        holder = {}
+        seen = []
+
+        class Iter:
+            def __init__(self):
+                self.n = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                self.n += 1
+                if self.n > 1:
+                    raise StopIteration(5)
+                return None
+
+            def __del__(self):
+                d = holder.get("d")
+                if d is not None:
+                    try:
+                        seen.append(("sent", d.send(None)))
+                    except BaseException as e:
+                        seen.append(("raised", type(e).__name__))
+
+        class Inner:
+            def __await__(self):
+                return Iter()
+
+        d = lib.defer(lambda: Inner())
+        holder["d"] = d
+        self.assertIsNone(d.send(None))
+        with self.assertRaises(StopIteration) as done:
+            d.send(None)
+        self.assertEqual(5, done.exception.value)
+        holder.clear()
+        self.assertEqual([("raised", "RuntimeError")], seen)
+
+
 # The end.
