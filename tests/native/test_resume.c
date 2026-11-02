@@ -910,6 +910,167 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
 }
 
 
+/* A kind whose clear records what the observed frame names while the
+   clear runs: a clear can run code that reaches the frame, so the
+   frame must already have let go of the resume it is releasing. */
+static KosDynFrame *observed_frame = NULL;
+static int observed_clear_calls = 0;
+static void *observed_clear_in = NULL;
+static const KosResumeKind *observed_kind_seen = NULL;
+static void *observed_state_seen = NULL;
+
+static void observing_clear(void *state) {
+
+  observed_clear_calls++;
+  observed_clear_in = state;
+  observed_kind_seen = KosDynFrame_RESUME_KIND(observed_frame);
+  observed_state_seen = KosDynFrame_RESUME_STATE(observed_frame);
+}
+
+KOS_RESUME_KIND(resume_observing_kind, "observing", resume_probe,
+                observing_clear, recording_clone);
+
+static void observing_reset(KosDynFrame *frame) {
+
+  observed_frame = frame;
+  observed_clear_calls = 0;
+  observed_clear_in = NULL;
+  observed_kind_seen = &resume_observing_kind;
+  observed_state_seen = &observed_clear_calls;
+}
+
+
+/* kos_dynframe_clear_resume hands the clear the frame's state with
+   both resume fields already NULL. */
+static int test_clear_resume_unnames_state_before_clear(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+  int marker = 0;
+  observing_reset(frame);
+  KosDynFrame_RESUME_KIND(frame) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(frame) = &marker;
+
+  kos_dynframe_clear_resume(frame);
+  TEST_ASSERT_EQ(observed_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(observed_clear_in, &marker,
+                   "the clear was handed the frame's state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the frame named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the frame named no state while the clear ran");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "the kind is gone");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_STATE(frame), "the state is gone");
+
+  observed_frame = NULL;
+  kos_dynframe_free(frame);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
+/* A frame freed with its resume still set runs the clear with both
+   resume fields already NULL. */
+static int test_free_unnames_resume_before_clear(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+  int marker = 0;
+  observing_reset(frame);
+  KosDynFrame_RESUME_KIND(frame) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(frame) = &marker;
+
+  kos_dynframe_free(frame);
+  observed_frame = NULL;
+  TEST_ASSERT_EQ(observed_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(observed_clear_in, &marker,
+                   "the clear was handed the frame's state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the frame named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the frame named no state while the clear ran");
+
+  Py_DECREF(ns);
+  return 0;
+}
+
+
+/* A landing that applies a restore record clears the resume the live
+   frame held while the context still names that frame; the clear runs
+   with the frame's resume fields already NULL. */
+static int test_capture_restore_apply_unnames_prior_before_clear(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *live = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(live, "push live frame");
+  KosDynFrame *tmpl = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(tmpl, "create template frame");
+  KosDynNode_NODE_ID(tmpl) = kos_dynnode_id(live);
+
+  int marker = 0;
+  int prior = 0;
+  recording_reset();
+  KosDynFrame_RESUME_KIND(tmpl) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(tmpl) = &marker;
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_ValueError);
+  TEST_ASSERT_NOT_NULL(exc, "create payload");
+  KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, exc,
+                                        NULL, NULL, 0);
+  TEST_ASSERT_NOT_NULL(goal, "create goal");
+  TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
+                     goal, (KosDynNode *) live, (KosDynNode *) tmpl),
+                 0, "the record is captured");
+
+  /* the live frame carries a resume of its own the landing displaces */
+  observing_reset(live);
+  KosDynFrame_RESUME_KIND(live) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(live) = &prior;
+
+  kos_xfer_goal_push(ctx, goal);
+  {
+    int boundary = 0;
+    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
+    TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
+  }
+  observed_frame = NULL;
+  TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal retired");
+  TEST_ASSERT_EQ(observed_clear_calls, 1,
+                 "the live frame's prior resume was cleared once");
+  TEST_ASSERT_SAME(observed_clear_in, &prior,
+                   "the clear was handed the prior state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the live frame named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the live frame named no state while the clear ran");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(live), &recorded_clone_out,
+                   "the live frame carries the record's clone");
+  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+
+  KosDynFrame_RESUME_KIND(live) = NULL;
+  KosDynFrame_RESUME_STATE(live) = NULL;
+  KosDynFrame_RESUME_KIND(tmpl) = NULL;
+  KosDynFrame_RESUME_STATE(tmpl) = NULL;
+  kos_dynframe_free(tmpl);
+  Py_DECREF(exc);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
 /* A transfer restore record clones a template frame's resume state
    through its kind; a template whose kind cannot clone is refused
    with an error in every build, never called through. The template
@@ -1249,6 +1410,9 @@ int run_resume_tests(void) {
   RUN_TEST(test_clone_copies_node_resume);
   RUN_TEST(test_capture_restore_clones_and_clears_unapplied);
   RUN_TEST(test_capture_restore_apply_hands_over_the_clone);
+  RUN_TEST(test_clear_resume_unnames_state_before_clear);
+  RUN_TEST(test_free_unnames_resume_before_clear);
+  RUN_TEST(test_capture_restore_apply_unnames_prior_before_clear);
   RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_cache_inert_clears_resume_triple);

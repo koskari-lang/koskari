@@ -178,12 +178,17 @@ void *kos_resume_clone_object(void *state) {
 
 
 void kos_dynframe_clear_resume(KosDynFrame *frame) {
-  const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
 
-  if (kind && kind->clear)
-    kind->clear(KosDynFrame_RESUME_STATE(frame));
+  const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
+  void *state = KosDynFrame_RESUME_STATE(frame);
+
+  /* The clear can run code (a delegate's close, a release) that
+     reaches this frame, a collection's traverse included; the frame
+     no longer names the state it is releasing. */
   KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
+  if (kind && kind->clear)
+    kind->clear(state);
 }
 
 
