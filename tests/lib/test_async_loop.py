@@ -75,4 +75,35 @@ def test_drive_async_loop_closes_loop_when_shutdown_step_fails():
     asyncio.set_event_loop(None)
 
 
+async def _leave_a_failed_task(reports):
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(lambda loop, context: reports.append(context))
+
+    async def stubborn():
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise ValueError("failed while cancelling")
+
+    asyncio.ensure_future(stubborn())
+    await asyncio.sleep(0)
+    return 42
+
+
+def test_drive_async_loop_reports_a_failed_task_at_shutdown():
+    """
+    A task the shutdown cancelled that then failed instead of
+    cancelling has its exception handed to the loop's exception
+    handler, as asyncio.Runner does, rather than dropped with the
+    gather
+    """
+
+    reports = []
+    assert drive_async_loop(_leave_a_failed_task(reports)) == 42
+    assert len(reports) == 1
+    assert isinstance(reports[0]["exception"], ValueError)
+    assert "shutdown" in reports[0]["message"]
+    asyncio.set_event_loop(None)
+
+
 # The end.

@@ -37,6 +37,9 @@ static PyObject *str_cancel = NULL;
 static PyObject *str_shutdown_asyncgens = NULL;
 static PyObject *str_shutdown_default_executor = NULL;
 static PyObject *str_close = NULL;
+static PyObject *str_cancelled = NULL;
+static PyObject *str_exception = NULL;
+static PyObject *str_call_exception_handler = NULL;
 
 
 #define KOS_ASYNCIO_NEW_EVENT_LOOP()                                    \
@@ -131,6 +134,59 @@ static int kos_asyncio_cancel_all_tasks(PyObject *loop) {
 }
 
 
+/**
+   Hand each task that finished with an exception, cancelled ones
+   aside, to the loop's exception handler with the context
+   asyncio.Runner builds for the same case. -1 with the error set when
+   a query or the handler fails.
+*/
+static int kos_asyncio_report_failed_tasks(PyObject *loop, PyObject *tasks) {
+
+  Py_ssize_t n = PyTuple_GET_SIZE(tasks);
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *task = PyTuple_GET_ITEM(tasks, i);
+    PyObject *cancelled = PyObject_CallMethodNoArgs(task, str_cancelled);
+    PyObject *exc;
+    PyObject *context;
+    PyObject *res;
+    int skip;
+
+    if (! cancelled)
+      return -1;
+    skip = PyObject_IsTrue(cancelled);
+    Py_DECREF(cancelled);
+    if (skip < 0)
+      return -1;
+    if (skip)
+      continue;
+
+    exc = PyObject_CallMethodNoArgs(task, str_exception);
+    if (! exc)
+      return -1;
+    if (exc == Py_None) {
+      Py_DECREF(exc);
+      continue;
+    }
+
+    context = Py_BuildValue(
+        "{s:s,s:O,s:O}",
+        "message", "unhandled exception during asyncio loop shutdown",
+        "exception", exc,
+        "task", task);
+    Py_DECREF(exc);
+    if (! context)
+      return -1;
+    res = PyObject_CallMethodOneArg(loop, str_call_exception_handler, context);
+    Py_DECREF(context);
+    if (! res)
+      return -1;
+    Py_DECREF(res);
+  }
+  return 0;
+}
+
+
 static int kos_asyncio_gather_all_tasks(PyObject *loop) {
 
   PyObject *all_tasks = KOS_ASYNCIO_ALL_TASKS(loop);
@@ -167,17 +223,28 @@ static int kos_asyncio_gather_all_tasks(PyObject *loop) {
 
   PyObject *gathered = KOS_ASYNCIO_GATHER(task_tuple, kwargs);
   Py_DECREF(kwargs);
-  Py_DECREF(task_tuple);
-  if (! gathered)
-    return -1;
-
-  if (kos_loop_run_until_complete(loop, gathered) < 0) {
-    Py_DECREF(gathered);
+  if (! gathered) {
+    Py_DECREF(task_tuple);
     return -1;
   }
 
+  if (kos_loop_run_until_complete(loop, gathered) < 0) {
+    Py_DECREF(gathered);
+    Py_DECREF(task_tuple);
+    return -1;
+  }
   Py_DECREF(gathered);
-  return 0;
+
+  /* The gather took every exception with return_exceptions; a task
+     that failed rather than cancelled still has its exception, which
+     the loop's exception handler reports, as asyncio.Runner's own
+     shutdown does. */
+  {
+    int rc = kos_asyncio_report_failed_tasks(loop, task_tuple);
+
+    Py_DECREF(task_tuple);
+    return rc;
+  }
 }
 
 
@@ -380,6 +447,9 @@ int koskari_async_loop_init(PyObject *mod) {
   STR_CONST(str_shutdown_asyncgens, "shutdown_asyncgens");
   STR_CONST(str_shutdown_default_executor, "shutdown_default_executor");
   STR_CONST(str_close, "close");
+  STR_CONST(str_cancelled, "cancelled");
+  STR_CONST(str_exception, "exception");
+  STR_CONST(str_call_exception_handler, "call_exception_handler");
 
   for (PyMethodDef *mdef = async_loop_methods; mdef->ml_name; mdef++) {
     PyObject *func = PyCFunction_New(mdef, mod);
@@ -410,6 +480,9 @@ int koskari_async_loop_clear(PyObject *mod) {
   Py_CLEAR(str_shutdown_asyncgens);
   Py_CLEAR(str_shutdown_default_executor);
   Py_CLEAR(str_close);
+  Py_CLEAR(str_cancelled);
+  Py_CLEAR(str_exception);
+  Py_CLEAR(str_call_exception_handler);
 
   return 0;
 }
