@@ -211,13 +211,22 @@ static PyObject *kospartial_repr(PyObject *self) {
   if (status != 0)
     return (status < 0) ? NULL : PyUnicode_FromString("...");
 
+  /* Each element's repr runs user code, and a __setstate__ from there
+     replaces the fields; render the ones held at entry */
+  PyObject *func = p->func;
+  PyObject *args = p->args;
+  PyObject *keywords = p->keywords;
+  Py_INCREF(func);
+  Py_INCREF(args);
+  Py_INCREF(keywords);
+
   PyObject *result = NULL;
   PyObject *parts = PyList_New(0);
   if (! parts)
     goto done;
 
   {
-    PyObject *fr = PyObject_Repr(p->func);
+    PyObject *fr = PyObject_Repr(func);
     if (! fr || PyList_Append(parts, fr) < 0) {
       Py_XDECREF(fr);
       goto done;
@@ -225,9 +234,9 @@ static PyObject *kospartial_repr(PyObject *self) {
     Py_DECREF(fr);
   }
 
-  Py_ssize_t na = PyTuple_GET_SIZE(p->args);
+  Py_ssize_t na = PyTuple_GET_SIZE(args);
   for (Py_ssize_t i = 0; i < na; i++) {
-    PyObject *ar = PyObject_Repr(PyTuple_GET_ITEM(p->args, i));
+    PyObject *ar = PyObject_Repr(PyTuple_GET_ITEM(args, i));
     if (! ar || PyList_Append(parts, ar) < 0) {
       Py_XDECREF(ar);
       goto done;
@@ -238,7 +247,7 @@ static PyObject *kospartial_repr(PyObject *self) {
   {
     PyObject *k, *v;
     Py_ssize_t pos = 0;
-    while (PyDict_Next(p->keywords, &pos, &k, &v)) {
+    while (PyDict_Next(keywords, &pos, &k, &v)) {
       PyObject *vr = PyObject_Repr(v);
       if (! vr)
         goto done;
@@ -270,6 +279,9 @@ static PyObject *kospartial_repr(PyObject *self) {
 
 done:
   Py_XDECREF(parts);
+  Py_DECREF(keywords);
+  Py_DECREF(args);
+  Py_DECREF(func);
   Py_ReprLeave(self);
   return result;
 }
@@ -294,6 +306,14 @@ static PyObject *kospartial_kos_repr(
   if (status != 0)
     return (status < 0) ? NULL : PyUnicode_FromString("...");
 
+  /* As kospartial_repr: render the fields held at entry */
+  PyObject *func = p->func;
+  PyObject *args = p->args;
+  PyObject *keywords = p->keywords;
+  Py_INCREF(func);
+  Py_INCREF(args);
+  Py_INCREF(keywords);
+
   PyObject *result = NULL;
   PyObject *parts = PyList_New(0);
   if (! parts)
@@ -309,7 +329,7 @@ static PyObject *kospartial_kos_repr(
   }
 
   {
-    PyObject *fr = KosUtils_Repr(p->func);
+    PyObject *fr = KosUtils_Repr(func);
     if (! fr || PyList_Append(parts, fr) < 0) {
       Py_XDECREF(fr);
       goto done;
@@ -317,9 +337,9 @@ static PyObject *kospartial_kos_repr(
     Py_DECREF(fr);
   }
 
-  Py_ssize_t na = PyTuple_GET_SIZE(p->args);
+  Py_ssize_t na = PyTuple_GET_SIZE(args);
   for (Py_ssize_t i = 0; i < na; i++) {
-    PyObject *ar = KosUtils_Repr(PyTuple_GET_ITEM(p->args, i));
+    PyObject *ar = KosUtils_Repr(PyTuple_GET_ITEM(args, i));
     if (! ar || PyList_Append(parts, ar) < 0) {
       Py_XDECREF(ar);
       goto done;
@@ -330,7 +350,7 @@ static PyObject *kospartial_kos_repr(
   {
     PyObject *k, *v;
     Py_ssize_t pos = 0;
-    while (PyDict_Next(p->keywords, &pos, &k, &v)) {
+    while (PyDict_Next(keywords, &pos, &k, &v)) {
       PyObject *kwd = PyUnicode_FromFormat("%U:", k);
       if (! kwd || PyList_Append(parts, kwd) < 0) {
         Py_XDECREF(kwd);
@@ -361,6 +381,9 @@ static PyObject *kospartial_kos_repr(
 
 done:
   Py_XDECREF(parts);
+  Py_DECREF(keywords);
+  Py_DECREF(args);
+  Py_DECREF(func);
   Py_ReprLeave(self);
   return result;
 }

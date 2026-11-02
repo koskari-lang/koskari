@@ -476,4 +476,68 @@ class TestKosPartialDispatch(unittest.TestCase):
         gc.collect()
 
 
+# An element's __repr__ replaces the partial's args and keywords through
+# __setstate__ while the repr of the partial is still rendering them.
+# Each run is a subprocess under the debug allocator, so a read of the
+# released tuple or dict ends the run instead of passing by luck.
+REPR_SETSTATE_SCRIPT = """
+import gc
+import sys
+
+from koskari.lib import KosPartial
+
+MODE, WHICH = sys.argv[1], sys.argv[2]
+
+
+def f(*a, **k):
+    return a, k
+
+
+class Swapper:
+    def __repr__(self):
+        p = holder[0]
+        if MODE == "args":
+            p.__setstate__((f, (), None, None))
+        else:
+            p.__setstate__((f, (), {}, None))
+        gc.collect()
+        junk = [object() for _ in range(10000)]
+        return "swapped"
+
+
+holder = [None]
+if MODE == "args":
+    p = KosPartial(f, Swapper(), *[object() for _ in range(2000)])
+else:
+    p = KosPartial(f, **{f"k{i}": Swapper() for i in range(2000)})
+holder[0] = p
+r = repr(p) if WHICH == "repr" else p.__kos_repr__()
+print("survived", len(r))
+"""
+
+
+class TestReprAcrossSetstate(unittest.TestCase):
+    """
+    repr and __kos_repr__ render the func, args and keywords the partial
+    held when they began, so a __setstate__ from an element's repr
+    cannot release what they are still reading
+    """
+
+    def test_repr_survives_setstate_from_element(self):
+        import os
+        import subprocess
+
+        env = dict(os.environ, PYTHONMALLOC="debug")
+        for mode in ("args", "keywords"):
+            for which in ("repr", "kos_repr"):
+                with self.subTest(mode=mode, which=which):
+                    proc = subprocess.run(
+                        [sys.executable, "-c", REPR_SETSTATE_SCRIPT,
+                         mode, which],
+                        capture_output=True, text=True, env=env)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertTrue(
+                        proc.stdout.startswith("survived "), proc.stdout)
+
+
 # The end.
