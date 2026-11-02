@@ -210,6 +210,34 @@ KosIterStepResult kos_iter_step_provider(
 }
 
 
+KosIterStepResult kos_iter_throw_provider(
+    KosContext *ctx,
+    PyObject *iter,
+    KosIterSlots *islots,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out) {
+
+  KosIterStepResult r = islots->ki_throw(ctx, iter, throw_typ, throw_exc,
+                                         out);
+
+  if (r != KOS_ITER_ERROR)
+    return r;
+
+  /* as for a step: a StopIteration ending the throw is the provider's
+     exhaustion, its value the end's payload */
+  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    PyObject *payload = NULL;
+
+    if (PyGen_FetchStopIterationValue(&payload) < 0)
+      return KOS_ITER_ERROR;
+    *out = payload;
+    return KOS_ITER_EXHAUSTED;
+  }
+  return KOS_ITER_ERROR;
+}
+
+
 /* Whether the live frame carries a resume: the receiver of a
    producer's element or end. */
 static inline int iter_frame_has_resume(KosContext *ctx) {
@@ -2086,16 +2114,21 @@ KosOpResult KosContext_NextResume(
 }
 
 
-KosOpResult KosContext_NextResumeBound(
+/**
+   Route one fetch's answer to resume, the shared tail of the next and
+   throw entries: see KosContext_NextResumeBound for what each status
+   reports. out is the fetch's element or awaitable when the status
+   carries one.
+*/
+static KosOpResult kos_iter_route_status(
     KosContext *ctx,
-    const KosIterRequest *req,
+    KosDynFrame *frame,
+    KosIterRequestStatus status,
+    PyObject *out,
     const KosResumeKind *resume,
     void *state) {
 
-  KosDynFrame *frame = KosContext_FRAME(ctx);
-  PyObject *out;
-
-  switch (kos_iter_fetch(ctx, req, &out)) {
+  switch (status) {
     case KOS_IREQ_DELIVERED:
       /* an element is data to a kind that takes its delivery as it
          is; a kind that takes a call's result settles it */
@@ -2135,6 +2168,59 @@ KosOpResult KosContext_NextResumeBound(
          that holds it. */
       return EVAL_RAISE();
   }
+}
+
+
+KosOpResult KosContext_NextResumeBound(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    const KosResumeKind *resume,
+    void *state) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  PyObject *out;
+  KosIterRequestStatus status = kos_iter_fetch(ctx, req, &out);
+
+  return kos_iter_route_status(ctx, frame, status, out, resume, state);
+}
+
+
+KosOpResult KosContext_ThrowResumeBound(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    const KosResumeKind *resume,
+    void *state) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  PyObject *out = NULL;
+  KosIterRequestStatus status;
+
+  if (req->kind != KOS_IREQ_KIND_PROVIDER) {
+    PyErr_SetString(PyExc_TypeError, "throw into a non-provider iterator");
+    return EVAL_RAISE();
+  }
+
+  switch (kos_iter_throw_provider(ctx, req->iter, req->islots, throw_typ,
+                                  throw_exc, &out)) {
+    case KOS_ITER_VALUE:
+      status = KOS_IREQ_DELIVERED;
+      break;
+    case KOS_ITER_EXHAUSTED:
+      Py_CLEAR(out);
+      status = KOS_IREQ_EXHAUSTED;
+      break;
+    case KOS_ITER_INSTALLED:
+    case KOS_ITER_INSTALLED_VALUE:
+      status = KOS_IREQ_CONTINUES;
+      break;
+    case KOS_ITER_ERROR:
+    default:
+      status = KOS_IREQ_ERROR;
+      break;
+  }
+  return kos_iter_route_status(ctx, frame, status, out, resume, state);
 }
 
 

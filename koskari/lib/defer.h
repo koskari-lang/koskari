@@ -50,7 +50,7 @@ typedef struct KosDefer {
 /* === type objects === */
 
 
-extern PyTypeObject KosDeferType;
+extern KosEvaluatedTypeObject KosDeferType;
 
 
 /* === type check macros === */
@@ -58,11 +58,11 @@ extern PyTypeObject KosDeferType;
 
 /* Defer is a final marker type (no Py_TPFLAGS_BASETYPE, so subclassing
    is impossible): the check is an exact type compare, no mro walk. */
-#define KosDefer_Check(obj)                      \
-  ((obj) && ((obj)->ob_type == &KosDeferType))
+#define KosDefer_Check(obj)                                             \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDeferType)))
 
-#define KosDefer_CheckExact(obj)                 \
-  ((obj) && ((obj)->ob_type == &KosDeferType))
+#define KosDefer_CheckExact(obj)                                        \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDeferType)))
 
 
 /* === public API === */
@@ -82,15 +82,6 @@ extern PyTypeObject KosDeferType;
   and asyncio.iscoroutine.
 */
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds);
-
-
-/**
-   Take the fresh Koskari coroutine a delegating defer holds, spending
-   the defer as a drive to completion would: a new reference to the
-   coroutine, or NULL with no error set when the defer is not
-   delegating to one that has not been started.
-*/
-PyObject *KosDefer_TakeFreshCoroutine(PyObject *defer);
 
 
 /* === unit lifecycle === */

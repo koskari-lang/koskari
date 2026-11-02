@@ -212,41 +212,27 @@ static inline KosOpResult kos_settle_value(
     }
   }
 
-  /* A Koskari coroutine that has not been started is a program with
-     nothing to drive: it installs on this chain as a call frame and
-     returns its value the way a callee does. A Defer under an explicit
-     await hands over the fresh coroutine it delegates to. A coroutine
-     already started keeps its own drive below. */
-  if (await_defer && KosDefer_Check(val)) {
-    PyObject *fresh = KosDefer_TakeFreshCoroutine(val);
-    if (fresh) {
-      Py_DECREF(val);
-      val = fresh;
-      type = Py_TYPE(val);
-    }
-  }
-  if (type == &KosCoroutineType) {
-    KosDynFrame *frame;
+  /* An awaitable whose type carries an await suite installs the work
+     it stands for on this chain and answers for the settle: a fresh
+     Koskari coroutine as a call frame, a Defer over one through it, a
+     provider step for an awaited anext. One already in flight falls
+     through to the drive below; one an implicit site takes as a plain
+     handle is the value. */
+  {
+    KosAwaitSlots *slots;
 
-    if (KosCoroutine_TakeFresh(val, &frame)) {
-      Py_DECREF(val);
-      /* the prepared frame installs as a callee's does; refused for
-         room, it is released, which offers it back to its function's
-         cache */
-      if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx),
-                                             1) < 0)) {
-        kos_dynframe_free(frame);
-        return EVAL_RAISE();
+    if (KosAwait_CheckSlots(val, &slots)) {
+      KosOpResult r;
+
+      if (! await_defer && slots->ka_implicit_plain) {
+        *out = val;
+        return EVAL_NORMAL();
       }
-      kos_dyn_push_ready_frame(ctx, frame);
-      return EVAL_REPROLOGUE();
+      if (slots->ka_install(ctx, val, out, &r)) {
+        Py_DECREF(val);
+        return r;
+      }
     }
-  }
-
-  /* Defer is not auto-awaited; a plain value (explicit AWAIT drives it). */
-  if (! await_defer && KosDefer_Check(val)) {
-    *out = val;
-    return EVAL_NORMAL();
   }
 
   /* asyncio futures are handles; implicit sites take them plain. */

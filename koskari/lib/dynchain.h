@@ -264,6 +264,9 @@ typedef struct KosIterRequest {
      bound with iter through kos_dyn_iter_request_bind_iter, so the
      step and delivery paths never re-derive it */
   struct KosIterSlots *islots;
+  /* the value a provider step sends into iter, borrowed for the one
+     fetch; NULL for a plain next, which every bind leaves it as */
+  PyObject *send;
   /* KOS_IREQ_KIND_*: how the step drives iter, classified once at bind
      so no step probes the type again */
   uint8_t kind;

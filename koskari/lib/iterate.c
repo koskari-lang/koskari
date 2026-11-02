@@ -241,7 +241,7 @@ typedef struct {
 } KosIterStepper;
 
 
-static PyTypeObject KosIterStepperType;
+static KosEvaluatedTypeObject KosIterStepperType;
 
 
 /**
@@ -1021,22 +1021,100 @@ static PyObject *stepper_repr(PyObject *self) {
 }
 
 
-static PyTypeObject KosIterStepperType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+/**
+   The await suite's install: a stepper not yet driven stands for one
+   step of its provider, taken here on the running chain as a next or
+   throw request from a native frame, the kind the adapter primed
+   choosing the resume that completes the frame with the element, the
+   end, or the close's None. The provider reference moves to the
+   resume's state and the stepper is spent, so a later await from
+   Python meets the reuse guard. A stepper Python has driven is in
+   flight on its own context and is awaited as the awaitable it is.
+*/
+static int stepper_await_install(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject **out,
+    KosOpResult *r) {
 
-  .tp_name = "koskari.lib.async_generator_asend",
-  .tp_basicsize = sizeof(KosIterStepper),
-  .tp_itemsize = 0,
-  .tp_dealloc = stepper_dealloc,
-  .tp_repr = stepper_repr,
-  .tp_as_async = &stepper_async_methods,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "KosIter provider step awaitable",
-  .tp_traverse = stepper_traverse,
-  .tp_clear = stepper_clear,
-  .tp_iter = PyObject_SelfIter,
-  .tp_iternext = stepper_iternext,
-  .tp_methods = stepper_methods,
+  KosIterStepper *st = (KosIterStepper *) self;
+  const KosResumeKind *kind;
+  KosIterRequest req;
+  PyObject *provider;
+
+  (void) out;
+  if (! st->provider || st->started || st->awaiting || st->running)
+    return 0;
+
+  provider = st->provider;
+  st->provider = NULL;
+  kos_iter_request_bind_next(&req, provider);
+  req.send = st->send_value;
+  kind = st->closing ? &kos_aclose_resume_kind : &kos_astep_resume_kind;
+
+  if (st->is_throw) {
+    *r = KosContext_ThrowInto(ctx, &req, st->throw_typ, st->throw_exc,
+                              kind, provider, 0);
+    /* A throw that found the provider already finished did nothing:
+       the end is in hand, StopIteration pending for the resume. An
+       athrow completes quietly with None there, as CPython's does,
+       where a provider that took the throw and then ended raises
+       StopAsyncIteration through the resume; aclose answers None at
+       either end through its own kind. */
+    if (! st->closing && r->kind == KOS_RES_RESUME
+        && PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      PyErr_Clear();
+      KosContext_StageDelivery(ctx, Py_NewRef(Py_None));
+      *r = EVAL_REPROLOGUE();
+    }
+  } else {
+    *r = KosContext_NextInto(ctx, &req, kind, provider, 0);
+  }
+
+  Py_CLEAR(st->send_value);
+  Py_CLEAR(st->throw_typ);
+  Py_CLEAR(st->throw_exc);
+
+  /* The request reports as a handler reads it: NORMAL or POLL for an
+     installed frame to thread into, RESUME for one halted on a resume
+     of its own. The settle's caller reads NORMAL as a value in hand,
+     so every installed shape is the prologue's to run. */
+  switch (r->kind) {
+    case KOS_RES_NORMAL:
+    case KOS_RES_POLL:
+    case KOS_RES_RESUME:
+      *r = EVAL_REPROLOGUE();
+      break;
+    default:
+      break;
+  }
+  return 1;
+}
+
+
+static KosEvaluatedTypeObject KosIterStepperType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.async_generator_asend",
+    .tp_basicsize = sizeof(KosIterStepper),
+    .tp_itemsize = 0,
+    .tp_dealloc = stepper_dealloc,
+    .tp_repr = stepper_repr,
+    .tp_as_async = &stepper_async_methods,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "KosIter provider step awaitable",
+    .tp_traverse = stepper_traverse,
+    .tp_clear = stepper_clear,
+    .tp_iter = PyObject_SelfIter,
+    .tp_iternext = stepper_iternext,
+    .tp_methods = stepper_methods,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_await = {
+    .ka_install = stepper_await_install,
+    .ka_implicit_plain = 0,
+  },
 };
 
 
@@ -1054,7 +1132,8 @@ static PyObject *stepper_new_ex(
     PyObject *throw_exc,
     int closing) {
 
-  KosIterStepper *st = PyObject_GC_New(KosIterStepper, &KosIterStepperType);
+  KosIterStepper *st = PyObject_GC_New(
+      KosIterStepper, KOS_EVALUATED_PYTYPE(KosIterStepperType));
   if (! st)
     return NULL;
 
@@ -1701,7 +1780,7 @@ int koskari_iterate_init(PyObject *mod) {
 
   STR_CONST(iterate_str_name, "__name__");
 
-  if (PyType_Ready(&KosIterStepperType) ||
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosIterStepperType)) ||
       PyType_Ready(KOS_EVALUATED_PYTYPE(KosPyIterType)))
     return -1;
 

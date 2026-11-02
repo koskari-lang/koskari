@@ -88,7 +88,8 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
     kos_gc_clear_finalized((PyObject *) coro);
   } else {
     KOS_TRACE_FL_ALLOC("coroutine", 0);
-    coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
+    coro = PyObject_GC_New(KosCoroutine,
+                           KOS_EVALUATED_PYTYPE(KosCoroutineType));
     if (! coro) {
       kos_dynframe_free(frame);
       return NULL;
@@ -943,24 +944,38 @@ static PyGetSetDef coroutine_getsets[] = {
 };
 
 
-PyTypeObject KosCoroutineType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+static int coroutine_await_install(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject **out,
+    KosOpResult *r);
 
-  .tp_name = "koskari.lib.Coroutine",
-  .tp_basicsize = sizeof(KosCoroutine),
-  .tp_itemsize = 0,
-  .tp_dealloc = coroutine_dealloc,
-  .tp_finalize = coroutine_finalize,
-  .tp_repr = coroutine_repr,
-  .tp_as_async = &coroutine_async_methods,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Koskari coroutine wrapper",
-  .tp_traverse = coroutine_traverse,
-  .tp_clear = coroutine_clear,
-  .tp_iter = PyObject_SelfIter,
-  .tp_iternext = coroutine_iternext,
-  .tp_methods = coroutine_methods,
-  .tp_getset = coroutine_getsets,
+
+KosEvaluatedTypeObject KosCoroutineType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.Coroutine",
+    .tp_basicsize = sizeof(KosCoroutine),
+    .tp_itemsize = 0,
+    .tp_dealloc = coroutine_dealloc,
+    .tp_finalize = coroutine_finalize,
+    .tp_repr = coroutine_repr,
+    .tp_as_async = &coroutine_async_methods,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Koskari coroutine wrapper",
+    .tp_traverse = coroutine_traverse,
+    .tp_clear = coroutine_clear,
+    .tp_iter = PyObject_SelfIter,
+    .tp_iternext = coroutine_iternext,
+    .tp_methods = coroutine_methods,
+    .tp_getset = coroutine_getsets,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_await = {
+    .ka_install = coroutine_await_install,
+    .ka_implicit_plain = 0,
+  },
 };
 
 
@@ -984,6 +999,38 @@ int KosCoroutine_TakeFresh(PyObject *self, KosDynFrame **frame) {
 }
 
 
+/**
+   The await suite's install: a coroutine that has not been started is
+   a program with nothing to drive, so its prepared frame installs on
+   the running chain as a callee's does and its return lands where the
+   await's value would. Refused for room, the frame is released, which
+   offers it back to its function's cache. One already started keeps
+   its own drive.
+*/
+static int coroutine_await_install(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject **out,
+    KosOpResult *r) {
+
+  KosDynFrame *frame;
+
+  (void) out;
+  if (! KosCoroutine_TakeFresh(self, &frame))
+    return 0;
+
+  if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx),
+                                         1) < 0)) {
+    kos_dynframe_free(frame);
+    *r = EVAL_RAISE();
+    return 1;
+  }
+  kos_dyn_push_ready_frame(ctx, frame);
+  *r = EVAL_REPROLOGUE();
+  return 1;
+}
+
+
 /* === Unit lifecycle === */
 
 
@@ -995,11 +1042,11 @@ int koskari_coro_init(PyObject *mod) {
 
   STR_CONST(coro_str_close, "close");
 
-  if (PyType_Ready(&KosCoroutineType))
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosCoroutineType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "Coroutine",
-                           (PyObject *) &KosCoroutineType))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosCoroutineType)))
     return -1;
 
   return 0;

@@ -145,7 +145,7 @@ static int defer_normalize_from_call(
 */
 static KosDefer *defer_alloc(void) {
 
-  KosDefer *self = PyObject_GC_New(KosDefer, &KosDeferType);
+  KosDefer *self = PyObject_GC_New(KosDefer, KOS_EVALUATED_PYTYPE(KosDeferType));
   if (! self)
     return NULL;
 
@@ -366,22 +366,36 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
 }
 
 
-PyObject *KosDefer_TakeFreshCoroutine(PyObject *self) {
+/**
+   The await suite's install: a delegating defer stands for what it
+   delegates to. When that value's own suite installs it on the running
+   chain, the handle is spent, as a drive to completion would spend it;
+   otherwise the defer is awaited as the awaitable it is. An implicit
+   site takes a defer as a plain handle (ka_implicit_plain).
+*/
+static int defer_await_install(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject **out,
+    KosOpResult *r) {
 
   KosDefer *d = (KosDefer *) self;
+  KosAwaitSlots *slots;
   PyObject *inner;
 
   if (d->state != KOS_DEFER_DELEGATING)
-    return NULL;
+    return 0;
   inner = d->u.inner;
-  if (! KosCoroutine_CheckExact(inner)
-      || ((KosCoroutine *) inner)->state != KOS_CORO_NEW)
-    return NULL;
+  if (! KosAwait_CheckSlots(inner, &slots))
+    return 0;
+  if (! slots->ka_install(ctx, inner, out, r))
+    return 0;
 
-  /* the handle is consumed: its coroutine runs elsewhere */
+  /* the handle is consumed: its program runs on this chain */
   d->u.inner = NULL;
   d->state = KOS_DEFER_SPENT;
-  return inner;
+  Py_DECREF(inner);
+  return 1;
 }
 
 
@@ -772,23 +786,30 @@ static PyAsyncMethods defer_async_methods = {
 /* === type object === */
 
 
-PyTypeObject KosDeferType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  "koskari.lib.defer",
-  sizeof(KosDefer),
-  0,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_new = defer_new,
-  .tp_vectorcall = defer_vectorcall,
-  .tp_dealloc = defer_dealloc,
-  .tp_traverse = defer_traverse,
-  .tp_clear = defer_clear,
-  .tp_repr = defer_repr,
-  .tp_as_async = &defer_async_methods,
-  .tp_methods = defer_methods,
-  /* tp_iternext without tp_iter: satisfies GET_AWAITABLE's iterator
-     check while keeping iter(d) a TypeError */
-  .tp_iternext = defer_iternext,
+KosEvaluatedTypeObject KosDeferType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "koskari.lib.defer",
+    .tp_basicsize = sizeof(KosDefer),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_new = defer_new,
+    .tp_vectorcall = defer_vectorcall,
+    .tp_dealloc = defer_dealloc,
+    .tp_traverse = defer_traverse,
+    .tp_clear = defer_clear,
+    .tp_repr = defer_repr,
+    .tp_as_async = &defer_async_methods,
+    .tp_methods = defer_methods,
+    /* tp_iternext without tp_iter: satisfies GET_AWAITABLE's iterator
+       check while keeping iter(d) a TypeError */
+    .tp_iternext = defer_iternext,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_await = {
+    .ka_install = defer_await_install,
+    .ka_implicit_plain = 1,
+  },
 };
 
 
@@ -804,11 +825,11 @@ int koskari_defer_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  if (PyType_Ready(&KosDeferType) < 0)
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosDeferType)) < 0)
     return -1;
 
-
-  if (PyDict_SetItemString(dict, "defer", (PyObject *) &KosDeferType) < 0)
+  if (PyDict_SetItemString(dict, "defer",
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosDeferType)) < 0)
     return -1;
 
   return 0;

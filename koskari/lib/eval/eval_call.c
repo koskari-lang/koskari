@@ -493,6 +493,63 @@ KosOpResult KosContext_SettleInto(
 }
 
 
+KosOpResult KosContext_NextInto(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags) {
+
+  KosDynFrame *frame = KosContext_InstallNativeFrame(
+      ctx, resume, state, frame_flags, NULL, 0);
+  KosOpResult r;
+
+  if (! frame) {
+    /* the state is the resume's from here: released as the frame's
+       teardown would have released it */
+    if (resume->clear)
+      resume->clear(state);
+    return EVAL_RAISE();
+  }
+
+  r = KosContext_NextResumeBound(ctx, req, resume, state);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+
+  KosContext_StageDelivery(ctx, r.val);
+  return EVAL_REPROLOGUE();
+}
+
+
+KosOpResult KosContext_ThrowInto(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags) {
+
+  KosDynFrame *frame = KosContext_InstallNativeFrame(
+      ctx, resume, state, frame_flags, NULL, 0);
+  KosOpResult r;
+
+  if (! frame) {
+    if (resume->clear)
+      resume->clear(state);
+    return EVAL_RAISE();
+  }
+
+  r = KosContext_ThrowResumeBound(ctx, req, throw_typ, throw_exc, resume,
+                                  state);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+
+  KosContext_StageDelivery(ctx, r.val);
+  return EVAL_REPROLOGUE();
+}
+
+
 /* === kos_call_invoke: the shared call core (call-unification Phase 2) ===
 
    The entry for the CALL_* opcode prologues: kos_call_invoke inlines

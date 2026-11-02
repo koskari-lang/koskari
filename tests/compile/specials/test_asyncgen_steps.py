@@ -1,0 +1,182 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+Koskari code stepping a Koskari async generator through __anext__,
+asend, athrow and aclose runs the step flattened on the consumer's own
+chain, as for-each and next do: the generator sees the consumer's
+dynamic state, and the awaitable the adapter returned is spent once
+the step has been taken.
+"""
+
+
+import unittest
+
+import pytest
+
+from koskari.module import load_module_source_async, new_module
+
+
+pytestmark = pytest.mark.phase_specials
+
+
+SRC = """
+(define-parameter p "root")
+
+(def pgen []
+  (while True
+    (yield p)))
+
+(def via_anext []
+  (var g (pgen))
+  (var out #[])
+  (parameterize [[p "one"]]
+    (out.append (await (g.__anext__))))
+  (parameterize [[p "two"]]
+    (out.append (await (g.__anext__))))
+  out)
+
+(def via_foreach []
+  (var g (pgen))
+  (var out #[])
+  (parameterize [[p "one"]]
+    (for-each [x g] (out.append x) (break)))
+  (parameterize [[p "two"]]
+    (for-each [x g] (out.append x) (break)))
+  out)
+
+(def echo [log]
+  (try
+    (begin
+      (var x (yield 1))
+      (yield (+ x 100))
+      (yield 3))
+    ([e ValueError]
+      (log.append "caught")
+      (yield "recovered"))
+    (finally:
+      (log.append "fin"))))
+
+(def do_asend [g]
+  (await (g.__anext__))
+  (await (g.asend 42)))
+
+(def do_athrow [g]
+  (await (g.__anext__))
+  (await (g.athrow (ValueError "t"))))
+
+(def do_aclose [g]
+  (await (g.__anext__))
+  (await (g.aclose)))
+
+(def two [] (yield 1) (yield 2))
+
+(def run_dry [g]
+  (await (g.__anext__))
+  (await (g.__anext__))
+  (await (g.__anext__)))
+
+(def after_end [g]
+  (await (g.__anext__))
+  (await (g.__anext__))
+  (try
+    (await (g.__anext__))
+    ([e StopAsyncIteration] None))
+  #((await (g.athrow (ValueError "late"))) (await (g.aclose))))
+
+(def take_stepper [st]
+  (await st))
+
+(def base [] (yield 1))
+
+(def layer [inner]
+  (yield (await (inner.__anext__))))
+
+(def build [n]
+  (var g (base))
+  (var i 0)
+  (while (< i n)
+    (set! g (layer g))
+    (set! i (+ i 1)))
+  g)
+
+(def take_first [g]
+  (for-each [x g] (return x)))
+"""
+
+
+class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
+
+    async def load(self):
+        module = new_module("asyncgen_steps")
+        vars(module)["__file__"] = "<asyncgen_steps>"
+        await load_module_source_async(module, SRC)
+        return vars(module)
+
+    async def test_anext_sees_the_consumers_parameterize(self):
+        v = await self.load()
+        self.assertEqual(["one", "two"], await v["via_foreach"]())
+        self.assertEqual(["one", "two"], await v["via_anext"]())
+
+    async def test_asend_delivers_its_value(self):
+        v = await self.load()
+        log = []
+        self.assertEqual(142, await v["do_asend"](v["echo"](log)))
+
+    async def test_athrow_is_caught_inside(self):
+        v = await self.load()
+        log = []
+        g = v["echo"](log)
+        self.assertEqual("recovered", await v["do_athrow"](g))
+        self.assertEqual(["caught"], log)
+        await g.aclose()
+
+    async def test_aclose_runs_finally_and_answers_none(self):
+        v = await self.load()
+        log = []
+        self.assertIsNone(await v["do_aclose"](v["echo"](log)))
+        self.assertEqual(["fin"], log)
+
+    async def test_anext_past_the_end_raises_stop_async_iteration(self):
+        v = await self.load()
+        with self.assertRaises(StopAsyncIteration):
+            await v["run_dry"](v["two"]())
+
+    async def test_athrow_and_aclose_after_the_end_answer_none(self):
+        v = await self.load()
+        self.assertEqual((None, None), await v["after_end"](v["two"]()))
+
+    async def test_stepper_awaited_from_koskari_is_spent(self):
+        v = await self.load()
+        g = v["two"]()
+        st = g.__anext__()
+        self.assertEqual(1, await v["take_stepper"](st))
+        with self.assertRaises(RuntimeError) as caught:
+            await st
+        self.assertIn("cannot reuse", str(caught.exception))
+        await g.aclose()
+
+    async def test_deep_nesting_is_bounded_by_the_frame_room(self):
+        """
+        Each layer's await is a step on the consumer's own chain, so a
+        chain of them meets the frame-room check and raises
+        RecursionError instead of exhausting the C stack
+        """
+
+        v = await self.load()
+        g = await v["build"](1200)
+        with self.assertRaises(RecursionError):
+            await v["take_first"](g)
+
+
+# The end.

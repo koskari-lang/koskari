@@ -62,7 +62,7 @@ PyObject *KosCoroutine_NewFromFrame(PyObject *fn, KosDynFrame *frame);
    KOS_CORO_DONE.
 */
 
-extern PyTypeObject KosCoroutineType;
+extern KosEvaluatedTypeObject KosCoroutineType;
 
 
 typedef enum {
@@ -104,10 +104,11 @@ typedef struct {
 
 
 #define KosCoroutine_Check(obj)                                         \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosCoroutineType))
+  ((obj) && PyType_IsSubtype((obj)->ob_type,                            \
+                             KOS_EVALUATED_PYTYPE(KosCoroutineType)))
 
-#define KosCoroutine_CheckExact(obj)                    \
-  ((obj) && ((obj)->ob_type == &KosCoroutineType))
+#define KosCoroutine_CheckExact(obj)                                    \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosCoroutineType)))
 
 
 /**

@@ -226,10 +226,35 @@ static inline void kos_iter_finish(
 }
 
 
+/**
+   The await suite: how the evaluator installs the work an awaitable
+   of this type stands for onto the running chain, instead of driving
+   the awaitable through its Python protocol. ka_install answers 1 with
+   *r the outcome -- the outcomes kos_settle_value returns: a value in
+   hand as NORMAL with *out, an install as REPROLOGUE or RESUME, AWAIT,
+   RAISE -- when it took self, and 0 when self is already in flight and
+   must be awaited as the awaitable it is. self is borrowed; the
+   caller releases it. ka_implicit_plain says an implicit site takes
+   the value unawaited, as a Defer handle is; only an explicit await
+   installs it.
+*/
+typedef int (*KosAwaitInstallFunc)(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject **out,
+    KosOpResult *r);
+
+typedef struct KosAwaitSlots {
+  KosAwaitInstallFunc ka_install;
+  uint8_t ka_implicit_plain;
+} KosAwaitSlots;
+
+
 typedef struct {
   PyTypeObject type;
   KosCallSlots kos_call;
   KosIterSlots kos_iter;
+  KosAwaitSlots kos_await;
 } KosEvaluatedTypeObject;
 
 
@@ -364,6 +389,28 @@ static inline int kos_iter_check(PyObject *obj) {
 
 
 /**
+   Check-and-resolve in one: when obj is an awaitable the evaluator
+   installs itself (a KosEvaluated whose suite carries ka_install),
+   store the resolved suite into *out_slots and return 1; otherwise
+   return 0 with *out_slots untouched.
+*/
+static inline int KosAwait_CheckSlots(
+    PyObject *obj,
+    KosAwaitSlots **out_slots) {
+
+  if (! obj || ! KosEvaluated_Check(obj))
+    return 0;
+
+  KosEvaluatedTypeObject *et = KosEvaluated_Resolve(Py_TYPE(obj));
+  if (! et || ! et->kos_await.ka_install)
+    return 0;
+
+  *out_slots = &et->kos_await;
+  return 1;
+}
+
+
+/**
    Bind iter into req for a next request, classified for the fetch
    (kos_iter_fetch): KOS_IREQ_KIND_PROVIDER with islots its suite,
    else islots NULL and PY_SYNC for a type with tp_iternext, PY_ASYNC
@@ -380,6 +427,7 @@ static inline void kos_iter_request_bind_next(
     PyObject *iter) {
 
   req->iter = iter;
+  req->send = NULL;
   if (KosIter_CheckSlots(iter, &req->islots)) {
     req->kind = KOS_IREQ_KIND_PROVIDER;
     return;
@@ -447,6 +495,20 @@ KosIterStepResult kos_iter_step_provider(
     PyObject *iter,
     KosIterSlots *islots,
     PyObject *send_val,
+    PyObject **out);
+
+
+/**
+   kos_iter_step_provider's twin for a throw: ki_throw, with a
+   StopIteration ending the throw read as exhaustion the same way. The
+   pair is borrowed.
+*/
+KosIterStepResult kos_iter_throw_provider(
+    struct KosContext *ctx,
+    PyObject *iter,
+    KosIterSlots *islots,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
     PyObject **out);
 
 

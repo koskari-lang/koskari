@@ -31,6 +31,7 @@
 void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter) {
 
   req->iter = iter;
+  req->send = NULL;
   if (KosIter_CheckSlots(iter, &req->islots)) {
     req->kind = KOS_IREQ_KIND_PROVIDER;
     return;
