@@ -1107,11 +1107,10 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
-  /* the last cell and its cdr are the chain's own references; the
-     allocation can run a collection on 3.9-3.11, where a finalizer
-     can cut the chain, so both are held across it */
+  /* the last cell is the chain's own reference; the allocation can
+     run a collection on 3.9-3.11, where a finalizer can cut the
+     chain, so the cell is held across it */
   Py_INCREF(last);
-  Py_INCREF(last_cdr);
 
   if (KosNilP(last_cdr)) {
     new_pair = KosPair_New(obj, KosNil);
@@ -1123,7 +1122,6 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
     KosPair_SETCDR(last, new_pair);
     Py_DECREF(new_pair);
   }
-  Py_DECREF(last_cdr);
   Py_DECREF(last);
 
   if (! new_pair)
@@ -1139,11 +1137,16 @@ static void pair_splice_at_last(KosPair *last, PyObject *last_cdr,
   if (KosNilP(last_cdr)) {
     KosPair_SETCDR(last, splice_head);
   } else {
+    /* the last cell is the spine's own reference; the allocation can
+       run a collection on 3.9-3.11, where a finalizer can cut the
+       spine, so the cell is held across it */
+    Py_INCREF(last);
     bridge = KosPair_New(last_cdr, splice_head);
     if (bridge) {
       KosPair_SETCDR(last, bridge);
       Py_DECREF(bridge);
     }
+    Py_DECREF(last);
   }
 }
 
@@ -1692,6 +1695,12 @@ static PyObject *pair_alloc(PyTypeObject *type,
     return NULL;
   }
 
+  /* the references are taken before the allocation: on 3.9-3.11 it
+     can run a collection whose finalizers may release a caller's
+     borrowed head or tail */
+  Py_INCREF(head);
+  Py_INCREF(tail);
+
   if (pair_free_list) {
     self = pair_free_list;
     pair_free_list = (KosPair *) KosPair_CDR(self);
@@ -1706,16 +1715,15 @@ static PyObject *pair_alloc(PyTypeObject *type,
   } else {
     KOS_TRACE_FL_ALLOC("pair", 0);
     self = PyObject_GC_New(KosPair, type);
-    if (! self)
+    if (! self) {
+      Py_DECREF(head);
+      Py_DECREF(tail);
       return NULL;
+    }
   }
 
   KosPair_POSITION(self) = NULL;
-
-  Py_INCREF(head);
   self->head = head;
-
-  Py_INCREF(tail);
   self->tail = tail;
 
   PyObject_GC_Track((PyObject *) self);
