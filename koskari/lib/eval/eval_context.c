@@ -178,6 +178,22 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx) {
    zero, which the freelist revival relies on, so a field added to
    KosContext is cleared here.
 */
+void KosContext_ReleaseChain(KosContext *ctx) {
+
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
+
+  /* Detach first, free second. Freeing a node runs Python: a local's
+     __del__, the namespace reset of a frame returning to its cache, a
+     delegate's close. Anything reaching this context from there, a
+     collection traversing it, a stepper's abandon drive, a recycle,
+     must find no register naming a node already freed, freelisted or
+     cached, or it walks freelist links as a chain. */
+  KosContext_ClearLiveRegs(ctx);
+  if (top)
+    kos_dynchain_free(top, NULL);
+}
+
+
 static int context_clear(PyObject *self) {
 
   KosContext *ctx = (KosContext *) self;
@@ -185,12 +201,9 @@ static int context_clear(PyObject *self) {
   Py_XDECREF(KosContext_TOKEN(ctx));
   KosContext_TOKEN(ctx) = NULL;
 
-  /* the live registers point into the chain freed here; a finalizer
-     in the same garbage cycle can still reach the context, so nothing
-     on it may point at freed memory */
-  if (KosContext_DYN_TOP(ctx))
-    kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-  KosContext_ClearLiveRegs(ctx);
+  /* a finalizer in the same garbage cycle can still reach the context
+     while its chain is freed, so the registers are cleared first */
+  KosContext_ReleaseChain(ctx);
 
   while (KosContext_GOAL(ctx)) {
     KosXferGoal *goal = KosContext_GOAL(ctx);
@@ -257,11 +270,9 @@ int KosContext_Recycle(KosContext *ctx) {
      not answer to it. The next capture mints a fresh one. */
   Py_CLEAR(KosContext_TOKEN(ctx));
 
-  /* the live registers point into the chain freed here; the next
-     drive derives them again from the frame it installs */
-  if (KosContext_DYN_TOP(ctx))
-    kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-  KosContext_ClearLiveRegs(ctx);
+  /* the next drive derives the live registers again from the frame it
+     installs */
+  KosContext_ReleaseChain(ctx);
 
   KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;

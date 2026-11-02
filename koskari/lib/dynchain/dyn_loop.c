@@ -66,7 +66,7 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
    DECREF RESULT; return node to freelist.
 */
 void kos_dynloop_free(KosDynLoop *node) {
-  Py_XDECREF(KosDynLoop_RESULT(node));
+  Py_CLEAR(KosDynLoop_RESULT(node));
   kos_dynnode_return_to_freelist(node);
 }
 

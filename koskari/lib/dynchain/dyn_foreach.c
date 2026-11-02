@@ -71,8 +71,8 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
    DECREF result and iterator; return node to freelist.
 */
 void kos_dynforeach_free(KosDynForeach *node) {
-  Py_XDECREF(KosDynForeach_RESULT(node));
-  Py_XDECREF(KosDynForeach_REQ(node)->iter);
+  Py_CLEAR(KosDynForeach_RESULT(node));
+  Py_CLEAR(KosDynForeach_REQ(node)->iter);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 

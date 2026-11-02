@@ -265,7 +265,10 @@ static void stepper_abandon_drive(KosIterStepper *st) {
     }
   }
 
-  {
+  /* A context whose chain is gone has nothing to close: its clear or
+     recycle released the chain already, and the stepper is being
+     dropped from inside that release. */
+  if (KosContext_DYN_TOP(st->ctx)) {
     PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
     if (exc) {
       KosOpResult res = koskari_eval(st->ctx, NULL, NULL, PyExc_GeneratorExit,

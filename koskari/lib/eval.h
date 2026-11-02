@@ -1325,6 +1325,17 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 int KosContext_Recycle(KosContext *ctx);
 
 
+/**
+   Free the context's chain, detaching first: the live registers are
+   cleared before any node is freed, so Python code a node's free runs
+   (a __del__, a frame's cache reset, a delegate's close) that reaches
+   the context, a collection traversing it included, finds no register
+   naming freed memory. Every release of a chain through its context
+   goes through here.
+*/
+void KosContext_ReleaseChain(KosContext *ctx);
+
+
 /* === Frame management === */
 
 /**

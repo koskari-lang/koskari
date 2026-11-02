@@ -56,10 +56,8 @@ static void asyncgen_free_span(KosPyAsyncGen *agen) {
 */
 static void asyncgen_free_chain_on(KosContext *ctx) {
 
-  if (! ctx || ! KosContext_DYN_TOP(ctx))
-    return;
-  kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-  KosContext_ClearLiveRegs(ctx);
+  if (ctx)
+    KosContext_ReleaseChain(ctx);
 }
 
 
