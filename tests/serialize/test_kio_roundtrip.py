@@ -31,8 +31,8 @@ from koskari.lib import (
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import (
-    KIO_MAGIC, CodeFlags, KioHeader, PoolBuilder, PoolKind, SectionTag,
-    code_flags, encode_pool_record_value)
+    HEADER_SIZE, KIO_MAGIC, CodeFlags, KioHeader, PoolBuilder, PoolKind,
+    SectionTag, code_flags, encode_directory, encode_pool_record_value)
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -610,6 +610,61 @@ class TestKioMalformed(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             load_kio(io.BytesIO(data))
         self.assertIn('abi', str(ctx.exception).lower())
+
+
+    def _image(self, pool, codep=struct.pack('<I', 0), meta=b''):
+        """
+        A .kio image holding the given POOL, CODE, and META section bytes
+        """
+
+        body = bytearray()
+        off = HEADER_SIZE
+        entries = []
+        for tag, data in ((SectionTag.POOL, pool), (SectionTag.CODE, codep),
+                          (SectionTag.META, meta)):
+            entries.append((tag, off, len(data)))
+            body += data
+            off += len(data)
+        header = KioHeader.default()
+        header.section_dir_offset = off
+        header.section_dir_count = 3
+        return header.to_bytes() + bytes(body) + encode_directory(entries)
+
+
+    def test_huge_arity_raises_value_error(self):
+        data = self._image(struct.pack('<IBI', 1, PoolKind.TUPLE, 0x40000000))
+        self.assertEqual(len(data), 113)
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(data)
+
+
+    def test_string_past_its_section_raises_value_error(self):
+        spec = NamespaceSpec(None, (), ())
+        code = Code(spec, [[OpCode.CONST, "abc"], [OpCode.RETURN, 1]], "t")
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        data = bytearray(buf.getvalue())
+        _header, sec = KioFile.validate(bytes(data))
+        poff, plen = sec[SectionTag.POOL]
+        pos = data.index(b"abc", poff, poff + plen)
+        # claim 8 bytes where 3 are stored; 5 lie past the POOL end
+        struct.pack_into('<I', data, pos - 4, 8)
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(bytes(data))
+
+
+    def test_section_with_trailing_bytes_raises_value_error(self):
+        data = self._image(struct.pack('<IB', 1, PoolKind.NIL) + b'\x00')
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(data)
+
+
+    def test_arity_past_its_section_raises_value_error(self):
+        # the second index would fall on the CODE section's count word
+        pool = struct.pack('<IB', 2, PoolKind.NIL) \
+            + struct.pack('<BII', PoolKind.TUPLE, 2, 0)
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(self._image(pool))
 
 
 # The end.

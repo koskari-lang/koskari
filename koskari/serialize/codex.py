@@ -241,7 +241,11 @@ class CodeBodyRecord(object):
         name_idx, fn_idx, ns_idx, flags, ic = cls._header.unpack_from(
             buf, off)
         off += cls._header.size
-        ib = buf[off:off + ic * INSTRUCTION_SIZE]
+        if off + ic * INSTRUCTION_SIZE > len(buf):
+            raise ValueError(
+                f".kio code body of {ic} instructions at {off}"
+                f" overruns its section")
+        ib = bytes(buf[off:off + ic * INSTRUCTION_SIZE])
         off += ic * INSTRUCTION_SIZE
         return cls(
             name_idx=name_idx,
@@ -505,28 +509,44 @@ class KioFile(object):
 
         header, sec = cls.validate(data)
 
-        pool, _ = decode_pool_records(
-            data, sec[SectionTag.POOL][0], allocator)
+        view = memoryview(data)
+        pool_off, pool_len = sec[SectionTag.POOL]
+        code_off, code_len = sec[SectionTag.CODE]
 
-        code_records, _ = decode_codep_bodies(data, sec[SectionTag.CODE][0])
+        try:
+            pool, pool_end = decode_pool_records(
+                view[pool_off:pool_off + pool_len], 0, allocator)
+            code_records, code_end = decode_codep_bodies(
+                view[code_off:code_off + code_len], 0)
+
+            codes = []
+            for record in code_records:
+                instr = []
+                ioff = 0
+                for _ in range(record.instr_count):
+                    (op, arg), ioff = decode_instruction(
+                        record.instr_bytes, ioff, pool)
+                    instr.append((op, arg))
+                nspec = pool[record.nspec_idx]
+                name = pool[record.name_idx]
+                filename = pool[record.filename_idx]
+                code = code_from_record(
+                    nspec, instr, name, filename, record.flags)
+                codes.append(code)
+        except (struct.error, IndexError) as exc:
+            raise ValueError(f"malformed .kio: {exc}") from exc
+
+        if pool_end != pool_len:
+            raise ValueError(
+                f".kio POOL section has {pool_len - pool_end} bytes"
+                f" past its records")
+        if code_end != code_len:
+            raise ValueError(
+                f".kio CODE section has {code_len - code_end} bytes"
+                f" past its records")
 
         meta, _off = KioMeta.from_buffer(
             data, sec[SectionTag.META][0], sec[SectionTag.META][1])
-
-        codes = []
-        for record in code_records:
-            instr = []
-            ioff = 0
-            for _ in range(record.instr_count):
-                (op, arg), ioff = decode_instruction(
-                    record.instr_bytes, ioff, pool)
-                instr.append((op, arg))
-            nspec = pool[record.nspec_idx]
-            name = pool[record.name_idx]
-            filename = pool[record.filename_idx]
-            code = code_from_record(
-                nspec, instr, name, filename, record.flags)
-            codes.append(code)
 
         return cls(header, meta, codes, pool)
 
@@ -942,7 +962,10 @@ def _pack_string(s):
 def _unpack_string(buf, off):
     ln = struct.unpack_from('<I', buf, off)[0]
     off += 4
-    s = buf[off:off + ln].decode('utf-8')
+    if off + ln > len(buf):
+        raise ValueError(
+            f".kio string of {ln} bytes at {off} overruns its section")
+    s = bytes(buf[off:off + ln]).decode('utf-8')
     return s, off + ln
 
 
@@ -963,6 +986,9 @@ def _pack_int_big(n):
 def _unpack_int_big(buf, off):
     nb = struct.unpack_from('<I', buf, off)[0]
     off += 4
+    if off + nb > len(buf):
+        raise ValueError(
+            f".kio int of {nb} bytes at {off} overruns its section")
     payload = buf[off:off + nb]
     off += nb
     return int.from_bytes(payload, 'big', signed=True), off
@@ -1150,7 +1176,10 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
     if kind == PoolKind.BYTES:
         ln = struct.unpack_from('<I', buf, off)[0]
         off += 4
-        b = buf[off:off + ln]
+        if off + ln > len(buf):
+            raise ValueError(
+                f".kio bytes of {ln} at {off} overrun their section")
+        b = bytes(buf[off:off + ln])
         off += ln
         return b, off
 
@@ -1165,7 +1194,10 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
     if kind in (PoolKind.TUPLE, PoolKind.FROZENSET):
         arity = struct.unpack_from('<I', buf, off)[0]
         off += 4
-        idxs = struct.unpack_from('<' + 'I' * arity, buf, off)
+        if off + 4 * arity > len(buf):
+            raise ValueError(
+                f".kio arity {arity} at {off} overruns its section")
+        idxs = struct.unpack_from(f'<{arity}I', buf, off)
         off += 4 * arity
         build = tuple if kind == PoolKind.TUPLE else frozenset
         return build(prior[j] for j in idxs), off
@@ -1189,6 +1221,10 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
         ni, fi, nsi, cni, cfi, flg, ic = struct.unpack_from(
             '<IIIIIII', buf, off)
         off += 28
+        if off + ic * INSTRUCTION_SIZE > len(buf):
+            raise ValueError(
+                f".kio function of {ic} instructions at {off}"
+                f" overruns its section")
         ib = buf[off:off + ic * INSTRUCTION_SIZE]
         off += ic * INSTRUCTION_SIZE
         name = prior[ni]
