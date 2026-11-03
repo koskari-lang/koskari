@@ -51,20 +51,48 @@ define [waits record]:
     finally:
         (await (sleep 0))
         (record "finally")
+
+define [yields_again record]:
+    try:
+        (yield 1)
+    finally:
+        (record "fin-start")
+        (yield 2)
+        (record "fin-end")
+
+define [break_waits record]:
+    (for-each [x (waits record)] (break))
+    "ok"
 """
+
+
+IGNORED = (
+    RuntimeError,
+    "async generator ignored GeneratorExit",
+    None,
+    AsyncGenerator)
 
 
 class Unraisables:
     """
-    Collects sys.unraisablehook reports for the extent of a block
+    Collects sys.unraisablehook reports for the extent of a block, each
+    as the exception type and message, the hook message, and the type
+    of the object, so no report keeps the object alive
     """
 
     def __init__(self):
         self.seen = []
 
+    def record(self, u):
+        self.seen.append((
+            type(u.exc_value),
+            str(u.exc_value),
+            u.err_msg,
+            type(u.object)))
+
     def __enter__(self):
         self.prior = sys.unraisablehook
-        sys.unraisablehook = lambda u: self.seen.append(u)
+        sys.unraisablehook = self.record
         return self
 
     def __exit__(self, *exc):
@@ -150,11 +178,62 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
         log = []
         before = live_wrappers()
-        for _ in range(5):
+        with Unraisables() as reports:
+            for _ in range(5):
+                agen = mod["waits"](log.append)
+                self.assertEqual(await agen.__anext__(), 1)
+                del agen
+        self.assertEqual(live_wrappers(), before)
+        self.assertEqual(reports.seen, [IGNORED] * 5)
+
+    async def test_dropped_generator_whose_finally_awaits_is_reported(self):
+        """
+        A finally that awaits cannot complete in the synchronous close; the
+        rest of it is dropped and reported as an ignored GeneratorExit
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
             agen = mod["waits"](log.append)
             self.assertEqual(await agen.__anext__(), 1)
             del agen
-        self.assertEqual(live_wrappers(), before)
+        self.assertEqual(log, [])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_dropped_generator_whose_finally_yields_is_reported(self):
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["yields_again"](log.append)
+            self.assertEqual(await agen.__anext__(), 1)
+            del agen
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_break_from_generator_whose_finally_awaits_is_reported(self):
+        """
+        A for-each that breaks closes its generator; a finally that awaits
+        is reported the same way as on a drop
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            self.assertEqual(await mod["break_waits"](log.append), "ok")
+        self.assertEqual(log, [])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_dropped_sync_view_whose_finally_awaits_is_reported(self):
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["waits"](log.append)
+            view = iter(agen)
+            self.assertEqual(next(view), 1)
+            del view, agen
+        self.assertEqual(log, [])
+        self.assertEqual(reports.seen, [IGNORED])
 
 
 # The end.

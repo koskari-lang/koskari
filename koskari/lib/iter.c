@@ -70,9 +70,11 @@ static void asyncgen_free_chain_on(KosContext *ctx) {
 
    This is the demand-path close: the GeneratorExit drive runs
    synchronously to completion, and a suspend attempt during close takes
-   the fallback (cannot honor). All koskari generators are async, so
-   dealloc must still run their teardown; a future explicit aclose is
-   where a genuinely suspending close could be honored.
+   the fallback (cannot honor), reported as unraisable once the span is
+   freed, as CPython reports an ignored GeneratorExit. All koskari
+   generators are async, so dealloc must still run their teardown; a
+   future explicit aclose is where a genuinely suspending close could
+   be honored.
 
    Safe at arbitrary points, including dealloc mid-unwind: the caller's
    pending exception is fenced (fetched before the drive, restored
@@ -89,6 +91,7 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   PyObject *fence_typ = NULL;
   PyObject *fence_val = NULL;
   PyObject *fence_tb = NULL;
+  int ignored = 0;
 
   PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
 
@@ -134,8 +137,10 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
         goto primary_success;
       case KOS_RES_AWAIT:
       case KOS_RES_YIELD:
-        /* Suspend attempt during close; cannot honor */
+        /* Suspend attempt during close; cannot honor, and reported
+           once the span is freed */
         Py_XDECREF(res.val);
+        ignored = 1;
         goto fallback;
       default:
         goto fallback;
@@ -158,6 +163,11 @@ fallback:
      all; a refused one, or a yield's freeze, left it resting */
   asyncgen_free_chain_on(ctx);
   asyncgen_free_span(agen);
+  if (ignored) {
+    PyErr_SetString(
+        PyExc_RuntimeError, "async generator ignored GeneratorExit");
+    PyErr_WriteUnraisable((PyObject *) agen);
+  }
   PyErr_Restore(fence_typ, fence_val, fence_tb);
 }
 
@@ -235,10 +245,12 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
    state is torn down, the way CPython closes an abandoned async
    generator, so its finally blocks, with exits and wind after thunks
    run against its frame as it was. GeneratorExit is thrown at the
-   suspension point through the same drive aclose uses, and whatever
-   comes back is swallowed there. A generator never started has
-   entered nothing, a finished or closed one has nothing left to
-   unwind, and one mid-drive belongs to that drive.
+   suspension point through the same drive aclose uses, and nothing
+   comes back out of it. For one suspended at a yield, an error the
+   cleanup raises, or a suspend the close cannot honor, is reported as
+   unraisable. A generator never started has entered nothing, a
+   finished or closed one has nothing left to unwind, and one mid-drive
+   belongs to that drive.
 */
 static void asyncgen_finalize(PyObject *self) {
 
