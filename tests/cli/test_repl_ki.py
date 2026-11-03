@@ -509,6 +509,28 @@ class TestFallbackPromptInterrupt(unittest.TestCase):
             got += chunk
         return got
 
+    def _drain(self, fd, timeout):
+        """
+        Read fd until the far side closes it or timeout elapses. A
+        tcsetattr that drains output blocks on a macOS pty slave until
+        the master has read every pending byte, so the child cannot
+        leave the prompt until its output is consumed
+        """
+
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            ready, _, _ = select.select([fd], [], [], remaining)
+            if not ready:
+                break
+            try:
+                if not os.read(fd, 4096):
+                    break
+            except OSError:
+                break
+
     def test_sigint_at_the_prompt_reports_and_prompts_again(self):
         try:
             import pty
@@ -536,6 +558,7 @@ class TestFallbackPromptInterrupt(unittest.TestCase):
             self.assertIn(b'3', answer)
 
             os.write(master, b'\x04')
+            self._drain(master, 10)
             self.assertEqual(0, child.wait(timeout=10))
         finally:
             if child.poll() is None:
