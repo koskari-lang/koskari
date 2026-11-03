@@ -476,7 +476,13 @@ static PyObject *gensym_build_name(PyObject *base, PyObject *marks) {
       PyMem_Free(buf);
       return NULL;
     }
-    len += snprintf(buf + len, cap - len, "#%llx", v);
+    int written = snprintf(buf + len, cap - len, "#%llx", v);
+    if (written < 0 || written >= (cap - len)) {
+      PyMem_Free(buf);
+      PyErr_SetString(PyExc_RuntimeError, "failed to build gensym name");
+      return NULL;
+    }
+    len += written;
   }
 
   PyObject *name = PyUnicode_FromStringAndSize(buf, len);
