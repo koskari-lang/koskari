@@ -3261,10 +3261,10 @@ tags:
 ---
 id: builtin-coroutine-fn-basic-001
 feature: builtin/coroutine-fn
-source: (begin (import asyncio) (asyncio.iscoroutinefunction (coroutine-fn (lambda [] 1))))
+source: (begin (import inspect) (inspect.iscoroutinefunction (coroutine-fn (lambda [] 1))))
 verify:
-  read: (begin (import asyncio) ((attr asyncio iscoroutinefunction) (coroutine-fn (lambda [] 1))))
-  expand: (begin (import asyncio) ((attr asyncio iscoroutinefunction) (coroutine-fn (lambda [] 1))))
+  read: (begin (import inspect) ((attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1))))
+  expand: (begin (import inspect) ((attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1))))
   eval: "true"
 references:
   - reference/runtime/functions.md
