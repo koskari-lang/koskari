@@ -26,21 +26,17 @@ still reported the generator being deallocated.
 :license: GNU General Public License v3
 """
 
-import subprocess
-import sys
+import asyncio
+import gc
 import unittest
 
 import pytest
 
+from koskari.module import load_module_source_async, new_module
+
 
 pytestmark = pytest.mark.phase_reproducers
 
-
-SCRIPT = '''
-import asyncio
-import gc
-
-from koskari.module import load_module_source_async, new_module
 
 SRC = """
 (def make-mk [probe]
@@ -56,19 +52,16 @@ SRC = """
 
 
 class Probe:
+    """
+    Released with the generator the landing lets go of; its finalizer
+    asks every context for its referents, which reports a frame's
+    resume state through the kind's traverse
+    """
+
     def __del__(self):
         for o in gc.get_objects():
             if type(o).__name__ == "Context":
                 gc.get_referents(o)
-
-
-module = new_module("frame_resume_clear_order")
-asyncio.run(load_module_source_async(module, SRC))
-r = vars(module)["f"](Probe)
-if hasattr(r, "__await__"):
-    r = asyncio.run(r)
-print(r)
-'''
 
 
 class TestFrameResumeClearOrder(unittest.TestCase):
@@ -79,11 +72,12 @@ class TestFrameResumeClearOrder(unittest.TestCase):
         generator it releases
         """
 
-        res = subprocess.run(
-            [sys.executable, "-c", SCRIPT],
-            capture_output=True, text=True, timeout=300)
-        self.assertEqual(0, res.returncode, res.stderr)
-        self.assertEqual("escaped\n", res.stdout)
+        module = new_module("frame_resume_clear_order")
+        asyncio.run(load_module_source_async(module, SRC))
+        r = vars(module)["f"](Probe)
+        if hasattr(r, "__await__"):
+            r = asyncio.run(r)
+        self.assertEqual("escaped", r)
 
 
 # The end.

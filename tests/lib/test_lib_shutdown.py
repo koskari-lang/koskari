@@ -20,6 +20,7 @@ Tests for the native types after the koskari.lib module object has died
 """
 
 
+import os
 import subprocess
 import sys
 import unittest
@@ -30,73 +31,9 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
-# A finalizer that runs in the interpreter's last collection, after
-# the module object of koskari.lib has been collected with the other
-# modules, and uses a static type through a reference of its own. Only
-# type objects are bound, never a module-level builtin function, since
-# a builtin function keeps its module alive.
-SCRIPT = """
-import contextvars
-import os
-import sys
-
-import koskari.lib as kl
-
-OP = sys.argv[1]
-K = dict(symbol=kl.symbol, gensym=kl.gensym, pair=kl.pair, nil=kl.nil,
-         values=kl.values, Ref=kl.Ref, repr=repr, str=str,
-         BaseException=BaseException)
-K['pre'] = kl.symbol("pre_existing")
-
-
-def op_symbol(K=K):
-    return K['symbol']("pre_existing") is K['pre']
-
-
-def op_fresh_symbol(K=K):
-    return K['symbol']("fresh_symbol")
-
-
-def op_gensym(K=K):
-    return K['gensym']("g")
-
-
-def op_pair_repr(K=K):
-    return K['repr'](K['pair'](1, K['pair'](2, K['nil'])))
-
-
-def op_pair_str(K=K):
-    return K['str'](K['pair'](1, K['pair'](2, K['nil'])))
-
-
-def op_values_repr(K=K):
-    return K['repr'](K['values'](1, 2, a=3))
-
-
-def op_ref(K=K):
-    return K['repr'](K['Ref']("x", 1))
-
-
-FN = globals()["op_" + OP]
-
-
-class Holder:
-    def __init__(self):
-        self.me = self
-
-    def __del__(self, write=os.write, fn=FN, K=K):
-        try:
-            result = fn()
-        except K['BaseException'] as exc:
-            write(2, ("raised " + K['repr'](exc)).encode())
-        else:
-            write(2, ("ok " + K['repr'](result)).encode())
-
-
-var = contextvars.ContextVar("holder")
-var.set(Holder())
-del kl
-"""
+# The module object dies in interpreter shutdown, which only a process
+# of its own can run to the end; the probe lives beside this module.
+PROBE = os.path.join(os.path.dirname(__file__), "lib_shutdown_probe.py")
 
 
 OPS = (
@@ -112,7 +49,7 @@ class TestTypesOutliveModule(unittest.TestCase):
 
     def run_op(self, op):
         return subprocess.run(
-            [sys.executable, "-c", SCRIPT, op],
+            [sys.executable, PROBE, op],
             capture_output=True, text=True)
 
     def test_finalizer_after_module_collection(self):

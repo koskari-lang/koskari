@@ -28,7 +28,8 @@ not, repr, truth, iter, ~,
 import pytest
 
 import koskari.lib
-from koskari.exceptions import SpecialError, SyntaxMatchError
+from koskari.exceptions import (
+    CompilerError, SpecialError, SyntaxMatchError, UncaughtCompilerError)
 from koskari.lib import Compare, OpCode, Operand, OpStyle
 from tests import SlowAIter
 from tests.dis.dis import dis
@@ -1458,6 +1459,16 @@ class TestOperandLimits(SpecialsTestCase):
         values[names[-1]] = -1
         expr, mod = self.compile_expr(src, **values)
         self.assertFalse(await expr())
+
+    async def test_finalizer_limit_is_a_positioned_compiler_error(self):
+        # a call wider than a segment holds is refused by the finalizer;
+        # the shape is flat, so no nesting limit is met on the way
+        names = [f"a{i}" for i in range(1025)]
+        src = "(lambda [] (f " + " ".join(names) + "))"
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_to_code(src)
+        self.assertNotIsInstance(caught.exception, UncaughtCompilerError)
+        self.assertIsNotNone(caught.exception.position)
 
 
 # The end.

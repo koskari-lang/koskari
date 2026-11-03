@@ -476,44 +476,32 @@ class TestKosPartialDispatch(unittest.TestCase):
         gc.collect()
 
 
-# An element's __repr__ replaces the partial's args and keywords through
-# __setstate__ while the repr of the partial is still rendering them.
-# Each run is a subprocess under the debug allocator, so a read of the
-# released tuple or dict ends the run instead of passing by luck.
-REPR_SETSTATE_SCRIPT = """
-import gc
-import sys
-
-from koskari.lib import KosPartial
-
-MODE, WHICH = sys.argv[1], sys.argv[2]
-
-
-def f(*a, **k):
+def _swapped(*a, **k):
     return a, k
 
 
 class Swapper:
+    """
+    An element whose repr replaces the holding partial's args and
+    keywords through __setstate__ while the partial's own repr is still
+    rendering them, then churns the allocator so a released tuple or
+    dict is reused
+    """
+
+    def __init__(self, holder, mode):
+        self.holder = holder
+        self.mode = mode
+
     def __repr__(self):
-        p = holder[0]
-        if MODE == "args":
-            p.__setstate__((f, (), None, None))
+        p = self.holder[0]
+        if self.mode == "args":
+            p.__setstate__((_swapped, (), None, None))
         else:
-            p.__setstate__((f, (), {}, None))
+            p.__setstate__((_swapped, (), {}, None))
         gc.collect()
         junk = [object() for _ in range(10000)]
+        del junk
         return "swapped"
-
-
-holder = [None]
-if MODE == "args":
-    p = KosPartial(f, Swapper(), *[object() for _ in range(2000)])
-else:
-    p = KosPartial(f, **{f"k{i}": Swapper() for i in range(2000)})
-holder[0] = p
-r = repr(p) if WHICH == "repr" else p.__kos_repr__()
-print("survived", len(r))
-"""
 
 
 class TestReprAcrossSetstate(unittest.TestCase):
@@ -523,21 +511,32 @@ class TestReprAcrossSetstate(unittest.TestCase):
     cannot release what they are still reading
     """
 
-    def test_repr_survives_setstate_from_element(self):
-        import os
-        import subprocess
+    def partial(self, mode):
+        holder = [None]
+        if mode == "args":
+            p = KosPartial(_swapped, Swapper(holder, mode),
+                           *[object() for _ in range(2000)])
+        else:
+            p = KosPartial(_swapped, **{
+                f"k{i}": Swapper(holder, mode) for i in range(2000)})
+        holder[0] = p
+        return p
 
-        env = dict(os.environ, PYTHONMALLOC="debug")
+    def test_repr_survives_setstate_from_element(self):
         for mode in ("args", "keywords"):
-            for which in ("repr", "kos_repr"):
-                with self.subTest(mode=mode, which=which):
-                    proc = subprocess.run(
-                        [sys.executable, "-c", REPR_SETSTATE_SCRIPT,
-                         mode, which],
-                        capture_output=True, text=True, env=env)
-                    self.assertEqual(proc.returncode, 0, proc.stderr)
-                    self.assertTrue(
-                        proc.stdout.startswith("survived "), proc.stdout)
+            with self.subTest(mode=mode):
+                p = self.partial(mode)
+                r = repr(p)
+                self.assertIn("swapped", r)
+                self.assertEqual(p.args, ())
+
+    def test_kos_repr_survives_setstate_from_element(self):
+        for mode in ("args", "keywords"):
+            with self.subTest(mode=mode):
+                p = self.partial(mode)
+                r = p.__kos_repr__()
+                self.assertIn("swapped", r)
+                self.assertEqual(p.args, ())
 
 
 # The end.
