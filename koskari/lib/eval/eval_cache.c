@@ -151,7 +151,9 @@ static PyObject *instance_attr_peek(PyObject *obj, PyObject *name) {
    plain attribute, INSTANCE_DICT);
    anything that invokes a descriptor or custom hook is reported as
    GENERIC_LOOKUP so the caller does not cache a value it cannot safely
-   reproduce from a guarded descriptor.
+   reproduce from a guarded descriptor. A class attribute whose type is
+   mutable is also GENERIC_LOOKUP: that type can gain __get__ or
+   __set__ without moving the receiver type's version.
 
    :param obj: object to resolve on (borrowed)
    :param name: attribute name (borrowed, PyUnicode)
@@ -250,6 +252,12 @@ static int resolve_named_attr_slow(
   koskari_Err_SetMissingAttribute(obj, name);
 
  done:
+  /* The guard is tp's version, which a class attribute of a mutable
+     type does not move when that type gains __get__ or __set__. */
+  if (descr && ! kos_type_is_immutable(Py_TYPE(descr))) {
+    *mode = KOS_METHOD_GENERIC_LOOKUP;
+    *cache_descr = NULL;
+  }
   Py_XDECREF(descr);
   return res;
 }
@@ -590,7 +598,9 @@ KOS_OP_INLINE int kos_resolve_named_attr(
    A __slots__ member resolves to SLOT with its byte offset, and on 3.11
    and later a managed-dict type with inline values resolves to
    INSTANCE_VALUE with the value index (compat*.h supplies the layout
-   access). Anything else is GENERIC.
+   access). A class attribute whose type is mutable is GENERIC, since
+   that type can gain __get__ or __set__ without moving the receiver
+   type's version. Anything else is GENERIC.
 */
 static KosFieldMode resolve_attr_location_slow(
     PyObject *obj,
@@ -613,6 +623,12 @@ static KosFieldMode resolve_attr_location_slow(
      directions, so it stays GENERIC. Every other data descriptor
      (property, ...) computes per access and stays GENERIC. */
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
+
+  /* The guard is tp's version, which a class attribute of a mutable
+     type does not move when that type gains __get__ or __set__. */
+  if (descr && ! kos_type_is_immutable(Py_TYPE(descr)))
+    return KOS_FIELD_GENERIC;
+
   if (descr && descr_is_data(descr)) {
     /* The member's offset describes the layout of the descriptor's own
        type; a member of some other class installed as an attribute of

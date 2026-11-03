@@ -171,6 +171,37 @@ class TestCallAttrUnboundPath(CevalTest):
         self.assertEqual(result, 42)
 
 
+class TestCallAttrMutableDescriptorType(CevalTest):
+    """
+    A class attribute whose class gains __get__ after a warm call
+    """
+
+    async def test_call_attr_class_attribute_gaining_get_is_bound(self):
+        """
+        CALL_ATTR calls the __get__ result once the class attribute's
+        class gains __get__, not the raw attribute
+        """
+
+        class Callee(object):
+            def __call__(self, *args):
+                return "raw"
+
+        class Host(object):
+            meth = Callee()
+        host = Host()
+        code, ns = build_expr([
+            ["CONST", host],
+            ["CALL_ATTR", ("meth", 0, 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        self.assertEqual(await fn(), "raw")
+        self.assertEqual(await fn(), "raw")
+        Callee.__get__ = lambda self, obj, tp=None: (lambda: "bound")
+        self.assertEqual(host.meth(), "bound")
+        self.assertEqual(await fn(), "bound")
+
+
 class TestCallAttrInstanceDictShadow(CevalTest):
     """
     Instance dict shadows class attribute. Resolver finds name in __dict__.

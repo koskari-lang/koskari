@@ -188,6 +188,14 @@ static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
 }
 
 
+/* True when tp can gain no slot after creation: no attribute can be
+   set on it and no instance can have its __class__ reassigned. Static
+   types carry the flag from 3.10. */
+static inline int kos_type_is_immutable(PyTypeObject *tp) {
+  return PyType_HasFeature(tp, Py_TPFLAGS_IMMUTABLETYPE);
+}
+
+
 /* === PEP 634 type tests === */
 
 

@@ -247,6 +247,14 @@ static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
 }
 
 
+/* True when tp can gain no slot after creation: no attribute can be
+   set on it and no instance can have its __class__ reassigned. 3.9
+   has no immutable heap types, so only a static type qualifies. */
+static inline int kos_type_is_immutable(PyTypeObject *tp) {
+  return ! (tp->tp_flags & Py_TPFLAGS_HEAPTYPE);
+}
+
+
 /* === PEP 634 type tests === */
 
 
