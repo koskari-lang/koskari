@@ -681,4 +681,88 @@ class TestCallVarAttr(CevalTest):
         self.assertEqual(result, ("descr called", (1,)))
 
 
+    async def test_call_var_attr_class_rebound_during_probe(self):
+        """
+        A key in the instance dict whose __eq__ rebinds the class method
+        runs after the class attribute was found. The first call answers
+        from the attribute found first, as CPython's generic lookup does;
+        later calls at the site see the rebound method
+        """
+
+        class C:
+            def m(self):
+                return "old"
+
+        def new_m(self):
+            return "new"
+
+        class Key:
+            armed = False
+
+            def __hash__(self):
+                return hash("m")
+
+            def __eq__(self, other):
+                if Key.armed:
+                    Key.armed = False
+                    C.m = new_m
+                    C.m
+                return False
+
+        c = C()
+        c.__dict__[Key()] = 1
+        code = build_code([
+            ["CALL_VAR_ATTR", ("obj", "m", 0, 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+
+        Key.armed = True
+        self.assertEqual(await fn(c), "old")
+        self.assertEqual(await fn(c), "new")
+        self.assertEqual(await fn(C()), "new")
+
+
+    async def test_call_var_attr_property_installed_during_probe(self):
+        """
+        A key in the instance dict whose __eq__ installs a property of the
+        same name on the class. The first call answers from the instance
+        value it found; later calls at the site go through the property
+        """
+
+        class D:
+            pass
+
+        class Key:
+            armed = False
+
+            def __hash__(self):
+                return hash("m")
+
+            def __eq__(self, other):
+                if Key.armed:
+                    Key.armed = False
+                    D.m = property(lambda s: lambda: "prop")
+                    D.m
+                return False
+
+        d = D()
+        d.__dict__[Key()] = 1
+        d.__dict__["m"] = lambda: "inst"
+        code = build_code([
+            ["CALL_VAR_ATTR", ("obj", "m", 0, 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+
+        Key.armed = True
+        self.assertEqual(await fn(d), "inst")
+        self.assertEqual(await fn(d), "prop")
+        self.assertEqual(d.m(), "prop")
+
+
 # The end.
