@@ -1117,12 +1117,110 @@ class TestTemplateEllipsisEscape(DefineSyntaxCompileHelpers):
           (syntax-rules bad []
             [(bad b) (#list (b 1) ...)]))
         """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("ellipsis", str(caught.exception))
+
+
+class TestTemplateEllipsisDepth(DefineSyntaxCompileHelpers):
+    """
+    A template ellipsis must follow an element holding a pattern
+    variable captured under at least one more ellipsis than the
+    template depth it sits at. Any other is refused when the syntax is
+    defined, whether or not the arm is ever used. A variable bound as a
+    sequence by a non-final ellipsis or a dotted tail splices
+    """
+
+    def assert_refused(self, src_str, line):
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("ellipsis", str(caught.exception))
+        self.assertEqual(line, caught.exception.line)
+
+
+    async def define_and_expand(self, src_str, name, use_str):
         expr, mod = self.compile_expr(src_str)
         await expr()
-        defn = {'compile/bad': vars(mod)['bad']}
-        with self.assertRaises(CompilerError) as caught:
-            self.compile_expr("(bad x)", **defn)
-        self.assertIn("ellipsis", str(caught.exception))
+        defn = {f'compile/{name}': vars(mod)[name]}
+        expr, mod = self.compile_expr(use_str, **defn)
+        return await expr()
+
+
+    def test_single_form_variable_is_refused(self):
+        self.assert_refused("""
+        (define sp
+          (syntax-rules sp []
+            [(sp x) (quote (got x ...))]))
+        """, 4)
+
+
+    def test_unused_arm_is_refused(self):
+        self.assert_refused("""
+        (define sp
+          (syntax-rules sp []
+            [(sp) 1]
+            [(sp x) (quote (got x ...))]))
+        """, 5)
+
+
+    def test_head_variable_is_refused(self):
+        self.assert_refused("""
+        (define hd
+          (syntax-rules hd []
+            [(hd x ...) (quote (hd ...))]))
+        """, 4)
+
+
+    def test_variable_under_too_few_ellipses_is_refused(self):
+        self.assert_refused("""
+        (define nest
+          (syntax-rules nest []
+            [(nest (a b) ...) (quote ((b ...) ...))]))
+        """, 4)
+
+
+    def test_syntax_match_value_is_refused(self):
+        self.assert_refused("""
+        (define sm
+          (syntax-match sm
+            [(sm (VALUE x)) (quote (got x ...))]))
+        """, 4)
+
+
+    async def test_non_final_ellipsis_variable_splices(self):
+        result = await self.define_and_expand("""
+        (define mid
+          (syntax-rules mid []
+            [(mid a ... b) (quote (b a ...))]))
+        """, 'mid', "(mid 1 2 3 4)")
+        self.assertEqual(cons(4, 1, 2, 3, nil), result)
+
+
+    async def test_dotted_tail_variable_splices(self):
+        result = await self.define_and_expand("""
+        (define dot
+          (syntax-rules dot []
+            [(dot a . rest) (quote (a rest ...))]))
+        """, 'dot', "(dot 1 2 3)")
+        self.assertEqual(cons(1, 2, 3, nil), result)
+
+
+    async def test_syntax_match_rest_splices(self):
+        result = await self.define_and_expand("""
+        (define smr
+          (syntax-match smr
+            [(smr (REST xs)) (quote (got xs ...))]))
+        """, 'smr', "(smr 1 2 3)")
+        self.assertEqual(cons(symbol("got"), 1, 2, 3, nil), result)
+
+
+    async def test_escaped_ellipsis_over_single_form_variable(self):
+        result = await self.define_and_expand("""
+        (define esc
+          (syntax-rules esc []
+            [(esc x) (quote (... (x ...)))]))
+        """, 'esc', "(esc 1)")
+        self.assertEqual(cons(1, Ellipsis, nil), result)
 
 
 # The end.

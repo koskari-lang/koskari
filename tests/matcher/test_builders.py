@@ -27,7 +27,8 @@ from koskari.lib import cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
-    SYMBOL, TEST_ANY, TYPE, VALUE, make_matcher, pattern_slot_names)
+    SYMBOL, TEST_ANY, TYPE, VALUE, make_matcher, pattern_slot_names,
+    repeat_capture)
 from koskari.matcher.tables import TableBuilder
 from koskari.types import is_symbol
 
@@ -836,6 +837,42 @@ class TestErgonomicShorthands(unittest.TestCase):
         self.assertEqual(bind((1,)), {"x": 1})
         spine = cons(symbol("a"), nil)
         self.assertIs(bind(spine)["x"].datum, value(spine)["x"].datum)
+
+
+# === Ellipsis depths ===
+
+
+class TestEllipsisDepths(unittest.TestCase):
+
+
+    def test_rule_shaped_pattern(self):
+        """
+        A capture's depth counts the repeats around it, plus one when
+        the capture is itself a sequence: a repeat or a rest
+        """
+
+        pattern = MATCH(
+            BIND("m"),
+            BIND("a"),
+            repeat_capture("rows", FORM(MATCH(
+                BIND("b"),
+                repeat_capture("c", TEST_ANY())))),
+            REST("d"))
+        builder = TableBuilder()
+        builder.lower(pattern)
+        self.assertEqual(
+            {"m": 0, "a": 0, "rows": 1, "b": 1, "c": 2, "d": 1},
+            builder.ellipsis_depths)
+
+
+    def test_named_repeat(self):
+        """
+        A named REPEAT and the captures inside it are each one deep
+        """
+
+        builder = TableBuilder()
+        builder.lower(MATCH(CAPTURE("xs", REPEAT(VALUE("e")))))
+        self.assertEqual({"xs": 1, "e": 1}, builder.ellipsis_depths)
 
 
 # === Cross-cutting integration ===

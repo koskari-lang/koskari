@@ -44,6 +44,7 @@ __all__ = (
     "Resolver",
     "binding_atom",
     "candidates",
+    "check_template_ellipses",
     "declared_spellings",
     "equal_by_base",
     "expand_template_with_hygiene",
@@ -289,7 +290,8 @@ def expand_template_with_hygiene(
             continue
 
         # a lone pattern variable bound to a non-repeat value (a pair spine
-        # from a REST capture) splices like quasiquote ,@ rather than iterating
+        # from a REST capture; check_template_ellipses admits no other)
+        # splices like quasiquote ,@ rather than iterating
         if (is_symbol(elem)
                 and elem in bindings
                 and _repeat_seq(bindings[elem]) is None):
@@ -322,6 +324,57 @@ def expand_template_with_hygiene(
     if tail is not None:
         return cons(*out, tail)
     return build_proper(*out)
+
+
+def check_template_ellipses(template, depths, depth=0, literal=False):
+    """
+    Refuse a template ellipsis that no pattern variable drives. Each
+    ``...`` must follow an element holding a pattern variable captured
+    under more ellipses than the template depth the element sits at;
+    any other would splice a single form or fail at expansion. Walks
+    the template as expand_template_with_hygiene does: a datumq
+    directive is raw, and inside an escape every ellipsis is an element
+
+    :param template: the template form
+    :param depths: each pattern variable's name mapped to the number of
+        ellipses it was captured under, a sequence capture counting one
+    :param depth: the template ellipsis depth of ``template``
+    :param literal: inside an escape: ellipses are elements
+    :raises CompilerError: at the spine cell holding the undriven
+        element
+    """
+
+    if not is_pair(template) or is_nil(template):
+        return
+
+    if _is_datumq_directive(template):
+        return
+
+    if not literal and _is_ellipsis_escape(template):
+        check_template_ellipses(template.cdr.car, depths, depth, True)
+        return
+
+    cell = template
+    while is_pair(cell) and not is_nil(cell):
+        elem = cell.car
+        rest = cell.cdr
+        if (not literal and is_pair(rest) and not is_nil(rest)
+                and rest.car is Ellipsis):
+            syms = set()
+            _collect_symbols(elem, syms)
+            if not any(depths.get(sym, 0) > depth for sym in syms):
+                raise CompilerError(
+                    "template ellipsis follows no pattern variable"
+                    " captured under an ellipsis; write a literal"
+                    " ellipsis as (... ...)", cell)
+            check_template_ellipses(elem, depths, depth + 1, literal)
+            cell = rest.cdr
+            continue
+        check_template_ellipses(elem, depths, depth, literal)
+        cell = rest
+
+    if not is_nil(cell):
+        check_template_ellipses(cell, depths, depth, literal)
 
 
 # --- Expansion finalize
