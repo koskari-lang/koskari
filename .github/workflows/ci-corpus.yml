@@ -18,6 +18,9 @@ on:
     paths:
       - docs/corpus/**
 
+permissions:
+  contents: read
+
 jobs:
   corpus:
     uses: ./.github/workflows/run_corpus.yml

@@ -5,14 +5,20 @@
 # running. All of the "should I" change detection lives here -- the
 # called workflows are pure "do it" definitions, each also dispatchable
 # by hand to force a run (see deploy_container.yml,
-# publish_corpus_dataset.yml, deploy_mcp_lambda.yml).
+# publish_corpus_dataset.yml, deploy_mcp_lambda.yml, deploy_docs.yml).
 #
 # Job graph:
 #
 #   tests  ─┬─► base   ──┬─► corpus (Hugging Face)
-#   detect ─┴─► export ──┴─► mcp    (Lambda)
+#   detect ─┼─► export ──┴─► mcp    (Lambda)
+#           └─► docs   (GitHub Pages)
 #
 # (corpus and mcp each need both base and export.)
+#
+# docs is the one delivery job with a second gate inside the called
+# workflow: its path filter fires on nearly every push, because autodoc
+# reads koskari/**, so deploy_docs.yml also compares the built site's
+# digest against the published one and skips the deploy on a match.
 #
 # base rebuilds the GHCR koskari runtime image only when its inputs
 # changed; corpus and mcp run in parallel after it, each on their own
@@ -44,6 +50,9 @@ concurrency:
   group: ci-master
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     uses: ./.github/workflows/run_tests.yml
@@ -58,6 +67,7 @@ jobs:
       base: ${{ steps.filter.outputs.base }}
       corpus: ${{ steps.filter.outputs.corpus }}
       mcp: ${{ steps.filter.outputs.mcp }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -99,6 +109,11 @@ jobs:
               - *corpus-data
               - 'tools/mcp/**'
               - '.github/workflows/deploy_mcp_lambda.yml'
+            docs:
+              - 'docs/**'
+              - 'koskari/**'
+              - 'setup.cfg'
+              - '.github/workflows/deploy_docs.yml'
 
   base:
     needs: [tests, detect]
@@ -175,6 +190,17 @@ jobs:
     with:
       dataset_artifact: corpus-datasets
     secrets: inherit
+
+  docs:
+    needs: [tests, detect]
+    if: ${{ needs.detect.outputs.docs == 'true' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy_docs.yml
+    with:
+      skip_unchanged: true
 
 
 # The end.

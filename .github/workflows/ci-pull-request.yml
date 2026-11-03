@@ -11,6 +11,9 @@ on:
       - tests/**
       - koskari/**
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     uses: ./.github/workflows/run_tests.yml

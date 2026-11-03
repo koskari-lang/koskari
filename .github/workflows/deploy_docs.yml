@@ -1,8 +1,35 @@
+# Build the Sphinx user documentation and deploy it to GitHub Pages.
+#
+# Invoked by the master pipeline (ci-master.yml) when a docs input
+# changed, or dispatched by hand to force a rebuild and redeploy.
+#
+# The build is deterministic, so the site carries a digest of its own
+# files as build-digest.txt (Pages serves no dotfiles, hence the plain
+# name). With skip_unchanged set, which only the master pipeline does,
+# the freshly built digest is compared against the live one and the
+# upload and deploy are skipped when they match. Most pushes touch some
+# docs input (autodoc covers koskari/**), but few change a rendered page.
+# A dispatched run always deploys.
+
 name: "Deploy Documentation"
 
 on:
   workflow_call:
+    inputs:
+      skip_unchanged:
+        description: >-
+          Skip the deploy when the built site's digest matches the one
+          currently published
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOCS_URL: https://docs.koskari.org
 
 jobs:
 
@@ -10,6 +37,9 @@ jobs:
     runs-on: self-hosted
     container:
       image: docker.io/library/python:3.14-bookworm
+
+    outputs:
+      changed: ${{ steps.digest.outputs.changed }}
 
     steps:
       - name: Checkout
@@ -26,7 +56,31 @@ jobs:
       - name: Generate Documentation
         run: tox -qe sphinx
 
+      # The digest covers every path and its contents. A missing or
+      # unreachable live digest counts as changed.
+      - name: Compare site digest with the published one
+        id: digest
+        working-directory: build/docs
+        env:
+          SKIP_UNCHANGED: ${{ inputs.skip_unchanged }}
+        run: |
+          digest="$(find . -type f ! -path ./build-digest.txt -print0 \
+            | LC_ALL=C sort -z \
+            | xargs -0 sha256sum \
+            | sha256sum | cut -d' ' -f1)"
+          echo "$digest" > build-digest.txt
+          live="$(curl -fsSL "$DOCS_URL/build-digest.txt" || true)"
+          echo "built: $digest"
+          echo "live:  ${live:-none}"
+          changed=true
+          if [ "$SKIP_UNCHANGED" = "true" ] && [ "$live" = "$digest" ]; then
+            echo "published site is current; skipping deploy"
+            changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
       - name: Store Documentation
+        if: ${{ steps.digest.outputs.changed == 'true' }}
         uses: actions/upload-pages-artifact@v5
         with:
           path: build/docs
@@ -38,6 +92,8 @@ jobs:
 
     needs:
       - build-documentation
+
+    if: ${{ needs.build-documentation.outputs.changed == 'true' }}
 
     permissions:
       pages: write
