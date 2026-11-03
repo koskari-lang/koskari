@@ -1386,13 +1386,13 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
 }
 
 
-/* === Test: PUSH_COLLECT with empty stack => RuntimeError === */
+/* === Test: PUSH_COLLECT with invalid spec => rejected at Code construction === */
 
 
-static int test_eval_push_collect_empty_stack_raises(void) {
+static int test_eval_push_collect_invalid_spec_refused_at_construction(void) {
     /*
-      PUSH_COLLECT with invalid constant (int 0, not NamespaceSpec).
-      Expect KOS_RES_RAISE with RuntimeError.
+      PUSH_COLLECT with invalid constant (int 0, not NamespaceSpec)
+      rejected at Code construction with TypeError.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -1402,31 +1402,16 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_POP_COLLECT, 0));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
-    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
-
-    Py_DECREF(instr);
-
-    PyObject *ns = KosNamespace_FromSpec(nspec, NULL);
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-    Py_DECREF(nspec);
-
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-    KosContext *ctx = KosContext_New(frame, kos_tls_current());
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
-
-    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
-    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
-                "exception is RuntimeError");
     PyErr_Clear();
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NULL(code_obj, "Code creation fails for invalid spec");
+    TEST_ASSERT(PyErr_Occurred(), "error is set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError),
+                "exception is TypeError");
 
-    Py_DECREF(ctx);
-    Py_DECREF(code_obj);
+    PyErr_Clear();
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
 
     return 0;
 }
@@ -3377,7 +3362,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_call_wrong_type);
     RUN_TEST(test_eval_build_function_no_defaults);
     RUN_TEST(test_eval_push_collect_pop_collect_build_class_empty);
-    RUN_TEST(test_eval_push_collect_empty_stack_raises);
+    RUN_TEST(test_eval_push_collect_invalid_spec_refused_at_construction);
     RUN_TEST(test_eval_pop_collect_without_push_collect);
 
     RUN_TEST(test_eval_object_add_underrun);

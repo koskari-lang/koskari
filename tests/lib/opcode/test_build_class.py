@@ -57,18 +57,17 @@ class TestPushCollectErrorPath(CevalTest):
 
     async def test_push_collect_raises_with_invalid_constant(self):
         """
-        PUSH_COLLECT with invalid constant (int, not NamespaceSpec)
-        raises RuntimeError
+        PUSH_COLLECT with invalid constant (int, not NamespaceSpec) is
+        refused with TypeError when the Code is built
         """
 
-        code_obj, ns = build_expr([
-            ["PUSH_COLLECT", 0],
-            ["POP_COLLECT", 0],
-            ["RETURN", 1],
-        ])
-        expr = make_callable(code_obj, ns)
-        with self.assertRaises(RuntimeError):
-            await expr()
+        with self.assertRaises(TypeError) as caught:
+            build_expr([
+                ["PUSH_COLLECT", 0],
+                ["POP_COLLECT", 0],
+                ["RETURN", 1],
+            ])
+        self.assertIn("PUSH_COLLECT", str(caught.exception))
 
 
 # The end.

@@ -122,6 +122,18 @@ class TestCountArgumentValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             make([[OpCode.CONST, 1], [OpCode.BUILD_KWDS, 513]])
 
+    def test_extra_count_over_the_segment_limit_rejected(self):
+        """
+        An EXTRA COUNT field past the segment limit is refused at
+        construction
+        """
+
+        code = make([[OpCode.CALL_VAR, ("f", 1024, None, None)]])
+        self.assertIsInstance(code, Code)
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CALL_VAR, ("f", 1025, None, None)]])
+        self.assertIn("1024", str(caught.exception))
+
 
 class TestLabelResolution(unittest.TestCase):
 

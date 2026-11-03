@@ -1749,6 +1749,17 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                          " comparison", i, slot, elem);
             goto failure;
           }
+
+          /* An operand count no segment can hold is refused here, as
+             for the scalar COUNT; a flag-valued COUNT never nears it. */
+          if (fk == KOSTYLE_COUNT && val > KOS_SEGMENT_MAX_SLOTS) {
+            PyErr_Format(
+                PyExc_ValueError,
+                "Code instruction %zd EXTRA field %d %R names more"
+                " operands than a segment holds (%u)",
+                i, slot, elem, (unsigned) KOS_SEGMENT_MAX_SLOTS);
+            goto failure;
+          }
           uint16_t v = (uint16_t) val;
           if (slot == 0) {
             row.a0 = v;
@@ -2936,39 +2947,40 @@ static int validate_fast_slots(
         return -1;
       }
       PyObject *ns = KosExtra_OBJ(&extra[eidx], 0);
-      if (ns && KosNamespaceSpec_CheckExact(ns)) {
-        uint32_t lim = 0;
-        if (namespace_spec_fast_slot_limit(ns, &lim)) {
-          return -1;
-        }
-        if (depth >= DERIVE_EXTENT_STACK_MAX) {
-          PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
-          return -1;
-        }
-        ns_stack[depth++] = lim;
+      if (! KosNamespaceSpec_CheckExact(ns)) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "PUSH_NS at pc %u spec must be a NamespaceSpec, not %.100s",
+            i, Py_TYPE(ns)->tp_name);
+        return -1;
       }
+      uint32_t lim = 0;
+      if (namespace_spec_fast_slot_limit(ns, &lim)) {
+        return -1;
+      }
+      if (depth >= DERIVE_EXTENT_STACK_MAX) {
+        PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
+        return -1;
+      }
+      ns_stack[depth++] = lim;
     } else if (op == KOS_OP_PUSH_COLLECT) {
-      /* Operand is the cpool index of the NamespaceSpec; the handler
-         raises on anything else before the body runs, so a non-spec
-         operand pushes no limit here. */
-      PyObject *ns = NULL;
-      if (code[i].arg < cpool_len) {
-        PyObject *v = cpool[code[i].arg];
-        if (KosNamespaceSpec_CheckExact(v)) {
-          ns = v;
-        }
+      PyObject *ns = cpool[code[i].arg];
+      if (! KosNamespaceSpec_CheckExact(ns)) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "PUSH_COLLECT at pc %u spec must be a NamespaceSpec, not %.100s",
+            i, Py_TYPE(ns)->tp_name);
+        return -1;
       }
-      if (ns) {
-        uint32_t lim = 0;
-        if (namespace_spec_fast_slot_limit(ns, &lim)) {
-          return -1;
-        }
-        if (depth >= DERIVE_EXTENT_STACK_MAX) {
-          PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
-          return -1;
-        }
-        ns_stack[depth++] = lim;
+      uint32_t lim = 0;
+      if (namespace_spec_fast_slot_limit(ns, &lim)) {
+        return -1;
       }
+      if (depth >= DERIVE_EXTENT_STACK_MAX) {
+        PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
+        return -1;
+      }
+      ns_stack[depth++] = lim;
     } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
       /* Do not error on underflow; extent validation reports POP without PUSH */
       if (depth > 0) {
