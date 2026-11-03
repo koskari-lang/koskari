@@ -44,7 +44,7 @@ static PyObject *_str_anon = NULL;
 
 
 /* Max depth for PUSH/POP stacks used in extent derivation and FAST validation */
-#define DERIVE_EXTENT_STACK_MAX 64
+#define DERIVE_EXTENT_STACK_MAX 512
 
 
 /* === Opcode styles table === */
@@ -2415,8 +2415,8 @@ static int derive_extents_fill(
 
     if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "extent nesting too deep");
+        PyErr_Format(PyExc_ValueError, "extent nesting too deep (limit %u)",
+                     (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
       if (extent_idx >= extent_count) {
@@ -2959,7 +2959,8 @@ static int validate_fast_slots(
         return -1;
       }
       if (depth >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
+        PyErr_Format(PyExc_ValueError, "namespace stack overflow (limit %u)",
+                     (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
       ns_stack[depth++] = lim;
@@ -2977,7 +2978,8 @@ static int validate_fast_slots(
         return -1;
       }
       if (depth >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
+        PyErr_Format(PyExc_ValueError, "namespace stack overflow (limit %u)",
+                     (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
       ns_stack[depth++] = lim;

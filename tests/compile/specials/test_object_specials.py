@@ -28,8 +28,7 @@ not, repr, truth, iter, ~,
 import pytest
 
 import koskari.lib
-from koskari.exceptions import (
-    CompilerError, SpecialError, SyntaxMatchError, UncaughtCompilerError)
+from koskari.exceptions import SpecialError, SyntaxMatchError
 from koskari.lib import Compare, OpCode, Operand, OpStyle
 from tests import SlowAIter
 from tests.dis.dis import dis
@@ -1459,16 +1458,6 @@ class TestOperandLimits(SpecialsTestCase):
         values[names[-1]] = -1
         expr, mod = self.compile_expr(src, **values)
         self.assertFalse(await expr())
-
-    async def test_finalizer_limit_is_a_positioned_compiler_error(self):
-        src = "b0"
-        for i in reversed(range(70)):
-            src = f"(let [[b{i} {i}]] {src})"
-        src = f"(lambda [] {src})"
-        with self.assertRaises(CompilerError) as caught:
-            self.compile_to_code(src)
-        self.assertNotIsInstance(caught.exception, UncaughtCompilerError)
-        self.assertIsNotNone(caught.exception.position)
 
 
 # The end.

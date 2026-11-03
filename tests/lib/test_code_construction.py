@@ -134,6 +134,27 @@ class TestCountArgumentValidation(unittest.TestCase):
             make([[OpCode.CALL_VAR, ("f", 1025, None, None)]])
         self.assertIn("1024", str(caught.exception))
 
+    def test_extent_nesting_over_the_limit_rejected(self):
+        """
+        Extents nest at most 512 deep, so a deeper nest is refused at
+        construction
+        """
+
+        def nested_tries(depth):
+            instrs = [[OpCode.PUSH_TRY, f"h{i}"] for i in range(depth)]
+            instrs.append([OpCode.CONST, 1])
+            for i in reversed(range(depth)):
+                instrs.append([OpCode.LABEL, f"h{i}"])
+                instrs.append([OpCode.POP_TRY, 0])
+            instrs.append([OpCode.RETURN, 1])
+            return instrs
+
+        code = make(nested_tries(512))
+        self.assertIsInstance(code, Code)
+        with self.assertRaises(ValueError) as caught:
+            make(nested_tries(513))
+        self.assertIn("512", str(caught.exception))
+
 
 class TestLabelResolution(unittest.TestCase):
 
