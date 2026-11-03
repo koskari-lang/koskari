@@ -29,7 +29,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import AsyncGenerator
+from koskari.lib import AsyncGenerator, KosMap
 from koskari.module import load_module_source_async, new_module
 
 
@@ -63,6 +63,23 @@ define [yields_again record]:
 define [break_waits record]:
     (for-each [x (waits record)] (break))
     "ok"
+
+define [mid_await_awaits pending record]:
+    try:
+        (yield 1)
+        (await pending)
+    finally:
+        (record "fin-start")
+        (await pending)
+        (record "fin-end")
+
+define [mid_await_raises pending record]:
+    try:
+        (yield 1)
+        (await pending)
+    finally:
+        (record "fin-start")
+        raise (ValueError "cleanup failed")
 """
 
 
@@ -71,6 +88,18 @@ IGNORED = (
     "async generator ignored GeneratorExit",
     None,
     AsyncGenerator)
+
+
+CLEANUP_FAILED = (ValueError, "cleanup failed", None, AsyncGenerator)
+
+
+class Pending:
+    """
+    An awaitable that suspends once and never resolves
+    """
+
+    def __await__(self):
+        yield "pending"
 
 
 class Unraisables:
@@ -233,6 +262,101 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(next(view), 1)
             del view, agen
         self.assertEqual(log, [])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def mid_await(self, name, log):
+        """
+        A generator of the named function stopped mid-await: its first
+        value taken, then a stepper sent into the await that never
+        resolves
+        """
+
+        mod = await self.load()
+        agen = mod[name](Pending(), log.append)
+        self.assertEqual(await agen.__anext__(), 1)
+        stepper = agen.__anext__()
+        self.assertEqual(stepper.send(None), "pending")
+        return agen, stepper
+
+    async def test_dropped_mid_await_whose_cleanup_awaits_is_reported(self):
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_awaits", log)
+            del stepper, agen
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_dropped_mid_await_whose_cleanup_raises_is_reported(self):
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_raises", log)
+            del stepper, agen
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [CLEANUP_FAILED])
+
+    async def test_closed_mid_await_stepper_raises_ignored_exit(self):
+        """
+        Closing the stepper mid-await closes the generator; a cleanup
+        that awaits again is raised to the caller of close
+        """
+
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_awaits", log)
+            with self.assertRaises(RuntimeError) as caught:
+                stepper.close()
+        self.assertEqual(
+            str(caught.exception), "async generator ignored GeneratorExit")
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [])
+        with self.assertRaises(StopAsyncIteration):
+            await agen.__anext__()
+
+    async def test_closed_mid_await_stepper_raises_cleanup_error(self):
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_raises", log)
+            with self.assertRaises(ValueError) as caught:
+                stepper.close()
+        self.assertEqual(str(caught.exception), "cleanup failed")
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [])
+        with self.assertRaises(StopAsyncIteration):
+            await agen.__anext__()
+
+    async def test_dropped_transform_mid_await_is_reported(self):
+        """
+        A transform stepped into its source's await and dropped is
+        reported against the transform, the provider its stepper holds
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["mid_await_awaits"](Pending(), log.append)
+            transform = KosMap(str, agen)
+            del agen
+            self.assertEqual(await transform.__anext__(), "1")
+            stepper = transform.__anext__()
+            self.assertEqual(stepper.send(None), "pending")
+            del stepper, transform
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED[:3] + (KosMap,)])
+
+    async def test_mid_await_in_a_cycle_runs_its_cleanup_and_is_reported(self):
+        """
+        The generator and its stepper unreachable together: the cleanup
+        runs before the collector clears anything, and is reported
+        """
+
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_awaits", log)
+            box = [agen, stepper]
+            box.append(box)
+            del agen, stepper, box
+            gc.collect()
+        self.assertEqual(log, ["fin-start"])
         self.assertEqual(reports.seen, [IGNORED])
 
 

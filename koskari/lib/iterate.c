@@ -243,48 +243,56 @@ static PyTypeObject KosIterStepperType;
 
 /**
    Mid-await abandonment: the live chain sits on the stepper's context,
-   so the provider's own close cannot reach it. Drive GeneratorExit
-   through that context so finally/with cleanup runs, exception-fenced
-   (callable from dealloc mid-unwind); the drive's own outcome is
-   swallowed, and an error from closing the pending await iterator is
-   reported as unraisable.
-   Marks the provider finished-exhausted and clears the awaiting mark.
+   so the provider's own close cannot reach it. Close the chain through
+   that context (kos_close_drive) so finally/with cleanup runs, mark
+   the provider finished-exhausted, clear the awaiting mark, and free
+   whatever the close left of the chain. The error the close owes is
+   held in the out-params, for the caller to raise or report against
+   the provider; none is left set.
 */
-static void stepper_abandon_drive(KosIterStepper *st) {
+static void stepper_abandon_drive(
+    KosIterStepper *st,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb) {
 
-  PyObject *fence_typ, *fence_val, *fence_tb;
   KosIterSlots *islots;
 
-  PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
-
-  {
-    PyObject *it = KosContext_PY_AWAIT_ITER(st->ctx);
-    if (it) {
-      Py_INCREF(it);
-      kos_iter_close(it);
-      Py_DECREF(it);
-      Py_CLEAR(KosContext_PY_AWAIT_ITER(st->ctx));
-    }
-  }
+  *typ = NULL;
+  *val = NULL;
+  *tb = NULL;
 
   /* A context whose chain is gone has nothing to close: its clear or
-     recycle released the chain already, and the stepper is being
-     dropped from inside that release. */
-  if (KosContext_DYN_TOP(st->ctx)) {
-    PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
-    if (exc) {
-      KosOpResult res = koskari_eval(st->ctx, NULL, NULL, PyExc_GeneratorExit,
-                                     exc);
-      Py_DECREF(exc);
-      Py_XDECREF(res.val);
-    }
-    PyErr_Clear();
-  }
+     recycle released the chain already, the pending awaitable goes
+     with the context, and the stepper is being dropped from inside
+     that release. */
+  if (KosContext_DYN_TOP(st->ctx))
+    (void) kos_close_drive(st->ctx, typ, val, tb);
 
   if (st->provider && KosIter_CheckSlots(st->provider, &islots))
     islots->ki_finish(st->provider, 1);
   st->awaiting = 0;
 
+  /* the finish recycles a durable context; an owned one, or one whose
+     recycle was refused, still holds what the close left */
+  KosContext_ReleaseChain(st->ctx);
+}
+
+
+/**
+   Close an abandoned mid-await drive with no caller to raise into,
+   exception-fenced (callable from a finalizer or dealloc mid-unwind):
+   what the close owes is reported as unraisable against the provider
+   once the chain is freed
+*/
+static void stepper_abandon(KosIterStepper *st) {
+
+  PyObject *fence_typ, *fence_val, *fence_tb;
+  PyObject *typ, *val, *tb;
+
+  PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+  stepper_abandon_drive(st, &typ, &val, &tb);
+  kos_close_report(st->provider, typ, val, tb);
   PyErr_Restore(fence_typ, fence_val, fence_tb);
 }
 
@@ -292,7 +300,7 @@ static void stepper_abandon_drive(KosIterStepper *st) {
 static void stepper_release_state(KosIterStepper *st) {
 
   if (st->awaiting && st->ctx)
-    stepper_abandon_drive(st);
+    stepper_abandon(st);
 
   Py_CLEAR(st->ctx);
   st->ctx_owned = 0;
@@ -305,7 +313,27 @@ static void stepper_release_state(KosIterStepper *st) {
 }
 
 
+/**
+   Finalizer: a stepper dropped mid-await closes its abandoned drive
+   before anything is cleared, so in a garbage cycle the cleanup runs
+   against a chain the collector has not yet released through the
+   context's own clear
+*/
+static void stepper_finalize(PyObject *self) {
+
+  KosIterStepper *st = (KosIterStepper *) self;
+
+  if (st->awaiting && st->ctx)
+    stepper_abandon(st);
+}
+
+
 static void stepper_dealloc(PyObject *self) {
+
+  /* run the finalizer first; it may resurrect the stepper, in which
+     case the dealloc is abandoned here and happens on the next drop */
+  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+    return;
 
   PyObject_GC_UnTrack(self);
   stepper_release_state((KosIterStepper *) self);
@@ -931,14 +959,24 @@ static PyObject *stepper_close(PyObject *self) {
   /* Close cascades are terminal (loop shutdown, task destruction, GC
      of an abandoned chain), so closing a step's awaitable closes the
      provider too -- CPython 3.13+ semantics, applied uniformly. A
-     stepper abandoned mid-await drives GeneratorExit through its context
-     (the live chain sits there); otherwise the provider's own close
+     stepper abandoned mid-await closes through its context (the live
+     chain sits there) and raises what the close owes to this caller,
+     once its state is released; otherwise the provider's own close
      runs its teardown (a provider another stepper is actively driving
      declines internally). */
   if (st->awaiting && st->ctx) {
-    stepper_abandon_drive(st);
+    PyObject *typ, *val, *tb;
 
-  } else if (st->provider) {
+    stepper_abandon_drive(st, &typ, &val, &tb);
+    stepper_release_state(st);
+    if (typ) {
+      PyErr_Restore(typ, val, tb);
+      return NULL;
+    }
+    Py_RETURN_NONE;
+  }
+
+  if (st->provider) {
     KosIterSlots *islots;
     if (KosIter_CheckSlots(st->provider, &islots)) {
       PyObject *ftyp, *fval, *ftb;
@@ -998,6 +1036,7 @@ static PyTypeObject KosIterStepperType = {
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = stepper_iternext,
   .tp_methods = stepper_methods,
+  .tp_finalize = stepper_finalize,
 };
 
 

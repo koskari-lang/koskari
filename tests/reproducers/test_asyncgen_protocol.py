@@ -25,7 +25,9 @@ expectation.
 :license: GNU General Public License v3
 """
 
+import sys
 import unittest
+from unittest import mock
 
 import pytest
 
@@ -698,12 +700,18 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
         """
         a finally that awaits during the synchronous close of a
         generator dropped mid-await cannot complete, as under CPython,
-        and a collector pass afterwards finds no cleanup left to run
+        is reported as an ignored GeneratorExit, and a collector pass
+        afterwards finds no cleanup left to run
         """
 
         import gc
 
         col = []
+        seen = []
+
+        def record(u):
+            seen.append((type(u.exc_value), str(u.exc_value)))
+
         agen = self.kos("g-slow-cleanup", col)
         self.assertEqual(await agen.__anext__(), 1)
 
@@ -713,15 +721,19 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
 
         gc.disable()
         try:
-            del pending
-            del stepper
-            del agen
+            with mock.patch.object(sys, "unraisablehook", record):
+                del pending
+                del stepper
+                del agen
             self.assertEqual(col, [])
         finally:
             gc.enable()
 
         gc.collect()
         self.assertEqual(col, [])
+        self.assertEqual(
+            [(RuntimeError, "async generator ignored GeneratorExit")],
+            seen)
 
 
 class TestDemandGenParity(unittest.TestCase):

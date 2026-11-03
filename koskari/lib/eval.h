@@ -1395,6 +1395,48 @@ void kos_iter_close(PyObject *iter);
 
 
 /**
+   Close the chain on ctx with GeneratorExit when there is no caller to
+   raise into: the awaitable a mid-await chain holds is closed first,
+   then the throw runs at the suspension point to an outcome. No error
+   is left set; one the close owes is held in the out-params instead,
+   so the caller frees the chain before it reports or raises it.
+
+   :param ctx: the context holding the suspended chain
+   :param typ: receives the held error's type, or NULL
+   :param val: receives the held error's value, or NULL
+   :param tb: receives the held error's traceback, or NULL
+   :return: 0 when the chain wound down, with an error held only when
+     the cleanup raised something other than GeneratorExit,
+     StopIteration or StopAsyncIteration; 1 when the chain was left in
+     place, with RuntimeError("async generator ignored GeneratorExit")
+     held when the body tried to suspend, or the error that kept the
+     throw from being made
+*/
+int kos_close_drive(
+    KosContext *ctx,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb);
+
+
+/**
+   Report a close error held by kos_close_drive through
+   sys.unraisablehook against obj, the object whose close owed it.
+   No-op when nothing is held.
+
+   :param obj: borrowed
+   :param typ: stolen
+   :param val: stolen
+   :param tb: stolen
+*/
+void kos_close_report(
+    PyObject *obj,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb);
+
+
+/**
   Execute the VM until a boundary event occurs.
 
   This is the main entry point for driving execution. The function

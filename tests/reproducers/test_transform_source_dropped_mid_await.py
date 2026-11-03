@@ -29,6 +29,7 @@ reuse the node storage cleanly.
 """
 
 import gc
+import sys
 import unittest
 
 import pytest
@@ -83,6 +84,29 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC)
         self.ns = vars(module)
         self.log = []
+        self.seen = []
+        self.addCleanup(setattr, sys, "unraisablehook", sys.unraisablehook)
+        sys.unraisablehook = self.record
+
+    def record(self, u):
+        """
+        Keep each report as the exception type and message and the type
+        of the object reported against
+        """
+
+        self.seen.append(
+            (type(u.exc_value), str(u.exc_value), type(u.object)))
+
+    def assert_ignored_by(self, provider_type):
+        """
+        Exactly one report: the transform's cleanup tried to suspend
+        """
+
+        expected = (
+            RuntimeError,
+            "async generator ignored GeneratorExit",
+            provider_type)
+        self.assertEqual(self.seen, [expected])
 
     def step_to_await(self, transform):
         """
@@ -123,6 +147,7 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, [])
+        self.assert_ignored_by(KosMap)
         self.churn()
 
     async def test_zip_dropped_mid_await(self):
@@ -134,6 +159,7 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, [])
+        self.assert_ignored_by(KosZip)
         self.churn()
 
     async def test_filter_dropped_mid_await(self):
@@ -145,13 +171,14 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, [])
+        self.assert_ignored_by(KosFilter)
         self.churn()
 
     async def test_map_dropped_in_a_cycle(self):
         """
         the transform, its stepper and the generator's log closure go
         together in a garbage collection, where the clear order is the
-        collector's
+        collector's; the abandoned drive still runs and is reported
         """
 
         holder = Holder()
@@ -166,6 +193,7 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper, transform, holder
         gc.collect()
         self.assertEqual(self.log, [])
+        self.assert_ignored_by(KosMap)
         self.churn()
 
     async def test_plain_finally_runs_on_drop(self):
@@ -182,6 +210,7 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, ["finally"])
+        self.assertEqual(self.seen, [])
         self.churn()
 
 

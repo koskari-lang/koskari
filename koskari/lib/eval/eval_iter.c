@@ -140,6 +140,88 @@ void kos_iter_close(PyObject *iter) {
 
 
 /**
+   Close the chain on ctx with GeneratorExit for a close with no caller
+   to raise into, holding the error the close owes for the caller to
+   report or raise once the chain is freed (see eval.h)
+*/
+int kos_close_drive(
+    KosContext *ctx,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb) {
+
+  PyObject *pending = KosContext_PY_AWAIT_ITER(ctx);
+  PyObject *exc;
+  KosOpResult res;
+  int left = 0;
+
+  *typ = NULL;
+  *val = NULL;
+  *tb = NULL;
+
+  if (pending) {
+    Py_INCREF(pending);
+    kos_iter_close(pending);
+    Py_DECREF(pending);
+    Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+  }
+
+  exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
+  if (! exc) {
+    PyErr_Fetch(typ, val, tb);
+    return 1;
+  }
+
+  res = koskari_eval(ctx, NULL, NULL, PyExc_GeneratorExit, exc);
+  Py_DECREF(exc);
+  Py_XDECREF(res.val);
+
+  switch (res.kind) {
+    case KOS_RES_RETURN:
+      break;
+
+    case KOS_RES_AWAIT:
+    case KOS_RES_YIELD:
+      /* a close with no caller cannot suspend: cannot honor */
+      PyErr_SetString(
+          PyExc_RuntimeError, "async generator ignored GeneratorExit");
+      left = 1;
+      break;
+
+    default:
+      /* GeneratorExit or StopIteration coming back is the close
+         completing; anything else is what the cleanup raised */
+      if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
+          || PyErr_ExceptionMatches(PyExc_StopIteration)
+          || PyErr_ExceptionMatches(PyExc_StopAsyncIteration))
+        PyErr_Clear();
+      break;
+  }
+
+  PyErr_Fetch(typ, val, tb);
+  return left;
+}
+
+
+/**
+   Report a close error held by kos_close_drive against obj; no-op when
+   nothing is held
+*/
+void kos_close_report(
+    PyObject *obj,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb) {
+
+  if (! typ)
+    return;
+
+  PyErr_Restore(typ, val, tb);
+  PyErr_WriteUnraisable(obj);
+}
+
+
+/**
    Classify a produced result under ambient async: a non-awaitable, a
    Defer, or a future/task handle is a completed value; anything else
    awaitable must be awaited before use.
