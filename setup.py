@@ -15,7 +15,7 @@
 
 
 """
-Koskari, a LISP dialect for Python
+Koskari, a Lisp dialect for Python
 
 :author: Christopher O'Brien  <obriencj@gmail.com>
 :license: GPL v.3
