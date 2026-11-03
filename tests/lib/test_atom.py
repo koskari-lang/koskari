@@ -18,6 +18,7 @@ Unit tests for symbol and keyword atom types
 :license: GNU General Public License v3
 """
 
+import copy
 import unittest
 
 import pytest
@@ -391,6 +392,40 @@ class TestAtomHash(unittest.IsolatedAsyncioTestCase):
         table = {s: 1, k: 2}
         self.assertEqual(table[s], 1)
         self.assertEqual(table[k], 2)
+
+
+class TestAtomCopy(unittest.IsolatedAsyncioTestCase):
+    """
+    An interned atom is its own value: copy and deepcopy hand back the
+    atom itself
+    """
+
+    def atoms(self):
+        return (
+            symbol("copied"),
+            keyword("copied"),
+            gensym("copied"),
+            gensym(symbol("copied"), marks=(5,)),
+        )
+
+    async def test_copy_is_self(self):
+        for atom in self.atoms():
+            with self.subTest(atom=atom):
+                self.assertIs(copy.copy(atom), atom)
+
+    async def test_deepcopy_is_self(self):
+        for atom in self.atoms():
+            with self.subTest(atom=atom):
+                self.assertIs(copy.deepcopy(atom), atom)
+
+    async def test_deepcopy_container_keeps_atoms(self):
+        s = symbol("held")
+        k = keyword("held")
+        held = {s: [s, k]}
+        dup = copy.deepcopy(held)
+        self.assertIsNot(dup[s], held[s])
+        self.assertIs(dup[s][0], s)
+        self.assertIs(dup[s][1], k)
 
 
 # The end.

@@ -27,11 +27,15 @@ methods.
 """
 
 import asyncio
+import copy
 import functools
+import gc
 import inspect
+import pickle
 import pydoc
 import sys
 import unittest
+import weakref
 
 import pytest
 
@@ -311,6 +315,90 @@ class TestFunctionClosures(unittest.TestCase):
             with self.assertRaises(NameError):
                 await g(False)
         asyncio.run(go())
+
+
+class TestFunctionCopyPickleWeakref(unittest.TestCase):
+    """
+    A function is a value by reference, as CPython's are: copy and
+    deepcopy hand back the function itself, pickle saves it by module
+    and qualified name, and it takes weak references
+    """
+
+    def load(self):
+        async def go():
+            mod = new_module("function_copy_case", system=True)
+            vars(mod)["__file__"] = "<function_copy_case>"
+            await load_module_source_async(mod, MODULE_SRC, layout=False)
+            v = vars(mod)
+            inner = await v["outer"]()
+            return v, inner
+        try:
+            return asyncio.run(go())
+        finally:
+            self.addCleanup(sys.modules.pop, "function_copy_case", None)
+
+    def test_copy_is_self(self):
+        fn = make_fn()
+        self.assertIs(copy.copy(fn), fn)
+
+    def test_deepcopy_is_self(self):
+        fn = make_fn()
+        self.assertIs(copy.deepcopy(fn), fn)
+        held = [fn, {"f": fn}]
+        dup = copy.deepcopy(held)
+        self.assertIsNot(dup, held)
+        self.assertIs(dup[0], fn)
+        self.assertIs(dup[1]["f"], fn)
+
+    def test_deepcopy_of_a_partial(self):
+        fn = make_fn()
+        p = functools.partial(fn, [1])
+        dup = copy.deepcopy(p)
+        self.assertIs(dup.func, fn)
+        self.assertEqual(dup.args, ([1],))
+        self.assertIsNot(dup.args[0], p.args[0])
+
+    def test_pickle_top_level_function(self):
+        v, inner = self.load()
+        top = v["top"]
+        self.assertIs(pickle.loads(pickle.dumps(top)), top)
+
+    def test_pickle_follows_qualname_override(self):
+        v, inner = self.load()
+        top = v["top"]
+        v["alias"] = top
+        top.__qualname__ = "alias"
+        self.assertIs(pickle.loads(pickle.dumps(top)), top)
+
+    def test_pickle_nested_lambda_is_refused(self):
+        v, inner = self.load()
+        with self.assertRaises(pickle.PicklingError):
+            pickle.dumps(inner)
+        self.assertIs(copy.deepcopy(inner), inner)
+
+    def test_weakref(self):
+        fn = make_fn()
+        ref = weakref.ref(fn)
+        self.assertIs(ref(), fn)
+        del fn
+        gc.collect()
+        self.assertIsNone(ref())
+
+    def test_weakref_callback_runs_on_release(self):
+        fn = make_fn()
+        seen = []
+        ref = weakref.ref(fn, seen.append)
+        del fn
+        gc.collect()
+        self.assertEqual(seen, [ref])
+
+    def test_weak_set(self):
+        fn = make_fn()
+        ws = weakref.WeakSet([fn])
+        self.assertIn(fn, ws)
+        del fn
+        gc.collect()
+        self.assertEqual(len(ws), 0)
 
 
 # The end.

@@ -1327,6 +1327,8 @@ static void function_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
   Py_TRASHCAN_BEGIN(self, function_dealloc);
+  if (((KosFunction *) self)->weakreflist)
+    PyObject_ClearWeakRefs(self);
   func_drop_cached_frame((KosFunction *) self);
   func_drop_dead_record((KosFunction *) self);
   ((KosFunction *) self)->install_arity = -1;
@@ -1581,6 +1583,28 @@ static PyObject *function_repr(PyObject *self) {
 }
 
 
+/**
+   A function is pickled by reference, as CPython pickles its own: the
+   qualified name, which pickle finds in __module__. copy.copy and
+   copy.deepcopy take a str reduction as the function itself.
+*/
+static PyObject *function_reduce(
+    PyObject *self,
+    PyObject *Py_UNUSED(ignored)) {
+
+  return function_get_qualname_dunder(self, NULL);
+}
+
+
+static PyMethodDef function_methods[] = {
+  { "__reduce__", function_reduce, METH_NOARGS,
+    "F.__reduce__() -> str\n"
+    "The qualified name, for pickle to find in the function's module." },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
 static PyMemberDef function_members[] = {
   { "code", T_OBJECT, offsetof(KosFunction, code), READONLY, NULL },
   { "formals", T_OBJECT, offsetof(KosFunction, formals), READONLY, NULL },
@@ -1603,11 +1627,13 @@ KosEvaluatedTypeObject KosFunctionType = {
       | Py_TPFLAGS_METHOD_DESCRIPTOR | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_dictoffset = offsetof(KosFunction, dict),
+  .tp_weaklistoffset = offsetof(KosFunction, weakreflist),
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
              "(*args, **kwargs) binds formals and returns a Coroutine.",
   .tp_traverse = function_traverse,
   .tp_clear = function_clear,
   .tp_new = function_new,
+  .tp_methods = function_methods,
   .tp_members = function_members,
   .tp_getset = function_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

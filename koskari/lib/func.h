@@ -220,6 +220,7 @@ typedef struct {
                                release frees it. A function's code
                                either yields or not, so the slot only
                                ever sees one kind. NULL when empty */
+  PyObject *weakreflist;    /* weak references; NULL when none */
 } KosFunction;
 
 /* Cached frames a function keeps. One serves a non-recursive function;
