@@ -301,6 +301,44 @@ static int test_namespace_bind(void) {
 }
 
 
+static int test_namespace_empty_refuses_bind(void) {
+    /*
+      The empty namespace is shared by every frame that has none and
+      reported to the collector by each of them, so its binds dict must
+      stay empty and untracked: a bind through the C entry point is
+      refused, as the Python method already refused it.
+    */
+    PyObject *key = PyUnicode_FromString("x");
+    PyObject *value = PyLong_FromLong(1);
+    TEST_ASSERT_NOT_NULL(key, "create key");
+    TEST_ASSERT_NOT_NULL(value, "create value");
+
+    PyObject *ref = KosSymbolicRef_New(key, value);
+    TEST_ASSERT_NOT_NULL(ref, "create ref");
+
+    PyObject *empty = KosNamespace_Empty();
+    TEST_ASSERT_NOT_NULL(empty, "the empty namespace");
+
+    PyErr_Clear();
+    TEST_ASSERT_EQ(KosNamespace_Bind(empty, key, ref), -1,
+                   "a bind into the empty namespace is refused");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError),
+                "the refusal is a TypeError");
+    PyErr_Clear();
+
+    PyObject *binds = KosNamespace_BINDS(empty);
+    TEST_ASSERT_NOT_NULL(binds, "the empty namespace keeps its dict");
+    TEST_ASSERT_EQ(PyDict_GET_SIZE(binds), 0, "the dict stays empty");
+    TEST_ASSERT_EQ(PyObject_GC_IsTracked(binds), 0,
+                   "the dict stays untracked");
+
+    Py_DECREF(ref);
+    Py_DECREF(value);
+    Py_DECREF(key);
+    return 0;
+}
+
+
 static int test_namespace_nested(void) {
     /*
       Test nested namespaces with closures.
@@ -1197,6 +1235,7 @@ int run_namespace_tests(void) {
     RUN_TEST(test_namespace_store_refcount);
     RUN_TEST(test_namespace_ref);
     RUN_TEST(test_namespace_bind);
+    RUN_TEST(test_namespace_empty_refuses_bind);
     RUN_TEST(test_namespace_nested);
     RUN_TEST(test_namespace_get_local_no_materialize);
     RUN_TEST(test_namespace_get_parent_chain);

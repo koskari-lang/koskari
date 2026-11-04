@@ -1162,6 +1162,17 @@ static int ns_store_symbol(PyObject *self, PyObject *key, PyObject *val) {
 static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
   // SAYF("ns_bind_ref(%R, %R, %R)", self, key, ref);
 
+  /* The empty namespace stands in for every frame that has none, and
+     every holder of such a frame reports its contents to the
+     collector; its binds dict stays empty and untracked, or those
+     reports would count one container many times. Every bind entry
+     passes here, so the refusal is here. */
+  if (self == NS_EMPTY) {
+    PyErr_SetString(PyExc_TypeError,
+                    "the empty namespace accepts no bindings");
+    return -1;
+  }
+
   if (! KosRef_Check(ref)) {
     PyErr_Format(PyExc_TypeError, "namespace binding must be a ref, not: %R",
                  ref);
@@ -1664,12 +1675,6 @@ static PyObject *ns_m_bind(PyObject *self, PyObject *args) {
 
   if (! PyArg_ParseTuple(args, "OO:Namespace.bind", &key, &ref))
     return NULL;
-
-  if (self == NS_EMPTY) {
-    PyErr_SetString(PyExc_TypeError,
-                    "the empty namespace accepts no bindings");
-    return NULL;
-  }
 
   if (ns_bind_ref(self, key, ref))
     return NULL;
