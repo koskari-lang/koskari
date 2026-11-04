@@ -15,14 +15,15 @@
 tests.reproducers.test_transform_source_dropped_mid_await
 
 A transform stepped from Python installs its koskari generator source
-under the transform's own native frame. When the stepper is dropped
-mid-await, the abandoned drive throws GeneratorExit into the generator;
-a finally block that awaits again leaves the generator's node installed
-on the transform's context. The transform is then freed with the node
-still on its chain. The generator object and the chain each let go of
-the node in whichever order the free runs, and the second one frees it:
-no fatal in a safety-net build, no double free, and later generators
-reuse the node storage cleanly.
+under the transform's own native frame. When the stepper and then the
+transform are dropped mid-await, the transform's finalizer moves the
+generator's suspended span onto the generator's own context, and the
+generator closes from its own finalizer once the transform lets go of
+it; a finally block that awaits again leaves the generator's node
+installed on that context, which is freed with it. The generator object
+and the chain each let go of the node in whichever order the free runs,
+and the second one frees it: no fatal in a safety-net build, no double
+free, and later generators reuse the node storage cleanly.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -34,7 +35,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import KosFilter, KosMap, KosZip
+from koskari.lib import AsyncGenerator, KosFilter, KosMap, KosZip
 from koskari.module import load_module_source_async, new_module
 
 
@@ -56,6 +57,20 @@ def produce [fut log]:
     finally:
         (await fut)
         (log "finally")
+
+def inner [fut log]:
+    try:
+        (yield 1)
+        (await fut)
+    finally:
+        (log "inner-fin")
+
+def outer [fut log]:
+    try:
+        (for-each [x (inner fut log)]
+            (yield x))
+    finally:
+        (log "outer-fin")
 """
 
 
@@ -97,15 +112,16 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         self.seen.append(
             (type(u.exc_value), str(u.exc_value), type(u.object)))
 
-    def assert_ignored_by(self, provider_type):
+    def assert_ignored_by(self, owner_type):
         """
-        Exactly one report: the transform's cleanup tried to suspend
+        Exactly one report, against the object whose cleanup tried to
+        suspend
         """
 
         expected = (
             RuntimeError,
             "async generator ignored GeneratorExit",
-            provider_type)
+            owner_type)
         self.assertEqual(self.seen, [expected])
 
     def step_to_await(self, transform):
@@ -147,7 +163,7 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, [])
-        self.assert_ignored_by(KosMap)
+        self.assert_ignored_by(AsyncGenerator)
         self.churn()
 
     async def test_zip_dropped_mid_await(self):
@@ -159,7 +175,7 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, [])
-        self.assert_ignored_by(KosZip)
+        self.assert_ignored_by(AsyncGenerator)
         self.churn()
 
     async def test_filter_dropped_mid_await(self):
@@ -171,14 +187,15 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper
         del transform
         self.assertEqual(self.log, [])
-        self.assert_ignored_by(KosFilter)
+        self.assert_ignored_by(AsyncGenerator)
         self.churn()
 
     async def test_map_dropped_in_a_cycle(self):
         """
         the transform, its stepper and the generator's log closure go
-        together in a garbage collection, where the clear order is the
-        collector's; the abandoned drive still runs and is reported
+        together in a garbage collection, where the finalizer order is
+        the collector's; the generator's close still runs, whichever
+        finalizer comes first, and is reported against the generator
         """
 
         holder = Holder()
@@ -193,13 +210,35 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         del stepper, transform, holder
         gc.collect()
         self.assertEqual(self.log, [])
-        self.assert_ignored_by(KosMap)
+        self.assert_ignored_by(AsyncGenerator)
+        self.churn()
+
+    async def test_nested_generators_close_with_the_outer(self):
+        """
+        A transform over an outer generator iterating an inner one,
+        dropped while the inner awaits: neither generator is closed by
+        the transform. Dropping the outer closes it, and its for-each
+        lets go of the inner, which closes first, as CPython's would
+        """
+
+        outer = self.ns["outer"](Pending(), self.log.append)
+        transform = KosMap(lambda x: x * 10, outer)
+        first, stepper = self.step_to_await(transform)
+        self.assertEqual(first, 10)
+        del stepper
+        del transform
+        self.assertEqual(self.log, [])
+        self.assertEqual(self.seen, [])
+        del outer
+        self.assertEqual(self.log, ["inner-fin", "outer-fin"])
+        self.assertEqual(self.seen, [])
         self.churn()
 
     async def test_plain_finally_runs_on_drop(self):
         """
-        a finally block that does not await completes on the abandoned
-        drive, and the node comes off the chain with the generator
+        a finally block that does not await completes when the
+        generator, let go by the transform, closes, and the node comes
+        off the chain with the generator
         """
 
         gen = self.ns["plain"](Pending(), self.log.append)

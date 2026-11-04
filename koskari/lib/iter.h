@@ -83,6 +83,32 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen);
 
 
 /**
+   Move the generator's step, suspended mid-await on a consumer's
+   chain, onto the generator's own context, where the generator owns
+   it: the span from the chain's top down to gen is frozen off from
+   (kos_dyn_gen_freeze), which gets the consumer's registers back, and
+   installed on the wrapper's context, created when there is none,
+   with the await iterator, the resume inject, the handler-visible
+   exception state and the AWAIT suspension mark moved with it. The
+   step stays in flight (busy), so the generator refuses another drive
+   as already running and closes from its own finalizer. The caller
+   is the consumer's finalizer, which then closes what is left of its
+   own chain. A generator whose finalizer has already run is closed
+   here instead.
+
+   :param agen: the GEN's owner, a reference held by the caller
+   :param from: the consumer's context, not running
+   :param gen: the innermost GEN on from's chain (kos_dyn_find_gen)
+   :return: 0, or -1 with the error set and the span back on from's
+     chain, from's drive state unmoved
+*/
+int KosPyAsyncGen_Park(
+    KosPyAsyncGen *agen,
+    KosContext *from,
+    KosDynGen *gen);
+
+
+/**
    Create a KosPyAsyncGen from code and namespace. Requires KosCode_YIELDS(code).
    Caller owns the returned reference.
 

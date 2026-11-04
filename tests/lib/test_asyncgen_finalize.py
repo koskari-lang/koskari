@@ -327,6 +327,83 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(log, ["fin-start"])
         self.assertEqual(reports.seen, [CLEANUP_FAILED])
 
+    async def test_dropped_stepper_leaves_the_generator_suspended(self):
+        """
+        Dropping the stepper alone closes nothing: the generator stays
+        suspended mid-await, as CPython's does when an asend awaitable
+        is dropped, and closes from its own finalizer when it is
+        dropped, reported against the generator
+        """
+
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_awaits", log)
+            del stepper
+            self.assertEqual(log, [])
+            self.assertEqual(reports.seen, [])
+            del agen
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_suspended_generator_refuses_each_method(self):
+        """
+        A generator left mid-await by a dropped stepper is still
+        running: anext, asend, athrow and aclose each refuse it with
+        CPython's text, and none of them runs its cleanup
+        """
+
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_plain", log)
+            del stepper
+            refusals = (
+                ("anext", agen.__anext__),
+                ("anext", lambda: agen.asend(None)),
+                ("athrow", lambda: agen.athrow(ValueError)),
+                ("aclose", agen.aclose))
+            for method, make in refusals:
+                with self.subTest(method=method):
+                    with self.assertRaises(RuntimeError) as caught:
+                        await make()
+                    self.assertEqual(
+                        str(caught.exception),
+                        f"{method}(): asynchronous generator is already"
+                        " running")
+            del refusals, make, caught
+            self.assertEqual(log, [])
+            self.assertEqual(reports.seen, [])
+            del agen
+        self.assertEqual(log, ["finally"])
+        self.assertEqual(reports.seen, [])
+
+    async def test_suspended_generator_cleanup_raises_at_its_drop(self):
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_raises", log)
+            del stepper
+            self.assertEqual(log, [])
+            del agen
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [CLEANUP_FAILED])
+
+    async def test_suspended_generator_in_a_cycle_closes_when_collected(self):
+        """
+        The stepper dropped first, the generator then unreachable in a
+        cycle: the collector runs its finalizer, which closes it
+        """
+
+        log = []
+        with Unraisables() as reports:
+            agen, stepper = await self.mid_await("mid_await_awaits", log)
+            del stepper
+            self.assertEqual(log, [])
+            box = [agen]
+            box.append(box)
+            del agen, box
+            gc.collect()
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED])
+
     async def test_closed_mid_await_stepper_raises_ignored_exit(self):
         """
         Closing the stepper mid-await closes the generator; a cleanup
@@ -359,8 +436,9 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
 
     async def test_dropped_transform_mid_await_is_reported(self):
         """
-        A transform stepped into its source's await and dropped is
-        reported against the transform, the provider its stepper holds
+        A transform stepped into its source's await and dropped lets go
+        of the generator, its last holder; the generator closes from its
+        own finalizer and is reported against itself
         """
 
         mod = await self.load()
@@ -374,7 +452,63 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stepper.send(None), "pending")
             del stepper, transform
         self.assertEqual(log, ["fin-start"])
-        self.assertEqual(reports.seen, [IGNORED[:3] + (KosMap,)])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_dropped_transform_leaves_a_held_generator_suspended(self):
+        """
+        A transform dropped mid-await does not close a generator held
+        elsewhere: it stays suspended, refuses a later anext as already
+        running, and closes when it is dropped
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["mid_await_awaits"](Pending(), log.append)
+            transform = KosMap(str, agen)
+            self.assertEqual(await transform.__anext__(), "1")
+            stepper = transform.__anext__()
+            self.assertEqual(stepper.send(None), "pending")
+            del stepper, transform
+            self.assertEqual(log, [])
+            self.assertEqual(reports.seen, [])
+            with self.assertRaises(RuntimeError) as caught:
+                await agen.__anext__()
+            self.assertEqual(
+                str(caught.exception),
+                "anext(): asynchronous generator is already running")
+            self.assertEqual(log, [])
+            del agen
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_dropped_transform_stepper_leaves_the_step_in_flight(self):
+        """
+        Dropping a transform's stepper closes nothing: the transform
+        refuses a later step while its step is in flight, and its drop
+        lets the generator close
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["mid_await_awaits"](Pending(), log.append)
+            transform = KosMap(str, agen)
+            del agen
+            self.assertEqual(await transform.__anext__(), "1")
+            stepper = transform.__anext__()
+            self.assertEqual(stepper.send(None), "pending")
+            del stepper
+            self.assertEqual(log, [])
+            self.assertEqual(reports.seen, [])
+            with self.assertRaises(ValueError) as caught:
+                await transform.__anext__()
+            self.assertEqual(
+                str(caught.exception), "map is already being iterated")
+            self.assertEqual(log, [])
+            del transform
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(reports.seen, [IGNORED])
 
     async def test_mid_await_in_a_cycle_runs_its_cleanup_and_is_reported(self):
         """

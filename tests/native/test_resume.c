@@ -1496,12 +1496,13 @@ static PyObject *resume_ticking_callable(void) {
 
 /**
    A map's step suspended on its callable's awaitable leaves the step
-   frame on top of the map's context, naming the map as its state. The
-   stage holds one reference to the map, which the kind's traverse
-   visits once; the step's finish releases it, and the traverse then
-   visits nothing.
+   frame on top of the map's own context, naming the map as its state.
+   A stage on the transform's own context holds no reference to it (the
+   map holds the context, so one would be a cycle), and the kind's
+   traverse visits nothing, staged or finished; the finished step
+   leaves the map as it was before the step.
 */
-static int test_staged_transform_step_traverses_its_transform(void) {
+static int test_own_context_transform_stage_holds_no_reference(void) {
 
   PyObject *tick = resume_ticking_callable();
   PyObject *items, *t, *stepper, *res;
@@ -1559,8 +1560,10 @@ static int test_staged_transform_step_traverses_its_transform(void) {
 
   TEST_ASSERT_NOT_NULL(kind, "the suspended top frame carries a resume");
   TEST_ASSERT_SAME(state, t, "the step frame's state is the map");
-  TEST_ASSERT_EQ(staged_refs, baseline + 1, "the stage holds the map");
-  TEST_ASSERT_EQ(staged_visits, 1, "the kind's traverse visits the map");
+  TEST_ASSERT_EQ(staged_refs, baseline,
+                 "a stage on the map's own context holds no reference");
+  TEST_ASSERT_EQ(staged_visits, 0,
+                 "the kind's traverse visits no unheld map");
   TEST_ASSERT(delivered, "the second send delivers the element");
   TEST_ASSERT_EQ(finished_visits, 0, "a finished step visits nothing");
   /* the step ended, so the spent stepper let go of the map as well */
@@ -1603,7 +1606,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_returns_value_in_hand);
   RUN_TEST(test_drive_restores_thread_exc_info);
-  RUN_TEST(test_staged_transform_step_traverses_its_transform);
+  RUN_TEST(test_own_context_transform_stage_holds_no_reference);
 
   return 0;
 }

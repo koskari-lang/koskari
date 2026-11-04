@@ -1224,6 +1224,22 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
 
 
 /**
+   Install a span frozen mid-await, as kos_dyn_gen_install does, but
+   with no yield placeholder: the frame at the top is suspended at an
+   await, not a yield, and the await's revive pushes the awaited value
+   itself (or stages it for a frame waiting on a resume). The context's
+   await state (the suspension event, the await iterator) is the
+   caller's to move.
+
+   :return: 0 on success, -1 on error with the span left resting
+*/
+int kos_dyn_gen_install_awaiting(
+    KosContext *ctx,
+    PyObject *owner,
+    KosGenState *state);
+
+
+/**
    Undo an install whose caller failed after the splice, before the
    installed frame ran: the span goes back to rest in the state through
    the freeze, and the context's registers return to the consumer, so

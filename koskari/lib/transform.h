@@ -49,12 +49,15 @@
    resume state holds one reference to the transform until ki_finish
    or the step clear, so a holder released while that frame is still
    on a chain -- a containing transform's clear dropping its source --
-   cannot free the transform under the frame.
+   cannot free the transform under the frame. A frame on the
+   transform's own context holds none (kos_transform_staged).
 */
 typedef enum KosTransformBusy {
   KOS_TF_IDLE = 0,
   KOS_TF_STEPPING,  /* a step runs, or is installed with no frame naming it */
   KOS_TF_STAGED,    /* a frame names the transform: one reference held */
+  KOS_TF_STAGED_OWN, /* a frame on the transform's own context names
+                        it: no reference held (kos_transform_staged) */
 } KosTransformBusy;
 
 
@@ -270,10 +273,11 @@ static inline const char *transform_kind(PyTypeObject *type) {
 
 /**
    The suite's ki_busy: 1 with "KIND is already being iterated" set as
-   a ValueError when a step is in flight, else 0. kos_transform_step
-   and the throw refuse a busy transform through it.
+   a ValueError when a step is in flight, else 0, whichever method
+   asks. kos_transform_step and the throw refuse a busy transform
+   through it.
 */
-int kos_transform_busy(PyObject *self);
+int kos_transform_busy(PyObject *self, const char *method);
 
 
 /**
@@ -301,7 +305,7 @@ KOS_OP_INLINE KosIterStepResult kos_transform_step(
     return KOS_ITER_EXHAUSTED;
   }
 
-  if (kos_transform_busy(self))
+  if (kos_transform_busy(self, NULL))
     return KOS_ITER_ERROR;
 
   if (send_val && send_val != Py_None) {
@@ -402,11 +406,25 @@ KosIterStepResult kos_transform_stage(
     KosDynNode *pre_top);
 
 
-/* Take the stage's reference once per step. */
-static inline void kos_transform_staged(KosTransform *t) {
+/**
+   Mark the step staged, once per step, taking the stage's reference
+   when the frame sits on another context's chain. A frame on the
+   transform's own context (a Python adapter's step) takes none: the
+   transform holds that context, so the reference would be a cycle
+   through it, and the transform dropped mid-await could not be
+   finalized until a collection. Without it the frame never outlives
+   the transform: the transform's clear frees its context before
+   anything else it holds, and a stepper holding the context and the
+   transform drops the context first (stepper_release_state).
+*/
+static inline void kos_transform_staged(KosContext *ctx, KosTransform *t) {
 
-  if (t->busy == KOS_TF_STAGED)
+  if (t->busy == KOS_TF_STAGED || t->busy == KOS_TF_STAGED_OWN)
     return;
+  if (ctx == t->ctx) {
+    t->busy = KOS_TF_STAGED_OWN;
+    return;
+  }
   t->busy = KOS_TF_STAGED;
   Py_INCREF(t);
 }
@@ -428,7 +446,7 @@ KOS_OP_INLINE KosIterRequestStatus kos_transform_next_or_defer(
       ctx, req, resume, t, &t->cached_frame, out);
 
   if (s == KOS_IREQ_CONTINUES)
-    kos_transform_staged(t);
+    kos_transform_staged(ctx, t);
   return s;
 }
 

@@ -200,7 +200,16 @@ static void kos_dyn_gen_inherit_demand(
 }
 
 
-int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
+/**
+   The install both entries share. placeholder: push the Py_None a
+   frame resumed at its yield expects; a span parked at an await takes
+   the awaited value as the await's own revive pushes it.
+*/
+static int kos_dyn_gen_install_span_at(
+    KosContext *ctx,
+    PyObject *owner,
+    KosGenState *state,
+    int placeholder) {
 
   KosDynNode *active = state->active;
   KosDynNode *bottom = state->bottom;
@@ -298,7 +307,7 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   /* The suspended yield expression's placeholder, replaced by the sent
      value at the drive. A frame waiting on a resume (a delegation in
      flight) takes its delivery through the pending slot instead. */
-  {
+  if (placeholder) {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (! (surfaced && KosDynFrame_RESUME_KIND(surfaced))
         && KosContext_StackPushRef(ctx, Py_None) < 0) {
@@ -316,6 +325,21 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
            : "NULL",
        (void *) KosContext_FRAME(ctx));
   return 0;
+}
+
+
+int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
+
+  return kos_dyn_gen_install_span_at(ctx, owner, state, 1);
+}
+
+
+int kos_dyn_gen_install_awaiting(
+    KosContext *ctx,
+    PyObject *owner,
+    KosGenState *state) {
+
+  return kos_dyn_gen_install_span_at(ctx, owner, state, 0);
 }
 
 

@@ -178,9 +178,11 @@ typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 
 /**
    Is a step in flight? 1 with the provider's error set when
-   one is, 0 otherwise
+   one is, 0 otherwise. method names the Python method the refusal
+   answers ("anext", "athrow", "aclose") when the caller is one, so
+   the provider can word it as that method's; NULL otherwise.
 */
-typedef int (*KosIterBusyFunc)(PyObject *self);
+typedef int (*KosIterBusyFunc)(PyObject *self, const char *method);
 
 
 /**

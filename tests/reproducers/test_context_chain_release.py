@@ -121,9 +121,9 @@ class TestContextChainRelease(unittest.TestCase):
 
     def test_abandoned_stepper_recycles_with_registers_cleared(self):
         """
-        A stepper dropped mid-await drives GeneratorExit; the cleanup
-        awaits again, is reported, and the finish recycles the wrapper's
-        context
+        A generator dropped mid-await after its stepper closes from its
+        finalizer; the cleanup awaits again, is reported, and the
+        chain left on the wrapper's context is freed
         """
 
         fut = self.loop.create_future()
