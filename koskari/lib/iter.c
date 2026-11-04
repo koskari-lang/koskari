@@ -139,14 +139,16 @@ fallback:
    span here (KosPyAsyncGen_Park). A context the collector cleared
    while the step was in flight counts too: it lost the chain without
    the cleanup, which the close reports. A step installed on a
-   consumer's chain leaves the wrapper's context empty, and belongs to
-   that consumer.
+   consumer's chain is marked so (KOS_GEN_BUSY_CONSUMER), and belongs
+   to that consumer. The chain test stays: a drive on the wrapper's
+   context that ended at a yield froze its span off the chain before
+   its finish, and is not left mid-await.
 */
 static int asyncgen_parked(KosPyAsyncGen *agen) {
 
   KosContext *ctx = agen->ctx;
 
-  if (! agen->state.busy || ! ctx
+  if (agen->state.busy != KOS_GEN_BUSY_OWN || ! ctx
       || (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
     return 0;
   return KosContext_DYN_TOP(ctx)
@@ -181,7 +183,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     (void) kos_close_drive(agen->ctx, &typ, &val, &tb);
     asyncgen_free_chain_on(agen->ctx);
     asyncgen_free_span(agen);
-    state->busy = 0;
+    state->busy = KOS_GEN_IDLE;
     kos_close_report((PyObject *) agen, typ, val, tb);
     PyErr_Restore(fence_typ, fence_val, fence_tb);
   }
@@ -493,7 +495,10 @@ static KosIterStepResult agen_iter_drive(
     return KOS_ITER_EXHAUSTED;
   }
 
-  state->busy = 1;
+  /* where the step runs: a Python adapter's drive on the wrapper's
+     context, or a consumer's chain */
+  state->busy = (ctx == agen->ctx)
+      ? KOS_GEN_BUSY_OWN : KOS_GEN_BUSY_CONSUMER;
 
   if (! active) {
     if (ctx != agen->ctx) {
@@ -572,7 +577,7 @@ install_error:
 drive_error:
   /* Every failed drive releases the busy mark; a wedged one would
      refuse all further iteration of a still-live generator. */
-  state->busy = 0;
+  state->busy = KOS_GEN_IDLE;
   return KOS_ITER_ERROR;
 }
 
@@ -655,15 +660,15 @@ static void agen_iter_finish(PyObject *self, int exhausted) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   if (! exhausted) {
-    /* the chain test first: a step that ended at a yield, or ran on a
-       consumer's chain, left the wrapper's context empty */
-    if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx)
-           && asyncgen_parked(agen)))
-      agen->state.busy = 0;
+    /* a step on a consumer's chain ends here on the one compare; one
+       on the wrapper's context is left mid-await only while its chain
+       is still there (asyncgen_parked), a yield having frozen it off */
+    if (agen->state.busy != KOS_GEN_BUSY_OWN || ! asyncgen_parked(agen))
+      agen->state.busy = KOS_GEN_IDLE;
     return;
   }
 
-  agen->state.busy = 0;
+  agen->state.busy = KOS_GEN_IDLE;
   agen->closed = 1;
 
   if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
@@ -829,6 +834,9 @@ int KosPyAsyncGen_Park(
   KosExc_Init(KosContext_EXC_INFO(from));
   KosContext_SetSuspensionEvent(own, KOS_SUSP_AWAIT);
   KosContext_MarkSuspendedNotRunning(own);
+
+  /* the step is in flight still, now on the wrapper's own context */
+  state->busy = KOS_GEN_BUSY_OWN;
 
   /* A generator whose finalizer already ran, while its span sat on
      the consumer's chain out of its reach (both unreachable in one

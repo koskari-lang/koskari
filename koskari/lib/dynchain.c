@@ -1224,7 +1224,7 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_GEN:
       /* freed with its chain: the step in flight is over, and the span
          it marked went with the chain */
-      KosDynGen_STATE(node)->busy = 0;
+      KosDynGen_STATE(node)->busy = KOS_GEN_IDLE;
       kos_dyngen_free((KosDynGen *) node);
       break;
     case KOS_DYN_COLLECT:

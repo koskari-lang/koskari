@@ -193,6 +193,20 @@ typedef struct KosLiveRegs {
 
 
 /**
+   Where the step in flight runs, recorded in KosGenState::busy: on a
+   consumer's chain, or on the generator's own context (a Python
+   adapter's drive, or a span moved home by KosPyAsyncGen_Park). Only
+   a step on its own context can be left there mid-await with nothing
+   driving it.
+*/
+typedef enum KosGenBusy {
+  KOS_GEN_IDLE = 0,
+  KOS_GEN_BUSY_CONSUMER,  /* installed on a consumer's chain */
+  KOS_GEN_BUSY_OWN,       /* on the generator's own context */
+} KosGenBusy;
+
+
+/**
    A generator's state between installs, held by the generator object:
    the span resting out of any chain and what the next install needs
    to put it back. The span is the unstarted frame until the first
@@ -224,8 +238,9 @@ typedef struct KosGenState {
                                   than entering fresh code */
   uint8_t installs;            /* a node of the resting span holds an
                                   effect the install puts back */
-  uint8_t busy;                /* a step is in flight, from the drive's
-                                  start to the owner's finish */
+  uint8_t busy;                /* KosGenBusy: a step is in flight, from
+                                  the drive's start to the owner's
+                                  finish; any nonzero value is busy */
   KosLiveRegs host;
   KosLiveRegs frozen;
 } KosGenState;
