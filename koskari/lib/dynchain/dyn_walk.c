@@ -67,12 +67,15 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
 #endif
 
-  /* 1. The span leaves the chain into the state: its bottom rests
-     with no parent, and the live registers the next install of this
-     head applies directly go with it. */
+  /* 1. The span leaves the chain: its bottom rests with no parent, and
+     the live registers the next install of this head applies directly
+     go with it. The state names the span only once dyn_top no longer
+     does (step 3): the generator's traverse reports state->active and
+     the context's reports dyn_top, and the extent freeze below can
+     allocate (the cell table's copy), so a collection in between would
+     otherwise count the span's references twice. */
   saved_parent = KosDynNode_PARENT(gen);
   KosDynNode_PARENT(bottom) = NULL;
-  state->active = ctx_active;
   kos_live_regs_capture(ctx, &state->frozen);
 
   /* An effect a node holds outside itself leaves with it, innermost
@@ -121,6 +124,9 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
     kos_dyn_resync_chain(ctx);
   }
   state->host.top = NULL;
+
+  /* 4. The span is the state's now: dyn_top no longer names it. */
+  state->active = ctx_active;
 
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p state=%p\n",
        (void *) KosContext_DYN_TOP(ctx),
