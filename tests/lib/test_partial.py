@@ -485,7 +485,8 @@ class Swapper:
     An element whose repr replaces the holding partial's args and
     keywords through __setstate__ while the partial's own repr is still
     rendering them, then churns the allocator so a released tuple or
-    dict is reused
+    dict is reused. The first element rendered does the swap; the rest
+    only render, since the fields are already gone
     """
 
     def __init__(self, holder, mode):
@@ -494,6 +495,9 @@ class Swapper:
 
     def __repr__(self):
         p = self.holder[0]
+        if p is None:
+            return "swapped"
+        self.holder[0] = None
         if self.mode == "args":
             p.__setstate__((_swapped, (), None, None))
         else:
