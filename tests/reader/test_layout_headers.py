@@ -19,6 +19,7 @@ Strict layout header semantics.
 from textwrap import dedent
 
 from unittest import IsolatedAsyncioTestCase, TestCase
+from unittest.mock import patch
 
 import pytest
 
@@ -482,6 +483,52 @@ class TestQuotePrefixMidLine(IsolatedAsyncioTestCase):
              (symbol('quote-syntax'), symbol('tag')),
              symbol('body')))
         self.assertEqual(read_layout(src), expected)
+
+
+class TestQuotePrefixInFirstElement(IsolatedAsyncioTestCase):
+    """
+    Only the prefix at the first character of a line opens a quote
+    block; a prefix inside that first element quotes its operand
+    """
+
+    async def test_stacked_prefix_quotes_the_head(self):
+        for prefix, head in (("'", 'quote'), ("#'", 'quote-syntax')):
+            with self.subTest(prefix=prefix):
+                src = f"{prefix}'x a:\n  d\n"
+                expected = cons(
+                    symbol(head),
+                    cons(keyword('#block'),
+                         cons(cons(symbol('quote'), symbol('x'), nil),
+                              symbol('a'), nil),
+                         cons(keyword('#line'), symbol('d'), nil),
+                         nil),
+                    nil)
+                self.assertEqual(read_layout(src), expected)
+
+
+    async def test_prefix_under_a_ref_is_not_a_block(self):
+        src = "&'x a:\n  d\n"
+        expected = pycons(
+            ((symbol('ref'), (symbol('quote'), symbol('x'))),
+             symbol('a'),
+             symbol('d')))
+        self.assertEqual(read_layout(src), expected)
+
+
+    async def test_stacked_prefixes_scan_the_line_once(self):
+        reader = LayoutReader(dict(_BUILTIN_REGISTRY))
+        stream = IndentAwareStream.from_source(
+            source_str("'" * 50 + "x\n", '<unittest>'))
+        with patch.object(
+                reader, '_structural_colon_before_line_end',
+                wraps=reader._structural_colon_before_line_end) as scan:
+            result = reader.read(stream)
+
+        expected = symbol('x')
+        for _ in range(50):
+            expected = cons(symbol('quote'), expected, nil)
+        self.assertEqual(result, expected)
+        self.assertEqual(scan.call_count, 1)
 
 
 class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
