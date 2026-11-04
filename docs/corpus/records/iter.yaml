@@ -984,7 +984,7 @@ stability: stable
 tags:
   - iter
   - reader
-notes: brackets and parens produce identical cons pairs; [1 2 3] and (1 2 3) are structurally equal
+notes: brackets and parens produce value-equal lists of different types (bracket-pair and pair); [1 2 3] and (1 2 3) are equal? but not the same type
 ---
 id: iter-reader-bracket-let-style-002
 feature: reader/bracket
@@ -1001,7 +1001,7 @@ stability: stable
 tags:
   - iter
   - reader
-notes: brackets inside quote produce cons pairs identical to parens; car of '[a b c] is a
+notes: brackets inside quote produce a bracket-pair list, value-equal to the paren list but a different type; car of '[a b c] is a
 ---
 id: iter-membership-in-basic-001
 feature: special/compile/in

@@ -521,6 +521,16 @@ The PR's `make test` (`phase_corpus`) is the authoritative backstop.
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
 [corpus-schema-philosophy.md](corpus-schema-philosophy.md).
 
+### Corpus harness blind to bracket kind (future)
+
+`form_to_py` maps pair and bracket-pair alike, so about 132 read and
+expand expectations recorded in the wrong bracket style pass. Replace
+the conversion with a strict structural walk over the forms, then
+regenerate the stale expectations through `quick verify` against each
+record's source.
+
+Ref: [corpus-bracket-kind.md](corpus-bracket-kind.md).
+
 ---
 
 ## Tooling
