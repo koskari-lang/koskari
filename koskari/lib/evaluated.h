@@ -36,9 +36,22 @@
    Detection is a marker-base subtype check against KosEvaluatedType,
    whose tp_basicsize is sizeof(PyObject), so adopting it constrains no
    instance layout. Suite reads resolve through the first static type
-   in the tp_base chain: a Python-level subclass of an adopter is a
-   plain PyHeapTypeObject without the extended fields, and reading past
-   its PyTypeObject would be garbage.
+   in the tp_base chain: a heap subclass of an adopter carries no
+   suites of its own.
+
+   The marker's metatype is KosEvaluatedMetaType, and PyType_Ready
+   hands it on to every adopter, so a heap subclass of an adopter is
+   built by it and laid out as a KosEvaluatedHeapTypeObject. Its
+   kos_call_kind records, at class creation, whether the subclass
+   overrides the static type's __call__: INHERIT (zero, the type's
+   zero-filled default) resolves to the static type's suite; KOS (a
+   KosCallable __call__) and PY (any other) resolve to an override
+   suite whose install calls that __call__. The metatype's tp_new
+   classifies a new type and its tp_setattro reclassifies a type and
+   its subclasses when __call__ is set or deleted. Two limits: a
+   second base whose metaclass does not derive from this one raises
+   CPython's metaclass conflict, and type.__setattr__ called on the
+   type directly bypasses the hook, so the type keeps its last kind.
 */
 
 
@@ -219,6 +232,39 @@ typedef struct {
 extern KosEvaluatedTypeObject KosEvaluatedType;
 
 
+/**
+   How a heap subclass of an adopter is called, recorded by the
+   metatype. INHERIT is zero: the static type's suite applies.
+*/
+typedef enum KosCallKind {
+  KOS_CALL_KIND_INHERIT = 0,
+  KOS_CALL_KIND_KOS,      /* __call__ is a KosCallable */
+  KOS_CALL_KIND_PY,       /* __call__ is any other override */
+} KosCallKind;
+
+
+/**
+   The layout KosEvaluatedMetaType gives a heap type: CPython's heap
+   type followed by the recorded call kind. The field holds no
+   references.
+*/
+typedef struct {
+  PyHeapTypeObject ht;
+  uint8_t kos_call_kind;
+} KosEvaluatedHeapTypeObject;
+
+
+extern PyTypeObject KosEvaluatedMetaType;
+
+
+/**
+   The suites for KOS_CALL_KIND_KOS and KOS_CALL_KIND_PY, indexed by
+   kind - 1. Each carries only kc_vinstall; the Python boundary calls
+   the instance through its tp_call.
+*/
+extern KosCallSlots kos_call_override_suites[2];
+
+
 #define KOS_EVALUATED_PYTYPE(typeobj) (&((typeobj).type))
 
 /**
@@ -261,10 +307,25 @@ static inline KosEvaluatedTypeObject *KosEvaluated_Resolve(PyTypeObject *t) {
 }
 
 
+/**
+   Resolve a type to its call suite. A static type's is its own. A heap
+   type's is the override suite its recorded kind names, or for
+   INHERIT the suite of the first static type in its tp_base chain.
+   The caller has established membership (KosEvaluated_CheckType), so
+   the walk ends on a static type.
+*/
 static inline KosCallSlots *KosEvaluated_CallSlots(PyTypeObject *t) {
 
-  KosEvaluatedTypeObject *et = KosEvaluated_Resolve(t);
-  return et ? &et->kos_call : NULL;
+  if (unlikely(t->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
+    uint8_t kind = ((KosEvaluatedHeapTypeObject *) t)->kos_call_kind;
+
+    if (kind)
+      return &kos_call_override_suites[kind - 1];
+    do
+      t = t->tp_base;
+    while (t->tp_flags & Py_TPFLAGS_HEAPTYPE);
+  }
+  return &((KosEvaluatedTypeObject *) t)->kos_call;
 }
 
 

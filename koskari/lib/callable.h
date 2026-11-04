@@ -42,11 +42,7 @@ static inline int KosCallable_CheckSlots(
   if (! obj || ! KosEvaluated_Check(obj))
     return 0;
 
-  KosEvaluatedTypeObject *et = KosEvaluated_Resolve(Py_TYPE(obj));
-  if (! et)
-    return 0;
-
-  KosCallSlots *slots = &et->kos_call;
+  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(obj));
   if (! slots->kc_vinstall)
     return 0;
 
