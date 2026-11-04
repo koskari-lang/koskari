@@ -236,6 +236,21 @@ test-py314: handlers  ## Run tests in container for Python 3.14
 	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.14 $(RUN_ARGS)
 
 
+##@ Pyodide Container
+
+PYODIDE_IMAGE := koskari-pyodide
+
+pyodide-image-build:  ## Build the Pyodide toolchain container
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@$(CONTAINER_ENGINE) build -q -t $(PYODIDE_IMAGE) -f tools/Containerfile.pyodide tools/
+
+test-pyodide: handlers pyodide-image-build  ## Run the unit tests under Pyodide in node
+	@$(CONTAINER_ENGINE) run -it --rm -v $(PWD):/src:z $(PYODIDE_IMAGE) test $(RUN_ARGS)
+
+wheel-pyodide: handlers pyodide-image-build  ## Build the Pyodide wheel into dist/pyodide
+	@$(CONTAINER_ENGINE) run -it --rm -v $(PWD):/src:z $(PYODIDE_IMAGE) wheel
+
+
 ##@ Runtime Container
 
 build-container:  ## Build koskari runtime container image
@@ -561,6 +576,7 @@ python:  ## Show Python executable
 	lint \
 	project \
 	purge \
+	pyodide-image-build \
 	python \
 	regen-editors \
 	report-python \
@@ -569,6 +585,7 @@ python:  ## Show Python executable
 	test-asan-suite \
 	test-container-build \
 	test-native \
+	test-pyodide \
 	test-py310 \
 	test-py311 \
 	test-py312 \
@@ -584,7 +601,8 @@ python:  ## Show Python executable
 	valgrind-run \
 	uninstall \
 	venv \
-	version
+	version \
+	wheel-pyodide
 
 
 # The end.

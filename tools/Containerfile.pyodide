@@ -1,0 +1,50 @@
+# Containerfile for Pyodide wheel builds and test runs
+#
+# Builds an image holding the Pyodide cross-build environment and
+# Emscripten, so a run needs only the source tree.  Use PYODIDE_VERSION
+# and PYODIDE_BUILD_VERSION build args to move to a new release.
+#
+# Build:
+#   podman build -t koskari-pyodide -f Containerfile.pyodide .
+#
+# Run (mount repo at /src, pass the mode as CMD):
+#   podman run -it --rm -v /path/to/repo:/src:z koskari-pyodide test
+#   podman run -it --rm -v /path/to/repo:/src:z koskari-pyodide wheel
+#
+# author: Christopher O'Brien <obriencj@gmail.com>
+# license: GPL v.3
+
+ARG PYTHON_VERSION=3.14
+FROM python:${PYTHON_VERSION}-slim
+
+ARG PYODIDE_VERSION=314.0.7
+ARG PYODIDE_BUILD_VERSION=0.39.3
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYODIDE_XBUILDENV_PATH=/opt/pyodide
+
+RUN apt-get update -qq && \
+    apt-get install -qy --no-install-recommends \
+        bzip2 \
+        ca-certificates \
+        git \
+        make \
+        xz-utils \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --root-user-action=ignore --no-cache-dir \
+    pyodide-cli "pyodide-build==${PYODIDE_BUILD_VERSION}"
+
+RUN pyodide xbuildenv install "${PYODIDE_VERSION}" && \
+    pyodide xbuildenv install-emscripten
+
+COPY pyodide_entry.sh /usr/local/bin/koskari-pyodide
+
+WORKDIR /src
+
+ENTRYPOINT ["bash", "/usr/local/bin/koskari-pyodide"]
+CMD ["test"]
+
+
+# The end.
