@@ -2876,6 +2876,9 @@ static void kos_continuation_release_struct(KosContinuation *k) {
    Free continuation and captured chain. Callers: error paths, wrapper dealloc.
 */
 void kos_continuation_free(KosContinuation *k) {
+
+  KosDynNode *chain;
+
   if (! k)
     return;
 
@@ -2883,11 +2886,17 @@ void kos_continuation_free(KosContinuation *k) {
   KosContinuation_TOKEN_REF(k) = NULL;
 
   /* resume_stack aliases a node-owned operand stack on captured_chain;
-   * kos_dynchain_free releases node-owned blocks. Clear the pointer
-   * only. */
+     kos_dynchain_free releases node-owned blocks, so only the pointer
+     is cleared */
   KosContinuation_RESUME_STACK(k) = NULL;
 
-  kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
+  /* Detach first, free second: freeing a node runs Python, and the
+     continuation's traverse reads captured_chain, so a collection
+     from inside the free must find it empty. The wrappers unlink the
+     struct before calling here; the order holds on its own too. */
+  chain = KosContinuation_CAPTURED_CHAIN(k);
+  KosContinuation_CAPTURED_CHAIN(k) = NULL;
+  kos_dynchain_free(chain, NULL);
 
   kos_continuation_release_struct(k);
 }

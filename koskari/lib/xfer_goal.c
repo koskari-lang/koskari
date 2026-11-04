@@ -72,21 +72,35 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
 
   if (! goal)
     return;
+
+  /* Detach first, free second: freeing a node or a stack runs Python,
+     and the goal's traverse reads target and every restore entry, so a
+     collection from inside a release must find nothing it has freed.
+     Callers unlink the goal before calling here; the order holds on
+     its own too. */
   if (goal->target) {
-    kos_dynchain_free(goal->target, NULL);
+    KosDynNode *target = goal->target;
+
     goal->target = NULL;
+    kos_dynchain_free(target, NULL);
   }
   Py_CLEAR(goal->payload);
   Py_CLEAR(goal->continuation_ref);
   if (goal->restore) {
     for (size_t i = 0; i < goal->restore_count; i++) {
       KosXferRestore *r = &goal->restore[i];
+      KosSegment *stack = r->stack;
+      const KosResumeKind *kind = r->resume_kind;
+      void *state = r->resume_state;
 
-      if (r->stack)
-        KosStack_Release(r->stack);
+      r->stack = NULL;
+      r->resume_kind = NULL;
+      r->resume_state = NULL;
+      if (stack)
+        KosStack_Release(stack);
       /* a cloned resume state never applied gets its kind's clear */
-      if (r->resume_kind && r->resume_kind->clear)
-        r->resume_kind->clear(r->resume_state);
+      if (kind && kind->clear)
+        kind->clear(state);
     }
     PyMem_Free(goal->restore);
     goal->restore = NULL;
