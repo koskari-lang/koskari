@@ -29,12 +29,18 @@ import unittest
 import pytest
 
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
-from koskari.lib import FormalsSpec, FunctionSpec, cons, demand_call, nil
+from koskari.lib import (
+    FormalsSpec, FunctionSpec, build_flags, cons, demand_call, nil)
 from koskari.serialize.codex import KioFile
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
 
 pytestmark = pytest.mark.phase_importer
+
+
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
 
 
 class TestKioImporterParity(unittest.TestCase):
@@ -478,6 +484,7 @@ class TestKioImporterParity(unittest.TestCase):
             self.assertFalse(code.protected)
 
 
+    @needs_protection
     def test_kio_function_code_placed_and_sealed(self):
         """
         a .kio module's function code sits in a sealed arena chunk, as
@@ -491,6 +498,7 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(demand_call(kio.f), 1)
 
 
+    @needs_protection
     def test_kio_function_code_sealed_before_first_body(self):
         """
         a .kio decodes every function before any body runs, so its code
@@ -514,6 +522,7 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertIsNone(kio.f.code.arena)
 
 
+    @needs_protection
     def test_kio_pack_module_toggle_mid_module(self):
         """
         a .kio records each function's placement as its build made it:

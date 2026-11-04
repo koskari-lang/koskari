@@ -26,7 +26,8 @@ import pytest
 
 from koskari.lib import (
     Code, CodeAllocator, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode,
-    OpStyle, bracket_nil, demand_call, gensym, keyword, nil, symbol)
+    OpStyle, bracket_nil, build_flags, demand_call, gensym, keyword, nil,
+    symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import (
@@ -38,6 +39,11 @@ from ..lib.opcode import build_code, build_expr
 
 
 pytestmark = pytest.mark.phase_compile
+
+
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
 
 
 class TestKioRoundTrip(unittest.TestCase):
@@ -147,6 +153,7 @@ class TestKioRoundTrip(unittest.TestCase):
         loaded = self._const_roundtrip(value)
         self.assertEqual(loaded, value)
 
+    @needs_protection
     def test_code_protect_and_cache_roundtrip(self):
         """a body's protect and cache settings are stored and restored"""
         rows = [['CONST', 1], ['RETURN', 1]]
@@ -198,6 +205,7 @@ class TestKioRoundTrip(unittest.TestCase):
         dump_kio(buf, [code])
         return buf.getvalue()
 
+    @needs_protection
     def test_placed_function_spec_decodes_into_allocator(self):
         """
         a function placed in an arena is placed into the allocator the
@@ -213,6 +221,7 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual(alloc.chunks, (fspec.code.arena,))
         self.assertFalse(fspec.code.arena.sealed)
 
+    @needs_protection
     def test_placed_function_spec_without_allocator_is_heap(self):
         """with no allocator a placed function decodes onto the heap"""
         kio = load_kio(io.BytesIO(self._placed_outer()))
@@ -429,6 +438,7 @@ class TestKioRoundTrip(unittest.TestCase):
         return specs[0]
 
 
+    @needs_protection
     def test_compile_ki_records_function_placement(self):
         """
         a build places its function code as a source load does, and the

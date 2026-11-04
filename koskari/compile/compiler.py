@@ -38,6 +38,7 @@ from ..types import (
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, ResolutionMode, StrayColon,
     StrayHash)
+from .pragma.settings import CODE_PROTECTION
 from .processor import ByteCodeProcessor, merge_function_constant_needs
 
 
@@ -558,7 +559,7 @@ class Compiler:
         self.stray_hash = stray_hash
         self.keyword_literals = keyword_literals
         self.protect_code = False
-        self.pack_module = True
+        self.pack_module = CODE_PROTECTION
         self.cache_expression = False
         self.cache_function = True
         self.rewrite_limit = 32
@@ -660,7 +661,7 @@ class Compiler:
         self._keyword_literals = pragma.get("compiler/keyword-literals")
 
         self.protect_code = pragma.get("compiler/protect-code", False)
-        self.pack_module = pragma.get("compiler/pack-module", True)
+        self.pack_module = pragma.get("compiler/pack-module", CODE_PROTECTION)
 
         self.cache_expression = pragma.get("compiler/cache-expression", False)
         self.cache_function = pragma.get("compiler/cache-function", True)

@@ -27,12 +27,17 @@ import weakref
 
 import pytest
 
-from koskari.lib import Arena, demand_call
+from koskari.lib import Arena, build_flags, demand_call
 from koskari.module import (
     detach_module_load_facets, load_module_source_async, new_module)
 
 
 pytestmark = pytest.mark.phase_importer
+
+
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
 
 
 PAGE = resource.getpagesize()
@@ -70,6 +75,7 @@ async def load(source, seal=True, detach=True):
     return module
 
 
+@needs_protection
 class TestSealMatrix(unittest.IsolatedAsyncioTestCase):
     """The four protect-code / pack-module combinations"""
 
@@ -122,6 +128,7 @@ class TestSealMatrix(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(demand_call(durable, 41), 42)
 
 
+@needs_protection
 class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
     """Sealing details through the load path"""
 
@@ -273,6 +280,7 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(demand_call(inner, 32), 42)
 
 
+@needs_protection
 class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
     """
     Deferred completion: several loads into one module with seal and

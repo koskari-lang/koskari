@@ -120,11 +120,11 @@ extern PyTypeObject KosCodeAllocatorType;
 
 /**
    The system page size, read once from sysconf. When the system reports
-   none, no block is placed in an arena or protected: every code block
-   is heap.
+   none, or the build sets KOS_NO_PROTECT, no block is placed in an
+   arena or protected: every code block is heap.
 
-   :return: the page size in bytes, or 0 when the system reports none;
-     no error is set
+   :return: the page size in bytes, or 0 when the system reports none
+     or the build has no read-only code protection; no error is set
 */
 size_t KosArena_PageSize(void);
 
@@ -132,7 +132,7 @@ size_t KosArena_PageSize(void);
 /**
    The chunk unit in bytes: KOS_ARENA_CHUNK_PAGES system pages.
 
-   :return: the unit, or 0 when the system reports no page size; no
+   :return: the unit, or 0 when KosArena_PageSize reports none; no
      error is set
 */
 size_t KosArena_ChunkUnit(void);

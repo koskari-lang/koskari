@@ -24,10 +24,18 @@ import unittest
 
 import pytest
 
+from koskari.lib import build_flags
+
 
 pytestmark = pytest.mark.phase_basics
 
 
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
+
+
+@needs_protection
 class TestBuiltinsPacked(unittest.TestCase):
     """The bootstrap .ki sources place function code into sealed chunks"""
 

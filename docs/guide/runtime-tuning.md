@@ -88,6 +88,25 @@ without denying them anything, and skips the newest fast path where
 the runtime cannot support it. No source change is needed -- the same code
 caches what it can on whichever interpreter it runs under.
 
+### Builds without read-only code
+
+A build without read-only code never seals anything. Emscripten builds
+are always of this kind, because WebAssembly memory has no page
+protection. Any other build can opt in by setting
+`KOS_NO_PROTECT=1` in the environment when it compiles the extension.
+`koskari.lib.build_flags['KOS_NO_PROTECT']` reports 1 in such a build and
+0 otherwise.
+
+In these builds:
+
+- `compiler/pack-module` defaults to off.
+- Turning `compiler/pack-module` or `compiler/protect-code` on raises
+  `ValueError`, including through a bare declaration. Turning either off
+  is accepted, so source that opts out runs everywhere.
+- A `.kio` file loads normally whatever settings it was compiled under,
+  and its code stays writable.
+- `code.arena` is `None` and `code.protected` is `False` for all code.
+
 ### Introspection
 
 - `code.caches` -- whether this code object was compiled with caching on
@@ -134,7 +153,9 @@ first setting leaves alone as it is built: top-level expressions, and
 function code when `pack-module` is off.
 
 Both pragmas depend on the system reporting its page size. Where it
-does not, nothing is sealed.
+does not, nothing is sealed. A build can also leave sealing out
+altogether; see
+[Builds without read-only code](#builds-without-read-only-code).
 
 The four combinations:
 

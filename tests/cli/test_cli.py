@@ -36,10 +36,16 @@ from koskari.exceptions import (
     CodeBoundary, _filter_infrastructure_tb, format_code_boundary_exception,
     format_exception_with_koskari_trace)
 from koskari.importer import install
+from koskari.lib import build_flags
 from koskari.module import new_module
 
 
 pytestmark = pytest.mark.phase_cli
+
+
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
 
 
 # Absolute path to the scripts directory next to this test file.
@@ -1260,6 +1266,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("when-main\nentry\n", out)
 
 
+    @needs_protection
     async def test_entry_runs_after_seal(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(

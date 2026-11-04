@@ -169,7 +169,9 @@ def code_from_record(nspec, instr, name, filename, flags, allocator=None):
     """
     Rebuild a Code with the protect and cache settings its record stored.
     A record whose code was placed in an arena is placed into
-    ``allocator`` when one is given, and built on the heap otherwise
+    ``allocator`` when one is given, and built on the heap otherwise. In
+    a build without read-only code protection every record loads as a
+    writable heap block, whatever its flags say
     """
 
     if not flags & CodeFlags.ARENA:

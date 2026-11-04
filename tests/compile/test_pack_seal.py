@@ -27,16 +27,22 @@ import pytest
 from koskari.compile import Compiler
 from koskari.compile.compiler import CompilerMode
 from koskari.compile.pragma.settings import compiler_pack_module
-from koskari.lib import Arena, OpCode
+from koskari.lib import Arena, OpCode, build_flags
 from koskari.pragma import ModulePragma
 
 
 pytestmark = pytest.mark.phase_compile
 
 
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
+
+
 class TestPackModuleSetting(unittest.TestCase):
     """Tests for the compiler/pack-module setting function"""
 
+    @needs_protection
     def test_defaults(self):
         self.assertIs(compiler_pack_module(), True)
         self.assertIs(compiler_pack_module(False), False)
@@ -46,6 +52,7 @@ class TestPackModuleSetting(unittest.TestCase):
             compiler_pack_module(True, max_count=2)
 
 
+@needs_protection
 class TestPragmaBaselines(unittest.TestCase):
     """The registered baselines for the two settings"""
 
@@ -89,6 +96,7 @@ def aligned(size):
     return ((size + unit - 1) // unit) * unit
 
 
+@needs_protection
 class TestCompilerAllocator(unittest.TestCase):
     """Placement at birth through the compiler's open allocator"""
 

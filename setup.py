@@ -26,7 +26,6 @@ import importlib.util
 import re
 import shlex
 import subprocess
-import sys
 import sysconfig
 from dataclasses import dataclass
 from os import environ
@@ -48,6 +47,7 @@ passenvs = (
     "KOS_DEBUG_PATCH_DYN_CACHES",
     "KOS_EVAL_SAFETYNET",
     "KOS_NOFREELIST",
+    "KOS_NO_PROTECT",
     "VERBOSE_DEBUG",
 )
 
@@ -65,7 +65,10 @@ baseline_args = (
 )
 
 
-LINUX = sys.platform == "linux"
+# the target, not the host: a cross build runs this under a Linux Python
+PLATFORM = sysconfig.get_platform()
+LINUX = PLATFORM.startswith("linux")
+EMSCRIPTEN = "emscripten" in PLATFORM
 
 
 def compiler_command():
@@ -234,6 +237,10 @@ def extra_compile_args(flags):
         # a PLT stub
         args.append("-fno-plt")
 
+    if EMSCRIPTEN:
+        # threaded dispatch needs guaranteed tail calls, a wasm feature
+        args.append("-mtail-call")
+
     if flags.fat_objects:
         args.append("-ffat-lto-objects")
 
@@ -262,6 +269,9 @@ def extra_link_args(flags):
         # segment. A hardening measure; the -fno-plt calls into
         # libpython bind at load either way.
         args.append("-Wl,-z,now")
+
+    if EMSCRIPTEN:
+        args.append("-mtail-call")
 
     if flags.lto_link:
         # The link is where LTO happens; without -flto here the linker

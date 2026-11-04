@@ -48,7 +48,7 @@ class Receiver:
 
 
 def change():
-    return ("compiler/protect-code", values())
+    return ("compiler/cache-expression", values())
 
 
 class TestPragmaWatchers(unittest.TestCase):

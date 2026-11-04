@@ -3341,15 +3341,18 @@ static PyMethodDef mdl_ns_methods[] = {
 };
 
 
-/* The core must sit at one offset in every kind, and the two heads
-   must be one size, so a function namespace pays nothing for the
-   module namespace being a dict. */
+/* The core must sit at one offset in every kind. With 64-bit pointers
+   the two heads are one size, so a function namespace pays nothing for
+   the module namespace being a dict; on a 32-bit build the dict's
+   uint64_t field pads it past the fast head. */
 _Static_assert(offsetof(KosNamespace, core) == offsetof(KosModuleNamespace, core),
                "namespace core offset differs between kinds");
 _Static_assert(offsetof(KosNamespace, core) == offsetof(KosNamespaceAny, core),
                "namespace core offset differs from the any-kind view");
+#if SIZEOF_VOID_P == 8
 _Static_assert(sizeof(KosNamespaceHead) == sizeof(PyDictObject),
                "the fast head and the dict head differ in size");
+#endif
 
 
 PyTypeObject KosModuleNamespaceType = {

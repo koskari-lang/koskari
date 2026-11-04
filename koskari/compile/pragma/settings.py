@@ -31,8 +31,32 @@ arg is omitted).
 
 from enum import Enum
 
+from ...lib import build_flags
 from ...pragma import pragma_setting
 from .resolution import KoskariPragma, PythonPragma, SchemePragma
+
+
+# whether this build can seal code read-only; the sealing settings are
+# off and refuse to turn on when it cannot
+CODE_PROTECTION = not build_flags['KOS_NO_PROTECT']
+
+
+def sealing_enabled(name, enabled):
+    """
+    The value of a code sealing setting, refused when this build has no
+    read-only code protection
+
+    :param name: the setting name
+    :param enabled: the requested value
+    :return: enabled
+    :raises ValueError: enabled is true in a build without protection
+    """
+
+    if enabled and not CODE_PROTECTION:
+        raise ValueError(
+            f"Cannot enable {name}: this build has no read-only code"
+            " protection")
+    return enabled
 
 
 class ResolutionMode(Enum):
@@ -273,22 +297,24 @@ def compiler_protect_code(enabled: bool = True) -> bool:
     """
     Whether each Code object's bytecode block is page-aligned and
     mprotect-sealed read-only at construction. Baseline disabled; a bare
-    declaration enables it (mention-to-enable).
+    declaration enables it (mention-to-enable). Enabling it raises
+    ValueError in a build without read-only code protection
     """
 
-    return enabled
+    return sealing_enabled("compiler/protect-code", enabled)
 
 
-@pragma_setting("compiler/pack-module", True)
+@pragma_setting("compiler/pack-module", CODE_PROTECTION)
 def compiler_pack_module(enabled: bool = True) -> bool:
     """
     Whether function code compiled during a module load is placed into
     the load's arena chunks, which are sealed read-only together when
     the load completes. Expression code is never placed. Baseline
-    enabled.
+    enabled; in a build without read-only code protection the baseline
+    is disabled and enabling it raises ValueError
     """
 
-    return enabled
+    return sealing_enabled("compiler/pack-module", enabled)
 
 
 # The end.
