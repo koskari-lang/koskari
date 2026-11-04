@@ -114,7 +114,8 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
   }
 
   /* every field after the object header starts cleared, by the memset
-     for a fresh context and by context_clear for a revived one, so a
+     for a fresh context and for a revived one by context_dealloc,
+     whose clear empties it and which then zeroes the flags, so a
      failure below can release the half-built context through the type,
      and a revived context carries nothing of its last use */
   ctx->param_refs = cells;
@@ -175,7 +176,8 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx) {
    so GEN.active is disposed before the context. Also the type's
    tp_clear, so a context inside a garbage cycle drops what it holds.
    A cleared context is empty, every field after the object header
-   zero, which the freelist revival relies on, so a field added to
+   zero but the flags, which keep KOS_CTX_CLEARED until the dealloc
+   zeroes them for the freelist revival, so a field added to
    KosContext is cleared here.
 */
 void KosContext_ReleaseChain(KosContext *ctx) {
@@ -197,6 +199,10 @@ void KosContext_ReleaseChain(KosContext *ctx) {
 static int context_clear(PyObject *self) {
 
   KosContext *ctx = (KosContext *) self;
+
+  /* first, and left set: an eval or a recycle reaching the context
+     from anything the clear releases, or after it, is refused */
+  KosContext_FLAGS(ctx) |= KOS_CTX_CLEARED;
 
   Py_XDECREF(KosContext_TOKEN(ctx));
   KosContext_TOKEN(ctx) = NULL;
@@ -225,7 +231,7 @@ static int context_clear(PyObject *self) {
   ctx->terminal = 0;
   KosContext_ENTRY_CALL(ctx) = NULL;
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
-  KosContext_FLAGS(ctx) = 0;
+  KosContext_FLAGS(ctx) = KOS_CTX_CLEARED;
 
   return 0;
 }
@@ -240,6 +246,8 @@ static void context_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
   context_clear(self);
+  /* the clear leaves its mark; a revival starts from all zero */
+  KosContext_FLAGS(self) = 0;
 
   if (context_freecount < CONTEXT_MAX_FREE) {
     ((KosContext *) self)->domain = (PyObject *) context_freelist;
@@ -257,12 +265,12 @@ static void context_dealloc(PyObject *self) {
 /**
    Make a context reusable after a completion at its root: drop the
    finished frame chain and clear the completion residue. A context
-   with an active transfer goal is left untouched -- the caller frees
-   it instead.
+   with an active transfer goal, or one the collector cleared, is left
+   untouched -- the caller frees it instead.
 */
 int KosContext_Recycle(KosContext *ctx) {
 
-  if (KosContext_GOAL(ctx))
+  if (KosContext_GOAL(ctx) || (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED))
     return -1;
 
   /* A continuation captured in the finished run carries this token; the

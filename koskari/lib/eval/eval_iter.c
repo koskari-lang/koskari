@@ -159,6 +159,15 @@ int kos_close_drive(
   *val = NULL;
   *tb = NULL;
 
+  /* a context the collector cleared lost its chain without the
+     cleanup; the throw cannot be made, and that is what is owed */
+  if (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "close of a generator whose context was cleared");
+    PyErr_Fetch(typ, val, tb);
+    return 1;
+  }
+
   if (pending) {
     Py_INCREF(pending);
     kos_iter_close(pending);

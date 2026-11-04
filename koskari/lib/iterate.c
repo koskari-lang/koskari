@@ -242,13 +242,32 @@ static PyTypeObject KosIterStepperType;
 
 
 /**
+   End a mid-await step without running anything of it: mark the
+   provider finished-exhausted, clear the awaiting mark, and free what
+   is left of the chain on the stepper's context, memory only, as a
+   context's clear frees it. No eval.
+*/
+static void stepper_spend(KosIterStepper *st) {
+
+  KosIterSlots *islots;
+
+  if (st->provider && KosIter_CheckSlots(st->provider, &islots))
+    islots->ki_finish(st->provider, 1);
+  st->awaiting = 0;
+
+  /* the finish recycles a durable context; an owned one, or one whose
+     recycle was refused, still holds what the step left */
+  KosContext_ReleaseChain(st->ctx);
+}
+
+
+/**
    Mid-await abandonment: the live chain sits on the stepper's context,
    so the provider's own close cannot reach it. Close the chain through
-   that context (kos_close_drive) so finally/with cleanup runs, mark
-   the provider finished-exhausted, clear the awaiting mark, and free
-   whatever the close left of the chain. The error the close owes is
-   held in the out-params, for the caller to raise or report against
-   the provider; none is left set.
+   that context (kos_close_drive) so finally/with cleanup runs, then
+   spend the step (stepper_spend). The error the close owes is held in
+   the out-params, for the caller to raise or report against the
+   provider; none is left set.
 */
 static void stepper_abandon_drive(
     KosIterStepper *st,
@@ -256,26 +275,19 @@ static void stepper_abandon_drive(
     PyObject **val,
     PyObject **tb) {
 
-  KosIterSlots *islots;
-
   *typ = NULL;
   *val = NULL;
   *tb = NULL;
 
-  /* A context whose chain is gone has nothing to close: its clear or
-     recycle released the chain already, the pending awaitable goes
-     with the context, and the stepper is being dropped from inside
-     that release. */
-  if (KosContext_DYN_TOP(st->ctx))
+  /* A context whose chain is gone has nothing to close: its recycle
+     released the chain already, and the pending awaitable goes with
+     the context. One the collector cleared lost the chain without its
+     cleanup, which the close drive refuses and reports. */
+  if (KosContext_DYN_TOP(st->ctx)
+      || (KosContext_FLAGS(st->ctx) & KOS_CTX_CLEARED))
     (void) kos_close_drive(st->ctx, typ, val, tb);
 
-  if (st->provider && KosIter_CheckSlots(st->provider, &islots))
-    islots->ki_finish(st->provider, 1);
-  st->awaiting = 0;
-
-  /* the finish recycles a durable context; an owned one, or one whose
-     recycle was refused, still holds what the close left */
-  KosContext_ReleaseChain(st->ctx);
+  stepper_spend(st);
 }
 
 
@@ -297,10 +309,24 @@ static void stepper_abandon(KosIterStepper *st) {
 }
 
 
+/**
+   Drop what the stepper holds; the clear, the dealloc and a finished
+   step all come here, and nothing here runs the provider. A stepper
+   still awaiting is dead: its finalizer, which closes an abandoned
+   await, already ran before this await began (it was resurrected, or
+   driven from another finalizer), and a finalizer runs once, so
+   nothing is closed again. Its step is spent instead, exception-fenced
+   as the abandon is.
+*/
 static void stepper_release_state(KosIterStepper *st) {
 
-  if (st->awaiting && st->ctx)
-    stepper_abandon(st);
+  if (st->awaiting && st->ctx) {
+    PyObject *fence_typ, *fence_val, *fence_tb;
+
+    PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+    stepper_spend(st);
+    PyErr_Restore(fence_typ, fence_val, fence_tb);
+  }
 
   Py_CLEAR(st->ctx);
   st->ctx_owned = 0;
@@ -317,7 +343,9 @@ static void stepper_release_state(KosIterStepper *st) {
    Finalizer: a stepper dropped mid-await closes its abandoned drive
    before anything is cleared, so in a garbage cycle the cleanup runs
    against a chain the collector has not yet released through the
-   context's own clear
+   context's own clear. The close is a drive of its own, begun from the
+   finalizer: the sanctioned exception to flattening, as for the
+   coroutine's and the generator's finalizers.
 */
 static void stepper_finalize(PyObject *self) {
 

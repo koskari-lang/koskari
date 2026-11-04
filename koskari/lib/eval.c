@@ -3543,10 +3543,14 @@ KosOpResult koskari_eval(
      entry can only be a caller without a busy check of its own. Refused
      here, before anything below is set up, so the return has nothing to
      unwind; nothing between this read and the set below releases the
-     GIL, so another thread cannot pass the check in the meantime. */
-  if (unlikely(KosContext_FLAGS(ctx) & KOS_CTX_RUNNING)) {
+     GIL, so another thread cannot pass the check in the meantime. A
+     context the collector cleared, or is clearing, is refused by the
+     same test: what it held is gone. */
+  if (unlikely(KosContext_FLAGS(ctx) & (KOS_CTX_RUNNING | KOS_CTX_CLEARED))) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "eval entered on a context already being evaluated");
+                    (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED)
+                    ? "eval entered on a cleared context"
+                    : "eval entered on a context already being evaluated");
     return EVAL_RAISE();
   }
 

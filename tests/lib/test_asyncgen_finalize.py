@@ -80,6 +80,13 @@ define [mid_await_raises pending record]:
     finally:
         (record "fin-start")
         raise (ValueError "cleanup failed")
+
+define [mid_await_plain pending record]:
+    try:
+        (yield 1)
+        (await pending)
+    finally:
+        (record "finally")
 """
 
 
@@ -100,6 +107,32 @@ class Pending:
 
     def __await__(self):
         yield "pending"
+
+
+class Resurrect:
+    """
+    Puts what it holds back in reach from its own finalizer
+    """
+
+    kept = []
+
+    def __init__(self, obj):
+        self.obj = obj
+        self.me = self
+
+    def __del__(self):
+        Resurrect.kept.append(self.obj)
+
+
+def finalized(obj):
+    """
+    obj, back from a collection that ran its finalizer
+    """
+
+    Resurrect(obj)
+    del obj
+    gc.collect()
+    return Resurrect.kept.pop()
 
 
 class Unraisables:
@@ -358,6 +391,60 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             gc.collect()
         self.assertEqual(log, ["fin-start"])
         self.assertEqual(reports.seen, [IGNORED])
+
+    async def test_stepper_finalized_before_its_await_is_not_closed_again(self):
+        """
+        A stepper whose finalizer ran while it was primed, then sent
+        into an await and dropped, is dead: a finalizer runs once, so
+        its dealloc closes nothing
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["mid_await_plain"](Pending(), log.append)
+            self.assertEqual(await agen.__anext__(), 1)
+            stepper = finalized(agen.__anext__())
+            self.assertEqual(stepper.send(None), "pending")
+            del stepper
+            self.assertEqual(log, [])
+            del agen
+        self.assertEqual(reports.seen, [])
+
+    async def test_stepper_finalized_before_its_await_runs_nothing_from_a_clear(self):
+        """
+        The same dead stepper reached only from a garbage cycle: the
+        collector's clear releases it, and no cleanup runs from there
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["mid_await_plain"](Pending(), log.append)
+            self.assertEqual(await agen.__anext__(), 1)
+            stepper = finalized(agen.__anext__())
+            self.assertEqual(stepper.send(None), "pending")
+            box = [stepper]
+            box.append(box)
+            del stepper, box
+            gc.collect()
+            self.assertEqual(log, [])
+        self.assertEqual(reports.seen, [])
+
+    async def test_finalized_unstarted_generator_is_closed(self):
+        """
+        A generator finalized before it was started is closed by its
+        finalizer, as CPython's is, so a later step finds it exhausted
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = finalized(mod["produce"](Box(), log.append))
+            with self.assertRaises(StopAsyncIteration):
+                await agen.__anext__()
+        self.assertEqual(log, [])
+        self.assertEqual(reports.seen, [])
 
 
 # The end.

@@ -221,8 +221,11 @@ static void asyncgen_finalize(PyObject *self) {
 
   if (state->busy || agen->closed)
     return;
-  if (state->active && ! state->started)
+  if (state->active && ! state->started) {
+    /* CPython's close marks a never-started frame completed */
+    agen->closed = 1;
     return;
+  }
   if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx)) && ! state->active)
     return;
 

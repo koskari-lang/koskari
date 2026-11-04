@@ -131,6 +131,7 @@ typedef enum KosContextFlags {
   KOS_CTX_RUNNING         = 0x01,
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
+  KOS_CTX_CLEARED         = 0x08,  /* context_clear began: no eval, no recycle */
 } KosContextFlags;
 
 
