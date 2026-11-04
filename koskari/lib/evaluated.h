@@ -45,8 +45,10 @@
    kos_call_kind records, at class creation, whether the subclass
    overrides the static type's __call__: INHERIT (zero, the type's
    zero-filled default) resolves to the static type's suite; KOS (a
-   KosCallable __call__) and PY (any other) resolve to an override
-   suite whose install calls that __call__. The metatype's tp_new
+   KosCallable __call__) resolves to an override suite whose install
+   runs that __call__ in the calling evaluator; PY (any other) resolves
+   to an empty suite, with no install, so the instance is a plain
+   Python callable called through its tp_call. The metatype's tp_new
    classifies a new type and its tp_setattro reclassifies a type and
    its subclasses when __call__ is set or deleted. Two limits: a
    second base whose metaclass does not derive from this one raises
@@ -259,8 +261,9 @@ extern PyTypeObject KosEvaluatedMetaType;
 
 /**
    The suites for KOS_CALL_KIND_KOS and KOS_CALL_KIND_PY, indexed by
-   kind - 1. Each carries only kc_vinstall; the Python boundary calls
-   the instance through its tp_call.
+   kind - 1. KOS carries only kc_vinstall; the Python boundary calls the
+   instance through its tp_call. PY is empty: no install, a plain
+   Python callable.
 */
 extern KosCallSlots kos_call_override_suites[2];
 

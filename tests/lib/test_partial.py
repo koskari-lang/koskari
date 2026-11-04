@@ -32,7 +32,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import FormalsSpec, KosPartial, demand_call, symbol
+from koskari.lib import (
+    FormalsSpec, KosPartial, demand, demand_call, symbol)
 from koskari.types import is_symbol
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
@@ -536,6 +537,20 @@ class TestKosPartialSubclassDispatch(unittest.TestCase):
 
         del Later.__call__
         self.assertEqual(_call_through_bytecode(kp, "B"), "AB")
+
+
+    def test_demand_over_python_call_override(self):
+        """
+        demand over a subclass instance with a Python __call__ calls it
+        as a plain Python callable and returns its value
+        """
+
+        class Marked(KosPartial):
+            def __call__(self, *args):
+                return ("marker", args)
+
+        wrapped = demand(Marked(_make_concat_fn(), "A"))
+        self.assertEqual(wrapped("B"), ("marker", ("B",)))
 
 
     def test_type_predicate_through_bytecode(self):

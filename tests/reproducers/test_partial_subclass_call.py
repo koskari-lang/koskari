@@ -76,6 +76,16 @@ class TestPartialSubclassCall(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result, 20000)
 
 
+    async def test_tail_recursion_through_override(self):
+        """
+        A tail self-recursion through the override reuses the caller's
+        frame at each level, so a depth no frame stack holds completes
+        """
+
+        mod = await self.load_module()
+        self.assertEqual(await mod.tail_deep(200000), 200000)
+
+
     async def test_python_subclass_with_koskari_call(self):
         """
         A partial subclass built in Python with a Koskari __call__ runs

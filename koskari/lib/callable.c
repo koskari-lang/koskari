@@ -371,33 +371,13 @@ PyObject *KosCallAdapt_CallAsync(
 
 
 /**
-   PY install: a heap subclass overriding __call__ with something other
-   than a KosCallable is called through its tp_call, which runs that
-   __call__; the value is reported in hand for the caller to settle.
-*/
-static KosOpResult kos_call_override_py_vinstall(
-    KosContext *ctx,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    int tail_call) {
-
-  (void) ctx;
-  (void) tail_call;
-
-  PyObject *r = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
-  return r ? EVAL_RETURN(r) : EVAL_RAISE();
-}
-
-
-/**
    KOS install: a heap subclass overriding __call__ with a KosCallable
    runs it in the calling evaluator, as the instance-call arm of the
    call dispatch does: a callable that binds its receiver gets the
    instance injected as its first positional, a non-descriptor is
    called without it (kos_instance_call_target). A __call__ that is no
-   longer a KosCallable falls to the PY install.
+   longer a KosCallable is called through tp_call, the value reported
+   in hand.
 */
 static KosOpResult kos_call_override_kos_vinstall(
     KosContext *ctx,
@@ -410,9 +390,11 @@ static KosOpResult kos_call_override_kos_vinstall(
   int binds;
   PyObject *target = kos_instance_call_target(callable, &binds);
 
-  if (! target)
-    return kos_call_override_py_vinstall(ctx, callable, args, nargs,
-                                         kwnames, tail_call);
+  if (! target) {
+    PyObject *r = PyObject_Vectorcall(callable, args, (size_t) nargs,
+                                      kwnames);
+    return r ? EVAL_RETURN(r) : EVAL_RAISE();
+  }
   if (binds)
     return KosContext_CallMethod(ctx, target, callable, args, nargs,
                                  kwnames, tail_call, NULL, NULL);
@@ -421,9 +403,11 @@ static KosOpResult kos_call_override_kos_vinstall(
 }
 
 
+/* KOS carries the install above. PY is empty: no install, so the
+   instance is a plain Python callable to every consumer. */
 KosCallSlots kos_call_override_suites[2] = {
   { .kc_vinstall = kos_call_override_kos_vinstall },
-  { .kc_vinstall = kos_call_override_py_vinstall },
+  { 0 },
 };
 
 
