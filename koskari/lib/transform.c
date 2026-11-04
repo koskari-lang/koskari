@@ -407,7 +407,13 @@ void kos_transform_dealloc(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
+  /* A transform over a transform over ... releases one link per
+     dealloc, each clear dropping the source that is the next. The
+     trashcan defers that recursion off the C stack, as CPython's own
+     map does; it needs the object untracked. */
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, kos_transform_dealloc);
+
   /* the type's clear, so a provider's own fields go in the one order
      its tp_clear states. The context teardown runs first: a frame
      still on the chain that KosNativeFrame_CacheOnFree flagged is
@@ -419,6 +425,8 @@ void kos_transform_dealloc(PyObject *self) {
     t->cached_frame = NULL;
   }
   Py_TYPE(self)->tp_free(self);
+
+  Py_TRASHCAN_END;
 }
 
 

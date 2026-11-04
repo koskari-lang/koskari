@@ -34,6 +34,7 @@ import unittest
 
 import pytest
 
+from koskari.lib import KosMap
 from koskari.module import load_module_source_async, new_module
 
 
@@ -41,6 +42,8 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 DEPTH = 100000
+
+NEST_DEPTH = 300000
 
 
 SRC = """
@@ -110,6 +113,20 @@ class TestDeepRecordChainRelease(unittest.TestCase):
             except StopIteration:
                 pass
         del g
+        gc.collect()
+
+
+class TestDeepTransformNestRelease(unittest.TestCase):
+    """
+    A transform over a transform over ..., each dealloc releasing the
+    source that is the next, is dropped with bounded C stack
+    """
+
+    def test_unstarted_map_nest(self):
+        m = iter(())
+        for _ in range(NEST_DEPTH):
+            m = KosMap(abs, m)
+        del m
         gc.collect()
 
 
