@@ -733,12 +733,14 @@ class LayoutReader(Reader):
 
     def _read_header_args(self, stream):
         """
-        Read header argument forms until a structural COLON or end-of-line.
+        Read header argument forms until a structural COLON or the end of
+        the logical line. Only horizontal whitespace is skipped between
+        forms, so a newline at delimiter depth 0 ends the header.
         """
 
         args = []
         while True:
-            stream.skip_whitespace()
+            self._skip_horizontal_whitespace(stream)
             if stream.dedented:
                 return args, False
 
