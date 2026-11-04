@@ -38,6 +38,7 @@ import pytest
 
 import koskari.lib as lib
 from koskari.module import load_module_source_async, new_module
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_lib
@@ -190,6 +191,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(read(), 7)
 
 
+    @needs_threads
     async def test_root_store_from_another_thread_stays_there(self):
         mod = await self.load()
         self.addCleanup(lib.ParamRef("cc_root").clear)

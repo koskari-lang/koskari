@@ -32,6 +32,7 @@ import pytest
 from koskari.cli.host import run_file_async
 from koskari.lib import Datum
 from koskari.module import new_module
+from tests import needs_native_stack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -48,6 +49,7 @@ class TestMatchDeepTuple(unittest.IsolatedAsyncioTestCase):
         await run_file_async(mod, _SCRIPT)
         return vars(mod)
 
+    @needs_native_stack
     async def test_deeply_nested_tuple_subject(self):
         ns = await self.load()
         stack = await ns['build'](400000)

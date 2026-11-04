@@ -20,7 +20,6 @@ protect flag
 """
 
 import gc
-import resource
 import unittest
 import weakref
 
@@ -36,12 +35,19 @@ from tests.lib.opcode import build_expr
 pytestmark = pytest.mark.phase_lib
 
 
+resource = None
+if not build_flags['KOS_NO_PROTECT']:
+    try:
+        import resource
+    except ImportError:
+        pass
+
 needs_protection = unittest.skipIf(
-    build_flags['KOS_NO_PROTECT'],
-    "built without read-only code protection")
+    resource is None,
+    "no read-only code protection in this build or platform")
 
 
-PAGE = resource.getpagesize()
+PAGE = resource.getpagesize() if resource else None
 
 
 def make_code(name, protect=True, payload=None, allocator=None):

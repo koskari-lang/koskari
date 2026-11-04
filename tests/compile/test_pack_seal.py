@@ -19,7 +19,6 @@ settings, the compiler's code allocator, and Compiler.seal()
 :license: GNU General Public License v3
 """
 
-import resource
 import unittest
 
 import pytest
@@ -34,9 +33,16 @@ from koskari.pragma import ModulePragma
 pytestmark = pytest.mark.phase_compile
 
 
+resource = None
+if not build_flags['KOS_NO_PROTECT']:
+    try:
+        import resource
+    except ImportError:
+        pass
+
 needs_protection = unittest.skipIf(
-    build_flags['KOS_NO_PROTECT'],
-    "built without read-only code protection")
+    resource is None,
+    "no read-only code protection in this build or platform")
 
 
 class TestPackModuleSetting(unittest.TestCase):

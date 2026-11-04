@@ -33,6 +33,7 @@ from koskari.lib import (
     FormalsSpec, FunctionSpec, build_flags, cons, demand_call, nil)
 from koskari.serialize.codex import KioFile
 from koskari.serialize.incremental import compile_ki_file_to_kio
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_importer
@@ -363,6 +364,7 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(555, user.secret)
 
 
+    @needs_processes
     def test_generated_macro_kio_in_fresh_process(self):
         """
         The compiled module loads and runs in an interpreter whose mark
@@ -386,6 +388,7 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual("8 100", proc.stdout.strip())
 
 
+    @needs_processes
     def test_generated_macro_imported_from_kio_in_fresh_process(self):
         """
         An interpreter that did not compile the module imports the

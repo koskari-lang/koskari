@@ -38,6 +38,7 @@ import unittest
 import pytest
 
 from tests.reproducers.context_manager_runner import RESULT_PREFIX
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -100,6 +101,7 @@ class ContextManagerShapeTestCase(unittest.TestCase):
                              f"manager {index} exc_type")
 
 
+@needs_processes
 class TestDirectProtocol(ContextManagerShapeTestCase):
     """
     The protocol methods called directly, with no with block involved.
@@ -123,6 +125,7 @@ class TestDirectProtocol(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, None))
 
 
+@needs_processes
 class TestSyncContextManager(ContextManagerShapeTestCase):
     """
     with over a koskari-defined manager whose __enter__ and __exit__ are
@@ -188,6 +191,7 @@ class TestSyncContextManager(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, None), (True, True, None))
 
 
+@needs_processes
 class TestSyncExitRaises(ContextManagerShapeTestCase):
     """
     A koskari-defined __exit__ that itself raises. The exit exception
@@ -222,6 +226,7 @@ class TestSyncExitRaises(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, 'ValueError'))
 
 
+@needs_processes
 class TestAsyncContextManager(ContextManagerShapeTestCase):
     """
     with over a koskari-defined manager implementing the async protocol.
@@ -288,6 +293,7 @@ class TestAsyncContextManager(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, None), (True, True, None))
 
 
+@needs_processes
 class TestDynWithContextManager(ContextManagerShapeTestCase):
     """
     The same koskari-defined managers driven through dyn-with, the
@@ -353,6 +359,7 @@ class TestDynWithContextManager(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, None), (True, True, None))
 
 
+@needs_processes
 class TestDynWind(ContextManagerShapeTestCase):
     """
     dyn-wind whose before, body, and after segments each call a

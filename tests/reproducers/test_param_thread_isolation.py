@@ -39,6 +39,7 @@ import pytest
 import koskari.asyncio
 from koskari.lib import Domain, ParamRef, demand_call
 from koskari.module import load_module_source_async, new_module
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -132,6 +133,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, source)
         return module
 
+    @needs_threads
     async def test_capture_crosses_threads(self):
         """
         A defer created inside a parameterize extent on this thread reads
@@ -161,6 +163,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, [])
         self.assertEqual(results, ["captured"])
 
+    @needs_threads
     async def test_concurrent_extents_on_two_threads(self):
         """
         Two threads inside parameterize extents of the same name at the
@@ -195,6 +198,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         # bare store is T1's thread's and T2 reads nothing
         self.assertEqual(results["after"], "unset")
 
+    @needs_threads
     async def test_bare_store_lands_in_the_running_threads_root(self):
         """
         A defer created on this thread and run on another stores, with
@@ -277,6 +281,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen["block_root"], ["k"])
         self.assertEqual(seen["after"], "unset")
 
+    @needs_threads
     def test_thread_has_no_foreign_ambient(self):
         """
         A second thread sees none of this thread's ambient state: its own

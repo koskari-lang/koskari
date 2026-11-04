@@ -29,6 +29,7 @@ import unittest
 import pytest
 
 from koskari.lib import KosMap
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_lib
@@ -40,6 +41,7 @@ TIMEOUT = 10
 class TestTransformBusy(unittest.TestCase):
 
 
+    @needs_threads
     def test_second_thread_refused(self):
         inside = threading.Event()
         release = threading.Event()

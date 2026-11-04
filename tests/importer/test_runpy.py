@@ -38,6 +38,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import pytest
 
 from koskari.importer import install, uninstall
+from tests import needs_interrupt
 
 
 pytestmark = pytest.mark.phase_importer
@@ -143,6 +144,7 @@ class TestRunpy(unittest.TestCase):
         self.assertIn("ValueError: boom", err)
 
 
+    @needs_interrupt
     def test_run_as_main_maps_an_interrupt_to_130(self):
         status, out, err = self._run_as_main('kiint')
         self.assertEqual(130, status)

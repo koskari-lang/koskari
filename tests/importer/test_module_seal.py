@@ -21,7 +21,6 @@ the module load path
 """
 
 import gc
-import resource
 import unittest
 import weakref
 
@@ -35,12 +34,19 @@ from koskari.module import (
 pytestmark = pytest.mark.phase_importer
 
 
+resource = None
+if not build_flags['KOS_NO_PROTECT']:
+    try:
+        import resource
+    except ImportError:
+        pass
+
 needs_protection = unittest.skipIf(
-    build_flags['KOS_NO_PROTECT'],
-    "built without read-only code protection")
+    resource is None,
+    "no read-only code protection in this build or platform")
 
 
-PAGE = resource.getpagesize()
+PAGE = resource.getpagesize() if resource else None
 
 SRC = """
 (def durable [x] (+ x 1))

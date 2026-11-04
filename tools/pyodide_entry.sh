@@ -28,7 +28,9 @@ case "$mode" in
     ;;
   test)
     pyodide venv /build/pyodide-venv
-    /build/pyodide-venv/bin/pip install pytest PyYAML /build/wheelhouse/*.whl
+    wheel=$(echo /build/wheelhouse/*.whl)
+    /build/pyodide-venv/bin/pip install pytest PyYAML jsonschema setuptools \
+        "$wheel[repl,lsp,pygments,sphinx]"
     /build/pyodide-venv/bin/python -m pytest "${@:-tests/}"
     ;;
   *)

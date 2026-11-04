@@ -31,6 +31,7 @@ import pytest
 
 from koskari.lib import Domain
 from koskari.module import load_module_source_async, new_module
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_lib
@@ -63,6 +64,7 @@ class TestThreadState(unittest.IsolatedAsyncioTestCase):
         seen = [v async for v in agen]
         self.assertEqual(seen, list(range(20)))
 
+    @needs_threads
     async def test_threads_running_koskari_exit_cleanly(self):
         mod = await self.load()
         add = mod["add"]
@@ -84,6 +86,7 @@ class TestThreadState(unittest.IsolatedAsyncioTestCase):
         # the main thread's own record is untouched by the workers' exits
         self.assertEqual(await add(20, 22), 42)
 
+    @needs_threads
     async def test_many_sequential_threads_and_interleaving(self):
         mod = await self.load()
         add = mod["add"]

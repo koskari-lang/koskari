@@ -36,5 +36,15 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+if sys.platform == 'emscripten':
+    from tests.pyodide_harness import install
+
+    install()
+
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError:
+        collect_ignore = ["tools/test_corpus_export.py"]
+
 
 # The end.

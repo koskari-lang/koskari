@@ -25,6 +25,7 @@ import sys
 import unittest
 
 import pytest
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_infra
@@ -36,6 +37,7 @@ def run(program):
         capture_output=True, text=True, check=True).stdout.split()
 
 
+@needs_processes
 class TestLazyLexerNames(unittest.TestCase):
 
     def test_importing_the_lexer_leaves_builtins_unloaded(self):

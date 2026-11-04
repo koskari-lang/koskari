@@ -32,6 +32,7 @@ import pytest
 
 from koskari.cli.host import run_file_async
 from koskari.module import new_module
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -74,6 +75,7 @@ def run_on_small_stack(fn, n):
     return box['value']
 
 
+@needs_threads
 class TestFlatDelivery(unittest.TestCase):
 
     @classmethod

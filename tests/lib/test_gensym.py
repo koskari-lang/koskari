@@ -26,6 +26,7 @@ import unittest
 import pytest
 
 from koskari.lib import cons, gensym, keyword, kos_repr, nil, symbol
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_lib
@@ -204,6 +205,7 @@ class TestGensymIdentity(unittest.TestCase):
         self.assertEqual(g.marks[0], b + 1)
 
 
+    @needs_processes
     def test_two_processes_draw_different_bases(self):
         """
         Marks count up from a base drawn once per process, so two

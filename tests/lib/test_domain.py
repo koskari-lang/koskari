@@ -28,6 +28,7 @@ import pytest
 from koskari.lib import Context, Domain, ParamRef, demand_call, parameter
 from tests import make_callable
 from tests.lib.opcode import build_expr
+from tests import needs_processes, needs_threads
 
 
 pytestmark = pytest.mark.phase_lib
@@ -483,6 +484,7 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertEqual(p.deref(), "from-koskari")
 
 
+    @needs_threads
     def test_second_thread_has_its_own_default(self):
         """
         Another thread sees none of this thread's root stores, and has
@@ -513,6 +515,7 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertEqual(ParamRef("tdd_thread_key").deref(), "main")
 
 
+    @needs_threads
     def test_thread_teardown_finalizer_reentry_leaks_nothing(self):
         """
         A root value of a worker thread whose finalizer re-enters
@@ -543,6 +546,7 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertEqual(domains(), before)
 
 
+    @needs_processes
     @unittest.skipUnless(hasattr(os, "fork"), "requires os.fork")
     def test_forked_child_releases_other_threads_defaults(self):
         """
@@ -605,6 +609,7 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertIn("finalized", out.stdout, out.stderr)
 
 
+    @needs_processes
     def test_finalizer_reentry_at_interpreter_exit(self):
         """
         At interpreter exit a daemon thread's record is torn down from

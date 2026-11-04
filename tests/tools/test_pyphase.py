@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from tests import needs_processes
 
 
 TOPDIR = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -67,6 +68,7 @@ def _total(summary, label):
     return int(found.group(1)) if found else None
 
 
+@needs_processes
 class TestPhaseTotals(unittest.TestCase):
 
     def run_pyphase(self, source):
