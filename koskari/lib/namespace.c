@@ -102,8 +102,10 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 
   if (type != &KosNamespaceType || count > (size_t) KOS_NS_MIN_SLOTS) {
     /* The overflow raw-flag words ride after the slots in the same
-       allocation; tp_itemsize is one pointer, the size of a word. */
-    size_t items = count + kos_ns_raw_more_words(count);
+       allocation; tp_itemsize is one pointer, so a raw word takes as
+       many items as its size in pointers. */
+    size_t items = count + kos_ns_raw_more_words(count)
+        * (sizeof(uint64_t) / sizeof(PyObject *));
     PyObject *p = PyObject_GC_NewVar(PyObject, type, (Py_ssize_t) items);
     if (! p)
       return NULL;
