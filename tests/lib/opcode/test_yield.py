@@ -335,8 +335,10 @@ class TestAgenDeallocWhenFrozen(CevalTest):
     async def test_agen_try_finally_runs_on_close(self):
         """
         Agen with try/finally in body; advance to yield; drop refs.
-        Verify finally runs during GeneratorExit teardown.
+        Verify finally runs during GeneratorExit teardown, in the aclose
+        the running loop's finalizer hook schedules for the generator.
         """
+        import asyncio
         import gc
 
         ran = {}
@@ -360,6 +362,8 @@ class TestAgenDeallocWhenFrozen(CevalTest):
         self.assertNotIn("done", ran)
         del agen
         gc.collect()
+        for _ in range(5):
+            await asyncio.sleep(0)
         self.assertIn("done", ran)
         self.assertIs(ran["done"], True)
 

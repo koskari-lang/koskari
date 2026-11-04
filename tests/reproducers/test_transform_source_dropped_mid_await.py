@@ -16,14 +16,14 @@ tests.reproducers.test_transform_source_dropped_mid_await
 
 A transform stepped from Python installs its koskari generator source
 under the transform's own native frame. When the stepper and then the
-transform are dropped mid-await, the transform's finalizer moves the
-generator's suspended span onto the generator's own context, and the
-generator closes from its own finalizer once the transform lets go of
-it; a finally block that awaits again leaves the generator's node
-installed on that context, which is freed with it. The generator object
-and the chain each let go of the node in whichever order the free runs,
-and the second one frees it: no fatal in a safety-net build, no double
-free, and later generators reuse the node storage cleanly.
+transform are dropped mid-await, the transform's finalizer closes its
+chain from the top, and every generator on it finishes with
+GeneratorExit there; a finally block that awaits again cannot complete,
+and the chain, the generator's node with it, is freed by the
+transform's release. The generator object and the chain each let go of
+the node in whichever order the free runs, and the second one frees
+it: no fatal in a safety-net build, no double free, and later
+generators reuse the node storage cleanly.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -213,12 +213,12 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         self.assert_ignored_by(AsyncGenerator)
         self.churn()
 
-    async def test_nested_generators_close_with_the_outer(self):
+    async def test_nested_generators_close_with_the_transform(self):
         """
         A transform over an outer generator iterating an inner one,
-        dropped while the inner awaits: neither generator is closed by
-        the transform. Dropping the outer closes it, and its for-each
-        lets go of the inner, which closes first, as CPython's would
+        dropped while the inner awaits: the transform's chain holds
+        both, and its drop closes them in one unwind from the top, the
+        inner first, while the outer is still held
         """
 
         outer = self.ns["outer"](Pending(), self.log.append)
@@ -227,8 +227,10 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first, 10)
         del stepper
         del transform
-        self.assertEqual(self.log, [])
+        self.assertEqual(self.log, ["inner-fin", "outer-fin"])
         self.assertEqual(self.seen, [])
+        with self.assertRaises(StopAsyncIteration):
+            await outer.__anext__()
         del outer
         self.assertEqual(self.log, ["inner-fin", "outer-fin"])
         self.assertEqual(self.seen, [])
@@ -237,8 +239,8 @@ class TestTransformSourceDroppedMidAwait(unittest.IsolatedAsyncioTestCase):
     async def test_plain_finally_runs_on_drop(self):
         """
         a finally block that does not await completes when the
-        generator, let go by the transform, closes, and the node comes
-        off the chain with the generator
+        transform's drop closes its chain, and the node comes off the
+        chain with the generator
         """
 
         gen = self.ns["plain"](Pending(), self.log.append)

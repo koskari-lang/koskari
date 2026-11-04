@@ -24,6 +24,7 @@ surfacing.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import gc
 import sys
 import unittest
@@ -109,6 +110,10 @@ class TestGeneratorCloseDecoration(unittest.IsolatedAsyncioTestCase):
         try:
             del agen
             gc.collect()
+            # at rest, the dropped generator closes in the aclose the
+            # running loop's finalizer hook schedules
+            for _ in range(5):
+                await asyncio.sleep(0)
         finally:
             sys.unraisablehook = prior
         self.assertEqual(unraisable, [])

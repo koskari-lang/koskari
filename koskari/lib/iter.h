@@ -50,7 +50,14 @@ struct KosPyAsyncGen {
      life so the dealloc can store the finished generator on it
      (KosFunction_DEAD_RECORD); NULL otherwise */
   PyObject *fn;
-  int closed;        /* generator closed */
+  /* the thread's async generator finalizer hook, taken when the hooks
+     were initialised (PEP 525); the finalizer calls it in place of the
+     synchronous close. NULL when none was set, or once it was called */
+  PyObject *finalizer;
+  PyObject *weakreflist;
+  uint8_t closed;        /* generator closed */
+  /* the PEP 525 hooks were read, on the first method call or drive */
+  uint8_t hooks_inited;
 };
 
 
@@ -80,32 +87,6 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynFrame *frame, PyObject *fn);
 */
 
 void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen);
-
-
-/**
-   Move the generator's step, suspended mid-await on a consumer's
-   chain, onto the generator's own context, where the generator owns
-   it: the span from the chain's top down to gen is frozen off from
-   (kos_dyn_gen_freeze), which gets the consumer's registers back, and
-   installed on the wrapper's context, created when there is none,
-   with the await iterator, the resume inject, the handler-visible
-   exception state and the AWAIT suspension mark moved with it. The
-   step stays in flight (busy), so the generator refuses another drive
-   as already running and closes from its own finalizer. The caller
-   is the consumer's finalizer, which then closes what is left of its
-   own chain. A generator whose finalizer has already run is closed
-   here instead.
-
-   :param agen: the GEN's owner, a reference held by the caller
-   :param from: the consumer's context, not running
-   :param gen: the innermost GEN on from's chain (kos_dyn_find_gen)
-   :return: 0, or -1 with the error set and the span back on from's
-     chain, from's drive state unmoved
-*/
-int KosPyAsyncGen_Park(
-    KosPyAsyncGen *agen,
-    KosContext *from,
-    KosDynGen *gen);
 
 
 /**

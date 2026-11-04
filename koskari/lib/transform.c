@@ -405,20 +405,51 @@ int kos_transform_clear(PyObject *self) {
 
 
 /**
+   The owners of the GEN nodes on ctx's chain, innermost first, each a
+   strong reference, so the generators outlive the close of the chain
+   that holds them only borrowed. NULL when the chain carries none or
+   the list cannot be had (the error cleared): the close then runs
+   without them.
+*/
+static PyObject *transform_chain_gens(KosContext *ctx) {
+
+  KosDynNode *n = (KosDynNode *) kos_dyn_find_gen(ctx);
+  PyObject *owners;
+
+  if (! n)
+    return NULL;
+
+  owners = PyList_New(0);
+  if (! owners) {
+    PyErr_Clear();
+    return NULL;
+  }
+  for (; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_IS_GEN(n)
+        && PyList_Append(owners, KosDynGen_OWNER((KosDynGen *) n)) < 0) {
+      PyErr_Clear();
+      break;
+    }
+  }
+  return owners;
+}
+
+
+/**
    Finalizer: a transform dropped with a step left mid-await on its own
    context (its stepper dropped first) closes that step before anything
-   is cleared. The generators whose spans the step installed on the
-   chain are not the transform's to close: each, innermost first, is
-   moved with its suspended state onto its own context
-   (KosPyAsyncGen_Park), where it stays running and closes from its own
-   finalizer, as CPython leaves an async generator whose asend
-   awaitable another generator's close dropped. What is left of the
-   chain, the transform's own, is then closed through the context
-   (kos_close_drive), the step spent, and what that close owes is
-   reported against the transform. A generator that cannot be moved
-   stays on the chain and is closed with it. A step on a consumer's
-   chain leaves this context empty, and belongs to that consumer; one
-   a drive is running is that drive's.
+   is cleared. The step is the context's: the chain is closed from its
+   top through the context (kos_close_drive), so every generator the
+   step installed on it finishes with GeneratorExit and its cleanup
+   runs now, innermost first, as a dropped coroutine closes the
+   generators on its chain. The step is then spent, and what the close
+   owes is reported against the innermost generator when the chain
+   carried one, else against the transform. Each generator on the
+   chain ends closed: a close that reached its GEN node finished it,
+   and one the close could not finish (a cleanup that suspended) is
+   finished here, its span gone with the chain. A step on a
+   consumer's chain leaves this context empty, and belongs to that
+   consumer; one a drive is running is that drive's.
 
    The close is a drive of its own, begun from the finalizer: the
    sanctioned exception to flattening, as for the generator's.
@@ -429,6 +460,7 @@ static void transform_finalize(PyObject *self) {
   KosContext *ctx = t->ctx;
   PyObject *fence_typ, *fence_val, *fence_tb;
   PyObject *typ, *val, *tb;
+  PyObject *gens = NULL;
   KosIterSlots *islots;
 
   if (t->busy == KOS_TF_IDLE || ! ctx
@@ -441,27 +473,29 @@ static void transform_finalize(PyObject *self) {
   PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
   Py_INCREF(ctx);
 
-  if (! (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED)) {
-    KosDynGen *gen;
-
-    while ((gen = kos_dyn_find_gen(ctx))) {
-      PyObject *owner = Py_NewRef(KosDynGen_OWNER(gen));
-      int parked = KosPyAsyncGen_Park((KosPyAsyncGen *) owner, ctx, gen);
-
-      if (parked < 0)
-        PyErr_WriteUnraisable(owner);
-      Py_DECREF(owner);
-      if (parked < 0)
-        break;
-    }
-  }
+  if (! (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED))
+    gens = transform_chain_gens(ctx);
 
   (void) kos_close_drive(ctx, &typ, &val, &tb);
   if (KosIter_CheckSlots(self, &islots))
     islots->ki_finish(self, 1);
   KosContext_ReleaseChain(ctx);
-  kos_close_report(self, typ, val, tb);
 
+  if (gens) {
+    Py_ssize_t i;
+
+    for (i = 0; i < PyList_GET_SIZE(gens); i++) {
+      PyObject *owner = PyList_GET_ITEM(gens, i);
+      if (KosIter_CheckSlots(owner, &islots))
+        islots->ki_finish(owner, 1);
+    }
+  }
+
+  kos_close_report(
+      (gens && PyList_GET_SIZE(gens)) ? PyList_GET_ITEM(gens, 0) : self,
+      typ, val, tb);
+
+  Py_XDECREF(gens);
   Py_DECREF(ctx);
   PyErr_Restore(fence_typ, fence_val, fence_tb);
 }

@@ -195,9 +195,8 @@ typedef struct KosLiveRegs {
 /**
    Where the step in flight runs, recorded in KosGenState::busy: on a
    consumer's chain, or on the generator's own context (a Python
-   adapter's drive, or a span moved home by KosPyAsyncGen_Park). Only
-   a step on its own context can be left there mid-await with nothing
-   driving it.
+   adapter's drive). Only a step on its own context can be left there
+   mid-await with nothing driving it.
 */
 typedef enum KosGenBusy {
   KOS_GEN_IDLE = 0,
@@ -1236,22 +1235,6 @@ void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen);
    :return: 0 on success, -1 on error
 */
 int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
-
-
-/**
-   Install a span frozen mid-await, as kos_dyn_gen_install does, but
-   with no yield placeholder: the frame at the top is suspended at an
-   await, not a yield, and the await's revive pushes the awaited value
-   itself (or stages it for a frame waiting on a resume). The context's
-   await state (the suspension event, the await iterator) is the
-   caller's to move.
-
-   :return: 0 on success, -1 on error with the span left resting
-*/
-int kos_dyn_gen_install_awaiting(
-    KosContext *ctx,
-    PyObject *owner,
-    KosGenState *state);
 
 
 /**

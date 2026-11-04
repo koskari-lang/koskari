@@ -26,6 +26,7 @@ dropping one suspended after a splice runs its finally.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import gc
 import unittest
 
@@ -145,6 +146,10 @@ class TestAsyncGenContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod["first_of"](g), 1)
         del g
         gc.collect()
+        # at rest, the dropped generator closes in the aclose the running
+        # loop's finalizer hook schedules
+        for _ in range(5):
+            await asyncio.sleep(0)
         self.assertEqual(box, ["f"])
 
     async def test_splice_reads_the_consumer_parameters(self):

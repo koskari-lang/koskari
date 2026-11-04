@@ -15,21 +15,27 @@
 """
 tests.lib.test_asyncgen_finalize
 
-An async generator dropped while suspended is closed by its finalizer,
-before any clearing, so its finally body runs against its frame as it
-was: on a plain drop, and inside a reference cycle collected by gc
+An async generator dropped while suspended is closed through its
+finalizer, before any clearing, so its finally body runs against its
+frame as it was: on a plain drop, and inside a reference cycle
+collected by gc. Under a running event loop the finalizer hands a
+generator at rest to the loop's finalizer hook, and its cleanup runs in
+the aclose task the loop schedules. A generator left mid-await, which
+nothing can resume, closes at its drop; one left mid-await on a
+transform's chain closes with that chain when the transform is dropped
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
+import asyncio
 import gc
 import sys
 import unittest
 
 import pytest
 
-from koskari.lib import AsyncGenerator, KosMap
+from koskari.lib import AsyncGenerator, KoskariSyncViolation, KosMap
 from koskari.module import load_module_source_async, new_module
 
 
@@ -81,6 +87,10 @@ define [mid_await_raises pending record]:
         (record "fin-start")
         raise (ValueError "cleanup failed")
 
+define [consume source]:
+    (for-each [x source] None)
+    "done"
+
 define [mid_await_plain pending record]:
     try:
         (yield 1)
@@ -88,6 +98,15 @@ define [mid_await_plain pending record]:
     finally:
         (record "finally")
 """
+
+
+NEVER_RETRIEVED = "Task exception was never retrieved"
+
+
+IGNORED_BY_ACLOSE = (
+    NEVER_RETRIEVED,
+    RuntimeError,
+    "async generator ignored GeneratorExit")
 
 
 IGNORED = (
@@ -173,6 +192,29 @@ def live_wrappers():
 
 class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
 
+    async def asyncSetUp(self):
+        self.handled = []
+        asyncio.get_running_loop().set_exception_handler(self.handle)
+
+    def handle(self, loop, context):
+        """
+        Keep each loop exception report as its message and the
+        exception's type and text
+        """
+
+        exc = context.get("exception")
+        self.handled.append((context["message"], type(exc), str(exc)))
+
+    async def settle(self):
+        """
+        Let the loop run the aclose task the finalizer hook scheduled,
+        then collect, so a failed task reports to the loop
+        """
+
+        for _ in range(5):
+            await asyncio.sleep(0)
+        gc.collect()
+
     async def load(self):
         mod = new_module("asyncgen_finalize")
         vars(mod)["__file__"] = "<asyncgen_finalize>"
@@ -195,8 +237,11 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
         with Unraisables() as reports:
             agen = await self.suspended(log, Box())
             del agen
+            self.assertEqual(log, [])
+            await self.settle()
         self.assertEqual(log, ["finally"])
         self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
     async def test_dropped_suspended_generators_run_their_finally_each_time(self):
         """
@@ -210,8 +255,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             for _ in range(3):
                 agen = await self.suspended(log, Box())
                 del agen
+                await self.settle()
         self.assertEqual(log, ["finally"] * 3)
         self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
     async def test_dropped_inside_a_cycle_runs_its_finally(self):
         """
@@ -228,13 +275,15 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             box.agen = agen
             del agen, box
             gc.collect()
+            await self.settle()
         self.assertEqual(log, ["finally"])
         self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
     async def test_finally_that_awaits_does_not_keep_the_wrapper_alive(self):
         """
-        The close cannot honour an await inside finally; the abandoned
-        chain is freed with the context and the wrapper goes with it
+        The loop's aclose completes a finally that awaits, and the
+        wrapper goes with the task that closed it
         """
 
         mod = await self.load()
@@ -245,13 +294,16 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
                 agen = mod["waits"](log.append)
                 self.assertEqual(await agen.__anext__(), 1)
                 del agen
+            await self.settle()
         self.assertEqual(live_wrappers(), before)
-        self.assertEqual(reports.seen, [IGNORED] * 5)
+        self.assertEqual(log, ["finally"] * 5)
+        self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
-    async def test_dropped_generator_whose_finally_awaits_is_reported(self):
+    async def test_dropped_generator_whose_finally_awaits_completes(self):
         """
-        A finally that awaits cannot complete in the synchronous close; the
-        rest of it is dropped and reported as an ignored GeneratorExit
+        A finally that awaits completes in the aclose the loop runs for
+        the dropped generator
         """
 
         mod = await self.load()
@@ -260,33 +312,45 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             agen = mod["waits"](log.append)
             self.assertEqual(await agen.__anext__(), 1)
             del agen
-        self.assertEqual(log, [])
-        self.assertEqual(reports.seen, [IGNORED])
+            self.assertEqual(log, [])
+            await self.settle()
+        self.assertEqual(log, ["finally"])
+        self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
     async def test_dropped_generator_whose_finally_yields_is_reported(self):
+        """
+        A finally that yields fails the loop's aclose with an ignored
+        GeneratorExit, and the failed task goes to the loop's handler
+        """
+
         mod = await self.load()
         log = []
         with Unraisables() as reports:
             agen = mod["yields_again"](log.append)
             self.assertEqual(await agen.__anext__(), 1)
             del agen
+            await self.settle()
         self.assertEqual(log, ["fin-start"])
-        self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [IGNORED_BY_ACLOSE])
 
-    async def test_break_from_generator_whose_finally_awaits_is_reported(self):
+    async def test_break_from_generator_whose_finally_awaits_completes(self):
         """
-        A for-each that breaks closes its generator; a finally that awaits
-        is reported the same way as on a drop
+        A for-each that breaks lets go of its generator, which the loop
+        closes as it closes any dropped one
         """
 
         mod = await self.load()
         log = []
         with Unraisables() as reports:
             self.assertEqual(await mod["break_waits"](log.append), "ok")
-        self.assertEqual(log, [])
-        self.assertEqual(reports.seen, [IGNORED])
+            await self.settle()
+        self.assertEqual(log, ["finally"])
+        self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
-    async def test_dropped_sync_view_whose_finally_awaits_is_reported(self):
+    async def test_dropped_sync_view_whose_finally_awaits_completes(self):
         mod = await self.load()
         log = []
         with Unraisables() as reports:
@@ -294,8 +358,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             view = iter(agen)
             self.assertEqual(next(view), 1)
             del view, agen
-        self.assertEqual(log, [])
-        self.assertEqual(reports.seen, [IGNORED])
+            await self.settle()
+        self.assertEqual(log, ["finally"])
+        self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
     async def mid_await(self, name, log):
         """
@@ -312,20 +378,29 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
         return agen, stepper
 
     async def test_dropped_mid_await_whose_cleanup_awaits_is_reported(self):
+        """
+        Dropped with its stepper mid-await, the generator closes at its
+        drop, the loop's hook or not: nothing can resume the step
+        """
+
         log = []
         with Unraisables() as reports:
             agen, stepper = await self.mid_await("mid_await_awaits", log)
             del stepper, agen
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
 
     async def test_dropped_mid_await_whose_cleanup_raises_is_reported(self):
         log = []
         with Unraisables() as reports:
             agen, stepper = await self.mid_await("mid_await_raises", log)
             del stepper, agen
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [CLEANUP_FAILED])
+        self.assertEqual(self.handled, [])
 
     async def test_dropped_stepper_leaves_the_generator_suspended(self):
         """
@@ -342,14 +417,17 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(log, [])
             self.assertEqual(reports.seen, [])
             del agen
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
 
     async def test_suspended_generator_refuses_each_method(self):
         """
         A generator left mid-await by a dropped stepper is still
         running: anext, asend, athrow and aclose each refuse it with
-        CPython's text, and none of them runs its cleanup
+        CPython's text, and none of them runs its cleanup; its drop
+        does
         """
 
         log = []
@@ -373,8 +451,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(log, [])
             self.assertEqual(reports.seen, [])
             del agen
-        self.assertEqual(log, ["finally"])
+            self.assertEqual(log, ["finally"])
+            await self.settle()
         self.assertEqual(reports.seen, [])
+        self.assertEqual(self.handled, [])
 
     async def test_suspended_generator_cleanup_raises_at_its_drop(self):
         log = []
@@ -383,8 +463,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             del stepper
             self.assertEqual(log, [])
             del agen
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [CLEANUP_FAILED])
+        self.assertEqual(self.handled, [])
 
     async def test_suspended_generator_in_a_cycle_closes_when_collected(self):
         """
@@ -401,8 +483,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             box.append(box)
             del agen, box
             gc.collect()
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
 
     async def test_closed_mid_await_stepper_raises_ignored_exit(self):
         """
@@ -436,9 +520,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
 
     async def test_dropped_transform_mid_await_is_reported(self):
         """
-        A transform stepped into its source's await and dropped lets go
-        of the generator, its last holder; the generator closes from its
-        own finalizer and is reported against itself
+        A transform stepped into its source's await and dropped closes
+        its chain from the top: the generator on it finishes with
+        GeneratorExit at the transform's drop, reported against the
+        generator
         """
 
         mod = await self.load()
@@ -451,14 +536,17 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             stepper = transform.__anext__()
             self.assertEqual(stepper.send(None), "pending")
             del stepper, transform
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
 
-    async def test_dropped_transform_leaves_a_held_generator_suspended(self):
+    async def test_dropped_transform_closes_a_held_generator(self):
         """
-        A transform dropped mid-await does not close a generator held
-        elsewhere: it stays suspended, refuses a later anext as already
-        running, and closes when it is dropped
+        A transform dropped mid-await closes the generator on its chain
+        even while it is held elsewhere: the step was the transform's,
+        so its cleanup runs at the transform's drop, and a later anext
+        finds the generator closed
         """
 
         mod = await self.load()
@@ -470,23 +558,21 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             stepper = transform.__anext__()
             self.assertEqual(stepper.send(None), "pending")
             del stepper, transform
-            self.assertEqual(log, [])
-            self.assertEqual(reports.seen, [])
-            with self.assertRaises(RuntimeError) as caught:
+            self.assertEqual(log, ["fin-start"])
+            self.assertEqual(reports.seen, [IGNORED])
+            with self.assertRaises(StopAsyncIteration):
                 await agen.__anext__()
-            self.assertEqual(
-                str(caught.exception),
-                "anext(): asynchronous generator is already running")
-            self.assertEqual(log, [])
             del agen
+            await self.settle()
         self.assertEqual(log, ["fin-start"])
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
 
     async def test_dropped_transform_stepper_leaves_the_step_in_flight(self):
         """
         Dropping a transform's stepper closes nothing: the transform
         refuses a later step while its step is in flight, and its drop
-        lets the generator close
+        closes the generator on its chain
         """
 
         mod = await self.load()
@@ -506,9 +592,44 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 str(caught.exception), "map is already being iterated")
             self.assertEqual(log, [])
-            del transform
-        self.assertEqual(log, ["fin-start"])
+            del transform, caught
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
+
+    async def test_dropped_coroutine_closes_a_held_generator(self):
+        """
+        A coroutine dropped while the generator it iterates awaits
+        closes its chain from the top on the demand path: the
+        generator's cleanup runs at the coroutine's drop, and its await
+        is refused in-eval with KoskariSyncViolation, which unwinds
+        through the generator. The generator, held elsewhere, ends
+        closed: a later anext finds it exhausted, its own finalizer and
+        the loop's hook have nothing left to do, and the close is
+        reported once, against the coroutine
+        """
+
+        mod = await self.load()
+        log = []
+        with Unraisables() as reports:
+            agen = mod["mid_await_awaits"](Pending(), log.append)
+            coro = mod["consume"](agen)
+            coro_type = type(coro)
+            self.assertEqual(coro.send(None), "pending")
+            del coro
+            self.assertEqual(log, ["fin-start"])
+            with self.assertRaises(StopAsyncIteration):
+                await agen.__anext__()
+            del agen
+            await self.settle()
+        self.assertEqual(log, ["fin-start"])
+        self.assertEqual(
+            reports.seen,
+            [(KoskariSyncViolation,
+              "async suspension is not allowed in demand_sync",
+              None, coro_type)])
+        self.assertEqual(self.handled, [])
 
     async def test_mid_await_in_a_cycle_runs_its_cleanup_and_is_reported(self):
         """
@@ -523,8 +644,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             box.append(box)
             del agen, stepper, box
             gc.collect()
-        self.assertEqual(log, ["fin-start"])
+            self.assertEqual(log, ["fin-start"])
+            await self.settle()
         self.assertEqual(reports.seen, [IGNORED])
+        self.assertEqual(self.handled, [])
 
     async def test_stepper_finalized_before_its_await_is_not_closed_again(self):
         """
