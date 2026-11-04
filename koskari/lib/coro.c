@@ -271,15 +271,29 @@ static void coroutine_finalize(PyObject *self) {
 static void coroutine_dealloc(PyObject *self) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
+  PyObject *fn;
 
-  /* run the finalizer first; it may resurrect the coroutine, in which
-     case the dealloc is abandoned here and happens on the next drop.
-     Without a context (never started, or done) the finalizer has
-     nothing to close, so the call is skipped. */
-  if (coro->ctx && PyObject_CallFinalizerFromDealloc(self) < 0)
-    return;
-
+  /* A chain of coroutines, each bound frame holding the previous one,
+     releases one coroutine per link: a frame returning to its
+     function's cache drops its locals in place, and a suspended link's
+     close frees the next link from inside the finalizer. The trashcan
+     wraps the finalizer too, as CPython's subtype_dealloc does, so
+     that recursion is deferred off the C stack. It needs the
+     coroutine untracked. */
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, coroutine_dealloc);
+
+  /* Run the finalizer first. It may resurrect the coroutine, in which
+     case the dealloc is abandoned here and happens on the next drop;
+     a resurrected object must be tracked, so the finalizer runs
+     tracked. Without a context (never started, or done) the finalizer
+     has nothing to close, so the call is skipped. */
+  if (coro->ctx) {
+    PyObject_GC_Track(self);
+    if (PyObject_CallFinalizerFromDealloc(self) < 0)
+      goto done;
+    PyObject_GC_UnTrack(self);
+  }
 
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
@@ -288,23 +302,23 @@ static void coroutine_dealloc(PyObject *self) {
      free: untracked, every field clear, refcount zero, the next call
      revives it. The function's own release frees a stored one, so the
      reference dropped here may free both at once. */
-  {
-    PyObject *fn = coro->fn;
-
-    coro->fn = NULL;
-    if (fn) {
-      if (! KosFunction_DEAD_RECORD(fn)) {
-        KosFunction_DEAD_RECORD(fn) = self;
-        KOS_TRACE_FL_RETURN("coroutine", 0);
-        Py_DECREF(fn);
-        return;
-      }
-      KOS_TRACE_FL_RETURN("coroutine", 1);
+  fn = coro->fn;
+  coro->fn = NULL;
+  if (fn) {
+    if (! KosFunction_DEAD_RECORD(fn)) {
+      KosFunction_DEAD_RECORD(fn) = self;
+      KOS_TRACE_FL_RETURN("coroutine", 0);
       Py_DECREF(fn);
+      goto done;
     }
+    KOS_TRACE_FL_RETURN("coroutine", 1);
+    Py_DECREF(fn);
   }
 
   Py_TYPE(self)->tp_free(self);
+
+done:
+  Py_TRASHCAN_END;
 }
 
 

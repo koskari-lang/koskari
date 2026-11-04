@@ -236,14 +236,27 @@ static void asyncgen_finalize(PyObject *self) {
 
 static void asyncgen_dealloc(PyObject *self) {
 
-  /* run the finalizer first; it may resurrect the generator, in which
-     case the dealloc is abandoned here and happens on the next drop */
-  if (PyObject_CallFinalizerFromDealloc(self) < 0)
-    return;
-
-  PyObject_GC_UnTrack(self);
-
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  PyObject *fn;
+
+  /* A chain of generators, each bound frame holding the previous one,
+     releases one generator per link: a frame returning to its
+     function's cache drops its locals in place, and a suspended link's
+     close frees the next link from inside the finalizer. The trashcan
+     wraps the finalizer too, as CPython's subtype_dealloc does, so
+     that recursion is deferred off the C stack. It needs the
+     generator untracked. */
+  PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, asyncgen_dealloc);
+
+  /* Run the finalizer first. It may resurrect the generator, in which
+     case the dealloc is abandoned here and happens on the next drop;
+     a resurrected object must be tracked, so the finalizer runs
+     tracked. */
+  PyObject_GC_Track(self);
+  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+    goto done;
+  PyObject_GC_UnTrack(self);
 
   asyncgen_drop_state(agen);
   Py_CLEAR(agen->code_name);
@@ -252,23 +265,23 @@ static void asyncgen_dealloc(PyObject *self) {
      free: untracked, every field clear, refcount zero, the next call
      revives it. The function's own release frees a stored one, so the
      reference dropped here may free both at once. */
-  {
-    PyObject *fn = agen->fn;
-
-    agen->fn = NULL;
-    if (fn) {
-      if (! KosFunction_DEAD_RECORD(fn)) {
-        KosFunction_DEAD_RECORD(fn) = self;
-        KOS_TRACE_FL_RETURN("asyncgen", 0);
-        Py_DECREF(fn);
-        return;
-      }
-      KOS_TRACE_FL_RETURN("asyncgen", 1);
+  fn = agen->fn;
+  agen->fn = NULL;
+  if (fn) {
+    if (! KosFunction_DEAD_RECORD(fn)) {
+      KosFunction_DEAD_RECORD(fn) = self;
+      KOS_TRACE_FL_RETURN("asyncgen", 0);
       Py_DECREF(fn);
+      goto done;
     }
+    KOS_TRACE_FL_RETURN("asyncgen", 1);
+    Py_DECREF(fn);
   }
 
   Py_TYPE(self)->tp_free(self);
+
+done:
+  Py_TRASHCAN_END;
 }
 
 
