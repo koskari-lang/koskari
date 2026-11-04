@@ -502,14 +502,22 @@ static KosIterStepResult agen_iter_drive(
     } else {
       PyObject *popped = KosContext_StackPopRef(ctx);
       if (! popped)
-        goto drive_error;
+        goto install_error;
       Py_DECREF(popped);
       if (KosContext_StackPushRef(ctx, send_val) < 0)
-        goto drive_error;
+        goto install_error;
     }
   }
 
   return KOS_ITER_INSTALLED;
+
+install_error:
+  /* The span is spliced and the frame has not run: put it back to
+     rest, and take back the yield event set above, so the generator
+     stays suspended where it was and the next drive installs afresh. */
+  kos_dyn_gen_unsplice(ctx, state);
+  if (! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
+    KosContext_SetSuspensionEvent(ctx, KOS_SUSP_NONE);
 
 drive_error:
   /* Every failed drive releases the busy mark; a wedged one would

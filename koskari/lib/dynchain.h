@@ -1224,6 +1224,20 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
 
 
 /**
+   Undo an install whose caller failed after the splice, before the
+   installed frame ran: the span goes back to rest in the state through
+   the freeze, and the context's registers return to the consumer, so
+   the generator stays suspended where it was and the next drive finds
+   a resting span. A pending error is kept across the freeze. No-op
+   when the span is not spliced.
+
+   :param ctx: the context the span was installed on
+   :param state: the owner's state record
+*/
+void kos_dyn_gen_unsplice(KosContext *ctx, KosGenState *state);
+
+
+/**
    Bootstrap install: graft the chain headed by chain_head onto the
    consumer ctx. A chain whose root is a bare frame, the unstarted
    generator's, gets a new GEN node under it and marks the state

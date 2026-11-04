@@ -301,8 +301,12 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (! (surfaced && KosDynFrame_RESUME_KIND(surfaced))
-        && KosContext_StackPushRef(ctx, Py_None) < 0)
+        && KosContext_StackPushRef(ctx, Py_None) < 0) {
+      /* the span is spliced and nothing else has run: put it back to
+         rest, so the generator stays suspended where it was */
+      kos_dyn_gen_unsplice(ctx, state);
       return -1;
+    }
   }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p",
@@ -312,6 +316,27 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
            : "NULL",
        (void *) KosContext_FRAME(ctx));
   return 0;
+}
+
+
+void kos_dyn_gen_unsplice(KosContext *ctx, KosGenState *state) {
+
+  KosDynNode *bottom = state->bottom;
+  KosDynGen *gen;
+  PyObject *typ, *val, *tb;
+
+  if (! bottom)
+    return;
+  gen = (KosDynGen *) KosDynNode_PARENT(bottom);
+  if (! gen || KosDynNode_KIND(gen) != KOS_DYN_GEN)
+    return;
+
+  /* the failure's error is the one the caller reports; the freeze's
+     own, should it have one, is not */
+  PyErr_Fetch(&typ, &val, &tb);
+  if (kos_dyn_gen_freeze(ctx, gen) < 0)
+    PyErr_Clear();
+  PyErr_Restore(typ, val, tb);
 }
 
 
