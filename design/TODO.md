@@ -504,6 +504,16 @@ into `__annotations__`, and a body's global binding would reach it too.
 [ideas.md](ideas.md). It has been removed from user-facing docs pending a
 decision.)
 
+### Review the `default!` macro (ref-based or removed)
+
+`default!` runs its location's object and key subforms once in the
+test and again in the store, so `(default! (get-config)["port"] 80)`
+calls `get-config` up to three times. Rewrite it over a ref: capture
+the ref once, check it, store into it when unset, with `default!`
+a macro over that function; or remove the macro.
+
+Ref: [MACROS.md](MACROS.md).
+
 ---
 
 ## Corpus
