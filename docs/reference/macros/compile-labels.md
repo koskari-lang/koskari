@@ -2,8 +2,8 @@
 **Syntax:** **`(labels [[NAME FORMALS BODY ...] ...] FORM ...)`**
 
 **Behaviour:** Like [`flet`](compile-flet.md), but the bound names are visible to
-one another, so the functions can be mutually recursive. Each declaration is
-bound with **`var`** inside a shared (empty) **`let`** scope, so a sibling
+one another, so the functions can be mutually recursive. The declarations share
+one new local scope, each bound there as **`var`** binds, so a sibling
 reference resolves there before the body runs:
 
 ```koskari
@@ -12,7 +12,7 @@ reference resolves there before the body runs:
   (even? 10))
 ```
 
-is equivalent to:
+behaves like:
 ```koskari
 (let []
   (var even? (function even? [n] (if (== n 0) True (odd? (- n 1)))))

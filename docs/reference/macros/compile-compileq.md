@@ -2,8 +2,9 @@
 
 **Syntax:** `(compileq FORM)`, `(compileq FORM NS)`
 
-**Behaviour:** Expands to `(call compile (quote FORM) ...)`, so the form
-is written as surface syntax and compiled without running. With one
+**Behaviour:** Compiles `FORM` without running it, as the
+[`compile`](../runtime/compile.md) function does. `FORM` is not
+evaluated, so it is written as surface syntax. With one
 argument the namespace is `(vars)`; with two, the given namespace.
 The result is an `Expression`, callable to run it.
 

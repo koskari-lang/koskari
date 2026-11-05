@@ -7,12 +7,12 @@
 - `(assert EXPR)` -- raise `AssertionError` when `EXPR` is falsey.
 - `(assert EXPR MESSAGE)` -- the same, with `MESSAGE` as the exception argument.
 
-**Behaviour:** Expands to a falsey-check that raises **`AssertionError`** --
-effectively `(unless EXPR (raise (AssertionError MESSAGE?)))`. `MESSAGE` is an
-ordinary expression and is evaluated only when the assertion fails.
+**Behaviour:** Evaluates `EXPR` and raises **`AssertionError`** when it is
+falsey, with `MESSAGE` as the exception argument when one is given. `MESSAGE`
+is an ordinary expression and is evaluated only when the assertion fails.
 
-The expansion is gated by the **`compiler/enable-asserts`** pragma setting
-(default on). When disabled, an `assert` form expands to nothing at all:
+`assert` is gated by the **`compiler/enable-asserts`** pragma setting
+(default on). When disabled, an `assert` form is dropped at compile time:
 neither the condition nor the message is compiled or evaluated, mirroring
 Python's `-O` behavior. The gate is consulted as each `assert` form is
 compiled, so a pragma change is forward-only -- it affects the asserts that

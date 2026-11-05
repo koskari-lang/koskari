@@ -5,24 +5,16 @@
 
 **Syntax:** `(slice)` or `(slice ARGS ...)`
 
-**Behaviour:** Routes slice construction through the [build-slice](../runtime/build-slice.md)
-function so keyword arguments are accepted. **`(slice)`** expands to
-**`(call build-slice)`**; **`(slice ARGS ...)`** expands to **`(call build-slice ARGS ...)`**.
+**Behaviour:** Builds a slice through the [build-slice](../runtime/build-slice.md)
+function so keyword arguments are accepted. **`(slice)`** calls it with no
+arguments; **`(slice ARGS ...)`** passes **ARGS** to it.
 
 ## compile/item-slice
 
 **Syntax:** `(item-slice SEQUENCE)` or `(item-slice SEQUENCE ARGS ...)`
 
-**Behaviour:** Slice a sequence via **`item`**. **`(item-slice SEQUENCE)`** expands to
-**`(item SEQUENCE (call build-slice))`**. With slice arguments:
-
-```koskari
-(item-slice sequence start ...)
-```
-
-is equivalent to:
-```koskari
-(item sequence (slice start ...))
-```
+**Behaviour:** Subscripts **SEQUENCE** via **`item`** with the slice that
+**`(slice ARGS ...)`** builds; with no **ARGS**, with the slice
+**`(slice)`** builds.
 
 **Also:** type [`slice`](../runtime/types-and-predicates.md#collections).

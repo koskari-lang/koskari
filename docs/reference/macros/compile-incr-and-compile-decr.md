@@ -3,8 +3,9 @@
 **Syntax:** `(incr! TARGET [VALUE])`, `(decr! TARGET [VALUE])`, with a
 default step of `1`.
 
-**Behaviour:** Expand to [`inplace`](../specials/compile-inplace.md)
-with `+` or `-`, so the target is read once, updated, and stored back.
+**Behaviour:** Update the target with `+` or `-`, as
+[`inplace`](../specials/compile-inplace.md) does: the target is read
+once, updated, and stored back.
 The target is a name, an attribute, or a subscript, as for `set!`.
 
 **Examples:**

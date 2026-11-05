@@ -29,29 +29,30 @@ resolution a store to a name bound in no enclosing scope is a compile
 error, and `global var` is how a function says it means the module's
 name.
 
-**Behaviour:** Every arm lowers to
-[compile/define-global](../specials/compile-define-global.md), or to
-[compile/define-global-values](../specials/compile-define-global-values.md)
-for a pattern. Each records its names as module bindings for the
+**Behaviour:** Every arm binds at the module as
+[compile/define-global](../specials/compile-define-global.md) does, or
+as [compile/define-global-values](../specials/compile-define-global-values.md)
+does for a pattern. Each records its names as module bindings for the
 current scope and, with a value, evaluates it and stores it at the
 module. A name the same scope already declared with `var` cannot also
-be declared `global var`. The form's value is `None`.
+be declared `global var`. The form's value is `None`. Each arm behaves
+like the form in its comment:
 
 ```koskari
 (global var x 1)
-;; -> (define-global x 1)
+;; like (define-global x 1)
 
 (global var [a b] x)
-;; -> (define-global-values [a b] x)
+;; like (define-global-values [a b] x)
 
 (global def f [x] body ...)
-;; -> (define-global f (function f [x] body ...))
+;; like (define-global f (function f [x] body ...))
 
 (global class C [Base] body ...)
-;; -> (define-global C (build-class C [Base] body ...))
+;; like (define-global C (build-class C [Base] body ...))
 
 (global syntax twice (syntax-rules [] ...))
-;; -> (define-syntax twice (syntax-rules [] ...))
+;; like (define-syntax twice (syntax-rules [] ...))
 ```
 
 A decorator line above `global var`, `global def` or `global class`

@@ -2,8 +2,8 @@
 
 **Syntax:** `(None? VALUE)`
 
-**Behaviour:** Identity test against the `None` singleton. Expands to
-`(is VALUE None)`.
+**Behaviour:** Identity test against the `None` singleton: true when
+`VALUE` is `None`.
 
 `None?` tests identity, not truthiness. A value that is falsy but is not
 `None` -- `0`, `""`, an empty collection -- is not `None`:

@@ -1,17 +1,16 @@
 # compile/function-compose
 **Syntax:** `(function-compose FN)` or `(function-compose FN1 FN2 ...)`
 
-**Behaviour:** **`macro-rules`** expansion. A single **FN** is unchanged. Two or more
-**FN**s expand to a **`lambda [*: args **: kwds]`** that nests calls from right to left:
+**Behaviour:** A single **FN** is returned unchanged. Two or more **FN**s
+make a function taking **`*: args **: kwds`** that nests calls from right to left:
 the rightmost **FN** receives **`*: args **: kwds`**, and each **FN** to the left wraps
-the accumulated call (same order as **`(decorate [DECORATOR ...] FN)`** folding). Example
-from the macro docstring:
+the accumulated call (same order as **`(decorate [DECORATOR ...] FN)`** folding).
 
 ```koskari
 (function-compose fn1 (fn2 foo) fn3)
 ```
 
-is equivalent to:
+behaves like:
 ```koskari
 (lambda [*: args **: kwds]
   (fn1 ((fn2 foo) (fn3 *: args **: kwds))))

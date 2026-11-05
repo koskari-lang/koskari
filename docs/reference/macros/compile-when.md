@@ -2,8 +2,7 @@
 
 **Syntax:** `(when COND BODY ...)`
 
-**Behaviour:** Expands to `(cond [COND BODY ...] [else: None])`. When
-`COND` is truthy the body forms run in order and the last is the value;
+**Behaviour:** When `COND` is truthy the body forms run in order and the last is the value;
 otherwise the value is `None`.
 
 **Examples:**
@@ -16,11 +15,6 @@ otherwise the value is `None`.
 when (> n 0):
   print n
   n
-```
-
-```koskari
->>> (macroexpand-1 '(when a b c))
-(cond [a b c] [else: None])
 ```
 
 **See also:** [`unless`](compile-unless.md) for the inverted test,

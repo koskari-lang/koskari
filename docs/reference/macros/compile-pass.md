@@ -2,7 +2,7 @@
 
 **Syntax:** `(pass)`, or a bare `pass`
 
-**Behaviour:** A no-op expression. Expands to `(begin)`, whose value is `None`.
+**Behaviour:** A no-op expression whose value is `None`.
 It fills a body or an arm that has to hold a form but has nothing to do.
 
 `pass` also carries a bare arm, so a lone `pass` on a line works. The

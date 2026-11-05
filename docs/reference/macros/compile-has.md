@@ -2,9 +2,9 @@
 
 **Syntax:** `(has? COLLECTION ELEMENT)`
 
-**Behaviour:** Membership. Expands to `(in ELEMENT COLLECTION)`, which
-is Python's `element in collection`, with the collection first so it
-reads as a question about the collection.
+**Behaviour:** Membership: true when `ELEMENT` is in `COLLECTION`, as
+Python's `element in collection`, with the collection first so it reads
+as a question about the collection.
 
 **Examples:**
 

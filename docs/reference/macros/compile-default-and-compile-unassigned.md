@@ -2,13 +2,13 @@
 
 **Syntax:** `(unassigned? LOCATION)`, `(default! LOCATION VALUE)`
 
-**Behaviour:** `unassigned?` expands to `(not (ref LOCATION))`: true when the
-storage location currently holds no value. A declared-but-unstored binding is
-unassigned; so is an attribute or subscript that does not exist, since
-`ref` accepts the same target shapes [`ref`](compile-ref.md) does.
+**Behaviour:** `unassigned?` is true when the storage location currently
+holds no value, and false otherwise. It accepts the target shapes
+[`ref`](compile-ref.md) accepts. A declared-but-unstored binding is
+unassigned; so is an attribute or subscript that does not exist.
 
 `default!` stores VALUE into LOCATION unless the location is already assigned
-to a value of its own that is truthy. It expands to
+to a value of its own that is truthy. It behaves like
 
 ```koskari
 unless (and (ref LOCATION) LOCATION):

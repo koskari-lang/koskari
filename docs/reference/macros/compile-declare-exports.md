@@ -2,8 +2,9 @@
 
 **Syntax:** `(declare-exports NAME ...)`
 
-**Behaviour:** Expands to `(define-global __features__ #(...))` holding
-the sorted, deduplicated names as strings. Each name is a feature stem.
+**Behaviour:** Binds the module global `__features__`, as
+`define-global` does, to a tuple of the sorted, deduplicated names as
+strings. Each name is a feature stem.
 When the module finishes loading, `__all__` is built from the stems as
 the bindings that exist: the runtime name and its `compile/` and
 `layout/` facets. A Python-side star import therefore sees only what is
