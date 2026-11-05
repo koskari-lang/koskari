@@ -650,11 +650,14 @@ struct KosDynNode {
     } shift;
     struct {
       /* The generator object whose span this node marks, borrowed. It
-         is alive while the node is installed: the record stepping it
-         sits below the node on the chain or releases its context
-         first, and the object's own context is cleared in its dealloc.
-         The node exists from an install to the freeze or the teardown,
-         and the chain frees it like any other. */
+         is alive while the node is installed on a running chain: the
+         record stepping it sits below the node on the chain or
+         releases its context first, and the object's own context is
+         cleared in its dealloc. A chain that outlives the owner, a
+         consumer's context freed after the record let the generator
+         go, frees the node without reading the owner or its state.
+         The node exists from an install to the freeze or the
+         teardown, and the chain frees it like any other. */
       PyObject *owner;
       /* the owner's state record, borrowed; valid while owner is */
       KosGenState *state;
@@ -1206,9 +1209,10 @@ void kos_dyngen_rest(KosDynGen *gen);
 
 
 /**
-   Free a GEN node: return it to the freelist. The chain free reaches
-   it through kos_dynnode_free, where a node freed with its chain is
-   the end of a step in flight; the state's clear frees a resting one.
+   Free a GEN node: return it to the freelist, touching neither its
+   owner nor the owner's state, which may already be gone. The chain
+   free reaches it through kos_dynnode_free; the state's clear frees a
+   resting one, taking it out of the state first.
 */
 void kos_dyngen_free(KosDynGen *gen);
 

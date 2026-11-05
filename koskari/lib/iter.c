@@ -223,9 +223,9 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
    Drop the generator's resting span and context without driving the
    body. The close itself belongs to the finalizer, which has already
    run by the time clear or dealloc reaches here. A span installed on
-   a consumer's chain is held there by the record stepping it, which
-   holds the wrapper too, so it is never met here; one on the
-   wrapper's own context goes with the context.
+   a consumer's chain is not in the state while installed, and goes
+   with that chain, whose free touches neither the wrapper nor its
+   state; one on the wrapper's own context goes with the context.
 */
 static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 

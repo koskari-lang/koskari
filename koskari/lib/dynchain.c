@@ -1222,9 +1222,19 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
 
     case KOS_DYN_GEN:
-      /* freed with its chain: the step in flight is over, and the span
-         it marked went with the chain */
-      KosDynGen_STATE(node)->busy = KOS_GEN_IDLE;
+      /* freed with its chain, and the span it marked went with the
+         chain. Neither the owner nor its state is touched: the owner
+         is borrowed, and the chain may outlive it (a transform's
+         context, held by its stepper, freed after the transform's
+         clear released the generator). An installed node is not in
+         the state's node slot, kos_dyngen_new having taken it out.
+         The step's busy mark is not reset here: every path that
+         finishes the owner resets it (kos_dyn_finish_flattened_gen
+         and a consumer's resume through ki_finish,
+         KosPyAsyncGen_Teardown itself, transform_finalize finishing
+         each owner on its chain). Only a raw chain free, a context's
+         clear or KosContext_ReleaseChain, leaves a consumer's step
+         marked running, the state of a step that never finished. */
       kos_dyngen_free((KosDynGen *) node);
       break;
     case KOS_DYN_COLLECT:

@@ -388,11 +388,12 @@ int kos_transform_clear(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
-  /* the context goes first: a source generator stepped on it may still
-     have its node on the chain, which lets go before the source does.
-     A source with a step in flight is held by that step's stage
-     reference, so dropping it here frees nothing a live frame names;
-     the last holder frees. */
+  /* the context goes first, so a chain no one else holds is freed
+     while the source is still the transform's. A source generator
+     with its node on a chain held elsewhere may go first: the chain's
+     later free does not touch the generator. A source with a step in
+     flight is held by that step's stage reference, so dropping it
+     here frees nothing a live frame names; the last holder frees. */
   Py_CLEAR(t->ctx);
   KosCallShape_Clear(&t->fn);
   Py_CLEAR(t->src.iter);

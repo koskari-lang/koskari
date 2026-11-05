@@ -72,23 +72,29 @@ void kos_dyngen_rest(KosDynGen *gen) {
 
 void kos_dyngen_free(KosDynGen *gen) {
 
-  KosGenState *state = KosDynGen_STATE(gen);
-
-  if (state->node == (KosDynNode *) gen)
-    state->node = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
 
 
+/**
+   The one free of a GEN node that knows the owner is alive: the state
+   is the owner's, and it takes its resting node out before freeing
+   it. An installed node is not in the state (kos_dyngen_new took it
+   out), and goes with its chain.
+*/
 void kos_gen_state_clear(KosGenState *state) {
 
   KosDynNode *active = state->active;
+  KosDynNode *node;
 
   state->active = NULL;
   if (active)
     kos_dynchain_free(active, NULL);
-  if (state->node)
-    kos_dyngen_free((KosDynGen *) state->node);
+
+  node = state->node;
+  state->node = NULL;
+  if (node)
+    kos_dyngen_free((KosDynGen *) node);
 }
 
 

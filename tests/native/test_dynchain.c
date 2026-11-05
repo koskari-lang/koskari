@@ -328,8 +328,9 @@ static int test_dyngen_borrows_owner(void) {
                      "the node rests in the state");
     TEST_ASSERT_NULL(KosDynGen_OWNER(gen), "a resting node names no owner");
 
-    kos_dyngen_free(gen);
-    TEST_ASSERT_NULL(state.node, "the free leaves the state");
+    /* the state's clear takes the resting node out and frees it */
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_NULL(state.node, "the clear leaves the state");
     TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the free touches no reference");
 
     Py_DECREF(owner);
@@ -337,34 +338,66 @@ static int test_dyngen_borrows_owner(void) {
 }
 
 
-static int test_dyngen_chain_free_ends_the_step(void) {
+/* Build the chain a consumer's step leaves: a frame under an installed
+   GEN node whose state is the record at state. */
+static KosContext *dyngen_installed_chain(
+    PyObject *owner,
+    KosGenState *state) {
 
-    PyObject *owner = PyList_New(0);
     PyObject *ns = PyDict_New();
-    KosGenState state;
     KosDynGen *gen;
     KosDynFrame *frame;
+
+    if (! ns)
+        return NULL;
+
+    kos_gen_state_init(state, NULL);
+    state->busy = KOS_GEN_BUSY_CONSUMER;
+    gen = kos_dyngen_new(owner, state);
+    if (! gen) {
+        Py_DECREF(ns);
+        return NULL;
+    }
+
+    /* the frame takes the namespace */
+    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
+    if (! frame)
+        return NULL;
+    return KosContext_New(frame, kos_tls_current());
+}
+
+
+/* The chain outlives the generator: freeing it reads and writes
+   nothing through the GEN node's owner or state. The plain build
+   checks a poisoned state for any write; under ASan and Valgrind the
+   freed state and owner catch any access. */
+static int test_dyngen_chain_free_leaves_the_owner_alone(void) {
+
+    unsigned char poison[sizeof(KosGenState)];
+    KosGenState *state = malloc(sizeof(KosGenState));
+    PyObject *owner = PyList_New(0);
     KosContext *ctx;
 
+    TEST_ASSERT_NOT_NULL(state, "allocate the state record");
     TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-    kos_gen_state_init(&state, NULL);
 
-    gen = kos_dyngen_new(owner, &state);
-    TEST_ASSERT_NOT_NULL(gen, "create the GEN node");
-    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
-
-    ctx = KosContext_New(frame, kos_tls_current());
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-    state.busy = 1;
-
-    /* the chain frees the node like any other: the step is over */
+    /* a poisoned state stays as it was */
+    ctx = dyngen_installed_chain(owner, state);
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+    memset(state, 0xA5, sizeof(KosGenState));
+    memcpy(poison, state, sizeof(KosGenState));
     Py_DECREF(ctx);
-    TEST_ASSERT_EQ(state.busy, 0, "the chain free ends the step");
+    TEST_ASSERT(memcmp(poison, state, sizeof(KosGenState)) == 0,
+                "the chain free writes nothing into the state");
     TEST_ASSERT_EQ(Py_REFCNT(owner), 1, "the chain free touches no reference");
 
+    /* a state and owner already gone are not reached */
+    ctx = dyngen_installed_chain(owner, state);
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context again");
+    free(state);
     Py_DECREF(owner);
+    Py_DECREF(ctx);
+
     return 0;
 }
 
@@ -600,7 +633,7 @@ int run_dynchain_tests(void) {
 
     /* GEN and payload cleanup tests */
     RUN_TEST(test_dyngen_borrows_owner);
-    RUN_TEST(test_dyngen_chain_free_ends_the_step);
+    RUN_TEST(test_dyngen_chain_free_leaves_the_owner_alone);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dyndelim_clone_owns_chain_copy);
     RUN_TEST(test_shift_capture_at_invocation_prompt_frames_inside);
