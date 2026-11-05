@@ -101,6 +101,78 @@ class TestLambdaNamed(SpecialsTestCase):
             self.assertEqual(await fn(10), 3628800)
 
 
+    async def test_positional_formal_sharing_the_name_wins(self):
+        """
+        A positional formal named like the lambda shadows the self
+        name: the body sees the argument
+        """
+
+        expr, mod = self.compile_expr("(lambda f [f] f)")
+        fn = await expr()
+        self.assertEqual(await fn(1), 1)
+
+
+    async def test_keyword_only_formal_sharing_the_name_wins(self):
+        """
+        A keyword-only formal named like the lambda shadows the self
+        name: the body sees the argument
+        """
+
+        expr, mod = self.compile_expr("(lambda f [*: nil f] f)")
+        fn = await expr()
+        self.assertEqual(await fn(f=2), 2)
+
+
+    async def test_named_lambda_records_its_self_slot(self):
+        """
+        A named lambda whose body names itself holds itself in a local,
+        and its code records that local's slot
+        """
+
+        src = """
+            (lambda fact [n]
+              (cond [(< n 2) 1]
+                    [else: (* n (fact (- n 1)))]))
+        """
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        local_syms = fn.code.namespace_spec.local_syms
+        self.assertEqual(fn.code.self_slot, local_syms.index('fact'))
+        self.assertEqual(await fn(5), 120)
+
+
+    async def test_named_lambda_not_naming_itself_has_no_self_local(self):
+        """
+        A named lambda whose body never names itself has no local for
+        the name and records no self slot
+        """
+
+        expr, mod = self.compile_expr("(lambda f [x] x)")
+        fn = await expr()
+        self.assertNotIn('f', fn.code.namespace_spec.local_syms)
+        self.assertEqual(fn.code.self_slot, -1)
+
+
+    async def test_inner_lambda_self_call_binds(self):
+        """
+        A self-call from a lambda nested in the named lambda's body
+        reaches the named lambda through its self local
+        """
+
+        src = """
+            (lambda count-down [n]
+              ((lambda []
+                 (cond [(< n 1) n]
+                       [else: (count-down (- n 1))]))))
+        """
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        local_syms = fn.code.namespace_spec.local_syms
+        self.assertEqual(
+            fn.code.self_slot, local_syms.index('count-down'))
+        self.assertEqual(await fn(4), 0)
+
+
     async def test_lambda_docstring_from_leading_str(self):
         src = '(lambda [x] "module doc line" x)'
         expr, mod = self.compile_expr(src)
@@ -206,6 +278,36 @@ class TestLambdaNamed(SpecialsTestCase):
         with self.assertRaises(SpecialError) as cm:
             self.compile_expr(src, int=int)
         self.assertIn("[(name :: int)]", str(cm.exception))
+
+
+class TestFunctionNeverBindsItself(SpecialsTestCase):
+    """
+    A function never binds its own name: a reference to the name in
+    its body reaches the enclosing binding, and a formal or local of
+    that name is an ordinary one
+    """
+
+    async def test_name_in_body_is_a_closure(self):
+        expr, mod = self.compile_expr(
+            '(let [[f "outer"]] (function f [] f))')
+        fn = await expr()
+        self.assertIn('f', fn.code.namespace_spec.closure_syms)
+        self.assertEqual(fn.code.self_slot, -1)
+        self.assertEqual(await fn(), "outer")
+
+
+    async def test_formal_sharing_the_name_is_a_formal(self):
+        expr, mod = self.compile_expr("(function f [f] f)")
+        fn = await expr()
+        self.assertEqual(await fn(4), 4)
+
+
+    async def test_local_sharing_the_name_starts_unbound(self):
+        expr, mod = self.compile_expr(
+            "(function f [] (cond [False (define f 1)]) f)")
+        fn = await expr()
+        with self.assertRaises(NameError):
+            await fn()
 
 
 class TestLambdaReturnType(SpecialsTestCase):

@@ -14,7 +14,8 @@ Parsed with `gather_bindings` (see helpers). Matcher shape: **BINDINGS** with
 child namespace (PUSH_NS), binds names to compiled values, runs the body, and
 pops (POP_NS). Named let expands to an immediately-invoked named lambda:
 `((lambda NAME [args...] BODY...) val...)`, so the name is bound in the
-function's scope for recursion.
+function's scope for recursion. A binding with the same name shadows it:
+`(let f [[f 3]] f)` returns `3`.
 
 **Behaviour:** Unnamed: `child_namespace` with the binding names and value
 expressions; body compiled with `helper_begin`. Named: rewrite to

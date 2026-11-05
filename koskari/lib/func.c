@@ -517,26 +517,7 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
   Py_INCREF(code);
   KosFunctionSpec_CODE(spec) = code;
 
-  spec->self_slot = -1;
-  if (name) {
-    /* the function's own name among the code's locals: the named
-       lambda declares it, and locals head the fast names in
-       declaration order, so its index is its slot */
-    PyObject *nspec = KosCode_NSPEC(code);
-    PyObject *locals = nspec ? KosNamespaceSpec_LOCAL_SYMS(nspec) : NULL;
-
-    if (locals && locals != Py_None) {
-      int bind = PySequence_Contains(locals, name);
-      Py_ssize_t slot = bind > 0 ? PySequence_Index(locals, name) : 0;
-
-      if (bind < 0 || slot < 0) {
-        Py_DECREF(self);
-        return NULL;
-      }
-      if (bind)
-        spec->self_slot = (int) slot;
-    }
-  }
+  spec->self_slot = KosCode_SELF_SLOT(code);
 
   return self;
 }
@@ -631,10 +612,8 @@ function_get_name_dunder(PyObject *self, void *closure) {
 
 /*
   __name__ and __qualname__ writes land in metadata override slots, never
-  in `name`: self-binding keys off `name` through the spec's self_slot
-  (see KosFunction_StoreSelf), so the semantic name stays fixed
-  after construction while wraps-style renames remain visible to
-  introspection.
+  in `name`, so the semantic name stays fixed after construction while
+  wraps-style renames remain visible to introspection.
 */
 static int
 function_set_name_dunder(PyObject *self, PyObject *val, void *closure) {
@@ -1573,7 +1552,7 @@ static PyObject *function_repr(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;
   PyObject *name;
 
-  /* display follows a __name__ override (wraps); self-binding does not */
+  /* display follows a __name__ override (wraps); `name` does not */
   name = fn->name_override ? fn->name_override : KosFunction_NAME(fn);
   if (name == NULL)
     name = KosCode_NAME(KosFunction_CODE(fn));

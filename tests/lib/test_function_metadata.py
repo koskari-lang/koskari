@@ -17,10 +17,9 @@ Demand and BoundMethod.
 
 __name__, __qualname__, __doc__, __module__, and __annotations__ accept
 writes on Function, enabling functools.update_wrapper. Writes land in
-metadata override storage; the semantic name that self-binding keys off
-stays fixed. Demand delegates reads to the wrapped function; BoundMethod
-delegates reads to __func__ and refuses writes, matching CPython bound
-methods.
+metadata override storage; the semantic name stays fixed. Demand
+delegates reads to the wrapped function; BoundMethod delegates reads to
+__func__ and refuses writes, matching CPython bound methods.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

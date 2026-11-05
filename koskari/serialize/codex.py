@@ -165,13 +165,20 @@ def code_flags(code):
     return flags
 
 
-def code_from_record(nspec, instr, name, filename, flags, allocator=None):
+def code_from_record(
+        nspec,
+        instr,
+        name,
+        filename,
+        flags,
+        self_slot,
+        allocator=None):
     """
-    Rebuild a Code with the protect and cache settings its record stored.
-    A record whose code was placed in an arena is placed into
-    ``allocator`` when one is given, and built on the heap otherwise. In
-    a build without read-only code protection every record loads as a
-    writable heap block, whatever its flags say
+    Rebuild a Code with the protect and cache settings and the self slot
+    its record stored. A record whose code was placed in an arena is
+    placed into ``allocator`` when one is given, and built on the heap
+    otherwise. In a build without read-only code protection every record
+    loads as a writable heap block, whatever its flags say
     """
 
     if not flags & CodeFlags.ARENA:
@@ -181,7 +188,8 @@ def code_from_record(nspec, instr, name, filename, flags, allocator=None):
         nspec, instr, name, filename,
         protect=bool(flags & CodeFlags.PROTECT),
         cache=bool(flags & CodeFlags.CACHE),
-        allocator=allocator)
+        allocator=allocator,
+        self_slot=self_slot)
 
 
 @dataclass
@@ -202,15 +210,17 @@ class SectionDirectoryEntry(object):
 @dataclass
 class CodeBodyRecord(object):
     """
-    Logical CODE section record
+    Logical CODE section record. self_slot is the code's self slot, -1
+    when it binds no self name
     """
 
-    _header = struct.Struct('<IIIII')
+    _header = struct.Struct('<IIIIiI')
 
     name_idx: int
     filename_idx: int
     nspec_idx: int
     flags: int
+    self_slot: int
     instr_count: int
     instr_bytes: bytes
 
@@ -225,6 +235,7 @@ class CodeBodyRecord(object):
             self.filename_idx,
             self.nspec_idx,
             self.flags,
+            self.self_slot,
             self.instr_count) + self.instr_bytes
 
 
@@ -238,7 +249,7 @@ class CodeBodyRecord(object):
         :return: pair of record and new offset past this record
         """
 
-        name_idx, fn_idx, ns_idx, flags, ic = cls._header.unpack_from(
+        name_idx, fn_idx, ns_idx, flags, ss, ic = cls._header.unpack_from(
             buf, off)
         off += cls._header.size
         if off + ic * INSTRUCTION_SIZE > len(buf):
@@ -252,6 +263,7 @@ class CodeBodyRecord(object):
             filename_idx=fn_idx,
             nspec_idx=ns_idx,
             flags=flags,
+            self_slot=ss,
             instr_count=ic,
             instr_bytes=ib,
         ), off
@@ -531,7 +543,8 @@ class KioFile(object):
                 name = pool[record.name_idx]
                 filename = pool[record.filename_idx]
                 code = code_from_record(
-                    nspec, instr, name, filename, record.flags)
+                    nspec, instr, name, filename, record.flags,
+                    record.self_slot)
                 codes.append(code)
         except (struct.error, IndexError) as exc:
             raise ValueError(f"malformed .kio: {exc}") from exc
@@ -591,6 +604,7 @@ class KioFile(object):
                 filename_idx=intern_for_pool(pb, code.filename),
                 nspec_idx=intern_for_pool(pb, code.namespace_spec),
                 flags=code_flags(code),
+                self_slot=code.self_slot,
                 instr_count=len(instr),
                 instr_bytes=encode_softened_instructions(pb, instr),
             ))
@@ -1037,7 +1051,7 @@ def encode_pool_record_value(val, index_of, pb=None):
         cfi = index_of(code.filename)
         ic = len(instr)
         return struct.pack(
-            '<BIIIIIII',
+            '<BIIIIIIiI',
             PoolKind.FUNCTION_SPEC,
             ni,
             fi,
@@ -1045,6 +1059,7 @@ def encode_pool_record_value(val, index_of, pb=None):
             cni,
             cfi,
             flg,
+            code.self_slot,
             ic) + instr_b
 
     if val is nil:
@@ -1218,9 +1233,9 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
         return FormalsSpec(*[prior[j] for j in idxs]), off
 
     if kind == PoolKind.FUNCTION_SPEC:
-        ni, fi, nsi, cni, cfi, flg, ic = struct.unpack_from(
-            '<IIIIIII', buf, off)
-        off += 28
+        ni, fi, nsi, cni, cfi, flg, ss, ic = struct.unpack_from(
+            '<IIIIIIiI', buf, off)
+        off += 32
         if off + ic * INSTRUCTION_SIZE > len(buf):
             raise ValueError(
                 f".kio function of {ic} instructions at {off}"
@@ -1238,7 +1253,7 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
             (op, arg), ioff = decode_instruction(ib, ioff, prior)
             instr.append((op, arg))
         code = code_from_record(
-            nspec, instr, code_name, code_fn, flg, allocator)
+            nspec, instr, code_name, code_fn, flg, ss, allocator)
         return FunctionSpec(name, formals, code), off
 
     raise ValueError(f'unknown pool kind {kind}')

@@ -26,7 +26,8 @@ use that binding.
 **Behaviour:** Same pipeline as `compile/lambda` via `helper_function` with
 `selfref=False`: `gather_formals`, `helper_begin`, `FunctionSpec`,
 `BUILD_FUNCTION`. Does **not** bind `NAME` in the inner function scope at
-creation (contrast named `lambda`).
+creation (contrast named `lambda`). A formal or local named `NAME` is an
+ordinary formal or local: `((function f [f] f) 4)` returns `4`.
 
 **See also:** [compile/lambda](compile-lambda.md) -- anonymous and named forms
 with optional inner self-reference for named `lambda`.

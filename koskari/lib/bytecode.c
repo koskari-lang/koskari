@@ -610,6 +610,12 @@ static PyObject *code_get_yields(PyObject *self, void *_unused) {
 }
 
 
+static PyObject *code_get_self_slot(PyObject *self, void *_unused) {
+
+  return PyLong_FromLong(KosCode_SELF_SLOT(self));
+}
+
+
 static PyObject *code_get_uses_fast(PyObject *self, void *_unused) {
 
   return PyBool_FromLong(KosCode_USES_FAST(self));
@@ -700,6 +706,10 @@ static PyGetSetDef code_getset[] = {
 
   { "yields", code_get_yields, NULL,
     "bool; whether this code will yield like a generator",
+    NULL },
+
+  { "self_slot", code_get_self_slot, NULL,
+    "int; the local slot this code's function binds itself in, or -1",
     NULL },
 
   { "uses_fast", code_get_uses_fast, NULL,
@@ -3168,6 +3178,37 @@ static int code_instr_init(
 /* === Python type methods === */
 
 
+/**
+   Record the local slot the code's function binds itself in.
+
+   :param code: the new KosCode
+   :param self_slot: an index among the namespace spec's locals, or -1
+     for none
+
+   :return: 0 on success, -1 with ValueError set when self_slot names
+     no local
+*/
+static int code_set_self_slot(PyObject *code, int self_slot) {
+
+  if (self_slot == -1)
+    return 0;
+
+  PyObject *loc = KosNamespaceSpec_LOCAL_SYMS(KosCode_NSPEC(code));
+  Py_ssize_t nloc = (loc && loc != Py_None) ? PySequence_Size(loc) : 0;
+  if (nloc < 0)
+    return -1;
+
+  if (self_slot < 0 || self_slot >= nloc) {
+    PyErr_Format(PyExc_ValueError, "Code self_slot %d names none of its"
+                 " %zd locals", self_slot, nloc);
+    return -1;
+  }
+
+  KosCode_SELF_SLOT(code) = self_slot;
+  return 0;
+}
+
+
 static PyObject *code_new(
     PyTypeObject *type,
     PyObject *args,
@@ -3180,15 +3221,17 @@ static PyObject *code_new(
   int protect = 1;
   int cache = 1;
   PyObject *allocator = NULL;
+  int self_slot = -1;
 
   static char *keywords[] = {
     "nspec", "instr", "name", "filename", "protect", "cache", "allocator",
-    NULL,
+    "self_slot", NULL,
   };
 
-  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$ppO:Code", keywords,
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$ppOi:Code", keywords,
                                     &nspec, &instr, &name, &filename,
-                                    &protect, &cache, &allocator)) {
+                                    &protect, &cache, &allocator,
+                                    &self_slot)) {
     return NULL;
   }
 
@@ -3196,8 +3239,13 @@ static PyObject *code_new(
     allocator = NULL;
   }
 
-  return KosCode_NewWithAllocator(nspec, instr, name, filename,
-                                  protect, cache, allocator);
+  PyObject *code = KosCode_NewWithAllocator(nspec, instr, name, filename,
+                                            protect, cache, allocator);
+  if (code && code_set_self_slot(code, self_slot)) {
+    Py_CLEAR(code);
+  }
+
+  return code;
 }
 
 
@@ -3549,6 +3597,7 @@ PyObject *KosCode_NewWithAllocator(
   ((KosCode *) self)->weakreflist = NULL;
   KosCode_ARENA(self) = NULL;
   KosCode_FAST_NEED(self) = 0;
+  KosCode_SELF_SLOT(self) = -1;
 
   /* Record the cache gate so code_emit assigns slots only when enabled. */
   KosCode_FLAGS(self) = cache ? KOS_CODE_CACHE : 0;

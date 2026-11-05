@@ -91,12 +91,11 @@ typedef struct KosFunctionSpec {
   PyObject *name;           /* PyUnicode or NULL */
   PyObject *formals_spec;   /* KosFormalsSpec */
   PyObject *code;           /* KosCode */
-  int self_slot;            /* fast slot of name among the code's locals,
-                               or -1 when name is NULL or not a local.
-                               Only the named-lambda form declares the
-                               function's own name as a body local;
-                               define and function refer to the outer
-                               binding. Computed once here, since every
+  int self_slot;            /* fast slot the function binds itself in,
+                               or -1 when it does not: the code's
+                               recorded self slot, which only a named
+                               lambda whose body references its name
+                               sets. Copied once here, since every
                                function built from this spec shares it */
 } KosFunctionSpec;
 
@@ -182,7 +181,7 @@ typedef struct {
   PyObject *creation_annotations; /* raw dict from BUILD_FUNCTION, or NULL */
   PyObject *annotations_cache; /* realized __annotations__ dict, or NULL */
   PyObject *name_override;  /* __name__ metadata write (e.g. wraps), or NULL.
-                               Display-only: self-binding keys off `name` */
+                               Display-only: `name` stays fixed */
   PyObject *qualname_override; /* __qualname__ metadata write, or NULL */
   PyObject *module_override; /* __module__ metadata write, or NULL */
   int annotations_need_resolve; /* creation dict holds str forward refs */
@@ -198,11 +197,10 @@ typedef struct {
                                instead of installing a frame. The one
                                value the install arms compare nargs
                                against; -1 matches no call */
-  int self_slot;            /* fast slot of the function's own name in
-                               its frame, or -1 when the body does not
-                               name it (locals head the fast names in
-                               declaration order). Copied from the
-                               spec; see KosFunction_StoreSelf */
+  int self_slot;            /* fast slot the function binds itself in
+                               within its frame, or -1 when it does
+                               not. Copied from the spec; see
+                               KosFunction_StoreSelf */
   KosDynFrame *cached_frame; /* head of the cached prepared frames
                                 (code + reset ns + cleared stack, fn
                                 NULL) for the next calls; owned;

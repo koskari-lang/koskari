@@ -94,6 +94,16 @@ class TestLetSpecial(SpecialsTestCase):
         self.assertEqual([1, 1, 1], seen)
 
 
+    async def test_named_let_binding_sharing_the_name_wins(self):
+        """
+        A named let binding named like the let shadows the self name:
+        the body sees the bound value
+        """
+
+        expr, mod = self.compile_expr("(let f [[f 3]] f)")
+        self.assertEqual(3, await expr())
+
+
 class TestLetInitScope(SpecialsTestCase):
     """
     A let's init expressions run before its scope opens, in the

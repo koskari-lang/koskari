@@ -3066,7 +3066,7 @@ static PyObject *create_nspec_with_self(const char *formal, const char *self) {
 static int test_cache_frame_takes_self_binding_function(void) {
     /*
       A function whose body names it, the named-lambda shape, takes
-      the name's slot as self_slot from its spec, and its frame is
+      the code's self slot through its spec, and its frame is
       cached like any simple function's: the self-bind is a store the
       call arms make, not a shape the cache refuses.
     */
@@ -3079,6 +3079,7 @@ static int test_cache_frame_takes_self_binding_function(void) {
     PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     Py_DECREF(instr);
     TEST_ASSERT_NOT_NULL(code, "code");
+    KosCode_SELF_SLOT(code) = 1;
     PyObject *parent = KosNamespace_FromSpec(nspec, NULL);
     Py_DECREF(nspec);
     TEST_ASSERT_NOT_NULL(parent, "parent namespace");
@@ -3097,7 +3098,7 @@ static int test_cache_frame_takes_self_binding_function(void) {
     Py_DECREF(code);
     TEST_ASSERT_NOT_NULL(fspec, "function spec");
     TEST_ASSERT_EQ(KosFunctionSpec_SELF_SLOT(fspec), 1,
-                   "the spec finds the name's slot after the formal's");
+                   "the spec copies the code's self slot");
 
     PyObject *fn = KosFunction_New(fspec, NULL, parent);
     Py_DECREF(fspec);

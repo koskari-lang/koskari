@@ -111,13 +111,12 @@ def helper_function(compiler, caps, selfref):
     if starstar_sym:
         lamb.declare_var(starstar_sym)
 
-    # selfref indicates whether the function should receive a direct
-    # self-reference at function creation. lambdas with a name get
-    # a self-ref, but functions do not. This allows a function to
-    # refer to a wrapped definition of itself, such as via decorators,
-    # while the lambda form is always purely the exact function.
+    # a named lambda binds itself, a function never does, so a function
+    # can refer to a wrapped definition of itself, such as through a
+    # decorator. The self name becomes a local only when the body
+    # references it and no formal shadows it, settled at completion
     if selfref and named is not None:
-        lamb.declare_var(named)
+        lamb.self_ref = named
 
     lamb.doc = discover_docstring(body_src)
 
@@ -220,7 +219,8 @@ def special_lambda(compiler, caps) -> ByteCodeFragment:
     """
     Compile (lambda [args] body) or (lambda name [args] body).
 
-    The Named form binds name in the function scope for self-reference.
+    The named form binds name in the function scope for self-reference,
+    unless a formal of the same name shadows it.
     """
 
     return helper_function(compiler, caps, selfref=True)

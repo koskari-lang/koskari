@@ -44,7 +44,8 @@ docstring discovery; the body is still compiled in full.
 
 **Use-case:** Create an anonymous or named function value. Named lambdas bind the
 given name in the function's scope so the function can refer to itself (e.g. for
-recursion in a named `let` or inline `(lambda NAME ...)`).
+recursion in a named `let` or inline `(lambda NAME ...)`). A formal with the
+same name shadows it: `((lambda f [f] f) 1)` returns `1`.
 
 **See also:** [compile/function](compile-function.md) -- named functions **without**
 a closure self-binding at creation; used by `def`, `global def`, and decorator

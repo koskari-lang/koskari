@@ -301,6 +301,22 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Closure refs (1):", text)
         self.assertIn('"outer"', text)
 
+    async def test_dis_header_names_the_self_slot(self):
+        nspec = NamespaceSpec(None, ("a", "f"), ())
+        instr = (
+            [OpCode.CONST, None],
+            [OpCode.RETURN, 1],
+        )
+        buf = io.StringIO()
+        await _dis().dis(Code(nspec, instr, "f", "file.ki", self_slot=1),
+                         file=buf)
+        self.assertIn("  yields: False\n  self-slot: 1 (f)\n", buf.getvalue())
+
+        buf = io.StringIO()
+        await _dis().dis(Code(nspec, instr, "g", "file.ki"), file=buf)
+        self.assertIn("  yields: False\n  self-slot: (none)\n",
+                      buf.getvalue())
+
     async def test_nspec_in_constant_pool_is_expanded(self):
         """
         NamespaceSpec entries in the constant pool are shown with ns# label

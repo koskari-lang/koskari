@@ -634,12 +634,16 @@ class Resolver:
     A marked spelling bound in the module was defined by an earlier
     turn, as a macro-generating macro's expansion leaves behind
 
+    A named lambda's self name is declared only when its completion
+    finds a reference to it, so the self names of the fragment and of
+    the fragments enclosing it are visible by identity instead
+
     :param fragment: the fragment being completed
     :param ancestors: the fragments enclosing it, outermost first
     :param module_names: the module's bound names
     """
 
-    __slots__ = ("declared", "module_names")
+    __slots__ = ("declared", "module_names", "self_refs")
 
 
     def __init__(self, fragment, ancestors, module_names):
@@ -647,11 +651,15 @@ class Resolver:
         self.declared.extend(
             declared_spellings(f) for f in reversed(ancestors))
         self.module_names = module_names
+        self.self_refs = tuple(
+            f.self_ref for f in (fragment, *ancestors)
+            if f.self_ref is not None)
 
 
     def choose(self, atom, scopes=()):
         """
-        The first candidate for atom whose spelling is declared in an
+        The first candidate for atom that is the self name of the
+        fragment or an ancestor, or whose spelling is declared in an
         inline scope, the fragment, an ancestor, or the module; the
         base when none is
 
@@ -662,6 +670,8 @@ class Resolver:
 
         cands = candidates(atom)
         for cand in cands[:-1]:
+            if any(cand is s for s in self.self_refs):
+                return cand
             spelling = str(cand)
             if any(spelling in s for s in scopes) \
                     or any(spelling in s for s in self.declared) \

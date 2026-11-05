@@ -175,6 +175,44 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertTrue(loaded_sealed.protected)
         self.assertTrue(loaded_sealed.caches)
 
+    def test_code_self_slot_roundtrip(self):
+        """a body's self slot, or its absence, is stored and restored"""
+        rows = [['CONST', 1], ['RETURN', 1]]
+        nspec = NamespaceSpec(None, ('a', 'f'), ())
+        instr = build_code(rows).soften()
+        selfed = Code(nspec, instr, 'f', self_slot=1)
+        plain = Code(nspec, instr, 'g')
+        self.assertEqual(selfed.self_slot, 1)
+        self.assertEqual(plain.self_slot, -1)
+        buf = io.BytesIO()
+        dump_kio(buf, [selfed, plain])
+        buf.seek(0)
+        loaded_selfed, loaded_plain = load_kio(buf).codes
+        self.assertEqual(loaded_selfed.self_slot, 1)
+        self.assertEqual(loaded_plain.self_slot, -1)
+
+    def test_code_self_slot_out_of_range_rejected(self):
+        """a self slot names one of the code's locals or none"""
+        nspec = NamespaceSpec(None, ('a',), ())
+        instr = build_code([['CONST', 1], ['RETURN', 1]]).soften()
+        for bad in (1, -2):
+            with self.assertRaises(ValueError):
+                Code(nspec, instr, 'f', self_slot=bad)
+
+    def test_function_spec_self_slot_roundtrip(self):
+        """a nested function body keeps its self slot"""
+        nspec = NamespaceSpec(None, ('f',), ())
+        instr = build_code([['CONST', 7], ['RETURN', 1]]).soften()
+        inner = Code(nspec, instr, 'f', self_slot=0)
+        fspec = FunctionSpec('f', FormalsSpec(), inner)
+        code, _ = build_expr([
+            ['CONST', fspec],
+            ['RETURN', 1],
+        ], name='outer')
+        loaded = self._const_roundtrip_code(code)
+        self.assertIsInstance(loaded, FunctionSpec)
+        self.assertEqual(loaded.code.self_slot, 0)
+
     def test_function_spec_flags_roundtrip(self):
         """a nested function body keeps its protect and cache settings"""
         nspec = NamespaceSpec(None, (), ())
