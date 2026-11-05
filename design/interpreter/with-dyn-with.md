@@ -13,8 +13,10 @@ WITH nodes (single-shot `with` and multi-shot `dyn-with`, told apart by the node
 
 ## Goal
 
-- **`with`**: Single-shot, extent-only unwind. Safe for normal control-flow and
-  exception unwind; **not** safe across continuation transfers.
+- **`with`**: Single-shot. Safe for normal control-flow, exception unwind,
+  and continuation transfers: a transfer out of the body runs `exit` once,
+  and a transfer back into a captured body does not run `enter` or `exit`
+  again (Rule 1).
 - **`dyn-with`**: Multi-shot, full wind/unwind participation for non-local
   transfers (shift/reset and undelimited call/cc), including re-entry.
 
@@ -32,7 +34,8 @@ them like CALL.
 
 - `expr` evaluates to a context-manager-like object `mgr`.
 - Optional `name` binds the enter value.
-- The overall expression value is **always** `None`.
+- The overall expression value is the body's value, or `None` when `exit`
+  swallows an exception.
 
 ### `dyn-with`
 
@@ -239,7 +242,8 @@ with-expression value.
   value as the with value.
 
 So the exit return is never observable as the with-expression result; it is
-only used internally for swallow and then discarded in favour of `None`.
+only used internally for swallow and then discarded in favour of the body
+value (`None` after a swallow).
 
 
 ### PUSH_DYN_WITH \<name-or-None\>
@@ -278,8 +282,11 @@ clones, so no instance runs `exit` twice.
 Single-shot means one `enter` and one `exit` per extent instance, not a
 barrier. WITH nodes are cloneable and may be captured in a chain segment
 ([dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md)
-§9.7); each clone is a fresh instance whose own enter runs on wind and
-whose own exit runs on unwind, and no instance is re-entered.
+§9.7); each clone is a separate node that shares the original's exit-done
+mark and is never entered: a landing skips it, and leaving it runs no
+`exit`. A body re-entered through a continuation runs without the manager
+entered again; the original instance's own leave runs `exit` if it has not
+run yet.
 
 ### Rule 2: `dyn-with` participates in transfer goals
 
@@ -340,13 +347,14 @@ for other extent kinds; no special case for dyn-with.
 
 ### Single-shot
 
-1. Normal enter/exit; expression returns None.
+1. Normal enter/exit; expression returns the body's value.
 2. Exception inside body; exit sees exception; swallow = false ⇒ exception propagates.
 3. Exception swallowed; stack restored; execution resumes; expression yields None.
 4. Break/continue exits body; exit runs; stack restored.
-5. Continuation transfer across `with` ⇒ explicit error.
-6. Async enter/exit: VM awaits enter then body then exit; expression returns None
-   (sync completion and suspend/resume paths). Opcode tests:
+5. Continuation transfer out of the body runs exit once; a transfer back into
+   the captured body runs neither enter nor exit again.
+6. Async enter/exit: VM awaits enter then body then exit; expression returns
+   the body's value (sync completion and suspend/resume paths). Opcode tests:
    `tests/lib/opcode/test_with.py` (sync and async). Special-form tests:
    `tests/compile/specials/test_with.py` (sync and async).
 

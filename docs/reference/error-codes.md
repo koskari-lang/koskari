@@ -4,9 +4,9 @@ Koskari errors currently use exception classes rather than a stable numeric erro
 code catalog. This page gives the public names you are most likely to see and
 how to respond to them.
 
-Every class on this page is bound in every module, as is every Python
-exception type, so each can be raised, caught, and tested by name with
-no import:
+Every class on this page except `KoskariContinuationDead` is bound in
+every module, as is every Python exception type, so each can be raised,
+caught, and tested by name with no import:
 
 ```koskari
 (try (shift k 1)
@@ -34,6 +34,8 @@ Exception
     KoskariContinuationError
       KoskariPromptNotFound
       KoskariPromptUnreachable
+  RuntimeError
+    KoskariContinuationDead
   TypeError
     KoskariSyncViolation
 ```
@@ -98,24 +100,29 @@ and Koskari runtime exceptions.
 | --- | --- | --- |
 | `KoskariException` | Base class for Koskari-raised exceptions. | Read the specific subclass and form details. |
 | `NotYetImplemented` | A placeholder for a feature that is not implemented yet. | Use a documented form or report the missing case. |
-| `KoskariContinuationError` | Base class for continuation capture and transfer failures. It is not a `RuntimeError` subclass, so an `except RuntimeError` around a continuation-using call will not swallow it. | Read the specific subclass; the two below need different fixes. |
+| `KoskariContinuationError` | Base class for continuation capture and transfer failures. It is not a `RuntimeError` subclass, so an `except RuntimeError` around a continuation-using call will not swallow it. | Read the specific subclass; its two subclasses below need different fixes. |
 | `KoskariPromptNotFound` | A `shift` found no enclosing delimiter on the dynamic chain. | Establish one: `reset`, or for searches `solve` / `solve-first`. |
 | `KoskariPromptUnreachable` | A boundary denied the capture (`boundary` attribute): a generator, or a running `enter`, `exit`, `before` or `after` call of a `with` or `dyn-wind`. For `shift` a delimiter exists beyond it; `operation` says which construct was capturing. | Restructure so the capture does not cross the boundary; adding a delimiter will not help. |
+| `KoskariContinuationDead` | A full continuation (from `call/cc`, `let/cc` or `capture/cc`) was invoked while the evaluation that captured it was not running: it had returned, or it was suspended on an `await`. Each top-level form of a module runs as its own evaluation, so a continuation captured by one top-level form is dead in the next. Invoking it from Koskari code or from Python raises the same error, with the message `continuation target context is no longer alive`. It is a `RuntimeError`, not a `KoskariContinuationError`, and is not bound in modules: `(import-from koskari.lib KoskariContinuationDead)`. | Capture and invoke the continuation within one running evaluation, such as one function body, not across top-level forms or a suspension. |
 | Python exceptions such as `ZeroDivisionError`, `NameError`, `ValueError` | A called operation failed at runtime. | Fix the value, missing name, or failing Python call. |
 
 ### Koskari errors that subclass a Python type
 
-Two Koskari classes inherit from a Python exception type.
+Three Koskari classes inherit from a Python exception type.
 
 | Error | Python base | What it means | What to try |
 | --- | --- | --- | --- |
 | `KoskariSyncViolation` | `TypeError` | A synchronous demand path reached an `await` or a `yield` it cannot perform. | Move the operation into an async-aware path, or stop demanding the call. |
+| `KoskariContinuationDead` | `RuntimeError` | A full continuation was invoked while the evaluation that captured it was not running. | See the runtime table above. |
 | `KoskariSyntaxError` | `SyntaxError` | Read-time or compile-time syntax failure; the base of the reader errors above. | See the reader table. |
 
 `KoskariSyncViolation` is defined in the native extension and inherits from
 `TypeError` alone, so an `except KoskariException` will not catch it; catch it
-by its own name or by `TypeError`. `KoskariSyntaxError` inherits from both
-`SyntaxError` and `KoskariException`.
+by its own name or by `TypeError`. `KoskariContinuationDead` is likewise
+defined in the native extension and inherits from `RuntimeError` alone, so
+neither `except KoskariException` nor `except KoskariContinuationError`
+catches it; catch it by its own name or by `RuntimeError`.
+`KoskariSyntaxError` inherits from both `SyntaxError` and `KoskariException`.
 
 Example:
 
