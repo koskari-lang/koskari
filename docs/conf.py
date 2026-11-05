@@ -74,6 +74,8 @@ extensions = [
 templates_path = ['_templates']
 exclude_patterns = [
     'agents', 'build', 'Thumbs.db', '.DS_Store',
+    # the corpus is served through the MCP server, not the site
+    'corpus',
     # agent instruction files are not pages
     '**/CLAUDE.md',
 ]
