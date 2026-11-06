@@ -118,10 +118,13 @@ Three Koskari classes inherit from a Python exception type.
 
 `KoskariSyncViolation` is defined in the native extension and inherits from
 `TypeError` alone, so an `except KoskariException` will not catch it; catch it
-by its own name or by `TypeError`. `KoskariContinuationDead` is likewise
-defined in the native extension and inherits from `RuntimeError` alone, so
-neither `except KoskariException` nor `except KoskariContinuationError`
-catches it; catch it by its own name or by `RuntimeError`.
+by its own name or by `TypeError`. When the demand path reaches an `await` on
+a Python awaitable, the violation is thrown into that awaitable, so a Python
+`except TypeError` around that `await` catches it. `KoskariContinuationDead`
+is likewise defined in the native extension and inherits from `RuntimeError`
+alone, so neither `except KoskariException` nor
+`except KoskariContinuationError` catches it; catch it by its own name or by
+`RuntimeError`.
 `KoskariSyntaxError` inherits from both `SyntaxError` and `KoskariException`.
 
 Example:
