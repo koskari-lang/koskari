@@ -237,6 +237,35 @@ static void coroutine_mark_demand(KosCoroutine *coro) {
 
 
 /**
+   A coroutine dropped with its bound call never entered warns as
+   CPython's does: RuntimeWarning "coroutine '<qualname>' was never
+   awaited", named by the function's __qualname__, or by the code's
+   name for an Expression. A warning that raises (an "error" filter)
+   is reported as unraisable; the pending exception is kept.
+*/
+static void coroutine_warn_unawaited(KosCoroutine *coro) {
+
+  PyObject *typ, *val, *tb;
+  PyObject *name;
+
+  PyErr_Fetch(&typ, &val, &tb);
+
+  if (coro->fn)
+    name = KosFunction_GetQualname(coro->fn);
+  else
+    name = Py_NewRef(KosCode_NAME(KosDynFrame_CODE(coro->frame)));
+
+  if (! name ||
+      PyErr_WarnFormat(PyExc_RuntimeWarning, 1,
+                       "coroutine '%S' was never awaited", name) < 0)
+    PyErr_WriteUnraisable((PyObject *) coro);
+
+  Py_XDECREF(name);
+  PyErr_Restore(typ, val, tb);
+}
+
+
+/**
    Finalizer: a coroutine dropped while suspended is closed before its
    context is torn down, the way CPython closes an abandoned coroutine,
    so its finally blocks, with exits, and wind after thunks run.
@@ -244,10 +273,16 @@ static void coroutine_mark_demand(KosCoroutine *coro) {
    propagates back out is swallowed here; anything other than the close
    itself is reported as unraisable. The forced free in dealloc follows
    regardless of how the close went. A coroutine never started has
-   entered nothing, and a finished one has nothing left to unwind.
+   entered nothing and only warns; a finished one has nothing left to
+   unwind.
 */
 static void coroutine_finalize(PyObject *self) {
   KosCoroutine *const coro = (KosCoroutine *) self;
+
+  if (coro->state == KOS_CORO_NEW && coro->frame) {
+    coroutine_warn_unawaited(coro);
+    return;
+  }
 
   if (! coro->ctx || coro->in_send || ! coro_str_close)
     return;
@@ -286,9 +321,10 @@ static void coroutine_dealloc(PyObject *self) {
   /* Run the finalizer first. It may resurrect the coroutine, in which
      case the dealloc is abandoned here and happens on the next drop;
      a resurrected object must be tracked, so the finalizer runs
-     tracked. Without a context (never started, or done) the finalizer
-     has nothing to close, so the call is skipped. */
-  if (coro->ctx) {
+     tracked. A started coroutine has a context to close; one never
+     started still holds its bound call, and warns. With neither (done)
+     the finalizer has nothing to do, so the call is skipped. */
+  if (coro->ctx || coro->frame) {
     PyObject_GC_Track(self);
     if (PyObject_CallFinalizerFromDealloc(self) < 0)
       goto done;

@@ -432,6 +432,13 @@ KosOpResult KosFunction_Install(
 PyObject *KosFunction_GetCode(PyObject *func);
 
 
+/**
+   Return the function's __qualname__ (new reference): the metadata
+   override when one was written, else its __name__.
+*/
+PyObject *KosFunction_GetQualname(PyObject *func);
+
+
 /* === The ready frame: one bound root frame for any purpose ===
 
    Every call of a KosFunction, wherever it comes from, needs the same
