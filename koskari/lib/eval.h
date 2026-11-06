@@ -1270,14 +1270,12 @@ void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val);
    Pop TOS and materialize it as a fast sequence for the UNPACK family.
    need is the required length; exact demands len == need, otherwise
    len >= need. Returns a new reference, or NULL with TypeError (subject
-   not iterable) or ValueError (wrong length) set. who names the opcode
-   in the message.
+   not iterable) or ValueError (wrong length) set.
 */
 PyObject *KosContext_PopUnpackSequence(
     KosContext *ctx,
     Py_ssize_t need,
-    int exact,
-    const char *who);
+    int exact);
 
 
 /* === Context lifecycle === */

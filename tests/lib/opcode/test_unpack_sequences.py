@@ -40,6 +40,19 @@ SRC = """
 (define [pair_items p]
   (define-values [a b] p)
   (#list a b))
+
+(define [nested_pair p]
+  (define-values [a [b c]] p)
+  (#list a b c))
+
+(define [star_pair p]
+  (define-values [a *: b c] p)
+  (#list a b c))
+"""
+
+
+MODULE_SRC = """
+(define-values [a b] subject)
 """
 
 
@@ -49,6 +62,13 @@ class TestUnpackSequences(unittest.IsolatedAsyncioTestCase):
         module = new_module("unpack_sequences")
         vars(module)["__file__"] = "<unpack_sequences>"
         await load_module_source_async(module, SRC, layout=False)
+        return vars(module)
+
+    async def module_unpack(self, subject):
+        module = new_module("unpack_sequences_module")
+        vars(module)["__file__"] = "<unpack_sequences_module>"
+        vars(module)["subject"] = subject
+        await load_module_source_async(module, MODULE_SRC, layout=False)
         return vars(module)
 
     async def test_tuple_list_generator_and_string(self):
@@ -62,10 +82,50 @@ class TestUnpackSequences(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
         with self.assertRaises(ValueError) as caught:
             await mod["pair_sum"]((1, 2, 3))
-        self.assertIn("expected 2 elements, got 3", str(caught.exception))
+        self.assertIn("(expected 2, got 3)", str(caught.exception))
         with self.assertRaises(ValueError) as caught:
             await mod["pair_sum"]([1])
-        self.assertIn("expected 2 elements, got 1", str(caught.exception))
+        self.assertIn("(expected 2, got 1)", str(caught.exception))
+
+    async def test_exact_wording(self):
+        mod = await self.load()
+        with self.assertRaises(ValueError) as caught:
+            await mod["pair_sum"]((1, 2, 3))
+        self.assertEqual(str(caught.exception),
+                         "too many values to unpack (expected 2, got 3)")
+        with self.assertRaises(ValueError) as caught:
+            await mod["pair_sum"](x for x in (1, 2, 3))
+        self.assertEqual(str(caught.exception),
+                         "too many values to unpack (expected 2)")
+        with self.assertRaises(ValueError) as caught:
+            await mod["pair_sum"]([1])
+        self.assertEqual(str(caught.exception),
+                         "not enough values to unpack (expected 2, got 1)")
+
+    async def test_every_binding_kind_gives_the_same_text(self):
+        mod = await self.load()
+        short = "not enough values to unpack (expected 2, got 1)"
+        long = "too many values to unpack (expected 2, got 3)"
+
+        # a local pair, a module-level pair, and a nested pattern's
+        # outer level
+        for subject, want in (([1], short), ((1, 2, 3), long)):
+            with self.assertRaises(ValueError) as caught:
+                await mod["pair_sum"](subject)
+            self.assertEqual(str(caught.exception), want)
+            with self.assertRaises(ValueError) as caught:
+                await self.module_unpack(subject)
+            self.assertEqual(str(caught.exception), want)
+            with self.assertRaises(ValueError) as caught:
+                await mod["nested_pair"](subject)
+            self.assertEqual(str(caught.exception), want)
+
+        # a star binding
+        with self.assertRaises(ValueError) as caught:
+            await mod["star_pair"]((1,))
+        self.assertEqual(
+            str(caught.exception),
+            "not enough values to unpack (expected at least 2, got 1)")
 
     async def test_non_iterable_reports_the_type(self):
         mod = await self.load()
@@ -73,6 +133,18 @@ class TestUnpackSequences(unittest.IsolatedAsyncioTestCase):
             await mod["pair_sum"](7)
         self.assertIn("cannot unpack non-iterable int object",
                       str(caught.exception))
+
+    async def test_non_iterable_has_no_prefix(self):
+        mod = await self.load()
+        for name in ("pair_sum", "nested_pair", "star_pair"):
+            with self.assertRaises(TypeError) as caught:
+                await mod[name](7)
+            self.assertEqual(str(caught.exception),
+                             "cannot unpack non-iterable int object")
+        with self.assertRaises(TypeError) as caught:
+            await self.module_unpack(7)
+        self.assertEqual(str(caught.exception),
+                         "cannot unpack non-iterable int object")
 
     async def test_shared_tuple_is_untouched(self):
         mod = await self.load()
@@ -93,14 +165,14 @@ class TestUnpackSequences(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError) as caught:
             await mod["pair_sum"](counting())
-        self.assertIn("expected 2 elements, got more", str(caught.exception))
+        self.assertIn("(expected 2)", str(caught.exception))
         self.assertEqual(3, len(pulls))
 
     async def test_short_iterator_reports_the_count(self):
         mod = await self.load()
         with self.assertRaises(ValueError) as caught:
             await mod["pair_sum"](iter([1]))
-        self.assertIn("expected 2 elements, got 1", str(caught.exception))
+        self.assertIn("(expected 2, got 1)", str(caught.exception))
 
 
 # The end.
