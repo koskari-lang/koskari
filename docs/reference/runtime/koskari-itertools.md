@@ -19,6 +19,10 @@ koskari generator as its source.
 in the builtins namespace and already behave this way; python's remain
 available as `py-map`, `py-filter` and `py-zip`.
 
+Exhaustion is permanent: once a combinator reports its end, later
+iteration yields nothing and its source is not read again, even when the
+source would yield more. Python's `itertools` calls the source again.
+
 ## Why not python's itertools
 
 Two things go wrong when a koskari function or a koskari source meets
