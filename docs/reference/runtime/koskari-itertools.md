@@ -15,6 +15,10 @@ iterator does not answer to. Every combinator here takes a koskari
 callable directly and accepts a sync iterable, an async iterable, or a
 koskari generator as its source.
 
+Arguments are positional, except for the keywords `iterable:`, `func:`
+and `initial:` on `accumulate`, `fillvalue:` on `zip-longest`, and
+`src:` and `key:` on `groupby`; any other keyword raises `TypeError`.
+
 `map`, `filter` and `zip` are not in this module. They are bound bare
 in the builtins namespace and already behave this way; python's remain
 available as `py-map`, `py-filter` and `py-zip`.

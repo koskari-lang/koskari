@@ -30,9 +30,51 @@
    on the first row, and a bad argument then raises where it is
    written rather than inside whatever drives the zip.
 
+   A strict zip raises ValueError where builtins.zip(strict=True)
+   does: a later source ending while the first has not, or a later
+   source yielding once the first has ended. The second needs a walk
+   of its own, the tail, which pulls every later source once after the
+   first ends; it runs synchronously while the sources answer without
+   the evaluator, and continues under the tail resume pair from the
+   first driven one.
+
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
 */
+
+
+/* zip's own record: the multi shape, and whether the sources must
+   all end together */
+typedef struct KosZip {
+  KosTransformMulti multi;
+  uint8_t strict;
+} KosZip;
+
+
+/* strict: source i ran out while the ones before it had not */
+static void zip_strict_short(uint16_t i) {
+
+  if (i == 1)
+    PyErr_SetString(PyExc_ValueError,
+                    "zip() argument 2 is shorter than argument 1");
+  else
+    PyErr_Format(PyExc_ValueError,
+                 "zip() argument %u is shorter than arguments 1-%u",
+                 (unsigned) i + 1, (unsigned) i);
+}
+
+
+/* strict: source i yielded after the first ran out */
+static void zip_strict_long(uint16_t i) {
+
+  if (i == 1)
+    PyErr_SetString(PyExc_ValueError,
+                    "zip() argument 2 is longer than argument 1");
+  else
+    PyErr_Format(PyExc_ValueError,
+                 "zip() argument %u is longer than arguments 1-%u",
+                 (unsigned) i + 1, (unsigned) i);
+}
 
 
 /* === the step's CPS resumes ===
@@ -56,11 +98,19 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
     KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_tail_deliver(
+    KosContext *ctx, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_tail_fetch(
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_TRANSFORM_STEP_KIND_AS_IS(zip_resume_deliver_kind, "zip-step",
     zip_resume_deliver);
 KOS_TRANSFORM_STEP_KIND_AS_IS(zip_resume_fetch_kind, "zip-step",
     zip_resume_fetch);
+KOS_TRANSFORM_STEP_KIND_AS_IS(zip_resume_tail_deliver_kind, "zip-step",
+    zip_resume_tail_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(zip_resume_tail_fetch_kind, "zip-step",
+    zip_resume_tail_fetch);
 
 
 /**
@@ -113,8 +163,21 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
 
   kos_transform_fetched(&t->reqs[t->idx], element);
 
-  if (! element)
-    return kos_transform_decline(ctx, t);
+  if (! element) {
+    if (! ((KosZip *) z)->strict || ! kos_transform_source_spent())
+      return kos_transform_decline(ctx, t);
+
+    PyErr_Clear();
+    if (t->idx) {
+      zip_strict_short(t->idx);
+      return kos_transform_decline(ctx, t);
+    }
+
+    /* the first source ended: the tail proves every later one did */
+    Py_CLEAR(t->pending);
+    t->idx = 1;
+    RESUME_HOP(&zip_resume_tail_fetch_kind, ctx, z, NULL);
+  }
 
   kos_transform_row_set(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
@@ -123,7 +186,105 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
 }
 
 
+/**
+   TAIL FETCH: a strict zip's first source ended; request the later
+   source at base.idx, whose answer zip_resume_tail_deliver judges and
+   re-enters here for the next. Once every later source has ended too,
+   the zip's own end is delivered. Always entered with a NULL value.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_tail_fetch(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  KosTransformMulti *z = (KosTransformMulti *) state;
+  KosTransform *t = &z->base;
+
+  (void) value;
+
+  if (PyErr_Occurred())
+    return kos_transform_decline(ctx, t);
+
+  if (t->idx < t->nsrc) {
+    KosOpResult r = KosContext_NextResumeBound(
+        ctx, &t->reqs[t->idx], &zip_resume_tail_deliver_kind, z);
+    RESULT_ENTRY(ctx, r, &zip_resume_tail_deliver_kind, z);
+  }
+
+  /* every source ended with the first: the zip's own end */
+  PyErr_SetNone(PyExc_StopIteration);
+  return kos_transform_decline(ctx, t);
+}
+
+
+/**
+   TAIL DELIVER: a later source answered after the first ended. An
+   element is the "longer" error; its end clears and the tail carries
+   on with the next source. element is consumed.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_tail_deliver(
+    KosContext *ctx, void *state, PyObject *element) {
+
+  KosTransformMulti *z = (KosTransformMulti *) state;
+  KosTransform *t = &z->base;
+
+  kos_transform_fetched(&t->reqs[t->idx], element);
+
+  if (element) {
+    Py_DECREF(element);
+    zip_strict_long(t->idx);
+    return kos_transform_decline(ctx, t);
+  }
+
+  if (! kos_transform_source_spent())
+    return kos_transform_decline(ctx, t);
+
+  PyErr_Clear();
+  t->idx++;
+
+  RESUME_HOP(&zip_resume_tail_fetch_kind, ctx, z, NULL);
+}
+
+
 /* === the step === */
+
+
+/**
+   A strict zip's first source ended synchronously: pull each later
+   source once. One that yields is the "longer" error, one that ends is
+   passed over, and the first driven one continues the tail under
+   zip_resume_tail_fetch from its position. Every one ended is the
+   zip's own end.
+*/
+static KosIterStepResult zip_strict_tail(
+    KosContext *ctx,
+    KosTransform *t,
+    PyObject **out,
+    KosDynNode *pre_top) {
+
+  uint16_t j;
+
+  for (j = 1; j < t->nsrc; j++) {
+    PyObject *element;
+
+    switch (kos_transform_next_or_defer(
+        ctx, t, &t->reqs[j], &zip_resume_tail_fetch_kind, &element)) {
+      case KOS_IREQ_DELIVERED:
+        Py_DECREF(element);
+        zip_strict_long(j);
+        return kos_transform_step_abort(ctx, t, pre_top);
+      case KOS_IREQ_EXHAUSTED:
+        continue;
+      case KOS_IREQ_CONTINUES:
+        t->idx = j;
+        return KOS_ITER_INSTALLED_VALUE;
+      default:
+        return kos_transform_step_abort(ctx, t, pre_top);
+    }
+  }
+
+  t->closed = 1;
+  *out = NULL;
+  return KOS_ITER_EXHAUSTED;
+}
 
 
 static KosIterStepResult zip_step_body(
@@ -178,6 +339,13 @@ static KosIterStepResult zip_step_body(
           continue;
         case KOS_IREQ_EXHAUSTED:
           Py_DECREF(row);
+          if (((KosZip *) z)->strict) {
+            if (i) {
+              zip_strict_short(i);
+              return kos_transform_step_abort(ctx, t, pre_top);
+            }
+            return zip_strict_tail(ctx, t, out, pre_top);
+          }
           t->closed = 1;
           *out = NULL;
           return KOS_ITER_EXHAUSTED;
@@ -216,11 +384,27 @@ static PyObject *koszip_new(
     PyObject *args,
     PyObject *kwds) {
 
-  KosTransformMulti *z;
+  KosZip *z;
+  int strict = 0;
 
   if (kwds && PyDict_Size(kwds)) {
-    PyErr_SetString(PyExc_TypeError, "zip takes no keyword arguments");
-    return NULL;
+    PyObject *flag = NULL;
+
+    if (PyDict_Size(kwds) == 1) {
+      flag = PyDict_GetItemString(kwds, "strict");
+      if (! flag && PyErr_Occurred())
+        return NULL;
+    }
+
+    if (! flag) {
+      PyErr_SetString(PyExc_TypeError,
+                      "zip takes only a strict keyword argument");
+      return NULL;
+    }
+
+    strict = PyObject_IsTrue(flag);
+    if (strict < 0)
+      return NULL;
   }
 
   if (PyTuple_GET_SIZE(args) > UINT16_MAX) {
@@ -228,14 +412,16 @@ static PyObject *koszip_new(
     return NULL;
   }
 
-  z = (KosTransformMulti *) type->tp_alloc(type, 0);
+  z = (KosZip *) type->tp_alloc(type, 0);
   if (! z)
     return NULL;
 
-  if (kos_transform_init_multi(z, args)) {
+  if (kos_transform_init_multi(&z->multi, args)) {
     Py_DECREF(z);
     return NULL;
   }
+
+  z->strict = (uint8_t) strict;
 
   return (PyObject *) z;
 }
@@ -246,15 +432,15 @@ KosEvaluatedTypeObject KosZipType = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
     .tp_name = "koskari.lib.zip",
-    .tp_basicsize = sizeof(KosTransformMulti),
+    .tp_basicsize = sizeof(KosZip),
     .tp_itemsize = 0,
     .tp_dealloc = kos_transform_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-    .tp_doc = "KosZip(*iterables) - native lazy zip; iterable both "
-              "asynchronously (ambient await, koskari-flattened) and "
-              "synchronously (demand path)",
+    .tp_doc = "KosZip(*iterables, strict=False) - native lazy zip; "
+              "iterable both asynchronously (ambient await, "
+              "koskari-flattened) and synchronously (demand path)",
     .tp_traverse = kos_transform_multi_traverse,
     .tp_clear = kos_transform_multi_clear,
     .tp_iter = KosIterAdapt_PyIter,
