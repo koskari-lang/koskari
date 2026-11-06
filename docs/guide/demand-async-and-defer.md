@@ -275,6 +275,12 @@ first -- that auto-awaits to the value (see the caveat above).
 `(coroutine-fn (function work [x] ...))`. See
 [`compile/decorate`](../reference/macros/compile-decorate.md).
 
+Without the wrapper, `inspect.iscoroutinefunction`,
+`asyncio.iscoroutinefunction` and `inspect.isasyncgenfunction` answer False
+for a Koskari function, even though a call from Python returns a coroutine.
+For a function that does not yield, `inspect.markcoroutinefunction` on
+Python 3.12 and later also makes the first two answer True.
+
 ### Scheduling and gathering -- `create-task`, `defer` + `gather`
 
 To run held async work on the loop, schedule a `defer` (or coroutine) with

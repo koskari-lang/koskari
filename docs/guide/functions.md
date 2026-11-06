@@ -172,6 +172,12 @@ applies to any function a Python caller invokes directly, including a
 Python decorator like `lru_cache` that calls what it wraps. The model
 is in [Demand, async, and defer](demand-async-and-defer.md).
 
+`inspect.iscoroutinefunction`, `asyncio.iscoroutinefunction` and
+`inspect.isasyncgenfunction` answer False for a Koskari function, even
+though a call from Python returns a coroutine. For a function that does
+not yield, `coroutine-fn` or, on Python 3.12 and later,
+`inspect.markcoroutinefunction` makes the first two answer True.
+
 ## Thunks
 
 Braces make a short anonymous function whose formals are inferred from
