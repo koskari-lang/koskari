@@ -136,10 +136,12 @@ int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
 
 /**
    The count check of a CLASS with npos positional fields, run after
-   its type test: cls.__match_args__ must be a tuple of at least npos
-   names. match_args is that tuple, borrowed, when the caller holds it
-   (see KosMatch_PlainMatchArgs), else NULL and it is read from cls. 0,
-   or -1 with a TypeError set.
+   its type test. A self-matching builtin (PEP 634's eleven, or a
+   subclass of one) with no __match_args__ admits npos of 1, the
+   subject itself. Any other cls.__match_args__ must be a tuple of at
+   least npos names. match_args is that tuple, borrowed, when the
+   caller holds it (see KosMatch_PlainMatchArgs), else NULL and it is
+   read from cls. 0, or -1 with a TypeError set.
  */
 int KosMatch_ClassArgs(
     PyObject *cls,
@@ -163,9 +165,10 @@ int KosMatch_LiteralTest(PyObject *elem, PyObject *lit);
 
 /**
    The attribute of elem that cls.__match_args__[pos] names, the tuple
-   given or read as KosMatch_ClassArgs takes it. Returns 1 with *out a
-   new reference, 0 when the attribute is missing, -1 with an
-   exception set.
+   given or read as KosMatch_ClassArgs takes it; for a self-matching
+   builtin with no __match_args__, elem itself, box and all. Returns 1
+   with *out a new reference, 0 when the attribute is missing, -1 with
+   an exception set.
  */
 int KosMatch_FieldPos(
     PyObject *elem,

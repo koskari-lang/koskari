@@ -294,6 +294,12 @@ static inline int kos_type_is_mapping(PyObject *obj) {
 }
 
 
+/* PEP 634's self-matching builtins and their subclasses: a single
+   positional class sub-pattern matches the subject itself */
+#define kos_type_matches_self(tp) \
+  PyType_HasFeature((tp), _Py_TPFLAGS_MATCH_SELF)
+
+
 /* === Handled exception === */
 
 

@@ -297,6 +297,22 @@ static inline int kos_type_is_mapping(PyObject *obj) {
 }
 
 
+/* 3.9 predates _Py_TPFLAGS_MATCH_SELF; the eleven types PEP 634 names,
+   and their subclasses, bool through int */
+static inline int kos_type_matches_self(PyTypeObject *tp) {
+  return PyType_IsSubtype(tp, &PyLong_Type)
+      || PyType_IsSubtype(tp, &PyFloat_Type)
+      || PyType_IsSubtype(tp, &PyUnicode_Type)
+      || PyType_IsSubtype(tp, &PyBytes_Type)
+      || PyType_IsSubtype(tp, &PyByteArray_Type)
+      || PyType_IsSubtype(tp, &PyList_Type)
+      || PyType_IsSubtype(tp, &PyTuple_Type)
+      || PyType_IsSubtype(tp, &PyDict_Type)
+      || PyType_IsSubtype(tp, &PySet_Type)
+      || PyType_IsSubtype(tp, &PyFrozenSet_Type);
+}
+
+
 /* === Handled exception === */
 
 

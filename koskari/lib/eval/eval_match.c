@@ -306,8 +306,9 @@ KOS_MATCH_BODY(kos_match_type) {
    MATCH_CLASS_VAR and MATCH_CLASS_FAST: TOS, which stays, must be an
    instance of the class in the slot in field 1, and the class's
    __match_args__ must then hold at least field 2 names, else a
-   TypeError. The tuple is read through the cache slot only after the
-   type test passes. Row LABEL, slot, count.
+   TypeError; a self-matching builtin with no __match_args__ admits a
+   count of 1 instead. The tuple is read through the cache slot only
+   after the type test passes. Row LABEL, slot, count.
 */
 KOS_MATCH_BODY(kos_match_class) {
   KOS_SYNC_PC(ctx, insn);
@@ -343,9 +344,10 @@ KOS_MATCH_BODY(kos_match_class) {
    MATCH_FIELD_POS_VAR and MATCH_FIELD_POS_FAST: the attribute of
    TOS that __match_args__[field 2] of the class in the slot in field
    1 names, pushed; a missing attribute is a miss, an index past the
-   end of __match_args__ a TypeError. Emitted after its CLASS's hit,
-   so the tuple is read through the cache slot behind the type test.
-   Row LABEL, slot, index.
+   end of __match_args__ a TypeError. For a self-matching builtin with
+   no __match_args__, TOS itself is pushed. Emitted after its CLASS's
+   hit, so the tuple is read through the cache slot behind the type
+   test. Row LABEL, slot, index.
 */
 KOS_MATCH_BODY(kos_match_field_pos) {
   KOS_SYNC_PC(ctx, insn);

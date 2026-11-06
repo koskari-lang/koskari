@@ -527,6 +527,99 @@ class TestMatchSpecial(SpecialsTestCase):
             self.compile_expr(src, data=(1, 2, 3))
 
 
+class SelfInt(int):
+    pass
+
+
+class RealInt(int):
+    __match_args__ = ("real",)
+
+
+class TestMatchSelfMatchingClasses(SpecialsTestCase):
+    """
+    A builtin class PEP 634 names self-matching, or a subclass of one
+    with no __match_args__, takes one positional field, which matches
+    the subject itself
+    """
+
+    async def match_one(self, name, cls, data):
+        src = f"""
+        (match data
+          [[(item {name} x)] x]
+          [else: "nope"])
+        """
+        expr, mod = self.compile_expr(src, data=data, **{name: cls})
+        return await expr()
+
+
+    async def test_int_binds_the_subject(self):
+        self.assertEqual(await self.match_one("int", int, 5), 5)
+
+
+    async def test_str_binds_the_subject(self):
+        self.assertEqual(await self.match_one("str", str, "ab"), "ab")
+
+
+    async def test_other_builtins_bind_the_subject(self):
+        fs = frozenset((1, 2))
+        for name, cls, data in (
+                ("float", float, 1.5),
+                ("bool", bool, True),
+                ("tuple", tuple, (1, 2)),
+                ("dict", dict, {"a": 1}),
+                ("bytes", bytes, b"ab"),
+                ("frozenset", frozenset, fs)):
+            got = await self.match_one(name, cls, data)
+            self.assertEqual(got, data, name)
+            self.assertIs(type(got), cls, name)
+
+
+    async def test_non_instance_misses(self):
+        self.assertEqual(await self.match_one("int", int, "s"), "nope")
+
+
+    async def test_bool_misses_an_int(self):
+        self.assertEqual(await self.match_one("bool", bool, 1), "nope")
+
+
+    async def test_two_positionals_raise(self):
+        src = """
+        (match data
+          [[(item int a b)] b]
+          [else: "nope"])
+        """
+        expr, mod = self.compile_expr(src, data=5, int=int)
+        with self.assertRaises(TypeError) as caught:
+            await expr()
+        self.assertEqual(
+            str(caught.exception),
+            "int() accepts 1 positional sub-pattern (2 given)")
+
+
+    async def test_subclass_without_match_args_binds_itself(self):
+        got = await self.match_one("SelfInt", SelfInt, SelfInt(5))
+        self.assertEqual(got, 5)
+        self.assertIs(type(got), SelfInt)
+
+
+    async def test_subclass_with_match_args_binds_the_attribute(self):
+        got = await self.match_one("RealInt", RealInt, RealInt(5))
+        self.assertEqual(got, 5)
+        self.assertIs(type(got), int)
+
+
+    async def test_keyword_field_combines(self):
+        src = """
+        (match data
+          [[(item int x real: 5)] x]
+          [else: "nope"])
+        """
+        expr, mod = self.compile_expr(src, data=5, int=int)
+        self.assertEqual(await expr(), 5)
+        expr, mod = self.compile_expr(src, data=6, int=int)
+        self.assertEqual(await expr(), "nope")
+
+
 class TestMatchFailedCaptures(SpecialsTestCase):
     """
     A capture is stored into its variable as soon as its value is

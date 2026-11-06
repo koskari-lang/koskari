@@ -96,11 +96,14 @@ Positional fields resolve through the class's `__match_args__`, which
 dataclasses and named tuples provide on Python 3.10 and later; on 3.9,
 which predates `__match_args__`, Koskari synthesizes the equivalent for
 dataclasses and namedtuples, and any other class needs an explicit
-`__match_args__`. Keyword fields, `Point[x: 0 y]`, read attributes and
-work on any class. Field patterns nest: `Point[(x :: int) y]`. For an
-isinstance check with no field extraction, write the type-check pattern
-`(:: Point)`; an empty bracket group is an index suffix to the reader,
-not a pattern.
+`__match_args__`. `bool`, `bytearray`, `bytes`, `dict`, `float`,
+`frozenset`, `int`, `list`, `set`, `str` and `tuple`, and subclasses of
+them that define no `__match_args__`, take one positional field, which
+matches the value itself: `int[n]` binds an int to `n`. Keyword fields,
+`Point[x: 0 y]`, read attributes and work on any class. Field patterns
+nest: `Point[(x :: int) y]`. For an isinstance check with no field
+extraction, write the type-check pattern `(:: Point)`; an empty bracket
+group is an index suffix to the reader, not a pattern.
 
 ### Mappings
 
