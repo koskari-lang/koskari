@@ -43,7 +43,8 @@ pip install "koskari[repl]"   # syntax-highlighted REPL input via prompt_toolkit
 Every release so far is a weekly development snapshot, a pre-release, so
 `pip install koskari` resolves to the newest one; once a final release
 exists, `--pre` keeps selecting snapshots. Koskari supports CPython 3.9
-through 3.14 and ships wheels for Linux and macOS.
+through 3.14 and ships wheels for Linux and macOS, plus an
+[experimental Pyodide wheel](https://docs.koskari.org/project/platforms.html).
 
 
 ## Links

@@ -90,6 +90,10 @@ tools/mcp/data/
 # from running the scheduler example
 .kosrunner
 
+# pyodide-build working state
+.pyodide_build/
+.pyodide-xbuildenv*/
+
 
 # The end.
 

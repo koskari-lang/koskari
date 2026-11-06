@@ -28,7 +28,8 @@ says what kinds of change to expect.
 ## Which Python versions and platforms?
 
 CPython 3.9 through 3.14, on Linux and macOS, with wheels on PyPI for
-both. Windows is untested.
+both. Windows is untested. A Pyodide wheel is published as an
+experimental target. See [Supported platforms](project/platforms.md).
 
 ## Is free-threading supported?
 

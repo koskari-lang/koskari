@@ -27,6 +27,7 @@ Run `make help` for the full list. Common targets:
 | `make build` | Build wheel (native ext + uv) |
 | `make test` | Run tox test suite (phased pytest) |
 | `make lint` | flake8 on `koskari/` |
+| `make lint-actions` | actionlint on the GitHub Actions workflows, in a container |
 | `make docs` | Build this documentation site |
 | `make clean` | Remove build artifacts |
 

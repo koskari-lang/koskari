@@ -60,6 +60,8 @@ the value, and `(class NAME SUPERS body ...)` as an expression now binds
   defaults to off, turning either sealing pragma on raises `ValueError`,
   and `koskari.lib.build_flags` reports the build. See
   [Builds without read-only code](guide/runtime-tuning.md#builds-without-read-only-code).
+- Snapshots carry an experimental Pyodide wheel for running Koskari in a
+  browser. See [Supported platforms](project/platforms.md).
 
 ## 0.1.0
 
