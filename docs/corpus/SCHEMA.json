@@ -28,7 +28,8 @@
         "expand": { "type": "string" },
         "eval": { "type": "string" },
         "error": { "type": "string" },
-        "invalid": { "type": "string" }
+        "invalid": { "type": "string" },
+        "warning": { "type": "string" }
       }
     },
     "references": {

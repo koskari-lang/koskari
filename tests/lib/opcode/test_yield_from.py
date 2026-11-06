@@ -18,6 +18,8 @@ Tests for YIELD_FROM opcode.
 :license: GNU General Public License v3
 """
 
+import gc
+
 import pytest
 
 from koskari.lib import AsyncGenerator, FormalsSpec
@@ -332,6 +334,12 @@ class TestYieldFrom(CevalTest):
             self.assertIn("iterable", str(ctx.exception))
 
         await run()
+        # the refused inner coroutine was never started; the CONST of
+        # the outer code holds it, so it drops with that code
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'expr' was never awaited$"):
+            del inner_coro, code_obj, ns, expr, agen, run
+            gc.collect()
 
 
     async def test_yield_from_defer_rejected(self):

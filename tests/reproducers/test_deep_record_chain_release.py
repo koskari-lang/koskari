@@ -80,8 +80,10 @@ class TestDeepRecordChainRelease(unittest.TestCase):
         c = None
         for _ in range(DEPTH):
             c = link(c)
-        del c
-        gc.collect()
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'coro-link' was never awaited$"):
+            del c
+            gc.collect()
 
 
     def test_unstarted_async_generator_chain(self):

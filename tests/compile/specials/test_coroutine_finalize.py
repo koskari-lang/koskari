@@ -240,7 +240,13 @@ class TestCoroutineFinalize(SpecialsTestCase):
         self.assertEqual(log, ["inner-closed"])
         self.assertEqual(reports.seen, [])
 
-    async def test_never_started_and_finished_coroutines_do_nothing(self):
+    async def test_never_started_warns_and_finished_does_nothing(self):
+        """
+        A coroutine dropped before it started runs none of its body and
+        only warns that it was never awaited; one dropped after it
+        finished neither runs anything nor warns
+        """
+
         log = []
         src = """
         (lambda []
@@ -253,7 +259,10 @@ class TestCoroutineFinalize(SpecialsTestCase):
 
         with Unraisables() as reports:
             never = fn()
-            del never
+            with self.assertWarnsRegex(
+                    RuntimeWarning,
+                    "^coroutine '<lambda>' was never awaited$"):
+                del never
         self.assertEqual(log, [])
 
         done = fn()
