@@ -131,6 +131,13 @@ static int test_literal_and_same_through_the_box(void) {
 
   TEST_ASSERT_EQ(KosMatch_LiteralTest(boxed, five), 1, "equal literal");
   TEST_ASSERT_EQ(KosMatch_LiteralTest(boxed, six), 0, "unequal literal");
+
+  /* True, False and None compare by identity alone */
+  PyObject *one = PyLong_FromLong(1);
+  TEST_ASSERT_EQ(KosMatch_LiteralTest(one, Py_True), 0, "1 is not True");
+  TEST_ASSERT_EQ(KosMatch_LiteralTest(Py_True, Py_True), 1, "True is True");
+  Py_DECREF(one);
+
   TEST_ASSERT_EQ(KosMatch_SameTest(boxed, other), 1, "same through two boxes");
   TEST_ASSERT_EQ(KosMatch_SameTest(boxed, six), 0, "not the same");
 

@@ -270,6 +270,12 @@ int KosMatch_LiteralTest(PyObject *elem, PyObject *lit) {
     Py_DECREF(res);
     return r;
   }
+
+  /* True, False and None compare by identity alone, as PEP 634 has
+     it: 1 is not True, and 0 is not False */
+  if (lit == Py_True || lit == Py_False || lit == Py_None)
+    return 0;
+
   return PyObject_RichCompareBool(lit, got, Py_EQ);
 }
 

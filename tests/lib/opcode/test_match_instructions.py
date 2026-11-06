@@ -839,6 +839,35 @@ class TestElementTests(CevalTest):
             await run(prog, anything), ("base", anything, "hit"))
 
 
+    async def test_literal_singletons_by_identity(self):
+        # True, False and None match only themselves, never an equal
+        # value
+        prog = [
+            ["MATCH_LITERAL", ("miss", True, 0, 0)],
+        ] + hit(2) + miss(2)
+        self.assertEqual(await run(prog, True), ("base", True, "hit"))
+        self.assertEqual(await run(prog, 1), ("base", 1, "miss"))
+        self.assertEqual(await run(prog, 1.0), ("base", 1.0, "miss"))
+        datum = Datum(True)
+        self.assertEqual(await run(prog, datum), ("base", datum, "hit"))
+
+        prog[0] = ["MATCH_LITERAL", ("miss", False, 0, 0)]
+        self.assertEqual(await run(prog, False), ("base", False, "hit"))
+        self.assertEqual(await run(prog, 0), ("base", 0, "miss"))
+        self.assertEqual(await run(prog, 0.0), ("base", 0.0, "miss"))
+        self.assertEqual(await run(prog, ""), ("base", "", "miss"))
+
+        class Anything:
+            def __eq__(self, other):
+                return True
+
+        anything = Anything()
+        prog[0] = ["MATCH_LITERAL", ("miss", None, 0, 0)]
+        self.assertEqual(await run(prog, None), ("base", None, "hit"))
+        self.assertEqual(
+            await run(prog, anything), ("base", anything, "miss"))
+
+
     async def test_core(self):
         prog = [
             ["MATCH_CORE", ("miss", int(CoreType.TUPLE), 0, 0)],

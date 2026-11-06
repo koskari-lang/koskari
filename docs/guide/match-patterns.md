@@ -35,7 +35,7 @@ structured says what it is.
 | Pattern | Written | Meaning |
 |---------|---------|---------|
 | capture | `x` | bind this position, or the whole subject, to `x` |
-| literal | `5`, `"s"`, `foo:`, `'sym` | the position must equal the value |
+| literal | `5`, `"s"`, `foo:`, `'sym` | the position must equal the value; `True`, `False` and `None` match only themselves |
 | typed capture | `x :: T` | bind `x`; the value must satisfy the type or predicate `T` |
 | type check | `(:: T)` | check only, no binding |
 | sequence | `#[a b c]` or `#(a b c)` | destructure a sequence by position |
