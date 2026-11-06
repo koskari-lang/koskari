@@ -204,6 +204,16 @@ the spellings per atom for the life of the resolver.
 
 Ref: `koskari/hygiene.py` (`candidates`, `Resolver.choose`).
 
+### Matcher content backtracking (design)
+
+OPTIONAL, REPEAT and ONEOF commit once their sub-pattern matches, so
+`#[(OPTIONAL a) (b :: int) *: r]` misses `#(1 "s")`. Make them choice
+points: the suffix is emitted once, a later miss resumes at the most
+recent live mark, alternatives keep today's order so every current hit
+is unchanged. REPEAT records per-pass positions; NOT stays committed.
+
+Ref: [matcher-backtracking.md](matcher-backtracking.md).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls
