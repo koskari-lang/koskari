@@ -202,14 +202,13 @@ static KosEvaluatedTypeObject FailingRecyclableType = {
 };
 
 
-/* An instance of one of the failing provider types, readied on first
-   use. Returns a new reference, or NULL with an error set. */
+/* An instance of one of the failing provider types, which
+   ready_iterate_test_types readied. Returns a new reference, or NULL
+   with an error set. */
 static PyObject *make_failing_provider(KosEvaluatedTypeObject *type) {
 
   PyTypeObject *pytype = KOS_EVALUATED_PYTYPE(*type);
 
-  if (! (pytype->tp_flags & Py_TPFLAGS_READY) && PyType_Ready(pytype) < 0)
-    return NULL;
   failing_pyctx_calls = 0;
   failing_step_calls = 0;
   return PyObject_CallNoArgs((PyObject *) pytype);
@@ -348,8 +347,6 @@ static PyObject *make_stepped_owning_adapter(void) {
   PyTypeObject *pytype = KOS_EVALUATED_PYTYPE(OwningDurableType);
   PyObject *provider, *adapter, *res;
 
-  if (! (pytype->tp_flags & Py_TPFLAGS_READY) && PyType_Ready(pytype) < 0)
-    return NULL;
   owning_ctx_refs_at_dealloc = -1;
 
   provider = PyObject_CallNoArgs((PyObject *) pytype);
@@ -632,6 +629,21 @@ static int test_staged_source_survives_containing_clear(void) {
                  "the inner map outlives its holder's clear");
   TEST_ASSERT_EQ(held_at_end, 1,
                  "the inner map goes with its step's frame");
+  return 0;
+}
+
+
+/**
+   Ready the suite's static provider types. The harness calls this from
+   its type initialization, before any suite runs. Returns 0, or -1 with
+   an error set.
+*/
+int ready_iterate_test_types(void) {
+
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(FailingDurableType)) < 0
+      || PyType_Ready(KOS_EVALUATED_PYTYPE(FailingRecyclableType)) < 0
+      || PyType_Ready(KOS_EVALUATED_PYTYPE(OwningDurableType)) < 0)
+    return -1;
   return 0;
 }
 

@@ -58,7 +58,9 @@ static int initialize_types(void) {
       we run the library's own init over a module of our own rather than
       importing the Python module (which would load a second copy of the
       code). The init is the one PyInit_lib runs, so the suites exercise
-      the statics as the module path leaves them.
+      the statics as the module path leaves them. The suites' own static
+      types are readied here too, so their PyType_Ready residue falls
+      under the initialize_types Valgrind suppression.
     */
 
     static struct PyModuleDef testmod = {
@@ -82,6 +84,12 @@ static int initialize_types(void) {
         if (PyErr_Occurred()) {
             PyErr_Print();
         }
+        return -1;
+    }
+
+    if (ready_iterate_test_types() < 0) {
+        fprintf(stderr, "Failed to ready the iterate test types\n");
+        PyErr_Print();
         return -1;
     }
 
