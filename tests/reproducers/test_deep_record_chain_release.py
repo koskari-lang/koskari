@@ -36,6 +36,7 @@ import pytest
 
 from koskari.lib import KosMap
 from koskari.module import load_module_source_async, new_module
+from tests import needs_native_stack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -73,6 +74,7 @@ def load():
     return vars(module)
 
 
+@needs_native_stack
 class TestDeepRecordChainRelease(unittest.TestCase):
 
     def test_unstarted_coroutine_chain(self):
@@ -118,6 +120,7 @@ class TestDeepRecordChainRelease(unittest.TestCase):
         gc.collect()
 
 
+@needs_native_stack
 class TestDeepTransformNestRelease(unittest.TestCase):
     """
     A transform over a transform over ..., each dealloc releasing the
