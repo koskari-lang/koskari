@@ -56,8 +56,6 @@ permissions:
 jobs:
   tests:
     uses: ./.github/workflows/run_tests.yml
-    with:
-      runner: self-hosted
 
   detect:
     runs-on: ubuntu-latest
@@ -129,7 +127,7 @@ jobs:
   export:
     needs: [tests, detect]
     if: ${{ needs.detect.outputs.corpus == 'true' || needs.detect.outputs.mcp == 'true' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     container:
       image: docker.io/library/python:3.14-bookworm
     permissions:

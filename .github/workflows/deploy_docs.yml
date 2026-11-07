@@ -34,7 +34,7 @@ env:
 jobs:
 
   build-documentation:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     container:
       image: docker.io/library/python:3.14-bookworm
 
@@ -86,9 +86,7 @@ jobs:
           path: build/docs
 
   deploy-documentation:
-    runs-on: self-hosted
-    container:
-      image: docker.io/library/python:3.14-bookworm
+    runs-on: ubuntu-latest
 
     needs:
       - build-documentation

@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   export:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     container:
       image: docker.io/library/python:3.14-bookworm
     if: ${{ inputs.dataset_artifact == '' }}
@@ -68,7 +68,7 @@ jobs:
           path: build/corpus/datasets/
 
   publish:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     container:
       image: docker.io/library/python:3.14-bookworm
     needs: export

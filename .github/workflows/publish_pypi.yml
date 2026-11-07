@@ -86,8 +86,6 @@ jobs:
     needs: gate
     if: ${{ needs.gate.outputs.proceed == 'true' }}
     uses: ./.github/workflows/run_tests.yml
-    with:
-      runner: self-hosted
 
   build:
     needs: [gate, tests]
