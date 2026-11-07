@@ -202,6 +202,20 @@ tags:
   - metaprogramming
 notes: define-only
 ---
+id: syntax-syntax-match-anon-list-001
+feature: special/compile/syntax-match
+source: (begin (def f [] (syntax h (syntax-match [(h (LIST (SYMBOL k))) (quote k)])) (h (a))) (f))
+verify:
+  eval: "symbol:a"
+references:
+  - reference/specials/compile-syntax-match.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-match
+  - metaprogramming
+notes: a registered matcher head at the top of a rule is that matcher without a slot name; (LIST (SYMBOL k)) matches the one list (a) and binds k to a
+---
 id: syntax-macro-match-identity-001
 feature: special/compile/macro-match
 source: (var ident (macro-match ident [(ident (VALUE x)) x]))

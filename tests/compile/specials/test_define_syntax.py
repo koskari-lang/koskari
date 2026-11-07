@@ -22,7 +22,7 @@ Integration tests for define with syntax and macro transformers.
 import pytest
 
 from koskari.compile import Compiler
-from koskari.exceptions import CompilerError, SpecialError
+from koskari.exceptions import CompilerError, SpecialError, SyntaxMatchError
 from koskari.lib import build_list, build_tuple, cons, nil, symbol
 from koskari.syntax import Syntax, build_macro, build_special, build_syntax
 from tests.dis.dis import dis
@@ -976,6 +976,105 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
         result = await expr()
         self.assertEqual(42, result)
+
+
+class TestRuleLevelMatcherHeads(DefineSyntaxCompileHelpers):
+    """
+    A registered matcher head at the top of a rule is that matcher,
+    with or without a slot name as its first argument
+    """
+
+    async def define_h(self, kind, rule):
+        src_str = f"(define h ({kind} h {rule}))"
+        expr, mod = self.compile_expr(src_str, str=str)
+        await expr()
+        return {'compile/h': vars(mod)['h']}
+
+
+    async def use(self, defn, src_str):
+        expr, mod = self.compile_expr(src_str, **defn)
+        return await expr()
+
+
+    async def test_anonymous_list(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (LIST (SYMBOL k))) (quote k)]")
+        self.assertIs(symbol("a"), await self.use(defn, "(h (a))"))
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_expr("(h LIST a)", **defn)
+
+
+    async def test_anonymous_optional(self):
+        defn = await self.define_h(
+            "syntax-match",
+            "[(h (VALUE a) (OPTIONAL (VALUE b))) a]")
+        self.assertEqual(1, await self.use(defn, "(h 1)"))
+        self.assertEqual(1, await self.use(defn, "(h 1 2)"))
+
+
+    async def test_anonymous_oneof(self):
+        defn = await self.define_h(
+            "syntax-match",
+            "[(h (ONEOF (KEYWORD k) (SYMBOL s))) \"matched\"]")
+        self.assertEqual("matched", await self.use(defn, "(h foo)"))
+        self.assertEqual("matched", await self.use(defn, "(h a:)"))
+
+
+    async def test_unnamed_repeat(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (REPEAT (VALUE e))) (quote (e ...))]")
+        self.assertEqual(cons(1, 2, nil), await self.use(defn, "(h 1 2)"))
+
+
+    async def test_literal(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (LITERAL 5)) \"five\"]")
+        self.assertEqual("five", await self.use(defn, "(h 5)"))
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_expr("(h 6)", **defn)
+
+
+    async def test_bare_rest(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (VALUE a) (REST)) a]")
+        self.assertEqual(1, await self.use(defn, "(h 1 2 3)"))
+
+
+    async def test_test_any(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (TEST_ANY)) \"any\"]")
+        self.assertEqual("any", await self.use(defn, "(h 1)"))
+
+
+    async def test_anonymous_match(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (MATCH (SYMBOL k))) (quote k)]")
+        self.assertIs(symbol("a"), await self.use(defn, "(h a)"))
+
+
+    async def test_macro_match_anonymous_list(self):
+        defn = await self.define_h(
+            "macro-match", "[(h (LIST (SYMBOL k))) (str k.datum)]")
+        self.assertEqual("a", await self.use(defn, "(h (a))"))
+
+
+    async def test_special_match_anonymous_list(self):
+        defn = await self.define_h(
+            "special-match",
+            "[(compiler (h (LIST (SYMBOL k)))) (str k.datum)]")
+        self.assertEqual("a", await self.use(defn, "(h (a))"))
+
+
+    def test_malformed_head_is_refused_at_definition(self):
+        for pattern in (
+                "(h (VALUE 1))",
+                "(h (NOT (SYMBOL s)) (VALUE v))",
+                "(h (LITERAL 1 2))"):
+            src_str = f"(define h (syntax-match h [{pattern} 1]))"
+            with self.assertRaises(SpecialError, msg=src_str) as caught:
+                self.compile_expr(src_str)
+            self.assertIn(
+                "invalid rule pattern", str(caught.exception), msg=src_str)
 
 
 class TestExpansionCycleGuard(DefineSyntaxCompileHelpers):

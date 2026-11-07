@@ -191,9 +191,10 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
     Lower MATCH-dialect pattern source (a cons tree) to a matcher Pattern.
 
     Distinct from :func:`parse_matcher`, which lowers a single META element.
-    This walks a rule-level spine: either a registered declaration
-    ``(HEAD slot . opts)`` when ``HEAD`` is in :data:`MATCHER_REGISTRY` and
-    ``slot`` is a symbol, or a sequential ``MATCH`` of per-cell patterns.
+    This walks a rule-level spine: an atom is a literal, a cell whose
+    head is in :data:`MATCHER_REGISTRY` is that matcher whatever its
+    arguments, and any other cell is a sequential ``MATCH`` of per-cell
+    patterns.
 
     :param form: koskari pattern datum
     :param source_ctx: optional value appended to error messages
@@ -221,12 +222,11 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
     head, tail = form
 
     # a pattern a template wrote arrives marked: the head names a
-    # registered matcher by its bare spelling, and the slot keeps its
+    # registered matcher by its bare spelling, and any slot keeps its
     # mark so the template's marked reference finds it
-    if not is_nil(tail) and is_pair(tail):
-        decl_bind = tail.car
+    if is_symbol(head):
         factory = lookup_matcher(str(strip_mark(head)))
-        if factory is not None and is_symbol(decl_bind):
+        if factory is not None:
             return factory(head, tail)
 
     specs = []

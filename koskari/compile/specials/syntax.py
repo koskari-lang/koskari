@@ -477,24 +477,30 @@ def match_rule_pattern(pattern_src, namesym):
     own name lowers to a CALLEDBY capture under that name, a slot bound
     to the symbol the macro was invoked as, with the rest of the spine
     lowered cell by cell; any other pattern lowers whole through
-    parse_explicit_rule_pattern, a literal head included
+    parse_explicit_rule_pattern
 
     :param pattern_src: the rule's pattern datum
     :param namesym: the macro's name symbol
     :return: Pattern instance
+    :raises SpecialError: when a cell of the pattern does not lower
     """
 
-    if is_pair(pattern_src) and not is_nil(pattern_src) \
-       and is_proper(pattern_src):
-        head, rest = pattern_src
-        if is_symbol(head) and strip_mark(head) == strip_mark(namesym):
-            specs = [CALLEDBY(str(head))]
-            while not is_nil(rest):
-                cell, rest = rest
-                specs.append(parse_explicit_rule_pattern(cell, pattern_src))
-            return MATCH(*specs)
+    try:
+        if is_pair(pattern_src) and not is_nil(pattern_src) \
+           and is_proper(pattern_src):
+            head, rest = pattern_src
+            if is_symbol(head) and strip_mark(head) == strip_mark(namesym):
+                specs = [CALLEDBY(str(head))]
+                while not is_nil(rest):
+                    cell, rest = rest
+                    specs.append(
+                        parse_explicit_rule_pattern(cell, pattern_src))
+                return MATCH(*specs)
 
-    return parse_explicit_rule_pattern(pattern_src)
+        return parse_explicit_rule_pattern(pattern_src)
+
+    except (TypeError, ValueError) as exc:
+        raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
 
 
 def parse_macro_rules_rows(literals_expr, raw_rules):
