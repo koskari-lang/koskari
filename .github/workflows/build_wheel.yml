@@ -11,7 +11,8 @@
 # for one Python, runs the full test suite as the only 32-bit coverage
 # in CI, and a failure leaves that week's snapshot without the wheel
 # rather than holding back the others. Its settings live in
-# tools/cibuildwheel-pyodide.toml, shared with the pyodide tox environment.
+# tools/cibuildwheel-pyodide.toml, shared with the wheel-pyodide and
+# test-pyodide tox environments.
 #
 # The optional version input stamps a PEP 440 version into setup.cfg
 # before building, which is how publish_pypi.yml injects snapshot (.devN)

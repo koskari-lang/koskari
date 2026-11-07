@@ -238,13 +238,13 @@ test-py314: handlers  ## Run tests in container for Python 3.14
 
 ##@ Pyodide
 
-test-pyodide: handlers  ## Build the Pyodide wheel and test it in node (RUN_ARGS: test paths)
+test-pyodide: handlers  ## Rebuild the Pyodide wheel and test it in node (RUN_ARGS: test selection)
 	@$(call checkfor,tox)
-	@$(if $(RUN_ARGS),CIBW_TEST_COMMAND='python -m pytest $(addprefix {project}/,$(RUN_ARGS))') tox -qe pyodide
+	@tox -qe test-pyodide -- $(RUN_ARGS)
 
 wheel-pyodide: handlers  ## Build the Pyodide wheel into dist/pyodide
 	@$(call checkfor,tox)
-	@CIBW_TEST_SKIP='*' tox -qe pyodide
+	@tox -qe wheel-pyodide
 
 
 ##@ Runtime Container
