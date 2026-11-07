@@ -5,15 +5,15 @@
 #
 # pyodide-version moves with the Pyodide CDN URL on koskari.org.
 #
-# The tests run from a temporary directory; tests/pyodide_pytest.py
-# resolves a selection against the project root. The test-pyodide tox
-# environment overrides test-command to pass its posargs as the
-# selection.
+# The tests run from the project root with -I, as the py tox environment
+# runs them, so the installed wheel is what they import. The test-pyodide
+# tox environment overrides test-command with the same line and its
+# posargs as the selection.
 
 [tool.cibuildwheel]
 pyodide-version = "314.0.7"
 test-extras = ["repl", "lsp", "pygments", "sphinx"]
 test-requires = ["pytest", "PyYAML", "jsonschema", "setuptools"]
-test-command = "python {project}/tests/pyodide_pytest.py {project}"
+test-command = "cd {project} && python -BI -m pytest tests"
 
 # The end.
