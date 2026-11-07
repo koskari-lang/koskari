@@ -15,15 +15,17 @@ Argument specifiers (order matters; analogous to Python 3.5+):
 Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:` (star kwargs). All positionals and `*:` must come before any keywords or
 `**:`; a keyword cannot be followed by `*:` or a positional. A keyword label
-written twice in one call is a compile error; a keyword and a `**:` mapping
-that name the same key merge at run time, the later one winning. Full form
-examples:
+written twice in one call is a compile error. A keyword and a `**:` mapping,
+or two `**:` mappings, that name the same key merge at run time in source
+order, the later one winning; Python raises `TypeError` for the same call.
+Full form examples:
 
 ```koskari
 (fn a b *: more x: xval y: yval **: kwargs)
 ```
 
-is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python.
+is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python,
+except that a key supplied by both a keyword and `kwargs` is not an error.
 
 ```koskari
 (fn a *: bargs c *: dargs)
@@ -31,7 +33,8 @@ is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python.
 ```
 
 are equivalent to `fn(a, *bargs, c, *dargs)` and
-`fn(x=1, **kw1, y=2, **kw2)` in Python.
+`fn(x=1, **kw1, y=2, **kw2)` in Python, with the same exception for a key
+supplied more than once.
 
 **Use-case:** Generic function application. Evaluates the callee and each
 argument, then emits CALL (positional only), CALL_NAMES (positional + keywords),
