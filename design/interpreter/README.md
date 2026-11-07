@@ -29,6 +29,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **generator-extent-freeze.md**: extents across a generator yield -- PARAM restores its cells at freeze and re-enters them at install; whether WIND and WITH need a leave and re-enter walk without unlinking is open
 - **yield-from-close.md**: closing a delegate through yield-from -- GeneratorExit takes the raise walk, which cannot await an async or Koskari delegate's close; whether it should route through the resume like every other throw is open
+- **generator-return-value.md**: a generator's `(return v)` reaches `(next g)` and Python consumers but `yield-from` is always None -- where the value is carried and dropped today, and the candidate rule that it carries across every path (open)
 - **pair-const-opcodes.md**: PROPER_CONST, BRACKET_PROPER_CONST, CONS_CONST and BRACKET_CONS_CONST, pair builders fed from a pool tuple so quoted and quasiquoted lists render down over their constant elements in one row (idea)
 - **module-dict.md**: a Koskari module's `__dict__` must be a dict for exec, eval, dataclasses and typing; the in-place snapshot was tried and set aside; a read-through dict subclass with purged writes, or dict-backed ItemRef bindings accelerated by dict versioning, are the directions to investigate (open)
 - **opcode-sizing.md**: per-handler code size joined with per-opcode timing (`make opsizing`, `design/perf/opsizing.tsv`); how to read the table and how to measure a change

@@ -388,6 +388,15 @@ not at the relay's aclose. Decide whether GeneratorExit should route
 through the resume so the drive can await the delegate's close.
 Ref: [interpreter/yield-from-close.md](interpreter/yield-from-close.md).
 
+### A generator's return value through `yield-from` (design)
+
+A Koskari generator's `(return v)` reaches `(next g)` and every Python
+consumer as the StopIteration or StopAsyncIteration value, but
+`(yield-from g)` is always None and the transforms have not been
+traced. Design the rule under which the value carries across every
+path that reads a generator's end, with `yield-from` evaluating to it.
+Ref: [interpreter/generator-return-value.md](interpreter/generator-return-value.md).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
