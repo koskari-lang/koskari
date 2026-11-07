@@ -433,6 +433,13 @@ PyObject *KosFunction_GetCode(PyObject *func);
 
 
 /**
+   Return the function's __name__ (new reference): the metadata
+   override when one was written, else its own name, else its code's.
+*/
+PyObject *KosFunction_GetName(PyObject *func);
+
+
+/**
    Return the function's __qualname__ (new reference): the metadata
    override when one was written, else its __name__.
 */

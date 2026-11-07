@@ -111,6 +111,8 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
   coro->param_refs = kos_param_cells_possible()
       ? KosContext_Snapshot(kos_tls_current()) : NULL;
   coro->fn = Py_XNewRef(fn);
+  coro->name = fn ? NULL
+      : Py_NewRef(KosCode_NAME(KosDynFrame_CODE(frame)));
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
@@ -253,7 +255,7 @@ static void coroutine_warn_unawaited(KosCoroutine *coro) {
   if (coro->fn)
     name = KosFunction_GetQualname(coro->fn);
   else
-    name = Py_NewRef(KosCode_NAME(KosDynFrame_CODE(coro->frame)));
+    name = Py_NewRef(coro->name);
 
   if (! name ||
       PyErr_WarnFormat(PyExc_RuntimeWarning, 1,
@@ -333,6 +335,7 @@ static void coroutine_dealloc(PyObject *self) {
 
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
+  Py_CLEAR(coro->name);
 
   /* A function's coroutine is stored on the function when its slot is
      free: untracked, every field clear, refcount zero, the next call
@@ -901,6 +904,45 @@ static PyObject *coroutine_repr(PyObject *self) {
 }
 
 
+/**
+   __name__: the function's __name__, or the code's name for an
+   Expression.
+*/
+static PyObject *coroutine_get_name(PyObject *self, void *closure) {
+
+  KosCoroutine *const coro = (KosCoroutine *) self;
+
+  (void) closure;
+
+  if (coro->fn)
+    return KosFunction_GetName(coro->fn);
+  return Py_NewRef(coro->name);
+}
+
+
+/**
+   __qualname__: the function's __qualname__, or the code's name for an
+   Expression.
+*/
+static PyObject *coroutine_get_qualname(PyObject *self, void *closure) {
+
+  KosCoroutine *const coro = (KosCoroutine *) self;
+
+  (void) closure;
+
+  if (coro->fn)
+    return KosFunction_GetQualname(coro->fn);
+  return Py_NewRef(coro->name);
+}
+
+
+static PyGetSetDef coroutine_getsets[] = {
+  { "__name__", (getter) coroutine_get_name, NULL, NULL, NULL },
+  { "__qualname__", (getter) coroutine_get_qualname, NULL, NULL, NULL },
+  { NULL, },
+};
+
+
 PyTypeObject KosCoroutineType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -918,6 +960,7 @@ PyTypeObject KosCoroutineType = {
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = coroutine_iternext,
   .tp_methods = coroutine_methods,
+  .tp_getset = coroutine_getsets,
 };
 
 

@@ -178,6 +178,12 @@ though a call from Python returns a coroutine. For a function that does
 not yield, `coroutine-fn` or, on Python 3.12 and later,
 `inspect.markcoroutinefunction` makes the first two answer True.
 
+The coroutine carries its function's `__name__` and `__qualname__`,
+which asyncio uses when it prints a Task. It has no Python frame
+object, so the `cr_*` and `ag_*` introspection attributes,
+`inspect.getcoroutinestate` and `inspect.getasyncgenstate` do not apply
+to it.
+
 ## Thunks
 
 Braces make a short anonymous function whose formals are inferred from

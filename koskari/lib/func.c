@@ -1530,6 +1530,11 @@ PyObject *KosFunction_GetCode(PyObject *self) {
 }
 
 
+PyObject *KosFunction_GetName(PyObject *self) {
+  return function_get_name_dunder(self, NULL);
+}
+
+
 PyObject *KosFunction_GetQualname(PyObject *self) {
   return function_get_qualname_dunder(self, NULL);
 }
