@@ -31,6 +31,7 @@ import pytest
 
 from koskari.lib import demand
 from koskari.matcher import FORM, MATCH, NOT, TEST_ANY
+from tests import needs_native_stack
 
 
 pytestmark = pytest.mark.phase_infra
@@ -59,6 +60,7 @@ def nested_lists(depth):
 
 class TestMatcherDepthBound(unittest.TestCase):
 
+    @needs_native_stack
     def test_a_pattern_nested_past_the_limit_is_refused_at_build(self):
         """
         A pattern nested far past the recursion limit is refused with

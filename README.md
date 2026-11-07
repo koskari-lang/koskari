@@ -40,9 +40,11 @@ GCC 15 or newer; the evaluator threads opcode dispatch through guaranteed tail
 calls, and the build picks clang when it is on the PATH or honors `CC`), and
 [uv](https://docs.astral.sh/uv/) for the virtual-environment workflow below.
 
-**Platforms:** Koskari is designed and tested against 64-bit CPython only.
+**Platforms:** Koskari is designed and tested against 64-bit CPython.
 The wheels cover Linux x86_64 and aarch64 and macOS arm64 and x86_64; a
-source build on anything else is untested.
+source build on anything else is untested. A wasm32 Pyodide wheel is
+published as an
+[experimental target](https://docs.koskari.org/project/platforms.html).
 
 
 ### Virtual environment

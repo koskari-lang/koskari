@@ -36,10 +36,17 @@ from koskari.exceptions import (
     CodeBoundary, _filter_infrastructure_tb, format_code_boundary_exception,
     format_exception_with_koskari_trace)
 from koskari.importer import install
+from koskari.lib import build_flags
 from koskari.module import new_module
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_cli
+
+
+needs_protection = unittest.skipIf(
+    build_flags['KOS_NO_PROTECT'],
+    "built without read-only code protection")
 
 
 # Absolute path to the scripts directory next to this test file.
@@ -563,6 +570,7 @@ class TestFormatCodeBoundaryException(unittest.IsolatedAsyncioTestCase):
         self.assertIn('REPLCodeBoundary', rendered)
 
 
+@needs_threads
 class TestMain(unittest.IsolatedAsyncioTestCase):
     """
     main() uses _drive_cli_async; run it in a thread to avoid nested loop.
@@ -1171,6 +1179,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         return path
 
 
+    @needs_threads
     async def test_int_return_is_exit_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1182,6 +1191,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(3, code, err)
 
 
+    @needs_threads
     async def test_none_return_exits_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1194,6 +1204,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("entered\n", out)
 
 
+    @needs_threads
     async def test_other_return_printed_exits_one(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1206,6 +1217,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("bad thing\n", err)
 
 
+    @needs_threads
     async def test_no_entry_exits_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1218,6 +1230,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("", out)
 
 
+    @needs_threads
     async def test_coroutine_entry_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1235,6 +1248,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("resumed\n", out)
 
 
+    @needs_threads
     async def test_explicit_slot_definition(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1245,6 +1259,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, code, err)
 
 
+    @needs_threads
     async def test_entry_runs_after_when_main(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1260,6 +1275,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("when-main\nentry\n", out)
 
 
+    @needs_protection
     async def test_entry_runs_after_seal(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1272,6 +1288,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("sealed True\n", out)
 
 
+    @needs_threads
     async def test_imported_entry_not_called(self):
         with tempfile.TemporaryDirectory() as tmp:
             self._write(
@@ -1291,6 +1308,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("app entry\n", out)
 
 
+    @needs_threads
     async def test_command_entry(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, out, err = await self._main(
@@ -1299,6 +1317,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(6, code, err)
 
 
+    @needs_threads
     async def test_module_package_main_entry(self):
         with tempfile.TemporaryDirectory() as tmp:
             pkg = os.path.join(tmp, 'entrypkg')
@@ -1314,6 +1333,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(5, code, err)
 
 
+    @needs_threads
     async def test_kio_entry(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = self._write(
@@ -1331,6 +1351,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, code, err)
 
 
+    @needs_threads
     async def test_stdin_entry(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, out, err = await self._main(
@@ -1341,6 +1362,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(8, code, err)
 
 
+    @needs_threads
     async def test_raising_entry_exits_one(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1353,6 +1375,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ValueError: boom", err)
 
 
+    @needs_threads
     async def test_system_exit_from_entry_propagates(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1366,6 +1389,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(7, caught.exception.code)
 
 
+    @needs_threads
     async def test_keyboard_interrupt_from_entry_exits_130(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1377,6 +1401,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(130, code, err)
 
 
+    @needs_threads
     async def test_int_like_returns(self):
         cases = [("True", 1), ("False", 0), ("-1", -1), ("300", 300)]
         for value, expected in cases:
@@ -1392,6 +1417,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("", err)
 
 
+    @needs_threads
     async def test_non_callable_entry_exits_one(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1402,6 +1428,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TypeError", err)
 
 
+    @needs_threads
     async def test_package_entry_body_error_is_a_traceback(self):
         """
         An import failing inside the body of a package run by -m is the
@@ -1423,6 +1450,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("cannot be directly executed", err)
 
 
+    @needs_threads
     async def test_interactive_package_entry_leaves_package_intact(self):
         """
         After a package's entry point runs under -i, the session opens
@@ -1449,6 +1477,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(os.path.realpath(init), pkg_file)
 
 
+    @needs_threads
     async def test_interactive_raising_entry_skips_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1463,6 +1492,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Koskari ", out)
 
 
+    @needs_threads
     async def test_interactive_other_return_continues_to_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1477,6 +1507,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Koskari ", out)
 
 
+    @needs_threads
     async def test_entry_skipped_when_load_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
@@ -1492,6 +1523,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("", out)
 
 
+    @needs_threads
     async def test_interactive_runs_entry_then_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(

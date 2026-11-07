@@ -33,6 +33,7 @@ from koskari.asyncio import (
     ProcessResult, as_coroutine, coroutine_fn, create_task, run_process)
 from koskari.lib import defer
 from tests.compile.specials import SpecialsTestCase
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_basics
@@ -285,6 +286,7 @@ class TestRunProcess(SpecialsTestCase):
     The run-process builtin and the ProcessResult it returns
     """
 
+    @needs_processes
     async def test_run_process_from_koskari(self):
         src = '(run-process "echo" "hello")'
         expr, _mod = self.compile_expr(src)
@@ -296,11 +298,13 @@ class TestRunProcess(SpecialsTestCase):
         self.assertEqual(result.text, "hello\n")
 
 
+    @needs_processes
     async def test_raise_for_status_returns_self(self):
         result = await run_process("true")
         self.assertIs(result.raise_for_status(), result)
 
 
+    @needs_processes
     async def test_raise_for_status_raises(self):
         result = await run_process("false")
         self.assertEqual(result.returncode, 1)

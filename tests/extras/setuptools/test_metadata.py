@@ -34,11 +34,13 @@ from koskari.extras.setuptools.metadata import (
     packages_from_koskari_scripts, parse_entry_point_line, parse_entry_target,
     validate_entry_point_value, validate_koskari_scripts,
     warn_koskari_scripts_metadata, warn_undeclared_script_packages)
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_extras
 
 
+@needs_processes
 class TestMetadataImport(unittest.TestCase):
 
     def test_metadata_imports_without_setuptools(self):

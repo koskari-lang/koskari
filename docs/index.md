@@ -66,6 +66,7 @@ reference/index
 :caption: Project
 
 project/build-test
+project/platforms
 project/architecture-map
 project/provenance
 project/release-and-versioning

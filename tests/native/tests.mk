@@ -77,6 +77,10 @@ endif
 ifneq ($(KOS_NOFREELIST),)
 CFLAGS += -DKOS_NOFREELIST=1
 endif
+# Build without read-only code protection
+ifneq ($(KOS_NO_PROTECT),)
+CFLAGS += -DKOS_NO_PROTECT=1
+endif
 ifneq ($(VERBOSE_DEBUG),)
 CFLAGS += -DVERBOSE_DEBUG=$(VERBOSE_DEBUG)
 endif

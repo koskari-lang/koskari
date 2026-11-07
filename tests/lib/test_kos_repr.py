@@ -26,6 +26,7 @@ from koskari.lib import (
     KosPartial, cons, keyword, kos_repr, kos_repr_register,
     kos_repr_registry_clear, kos_repr_registry_snapshot, kos_repr_unregister,
     nil, pair, setcdr, symbol)
+from tests import needs_native_stack
 
 
 pytestmark = pytest.mark.phase_lib
@@ -575,12 +576,15 @@ class TestKosReprDepth(unittest.TestCase):
             return
         self.assertIsInstance(got, str)
 
+    @needs_native_stack
     def test_deep_list_is_bounded(self):
         self.assert_bounded(self.nested(list, 100000))
 
+    @needs_native_stack
     def test_deep_tuple_is_bounded(self):
         self.assert_bounded(self.nested(tuple, 100000))
 
+    @needs_native_stack
     def test_deep_dict_is_bounded(self):
         value = {}
         for _ in range(100000):

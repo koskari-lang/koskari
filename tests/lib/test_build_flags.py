@@ -52,6 +52,9 @@ class TestBuildFlags(unittest.TestCase):
         # that imports reports it on
         self.assertEqual(build_flags.get('KOS_HAVE_MUSTTAIL'), 1)
 
+    def test_no_protect_always_present(self):
+        self.assertIn(build_flags['KOS_NO_PROTECT'], (0, 1))
+
     def test_absent_knob_is_absent(self):
         self.assertIsNone(build_flags.get('KOS_NO_SUCH_KNOB'))
 

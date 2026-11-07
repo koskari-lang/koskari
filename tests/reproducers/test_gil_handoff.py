@@ -34,11 +34,13 @@ import time
 import pytest
 
 from tests.compile.specials import SpecialsTestCase
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_reproducers
 
 
+@needs_threads
 class TestGilHandoff(SpecialsTestCase):
 
     async def test_koskari_loop_yields_to_a_python_thread(self):

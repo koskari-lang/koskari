@@ -26,6 +26,7 @@ import pytest
 from koskari.lib import (
     bracket_nil, bracket_pair, break_recursive, car, cdr, cons,
     kos_repr, make_recursive, nil, pair, setcar, setcdr)
+from tests import needs_native_stack
 
 
 pytestmark = pytest.mark.phase_lib
@@ -528,6 +529,7 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inner.get_position(), ("inner", 1, 1))
         self.assertIsNone(cdr(inner).get_position())
 
+    @needs_native_stack
     async def test_follow_walks_a_deep_car_nesting(self):
         """
         The follow walks descend into cars with an explicit stack, so a
@@ -1025,6 +1027,7 @@ class TestPairRenderErrors(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             str(p)
 
+    @needs_native_stack
     async def test_car_cycle_raises_recursion_error(self):
         """
         A cycle through the car is not a spine cycle; the renderer recurses

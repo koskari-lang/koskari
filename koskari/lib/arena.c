@@ -31,6 +31,7 @@
    system header: anonymous mappings need the GNU or Darwin extensions
    beyond plain POSIX, and pyconfig.h chooses them per platform */
 #include "lib.h"
+#include "hints.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -98,6 +99,9 @@ static void arena_take(
 
 size_t KosArena_PageSize(void) {
 
+#if KOS_NO_PROTECT
+  return 0;
+#else
   static size_t page = 0;
 
   /* a guessed page size would be handed to mmap and mprotect, so none
@@ -109,6 +113,7 @@ size_t KosArena_PageSize(void) {
     }
   }
   return page;
+#endif
 }
 
 
@@ -611,7 +616,8 @@ int koskari_arena_init(PyObject *mod) {
   }
 
   /* the reservation alignment, and the chunk unit in bytes: 0 on a
-     system that reports no page size, where no block is placed */
+     system that reports no page size or a build without read-only
+     code protection, where no block is placed */
   if (set_type_constant(&KosArenaType, "UNIT", KOS_ARENA_UNIT) ||
       set_type_constant(&KosArenaType, "CHUNK", KosArena_ChunkUnit())) {
     return -1;

@@ -32,6 +32,7 @@ import pytest
 
 from koskari.importer import (
     KoskariSourceFileLoader, install, is_installed, uninstall)
+from tests import needs_pwd_builtin
 
 
 pytestmark = pytest.mark.phase_importer
@@ -147,6 +148,7 @@ class TestPrecedence(unittest.IsolatedAsyncioTestCase):
         mod = importlib.import_module('prec_order')
         self.assertEqual('py', mod.which)
 
+    @needs_pwd_builtin
     async def test_ki_does_not_shadow_a_builtin(self):
         with open(os.path.join(self._tmpdir, 'pwd.ki'), 'w') as fh:
             fh.write('(var shadowed True)\n')

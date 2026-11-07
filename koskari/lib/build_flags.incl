@@ -72,6 +72,9 @@ FLAG(KOS_XFER_TRACE)
 #endif
 
 /* detected or derived from the compiler and Python headers */
+#ifdef KOS_NO_PROTECT
+FLAG(KOS_NO_PROTECT)
+#endif
 #ifdef KOS_HAVE_MUSTTAIL
 FLAG(KOS_HAVE_MUSTTAIL)
 #endif

@@ -623,7 +623,7 @@ static KosFieldMode resolve_attr_location_slow(
         && PyType_IsSubtype(tp, PyDescr_TYPE(descr))) {
       PyMemberDef *m = ((PyMemberDescrObject *) descr)->d_member;
       if (m->type == KOS_T_OBJECT_EX && ! (m->flags & KOS_READONLY)
-          && m->offset > 0 && m->offset <= (Py_ssize_t) UINT32_MAX) {
+          && m->offset > 0 && (size_t) m->offset <= UINT32_MAX) {
         *index = (uint32_t) m->offset;
         return KOS_FIELD_SLOT;
       }

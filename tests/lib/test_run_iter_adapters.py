@@ -26,6 +26,7 @@ import pytest
 from koskari.lib import AsyncGenerator
 from tests import make_callable
 from tests.lib.opcode import build_expr
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_lib
@@ -36,6 +37,7 @@ class TestCoroutineDemand(unittest.IsolatedAsyncioTestCase):
     KosCoroutine.demand() matches asyncio.run(expr()) for pure Koskari code
     """
 
+    @needs_threads
     async def test_demand_returns_same_as_asyncio_run(self):
         """
         expr().demand() returns the same value as asyncio.run(expr())
@@ -74,6 +76,7 @@ class TestAsyncGeneratorSyncList(unittest.IsolatedAsyncioTestCase):
     list(agen) via KosPyIter matches async for
     """
 
+    @needs_threads
     async def test_list_matches_async_for(self):
         """
         list(agen) matches the list from async for over a fresh agen

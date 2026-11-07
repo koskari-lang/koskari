@@ -29,6 +29,7 @@ import sys
 import unittest
 
 import pytest
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_cli
@@ -49,6 +50,7 @@ sys.meta_path.insert(0, BlockPT())
 """
 
 
+@needs_processes
 class TestWithoutPromptToolkit(unittest.TestCase):
 
     def _run(self, program):

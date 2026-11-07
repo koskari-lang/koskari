@@ -20,14 +20,14 @@ protect flag
 """
 
 import gc
-import resource
 import unittest
 import weakref
 
 import pytest
 
 from koskari.lib import (
-    Arena, Code, CodeAllocator, FormalsSpec, NamespaceSpec, OpCode)
+    Arena, Code, CodeAllocator, FormalsSpec, NamespaceSpec, OpCode,
+    build_flags)
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -35,7 +35,19 @@ from tests.lib.opcode import build_expr
 pytestmark = pytest.mark.phase_lib
 
 
-PAGE = resource.getpagesize()
+resource = None
+if not build_flags['KOS_NO_PROTECT']:
+    try:
+        import resource
+    except ImportError:
+        pass
+
+needs_protection = unittest.skipIf(
+    resource is None,
+    "no read-only code protection in this build or platform")
+
+
+PAGE = resource.getpagesize() if resource else None
 
 
 def make_code(name, protect=True, payload=None, allocator=None):
@@ -81,6 +93,7 @@ def aligned(size):
     return ((size + unit - 1) // unit) * unit
 
 
+@needs_protection
 class TestArena(unittest.TestCase):
     """Tests for the Arena type itself"""
 
@@ -101,6 +114,7 @@ class TestArena(unittest.TestCase):
         self.assertIn("sealed", repr(chunk))
 
 
+@needs_protection
 class TestCodeAllocator(unittest.TestCase):
     """Tests for CodeAllocator placement at birth"""
 
@@ -334,6 +348,7 @@ class TestCodeAllocator(unittest.TestCase):
         self.assertEqual(next(it), 2)
 
 
+@needs_protection
 class TestCodeProtect(unittest.TestCase):
     """Tests for the Code constructor protect flag"""
 

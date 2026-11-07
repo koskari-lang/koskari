@@ -31,6 +31,7 @@ import pytest
 
 import koskari.lib as lib
 from koskari.module import load_module_source_async, new_module
+from tests import needs_threads
 
 
 pytestmark = pytest.mark.phase_lib
@@ -47,6 +48,7 @@ def release():
     time.sleep(0)
 
 
+@needs_threads
 class TestDemandCachedContextThreads(unittest.IsolatedAsyncioTestCase):
 
     async def load(self):

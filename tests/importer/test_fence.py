@@ -37,6 +37,7 @@ from koskari.exceptions import FenceError, SpecialError
 from koskari.importer import install
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_basics
@@ -151,6 +152,7 @@ class TestBashFence(FenceTestCase):
     The built-in fence/bash handler and the run-process runtime
     """
 
+    @needs_processes
     async def test_script_is_callable(self):
         src = "```bash\necho hello\n```\n"
         expr, _mod = self.compile_expr(src)
@@ -164,6 +166,7 @@ class TestBashFence(FenceTestCase):
         self.assertEqual(result.text, "hello\n")
 
 
+    @needs_processes
     async def test_invoked_in_expression(self):
         src = "(```bash\necho hello\n```\n)"
         expr, _mod = self.compile_expr(src)
@@ -172,6 +175,7 @@ class TestBashFence(FenceTestCase):
         self.assertEqual(result.text, "hello\n")
 
 
+    @needs_processes
     async def test_args_forwarded(self):
         src = "```bash\necho \"$1:$2\"\n```\n"
         expr, _mod = self.compile_expr(src)
@@ -181,6 +185,7 @@ class TestBashFence(FenceTestCase):
         self.assertEqual(result.text, "alpha:beta\n")
 
 
+    @needs_processes
     async def test_nonzero_exit_reported_not_raised(self):
         src = "(```bash\necho oops >&2\nexit 3\n```\n)"
         expr, _mod = self.compile_expr(src)
@@ -194,6 +199,7 @@ class TestBashFence(FenceTestCase):
         self.assertEqual(cm.exception.returncode, 3)
 
 
+    @needs_processes
     async def test_raise_for_status_chains(self):
         src = ("(.json (.raise_for_status"
                " (```bash\necho '{\"a\": 1}'\n```\n)))")
@@ -201,6 +207,7 @@ class TestBashFence(FenceTestCase):
         self.assertEqual(await expr(), {"a": 1})
 
 
+    @needs_processes
     async def test_json_helper(self):
         src = "(```bash\necho '{\"a\": [1, 2]}'\n```\n)"
         expr, _mod = self.compile_expr(src)
@@ -208,6 +215,7 @@ class TestBashFence(FenceTestCase):
         self.assertEqual(result.json(), {"a": [1, 2]})
 
 
+    @needs_processes
     async def test_immediate_option(self):
         src = "```bash immediate: True\necho hello\n```\n"
         expr, _mod = self.compile_expr(src)

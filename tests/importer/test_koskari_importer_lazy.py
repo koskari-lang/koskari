@@ -23,11 +23,13 @@ import subprocess
 import sys
 
 import pytest
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_importer
 
 
+@needs_processes
 def test_import_koskari_subprocess_does_not_load_compile_or_lib():
     """
     Fresh interpreter: ``import koskari`` must not load compile or lib yet.

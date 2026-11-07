@@ -236,6 +236,17 @@ test-py314: handlers  ## Run tests in container for Python 3.14
 	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.14 $(RUN_ARGS)
 
 
+##@ Pyodide
+
+test-pyodide: handlers  ## Build the Pyodide wheel and test it in node (RUN_ARGS: test paths)
+	@$(call checkfor,tox)
+	@$(if $(RUN_ARGS),CIBW_TEST_COMMAND='python -m pytest $(addprefix {project}/,$(RUN_ARGS))') tox -qe pyodide
+
+wheel-pyodide: handlers  ## Build the Pyodide wheel into dist/pyodide
+	@$(call checkfor,tox)
+	@CIBW_TEST_SKIP='*' tox -qe pyodide
+
+
 ##@ Runtime Container
 
 build-container:  ## Build koskari runtime container image
@@ -422,6 +433,14 @@ lint:  ## Run linting (flake8) via tox
 	@echo "Running flake8..."
 	@tox -qe flake8
 
+ACTIONLINT_IMAGE ?= docker.io/rhysd/actionlint:1.7.12
+
+lint-actions:  ## Check the GitHub Actions workflows with actionlint
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@echo "Running actionlint via $(ACTIONLINT_IMAGE)..."
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/repo:Z --workdir /repo \
+		$(ACTIONLINT_IMAGE) -color
+
 flawfinder:  ## Run Flawfinder on koskari/lib via tox
 	@$(call checkfor,tox)
 	@echo "Running flawfinder..."
@@ -559,6 +578,7 @@ python:  ## Show Python executable
 	install \
 	install-dev \
 	lint \
+	lint-actions \
 	project \
 	purge \
 	python \
@@ -569,6 +589,7 @@ python:  ## Show Python executable
 	test-asan-suite \
 	test-container-build \
 	test-native \
+	test-pyodide \
 	test-py310 \
 	test-py311 \
 	test-py312 \
@@ -584,7 +605,8 @@ python:  ## Show Python executable
 	valgrind-run \
 	uninstall \
 	venv \
-	version
+	version \
+	wheel-pyodide
 
 
 # The end.

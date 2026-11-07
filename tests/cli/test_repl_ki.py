@@ -39,6 +39,7 @@ from koskari.lib import drive_async_loop, values
 from koskari.module import (
     build_module_load_facets, init_module, load_module_source_async,
     new_module)
+from tests import needs_terminal
 
 
 pytestmark = pytest.mark.phase_cli
@@ -440,6 +441,7 @@ class TestReplKiDriver(unittest.TestCase):
         self.assertIn('42', out)
 
 
+    @needs_terminal
     def test_prompt_toolkit_cooperative_on_our_loop(self):
         # The real prompt_toolkit backend, driven cooperatively on our own
         # event loop via prompt_async (no worker thread, no nested
@@ -474,6 +476,7 @@ class TestReplKiDriver(unittest.TestCase):
         self.assertIn('42', stdout.getvalue())
 
 
+@needs_terminal
 class TestFallbackPromptInterrupt(unittest.TestCase):
     """
     The input() prompt, used when prompt_toolkit is absent, is driven on

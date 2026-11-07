@@ -32,6 +32,7 @@ import unittest
 import pytest
 
 from koskari.module import load_module_source_async, new_module
+from tests import needs_native_stack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -51,6 +52,7 @@ def chain [count]:
 """
 
 
+@needs_native_stack
 class TestDeepClosureChainRelease(unittest.IsolatedAsyncioTestCase):
 
     async def test_dropping_a_300k_closure_chain(self):

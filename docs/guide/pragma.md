@@ -226,7 +226,9 @@ turning one off makes its character inert in the reader.
   read-only the moment it is built. On, a stray or hostile write to that
   bytecode faults instead of corrupting the interpreter, at the cost of a
   full memory page per code object. A bare `[compiler/protect-code]` turns
-  it on. See [Code sealing](runtime-tuning.md#code-sealing).
+  it on. Unavailable in a
+  [build without read-only code](runtime-tuning.md#builds-without-read-only-code).
+  See [Code sealing](runtime-tuning.md#code-sealing).
 - `compiler/pack-module`, default on: whether the function code a module
   compiles while it loads is sealed read-only when the module finishes
   loading. On -- the baseline -- a loaded module's functions are read-only
@@ -236,8 +238,10 @@ turning one off makes its character inert in the reader.
   (pragma [compiler/pack-module False])
   ```
 
-  See [Code sealing](runtime-tuning.md#code-sealing) for the model and
-  its tradeoffs.
+  In a [build without read-only code](runtime-tuning.md#builds-without-read-only-code)
+  it defaults to off and cannot be turned on. See
+  [Code sealing](runtime-tuning.md#code-sealing) for the model and its
+  tradeoffs.
 
 ### Pragma machinery
 

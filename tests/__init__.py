@@ -17,8 +17,26 @@ Test suite for koskari.
 """
 
 import asyncio
+import sys
+import unittest
 
 from koskari.lib import Expression, FormalsSpec, Function
+
+
+EMSCRIPTEN = sys.platform == 'emscripten'
+
+needs_threads = unittest.skipIf(
+    EMSCRIPTEN, "Emscripten cannot start threads")
+needs_processes = unittest.skipIf(
+    EMSCRIPTEN, "Emscripten cannot spawn processes")
+needs_terminal = unittest.skipIf(
+    EMSCRIPTEN, "Emscripten has no pty or file descriptor polling")
+needs_native_stack = unittest.skipIf(
+    EMSCRIPTEN, "deep C recursion overflows the JavaScript stack")
+needs_interrupt = unittest.skipIf(
+    EMSCRIPTEN, "a KeyboardInterrupt escaping main ends the Pyodide process")
+needs_pwd_builtin = unittest.skipIf(
+    EMSCRIPTEN, "the pwd module is not built in on Emscripten")
 
 
 class SlowAIter:

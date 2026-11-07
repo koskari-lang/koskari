@@ -2759,7 +2759,7 @@ static int namespace_spec_fast_slot_limit(
 
   Py_ssize_t total = nloc + nclo + nglo;
 
-  if (total > (Py_ssize_t) 0xFFFFFFFFu) {
+  if ((size_t) total > 0xFFFFFFFFu) {
     PyErr_SetString(PyExc_ValueError, "namespace symbol count too large");
     return -1;
   }
@@ -3011,8 +3011,9 @@ static int code_instr_init(
 
   SAYF("in code_instr_init(%R, %R)", self, instr);
 
-  /* placement and protection both need the system page size; where
-     the system reports none, the block is heap and neither applies */
+  /* placement and protection both need a page size; where the system
+     reports none or the build has no read-only code protection, the
+     block is heap and neither applies, whatever a kio record asked */
   if (! KosArena_PageSize()) {
     allocator = NULL;
     protect = 0;

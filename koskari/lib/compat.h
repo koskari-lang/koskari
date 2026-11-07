@@ -318,7 +318,7 @@ static inline int kos_type_value_index(
     if (k == name
         || (PyUnicode_CheckExact(k) && PyUnicode_CheckExact(name)
             && PyUnicode_Compare(k, name) == 0)) {
-      if (i > (Py_ssize_t) UINT32_MAX)
+      if ((size_t) i > UINT32_MAX)
         return 0;
       *index = (uint32_t) i;
       return 1;

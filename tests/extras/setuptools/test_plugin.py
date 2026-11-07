@@ -33,6 +33,7 @@ from koskari.extras.setuptools.metadata import (
 from koskari.extras.setuptools.plugin import (
     KoskariEditableWheel, KoskariInstallScripts, configure_koskari_scripts,
     iter_koskari_script_args, koskari_script_source)
+from tests import needs_processes
 
 
 pytestmark = pytest.mark.phase_extras
@@ -288,6 +289,7 @@ class TestHookReach(unittest.TestCase):
     setuptools internals loaded and no shared state changed
     """
 
+    @needs_processes
     def test_importing_the_hook_loads_no_setuptools_internals(self):
         import subprocess
         code = (

@@ -102,8 +102,10 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 
   if (type != &KosNamespaceType || count > (size_t) KOS_NS_MIN_SLOTS) {
     /* The overflow raw-flag words ride after the slots in the same
-       allocation; tp_itemsize is one pointer, the size of a word. */
-    size_t items = count + kos_ns_raw_more_words(count);
+       allocation; tp_itemsize is one pointer, so a raw word takes as
+       many items as its size in pointers. */
+    size_t items = count + kos_ns_raw_more_words(count)
+        * (sizeof(uint64_t) / sizeof(PyObject *));
     PyObject *p = PyObject_GC_NewVar(PyObject, type, (Py_ssize_t) items);
     if (! p)
       return NULL;
@@ -3341,15 +3343,18 @@ static PyMethodDef mdl_ns_methods[] = {
 };
 
 
-/* The core must sit at one offset in every kind, and the two heads
-   must be one size, so a function namespace pays nothing for the
-   module namespace being a dict. */
+/* The core must sit at one offset in every kind. With 64-bit pointers
+   the two heads are one size, so a function namespace pays nothing for
+   the module namespace being a dict; on a 32-bit build the dict's
+   uint64_t field pads it past the fast head. */
 _Static_assert(offsetof(KosNamespace, core) == offsetof(KosModuleNamespace, core),
                "namespace core offset differs between kinds");
 _Static_assert(offsetof(KosNamespace, core) == offsetof(KosNamespaceAny, core),
                "namespace core offset differs from the any-kind view");
+#if SIZEOF_VOID_P == 8
 _Static_assert(sizeof(KosNamespaceHead) == sizeof(PyDictObject),
                "the fast head and the dict head differ in size");
+#endif
 
 
 PyTypeObject KosModuleNamespaceType = {

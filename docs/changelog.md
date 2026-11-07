@@ -55,6 +55,14 @@ the value, and `(class NAME SUPERS body ...)` as an expression now binds
   print their members. See [vars](reference/specials/compile-vars.md)
   and [koskari-vars](reference/runtime/koskari-vars.md).
 
+- Builds can leave out read-only code: `KOS_NO_PROTECT=1` at build time
+  opts out, and Emscripten builds always do. `compiler/pack-module` then
+  defaults to off, turning either sealing pragma on raises `ValueError`,
+  and `koskari.lib.build_flags` reports the build. See
+  [Builds without read-only code](guide/runtime-tuning.md#builds-without-read-only-code).
+- Snapshots carry an experimental Pyodide wheel for running Koskari in a
+  browser. See [Supported platforms](project/platforms.md).
+
 ## 0.1.0
 
 Published as weekly `0.1.0.devYYYYMMDD` snapshots; no final 0.1.0 was

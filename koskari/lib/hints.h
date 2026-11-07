@@ -125,6 +125,21 @@
 #endif
 
 
+/* Read-only code memory: nonzero builds without it. Function code is
+   not placed in arena chunks, nothing is sealed, and every code block
+   is a writable heap block. An opt-out for any build through
+   -DKOS_NO_PROTECT=1, and forced on where the platform cannot honor
+   it: Emscripten's mprotect does nothing and its munmap refuses a
+   partial unmap, which a chunk's seal needs. */
+#ifdef __EMSCRIPTEN__
+# undef KOS_NO_PROTECT
+# define KOS_NO_PROTECT 1
+#endif
+#ifndef KOS_NO_PROTECT
+# define KOS_NO_PROTECT 0
+#endif
+
+
 #endif
 
 
