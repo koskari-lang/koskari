@@ -27,6 +27,8 @@ import unittest
 
 import pytest
 
+from tests import needs_processes
+
 
 pytestmark = pytest.mark.phase_lib
 
@@ -41,6 +43,7 @@ OPS = (
     "values_repr", "ref")
 
 
+@needs_processes
 class TestTypesOutliveModule(unittest.TestCase):
     """
     The static types and their instances hold no reference to the
