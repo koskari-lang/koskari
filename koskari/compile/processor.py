@@ -602,6 +602,11 @@ class ByteCodeProcessor:
         # readable after process returns, for Code construction
         self.base_nspec = None
 
+        # the index among the base locals of the named lambda's self
+        # name, settled with the base NamespaceSpec; -1 when the code
+        # does not bind itself
+        self.self_slot = -1
+
         # the output accumulator of the pass currently walking the
         # stream; the matcher and splice services address it
         self.rows = None
@@ -1833,6 +1838,26 @@ class ByteCodeProcessor:
         merge_function_constant_needs(self.fragment, self.instructions)
 
 
+    def declare_self_ref(self):
+        """
+        Declare a named lambda's self name when its body, or a function
+        within it, references it. A formal of the name is declared
+        already, so it is no request, and an unreferenced name is none.
+        A name the body pulls from the module is the module's
+
+        :return: the declared self symbol, or None
+        """
+
+        fragment = self.fragment
+        sym = fragment.self_ref
+        if sym is None or not any(r is sym for r in fragment.requests):
+            return None
+        if any(g is sym for g in fragment._request_global):
+            return None
+        fragment.declare_var(sym)
+        return sym
+
+
     def process(self, function_body=False):
         """
         Run the full pipeline and return the finished rows.
@@ -1885,8 +1910,13 @@ class ByteCodeProcessor:
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
         self.cpool_scan_merge()
-        self.base_nspec = stringify_namespace_spec(
-            self.fragment.resolution.build_namespace_spec(self.fragment))
+        self_sym = self.declare_self_ref()
+        nspec = self.fragment.resolution.build_namespace_spec(self.fragment)
+        if self_sym is not None:
+            self.self_slot = next(
+                i for i, sym in enumerate(nspec.local_syms)
+                if sym is self_sym)
+        self.base_nspec = stringify_namespace_spec(nspec)
 
         if compiler.convert_fast_enabled and function_body:
             self.convert_fast(self.base_nspec)

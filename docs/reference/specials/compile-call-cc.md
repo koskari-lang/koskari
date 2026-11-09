@@ -36,7 +36,10 @@ capture that would cross a generator: `KoskariPromptUnreachable`, with the
 `boundary` attribute naming what refused (`enter`, `exit`, `before`,
 `after` or `generator`) and `operation` set to `call/cc`. The same applies
 to [`let/cc`](compile-let-cc.md) and [`capture/cc`](compile-capture-cc.md).
-See [Error codes](../error-codes.md).
+Invoking the continuation while the evaluation that captured it is not
+running -- it has returned, or it is suspended on an `await` -- raises
+`KoskariContinuationDead`; each top-level form of a module is its own
+evaluation. See [Error codes](../error-codes.md).
 
 **Examples:**
 
@@ -53,4 +56,11 @@ See [Error codes](../error-codes.md).
       (do-setup)
       (escape "early-exit")
       (do-cleanup))))
+
+;; Separate top-level forms: by the try, the var form's evaluation has returned
+(import-from koskari.lib KoskariContinuationDead)
+(var k (call/cc (lambda [c] c)))
+(try (k 2)
+  [[e KoskariContinuationDead] (str e)])
+;; "continuation target context is no longer alive"
 ```

@@ -202,14 +202,13 @@ static KosEvaluatedTypeObject FailingRecyclableType = {
 };
 
 
-/* An instance of one of the failing provider types, readied on first
-   use. Returns a new reference, or NULL with an error set. */
+/* An instance of one of the failing provider types, which
+   ready_iterate_test_types readied. Returns a new reference, or NULL
+   with an error set. */
 static PyObject *make_failing_provider(KosEvaluatedTypeObject *type) {
 
   PyTypeObject *pytype = KOS_EVALUATED_PYTYPE(*type);
 
-  if (! (pytype->tp_flags & Py_TPFLAGS_READY) && PyType_Ready(pytype) < 0)
-    return NULL;
   failing_pyctx_calls = 0;
   failing_step_calls = 0;
   return PyObject_CallNoArgs((PyObject *) pytype);
@@ -253,6 +252,160 @@ static int pyiter_next_fails_with_provider_error(PyObject *provider) {
   PyErr_Clear();
   Py_DECREF(adapter);
   return failed;
+}
+
+
+/* === a provider that records its context at its death === */
+
+
+/**
+   A durable provider owning its context, as the async generator does.
+   Its dealloc records how many references its context still has: an
+   adapter that releases the context before the provider leaves only
+   the provider's own.
+*/
+typedef struct {
+  PyObject_HEAD
+  KosContext *ctx;
+  int steps;
+} OwningProvider;
+
+
+static Py_ssize_t owning_ctx_refs_at_dealloc = -1;
+
+
+static KosContext *owning_pyctx(PyObject *self) {
+
+  OwningProvider *p = (OwningProvider *) self;
+
+  if (! p->ctx)
+    p->ctx = KosContext_New(NULL, kos_tls_current());
+  return p->ctx;
+}
+
+
+/* one element, then exhaustion */
+static KosIterStepResult owning_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  OwningProvider *p = (OwningProvider *) self;
+
+  (void) ctx;
+  (void) send_val;
+  if (p->steps++) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
+  *out = Py_NewRef(Py_None);
+  return KOS_ITER_VALUE;
+}
+
+
+static void owning_dealloc(PyObject *self) {
+
+  OwningProvider *p = (OwningProvider *) self;
+
+  owning_ctx_refs_at_dealloc = p->ctx ? Py_REFCNT(p->ctx) : 0;
+  Py_CLEAR(p->ctx);
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static KosEvaluatedTypeObject OwningDurableType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "test.owning_durable",
+    .tp_basicsize = sizeof(OwningProvider),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+    .tp_dealloc = owning_dealloc,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = owning_step,
+    .ki_throw = failing_throw,
+    .ki_close = failing_close,
+    .ki_finish = failing_finish,
+    .ki_pyctx = owning_pyctx,
+    .ki_busy = NULL,
+    .ki_pyctx_recyclable = 0,
+  },
+};
+
+
+/**
+   An owning provider and its sync adapter, stepped once so the
+   adapter holds the provider's context, with the caller's reference
+   to the provider dropped: the adapter holds the only one. Returns
+   the adapter, or NULL with an error set.
+*/
+static PyObject *make_stepped_owning_adapter(void) {
+
+  PyTypeObject *pytype = KOS_EVALUATED_PYTYPE(OwningDurableType);
+  PyObject *provider, *adapter, *res;
+
+  owning_ctx_refs_at_dealloc = -1;
+
+  provider = PyObject_CallNoArgs((PyObject *) pytype);
+  if (! provider)
+    return NULL;
+
+  adapter = KosIterAdapt_PyIter(provider);
+  Py_DECREF(provider);
+  if (! adapter)
+    return NULL;
+
+  res = PyIter_Next(adapter);
+  if (! res) {
+    Py_DECREF(adapter);
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError, "the first step yielded nothing");
+    return NULL;
+  }
+  Py_DECREF(res);
+  return adapter;
+}
+
+
+/* === a source transform with its step in flight === */
+
+
+/**
+   A callable answering every element with an awaitable that suspends
+   once, yielding 'tick', and then returns 1. Returns the callable, or
+   NULL with an error set.
+*/
+static PyObject *make_ticking_callable(void) {
+
+  PyObject *globals = PyDict_New();
+  PyObject *ran, *fn;
+
+  if (! globals)
+    return NULL;
+
+  ran = PyRun_String(
+      "class Tick:\n"
+      "    def __await__(self):\n"
+      "        yield 'tick'\n"
+      "        return 1\n"
+      "def tick(x):\n"
+      "    return Tick()\n",
+      Py_file_input, globals, globals);
+  if (! ran) {
+    Py_DECREF(globals);
+    return NULL;
+  }
+  Py_DECREF(ran);
+
+  fn = PyDict_GetItemString(globals, "tick");
+  Py_XINCREF(fn);
+  Py_DECREF(globals);
+  if (! fn)
+    PyErr_SetString(PyExc_RuntimeError, "the prelude defined no tick");
+  return fn;
 }
 
 
@@ -368,6 +521,133 @@ static int test_recyclable_pyctx_failure_fails_pyiter(void) {
 }
 
 
+static int test_pyiter_dealloc_releases_context_first(void) {
+
+  PyObject *adapter = make_stepped_owning_adapter();
+
+  TEST_ASSERT_NOT_NULL(adapter, "step the owning provider once");
+  Py_DECREF(adapter);
+
+  TEST_ASSERT_EQ(owning_ctx_refs_at_dealloc, 1,
+                 "the adapter's dealloc drops the context first");
+  return 0;
+}
+
+
+static int test_pyiter_clear_releases_context_first(void) {
+
+  PyObject *adapter = make_stepped_owning_adapter();
+  Py_ssize_t refs;
+
+  TEST_ASSERT_NOT_NULL(adapter, "step the owning provider once");
+  (void) Py_TYPE(adapter)->tp_clear(adapter);
+  refs = owning_ctx_refs_at_dealloc;
+  Py_DECREF(adapter);
+
+  TEST_ASSERT_EQ(refs, 1, "the adapter's clear drops the context first");
+  return 0;
+}
+
+
+static int test_pyiter_exhaustion_releases_context_first(void) {
+
+  PyObject *adapter = make_stepped_owning_adapter();
+  PyObject *res;
+  Py_ssize_t refs;
+  int exhausted;
+
+  TEST_ASSERT_NOT_NULL(adapter, "step the owning provider once");
+  res = PyIter_Next(adapter);
+  exhausted = (! res && ! PyErr_Occurred());
+  Py_XDECREF(res);
+  PyErr_Clear();
+  refs = owning_ctx_refs_at_dealloc;
+  Py_DECREF(adapter);
+
+  TEST_ASSERT(exhausted, "the second step exhausts the adapter");
+  TEST_ASSERT_EQ(refs, 1, "the adapter's release drops the context first");
+  return 0;
+}
+
+
+/**
+   A map over a map, its step suspended on the inner map's awaitable,
+   so the inner step's frame sits on the outer's context. The outer
+   map's clear drops its source, the inner map, while that frame is
+   still on the chain; the inner map stays alive until the context's
+   clear frees the frame, which is seen through the inner map's source
+   list, held by the inner map's iterator over it.
+*/
+static int test_staged_source_survives_containing_clear(void) {
+
+  PyObject *tick = make_ticking_callable();
+  PyObject *items, *inner, *outer, *stepper, *res;
+  KosContext *ctx;
+  Py_ssize_t held_after_clear, held_at_end;
+  int ticked;
+
+  TEST_ASSERT_NOT_NULL(tick, "build the ticking callable");
+  items = Py_BuildValue("[ii]", 1, 2);
+  TEST_ASSERT_NOT_NULL(items, "build the source list");
+
+  inner = PyObject_CallFunction((PyObject *) &KosMapType, "OO", tick, items);
+  Py_DECREF(tick);
+  TEST_ASSERT_NOT_NULL(inner, "build the inner map");
+
+  outer = PyObject_CallFunction((PyObject *) &KosMapType, "OO",
+                                (PyObject *) &PyLong_Type, inner);
+  /* the outer map holds the only reference to the inner one */
+  Py_DECREF(inner);
+  TEST_ASSERT_NOT_NULL(outer, "build the outer map");
+
+  stepper = PyObject_CallMethod(outer, "__anext__", NULL);
+  TEST_ASSERT_NOT_NULL(stepper, "take the outer map's __anext__");
+
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  TEST_ASSERT_NOT_NULL(res, "the step suspends on the awaitable");
+  ticked = (PyUnicode_Check(res)
+            && PyUnicode_CompareWithASCIIString(res, "tick") == 0);
+  Py_DECREF(res);
+  TEST_ASSERT(ticked, "the suspension yields the awaitable's tick");
+
+  ctx = kos_transform_pyctx(outer);
+  TEST_ASSERT_NOT_NULL(ctx, "the outer map's durable context");
+  Py_INCREF(ctx);
+
+  (void) Py_TYPE(outer)->tp_clear(outer);
+  held_after_clear = Py_REFCNT(items);
+
+  (void) Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
+  held_at_end = Py_REFCNT(items);
+
+  Py_DECREF(stepper);
+  Py_DECREF(ctx);
+  Py_DECREF(outer);
+  Py_DECREF(items);
+
+  TEST_ASSERT_EQ(held_after_clear, 2,
+                 "the inner map outlives its holder's clear");
+  TEST_ASSERT_EQ(held_at_end, 1,
+                 "the inner map goes with its step's frame");
+  return 0;
+}
+
+
+/**
+   Ready the suite's static provider types. The harness calls this from
+   its type initialization, before any suite runs. Returns 0, or -1 with
+   an error set.
+*/
+int ready_iterate_test_types(void) {
+
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(FailingDurableType)) < 0
+      || PyType_Ready(KOS_EVALUATED_PYTYPE(FailingRecyclableType)) < 0
+      || PyType_Ready(KOS_EVALUATED_PYTYPE(OwningDurableType)) < 0)
+    return -1;
+  return 0;
+}
+
+
 int run_iterate_tests(void) {
 
   BEGIN_TEST_SUITE("Iterate Adapter Tests");
@@ -378,6 +658,10 @@ int run_iterate_tests(void) {
   RUN_TEST(test_durable_pyctx_failure_fails_pyiter);
   RUN_TEST(test_recyclable_pyctx_failure_fails_stepper);
   RUN_TEST(test_recyclable_pyctx_failure_fails_pyiter);
+  RUN_TEST(test_pyiter_dealloc_releases_context_first);
+  RUN_TEST(test_pyiter_clear_releases_context_first);
+  RUN_TEST(test_pyiter_exhaustion_releases_context_first);
+  RUN_TEST(test_staged_source_survives_containing_clear);
 
   return 0;
 }

@@ -3,9 +3,10 @@
 **Syntax:** `(def NAME FORMALS BODY ...)` or
 `(def NAME :: TYPE FORMALS BODY ...)`
 
-**Behaviour:** Expands to `(var NAME (function NAME FORMALS BODY ...))`,
-defining a function and binding it to **NAME** in the scope the form
-appears in, as [`var`](../specials/compile-var.md) binds. **FORMALS**
+**Behaviour:** Defines a function named **NAME** and binds it to
+**NAME** in the scope the form appears in, as
+[`var`](../specials/compile-var.md) binds. It behaves like
+`(var NAME (function NAME FORMALS BODY ...))`. **FORMALS**
 take every shape [`lambda`](../specials/compile-lambda.md) accepts. A
 `:: TYPE` after the name passes through to
 [`function`](../specials/compile-function.md) as the return annotation.
@@ -13,8 +14,7 @@ To bind the function at the module from inside a body, write
 `global def`; see [compile/global](compile-global.md).
 
 `def` takes a name, formals, and a body, never a plain value:
-`(def x 1)` expands to `(var x (function x 1))`, which fails to compile
-because `1` is not a formals list. A value binding is `var`.
+`(def x 1)` fails to compile because `1` is not a formals list. A value binding is `var`.
 
 A decorator line above `def` decorates the function and binds the
 result; see [`decorate`](compile-decorate.md).

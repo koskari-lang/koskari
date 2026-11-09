@@ -22,7 +22,7 @@ Integration tests for define with syntax and macro transformers.
 import pytest
 
 from koskari.compile import Compiler
-from koskari.exceptions import CompilerError, SpecialError
+from koskari.exceptions import CompilerError, SpecialError, SyntaxMatchError
 from koskari.lib import build_list, build_tuple, cons, nil, symbol
 from koskari.syntax import Syntax, build_macro, build_special, build_syntax
 from tests.dis.dis import dis
@@ -978,6 +978,105 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         self.assertEqual(42, result)
 
 
+class TestRuleLevelMatcherHeads(DefineSyntaxCompileHelpers):
+    """
+    A registered matcher head at the top of a rule is that matcher,
+    with or without a slot name as its first argument
+    """
+
+    async def define_h(self, kind, rule):
+        src_str = f"(define h ({kind} h {rule}))"
+        expr, mod = self.compile_expr(src_str, str=str)
+        await expr()
+        return {'compile/h': vars(mod)['h']}
+
+
+    async def use(self, defn, src_str):
+        expr, mod = self.compile_expr(src_str, **defn)
+        return await expr()
+
+
+    async def test_anonymous_list(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (LIST (SYMBOL k))) (quote k)]")
+        self.assertIs(symbol("a"), await self.use(defn, "(h (a))"))
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_expr("(h LIST a)", **defn)
+
+
+    async def test_anonymous_optional(self):
+        defn = await self.define_h(
+            "syntax-match",
+            "[(h (VALUE a) (OPTIONAL (VALUE b))) a]")
+        self.assertEqual(1, await self.use(defn, "(h 1)"))
+        self.assertEqual(1, await self.use(defn, "(h 1 2)"))
+
+
+    async def test_anonymous_oneof(self):
+        defn = await self.define_h(
+            "syntax-match",
+            "[(h (ONEOF (KEYWORD k) (SYMBOL s))) \"matched\"]")
+        self.assertEqual("matched", await self.use(defn, "(h foo)"))
+        self.assertEqual("matched", await self.use(defn, "(h a:)"))
+
+
+    async def test_unnamed_repeat(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (REPEAT (VALUE e))) (quote (e ...))]")
+        self.assertEqual(cons(1, 2, nil), await self.use(defn, "(h 1 2)"))
+
+
+    async def test_literal(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (LITERAL 5)) \"five\"]")
+        self.assertEqual("five", await self.use(defn, "(h 5)"))
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_expr("(h 6)", **defn)
+
+
+    async def test_bare_rest(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (VALUE a) (REST)) a]")
+        self.assertEqual(1, await self.use(defn, "(h 1 2 3)"))
+
+
+    async def test_test_any(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (TEST_ANY)) \"any\"]")
+        self.assertEqual("any", await self.use(defn, "(h 1)"))
+
+
+    async def test_anonymous_match(self):
+        defn = await self.define_h(
+            "syntax-match", "[(h (MATCH (SYMBOL k))) (quote k)]")
+        self.assertIs(symbol("a"), await self.use(defn, "(h a)"))
+
+
+    async def test_macro_match_anonymous_list(self):
+        defn = await self.define_h(
+            "macro-match", "[(h (LIST (SYMBOL k))) (str k.datum)]")
+        self.assertEqual("a", await self.use(defn, "(h (a))"))
+
+
+    async def test_special_match_anonymous_list(self):
+        defn = await self.define_h(
+            "special-match",
+            "[(compiler (h (LIST (SYMBOL k)))) (str k.datum)]")
+        self.assertEqual("a", await self.use(defn, "(h (a))"))
+
+
+    def test_malformed_head_is_refused_at_definition(self):
+        for pattern in (
+                "(h (VALUE 1))",
+                "(h (NOT (SYMBOL s)) (VALUE v))",
+                "(h (LITERAL 1 2))"):
+            src_str = f"(define h (syntax-match h [{pattern} 1]))"
+            with self.assertRaises(SpecialError, msg=src_str) as caught:
+                self.compile_expr(src_str)
+            self.assertIn(
+                "invalid rule pattern", str(caught.exception), msg=src_str)
+
+
 class TestExpansionCycleGuard(DefineSyntaxCompileHelpers):
     """
     The full_compile rewrite loop detects macro-expansion cycles by
@@ -1117,12 +1216,110 @@ class TestTemplateEllipsisEscape(DefineSyntaxCompileHelpers):
           (syntax-rules bad []
             [(bad b) (#list (b 1) ...)]))
         """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("ellipsis", str(caught.exception))
+
+
+class TestTemplateEllipsisDepth(DefineSyntaxCompileHelpers):
+    """
+    A template ellipsis must follow an element holding a pattern
+    variable captured under at least one more ellipsis than the
+    template depth it sits at. Any other is refused when the syntax is
+    defined, whether or not the arm is ever used. A variable bound as a
+    sequence by a non-final ellipsis or a dotted tail splices
+    """
+
+    def assert_refused(self, src_str, line):
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("ellipsis", str(caught.exception))
+        self.assertEqual(line, caught.exception.line)
+
+
+    async def define_and_expand(self, src_str, name, use_str):
         expr, mod = self.compile_expr(src_str)
         await expr()
-        defn = {'compile/bad': vars(mod)['bad']}
-        with self.assertRaises(CompilerError) as caught:
-            self.compile_expr("(bad x)", **defn)
-        self.assertIn("ellipsis", str(caught.exception))
+        defn = {f'compile/{name}': vars(mod)[name]}
+        expr, mod = self.compile_expr(use_str, **defn)
+        return await expr()
+
+
+    def test_single_form_variable_is_refused(self):
+        self.assert_refused("""
+        (define sp
+          (syntax-rules sp []
+            [(sp x) (quote (got x ...))]))
+        """, 4)
+
+
+    def test_unused_arm_is_refused(self):
+        self.assert_refused("""
+        (define sp
+          (syntax-rules sp []
+            [(sp) 1]
+            [(sp x) (quote (got x ...))]))
+        """, 5)
+
+
+    def test_head_variable_is_refused(self):
+        self.assert_refused("""
+        (define hd
+          (syntax-rules hd []
+            [(hd x ...) (quote (hd ...))]))
+        """, 4)
+
+
+    def test_variable_under_too_few_ellipses_is_refused(self):
+        self.assert_refused("""
+        (define nest
+          (syntax-rules nest []
+            [(nest (a b) ...) (quote ((b ...) ...))]))
+        """, 4)
+
+
+    def test_syntax_match_value_is_refused(self):
+        self.assert_refused("""
+        (define sm
+          (syntax-match sm
+            [(sm (VALUE x)) (quote (got x ...))]))
+        """, 4)
+
+
+    async def test_non_final_ellipsis_variable_splices(self):
+        result = await self.define_and_expand("""
+        (define mid
+          (syntax-rules mid []
+            [(mid a ... b) (quote (b a ...))]))
+        """, 'mid', "(mid 1 2 3 4)")
+        self.assertEqual(cons(4, 1, 2, 3, nil), result)
+
+
+    async def test_dotted_tail_variable_splices(self):
+        result = await self.define_and_expand("""
+        (define dot
+          (syntax-rules dot []
+            [(dot a . rest) (quote (a rest ...))]))
+        """, 'dot', "(dot 1 2 3)")
+        self.assertEqual(cons(1, 2, 3, nil), result)
+
+
+    async def test_syntax_match_rest_splices(self):
+        result = await self.define_and_expand("""
+        (define smr
+          (syntax-match smr
+            [(smr (REST xs)) (quote (got xs ...))]))
+        """, 'smr', "(smr 1 2 3)")
+        self.assertEqual(cons(symbol("got"), 1, 2, 3, nil), result)
+
+
+    async def test_escaped_ellipsis_over_single_form_variable(self):
+        result = await self.define_and_expand("""
+        (define esc
+          (syntax-rules esc []
+            [(esc x) (quote (... (x ...)))]))
+        """, 'esc', "(esc 1)")
+        self.assertEqual(cons(1, Ellipsis, nil), result)
 
 
 # The end.

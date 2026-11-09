@@ -305,6 +305,30 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
                      [OpCode.RETURN, 1]])
         self.assertIsInstance(code, Code)
 
+    def test_push_ns_without_a_namespace_spec_is_refused(self):
+        """
+        A PUSH_NS spec that is not a NamespaceSpec is refused at
+        construction
+        """
+
+        with self.assertRaises(TypeError) as caught:
+            make([[OpCode.PUSH_NS, (12345, None, 0, 0)],
+                  [OpCode.POP_NS, 0],
+                  [OpCode.CONST, 1], [OpCode.RETURN, 1]])
+        self.assertIn("PUSH_NS", str(caught.exception))
+
+    def test_push_collect_without_a_namespace_spec_is_refused(self):
+        """
+        A PUSH_COLLECT operand that is not a NamespaceSpec is refused at
+        construction
+        """
+
+        with self.assertRaises(TypeError) as caught:
+            make([[OpCode.PUSH_COLLECT, 12345],
+                  [OpCode.POP_COLLECT, 0],
+                  [OpCode.RETURN, 1]])
+        self.assertIn("PUSH_COLLECT", str(caught.exception))
+
 
 class TestMatchCursorMoves(unittest.IsolatedAsyncioTestCase):
     """

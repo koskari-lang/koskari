@@ -189,8 +189,9 @@ static KosDynNode *kos_dynnode_alloc(void) {
    The node every clone for continuation capture starts from: a fresh
    node of the source's kind and caps with no parent, the source's
    flags plus KOS_DYNF_CLONED, and the source's id, so the clone matches
-   its original by id. The kind's clone fills its own payload after.
-   NULL with an exception set on allocation failure.
+   its original by id. A goal's wait on the source is not the clone's,
+   so KOS_DYNF_GOAL_WAIT stays behind. The kind's clone fills its own
+   payload after. NULL with an exception set on allocation failure.
 */
 static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
   KosDynNode *clone = kos_dynnode_alloc();
@@ -198,7 +199,8 @@ static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
     return NULL;
 
   kos_dynnode_init(clone, KosDynNode_KIND(src), NULL, KosDynNode_CAPS(src));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(src) | KOS_DYNF_CLONED;
+  KosDynNode_FLAGS(clone) =
+      (KosDynNode_FLAGS(src) & ~KOS_DYNF_GOAL_WAIT) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(src);
   return clone;
 }
@@ -1222,9 +1224,19 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
 
     case KOS_DYN_GEN:
-      /* freed with its chain: the step in flight is over, and the span
-         it marked went with the chain */
-      KosDynGen_STATE(node)->busy = 0;
+      /* freed with its chain, and the span it marked went with the
+         chain. Neither the owner nor its state is touched: the owner
+         is borrowed, and the chain may outlive it (a transform's
+         context, held by its stepper, freed after the transform's
+         clear released the generator). An installed node is not in
+         the state's node slot, kos_dyngen_new having taken it out.
+         The step's busy mark is not reset here: every path that
+         finishes the owner resets it (kos_dyn_finish_flattened_gen
+         and a consumer's resume through ki_finish,
+         KosPyAsyncGen_Teardown itself, transform_finalize finishing
+         each owner on its chain). Only a raw chain free, a context's
+         clear or KosContext_ReleaseChain, leaves a consumer's step
+         marked running, the state of a step that never finished. */
       kos_dyngen_free((KosDynGen *) node);
       break;
     case KOS_DYN_COLLECT:
@@ -2538,6 +2550,21 @@ static KosContinuation *kos_continuation_capture_segment(
     } else {
       captured_chain = (KosDynNode *) base;
     }
+
+    /* A delim of the segment returning into the frame below the bound
+       names baseline_src, which the segment's own remap could not
+       find. base is that frame's clone; point the delim at it, so the
+       template refers only to its own nodes and never into the live
+       chain. */
+    for (KosDynNode *node = captured_chain;
+         node && node != (KosDynNode *) base;
+         node = KosDynNode_PARENT(node)) {
+      if (KosDynNode_IS_DELIM(node)
+          && KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node)
+             == (KosDynNode *) baseline_src)
+        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) =
+            (KosDynNode *) base;
+    }
   }
 
   resume_frame = kos_chain_first_frame(captured_chain);
@@ -2861,6 +2888,9 @@ static void kos_continuation_release_struct(KosContinuation *k) {
    Free continuation and captured chain. Callers: error paths, wrapper dealloc.
 */
 void kos_continuation_free(KosContinuation *k) {
+
+  KosDynNode *chain;
+
   if (! k)
     return;
 
@@ -2868,11 +2898,17 @@ void kos_continuation_free(KosContinuation *k) {
   KosContinuation_TOKEN_REF(k) = NULL;
 
   /* resume_stack aliases a node-owned operand stack on captured_chain;
-   * kos_dynchain_free releases node-owned blocks. Clear the pointer
-   * only. */
+     kos_dynchain_free releases node-owned blocks, so only the pointer
+     is cleared */
   KosContinuation_RESUME_STACK(k) = NULL;
 
-  kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
+  /* Detach first, free second: freeing a node runs Python, and the
+     continuation's traverse reads captured_chain, so a collection
+     from inside the free must find it empty. The wrappers unlink the
+     struct before calling here; the order holds on its own too. */
+  chain = KosContinuation_CAPTURED_CHAIN(k);
+  KosContinuation_CAPTURED_CHAIN(k) = NULL;
+  kos_dynchain_free(chain, NULL);
 
   kos_continuation_release_struct(k);
 }

@@ -388,3 +388,19 @@ tags:
   - metaprogramming
   - pitfall
 notes: "corrective: put the syntax at module top level, or write global syntax twice inside the body and call f before twice is used"
+---
+id: syntax-syntax-match-rule-head-invalid-001
+feature: special/compile/syntax-match
+source: |-
+  (define-syntax h (syntax-match [(h (VALUE 1)) 1]))
+verify:
+  error: "SpecialError: invalid rule pattern"
+references:
+  - reference/specials/compile-syntax-match.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-match
+  - invalid
+  - metaprogramming
+notes: "a registered matcher head at the top of a rule is always that matcher, so a malformed one is refused when the rule is defined; VALUE takes a slot name. corrective: (define-syntax h (syntax-match [(h (LITERAL 1)) 1])) to match the literal 1, or (VALUE x) to bind any value"

@@ -1,0 +1,66 @@
+;; Reproducer: a Koskari class over partial whose __call__ is a Koskari
+;; function is called through that __call__, in the calling evaluator.
+;; The partial's own dispatch would call the wrapped function instead.
+
+
+(import-from asyncio sleep)
+
+
+def target [a b]:
+    #("target" a b)
+
+
+class Awaits [partial]:
+
+    def __call__ [self x]:
+        (sleep 0)
+        #("called" x)
+
+
+def call_awaits []:
+    var c (Awaits target 1)
+    (c 2)
+
+
+def base [n]:
+    "base"
+
+
+class Recur [partial]:
+
+    def __call__ [self n]:
+        if (> n 0):
+            + 1 (self (- n 1))
+        else:
+            0
+
+
+def recur_deep [n]:
+    ((Recur base) n)
+
+
+class TailRecur [partial]:
+
+    def __call__ [self n acc]:
+        if (> n 0):
+            (self (- n 1) (+ acc 1))
+        else:
+            acc
+
+
+def tail_deep [n]:
+    ((TailRecur base) n 0)
+
+
+;; __call__ for a partial subclass the test builds in Python
+
+def py_call [self x]:
+    (sleep 0)
+    #("py-called" x)
+
+
+def call_given [obj x]:
+    (obj x)
+
+
+;; The end.

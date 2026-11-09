@@ -111,7 +111,7 @@ class TestNoProtect(unittest.TestCase):
         allocator = CodeAllocator()
         code = code_from_record(
             NamespaceSpec("c", (), ()), instructions(), "c", "<test>",
-            CodeFlags.PROTECT | CodeFlags.ARENA, allocator)
+            CodeFlags.PROTECT | CodeFlags.ARENA, -1, allocator)
 
         self.assertIs(code.protected, False)
         self.assertIsNone(code.arena)

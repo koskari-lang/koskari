@@ -174,7 +174,7 @@ differ from calling the same name as a value.
 | Reflex | Fact | Write |
 |---|---|---|
 | awaiting one `defer` twice | the second await raises `RuntimeError`: a defer is single-shot | `(create-task (defer ...))` for a handle awaited more than once |
-| `(await (create-task ...))` on the demand path | `KoskariSyncViolation`: the demand path cannot suspend | await it from async-hosted code |
+| `(await (create-task ...))` on the demand path | with no running loop `create-task` itself raises `RuntimeError` before anything suspends; inside a running loop the await raises `KoskariSyncViolation`, since the demand path cannot suspend | await it from async-hosted code |
 
 Reference: [Functions](../reference/runtime/functions.md),
 [Types and type predicates](../reference/runtime/types-and-predicates.md),

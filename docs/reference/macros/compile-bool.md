@@ -2,8 +2,8 @@
 
 **Syntax:** `(bool VALUE)`
 
-**Behaviour:** Expands to `(truth VALUE)`: the truthiness of `VALUE`
-under Python's rules, as `True` or `False`.
+**Behaviour:** The truthiness of `VALUE` under Python's rules, as `True`
+or `False`.
 
 **Examples:**
 

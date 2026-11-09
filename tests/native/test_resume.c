@@ -910,6 +910,222 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
 }
 
 
+/* A kind whose clear records what the observed frame names while the
+   clear runs: a clear can run code that reaches the frame, so the
+   frame must already have let go of the resume it is releasing. */
+static KosDynFrame *observed_frame = NULL;
+static KosDynDelim *observed_delim = NULL;
+static int observed_clear_calls = 0;
+static void *observed_clear_in = NULL;
+static const KosResumeKind *observed_kind_seen = NULL;
+static void *observed_state_seen = NULL;
+
+static void observing_clear(void *state) {
+
+  observed_clear_calls++;
+  observed_clear_in = state;
+  if (observed_delim) {
+    observed_kind_seen = KosDynDelim_SAVED_RESUME_KIND(observed_delim);
+    observed_state_seen = KosDynDelim_SAVED_RESUME_STATE(observed_delim);
+    return;
+  }
+  observed_kind_seen = KosDynFrame_RESUME_KIND(observed_frame);
+  observed_state_seen = KosDynFrame_RESUME_STATE(observed_frame);
+}
+
+KOS_RESUME_KIND(resume_observing_kind, "observing", resume_probe,
+                observing_clear, recording_clone);
+
+static void observing_reset(KosDynFrame *frame) {
+
+  observed_frame = frame;
+  observed_delim = NULL;
+  observed_clear_calls = 0;
+  observed_clear_in = NULL;
+  observed_kind_seen = &resume_observing_kind;
+  observed_state_seen = &observed_clear_calls;
+}
+
+static void observing_delim_reset(KosDynDelim *delim) {
+
+  observing_reset(NULL);
+  observed_delim = delim;
+}
+
+
+/* kos_dynframe_clear_resume hands the clear the frame's state with
+   both resume fields already NULL. */
+static int test_clear_resume_unnames_state_before_clear(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+  int marker = 0;
+  observing_reset(frame);
+  KosDynFrame_RESUME_KIND(frame) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(frame) = &marker;
+
+  kos_dynframe_clear_resume(frame);
+  TEST_ASSERT_EQ(observed_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(observed_clear_in, &marker,
+                   "the clear was handed the frame's state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the frame named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the frame named no state while the clear ran");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "the kind is gone");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_STATE(frame), "the state is gone");
+
+  observed_frame = NULL;
+  kos_dynframe_free(frame);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
+/* A frame freed with its resume still set runs the clear with both
+   resume fields already NULL. */
+static int test_free_unnames_resume_before_clear(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+  int marker = 0;
+  observing_reset(frame);
+  KosDynFrame_RESUME_KIND(frame) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(frame) = &marker;
+
+  kos_dynframe_free(frame);
+  observed_frame = NULL;
+  TEST_ASSERT_EQ(observed_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(observed_clear_in, &marker,
+                   "the clear was handed the frame's state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the frame named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the frame named no state while the clear ran");
+
+  Py_DECREF(ns);
+  return 0;
+}
+
+
+/* A landing that applies a restore record clears the resume the live
+   frame held while the context still names that frame; the clear runs
+   with the frame's resume fields already NULL. */
+static int test_capture_restore_apply_unnames_prior_before_clear(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *live = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(live, "push live frame");
+  KosDynFrame *tmpl = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(tmpl, "create template frame");
+  KosDynNode_NODE_ID(tmpl) = kos_dynnode_id(live);
+
+  int marker = 0;
+  int prior = 0;
+  recording_reset();
+  KosDynFrame_RESUME_KIND(tmpl) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(tmpl) = &marker;
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_ValueError);
+  TEST_ASSERT_NOT_NULL(exc, "create payload");
+  KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, exc,
+                                        NULL, NULL, 0);
+  TEST_ASSERT_NOT_NULL(goal, "create goal");
+  TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
+                     goal, (KosDynNode *) live, (KosDynNode *) tmpl),
+                 0, "the record is captured");
+
+  /* the live frame carries a resume of its own the landing displaces */
+  observing_reset(live);
+  KosDynFrame_RESUME_KIND(live) = &resume_observing_kind;
+  KosDynFrame_RESUME_STATE(live) = &prior;
+
+  kos_xfer_goal_push(ctx, goal);
+  {
+    int boundary = 0;
+    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
+    TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
+  }
+  observed_frame = NULL;
+  TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal retired");
+  TEST_ASSERT_EQ(observed_clear_calls, 1,
+                 "the live frame's prior resume was cleared once");
+  TEST_ASSERT_SAME(observed_clear_in, &prior,
+                   "the clear was handed the prior state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the live frame named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the live frame named no state while the clear ran");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(live), &recorded_clone_out,
+                   "the live frame carries the record's clone");
+  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+
+  KosDynFrame_RESUME_KIND(live) = NULL;
+  KosDynFrame_RESUME_STATE(live) = NULL;
+  KosDynFrame_RESUME_KIND(tmpl) = NULL;
+  KosDynFrame_RESUME_STATE(tmpl) = NULL;
+  kos_dynframe_free(tmpl);
+  Py_DECREF(exc);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
+/* A delim freed with a displaced resume still saved runs the clear
+   with both saved fields already NULL, freed directly or through
+   kos_dynchain_free. */
+static int check_delim_free_unnames_saved_resume(int through_chain) {
+
+  KosDynDelim *delim = kos_dyndelim_new(
+      NULL, KOS_DYN_DELIM_MODE_INPLACE, NULL, NULL, NULL, NULL);
+  TEST_ASSERT_NOT_NULL(delim, "create delim");
+
+  int marker = 0;
+  observing_delim_reset(delim);
+  KosDynDelim_SAVED_RESUME_KIND(delim) = &resume_observing_kind;
+  KosDynDelim_SAVED_RESUME_STATE(delim) = &marker;
+
+  if (through_chain)
+    kos_dynchain_free((KosDynNode *) delim, NULL);
+  else
+    kos_dyndelim_free(delim);
+  observed_delim = NULL;
+  TEST_ASSERT_EQ(observed_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(observed_clear_in, &marker,
+                   "the clear was handed the delim's saved state");
+  TEST_ASSERT_NULL(observed_kind_seen,
+                   "the delim named no kind while the clear ran");
+  TEST_ASSERT_NULL(observed_state_seen,
+                   "the delim named no state while the clear ran");
+  return 0;
+}
+
+
+static int test_dyndelim_free_unnames_saved_resume_before_clear(void) {
+
+  return check_delim_free_unnames_saved_resume(0);
+}
+
+
+static int test_dynchain_free_unnames_delim_saved_resume_before_clear(void) {
+
+  return check_delim_free_unnames_saved_resume(1);
+}
+
+
 /* A transfer restore record clones a template frame's resume state
    through its kind; a template whose kind cannot clone is refused
    with an error in every build, never called through. The template
@@ -1226,6 +1442,136 @@ static int test_drive_restores_thread_exc_info(void) {
 }
 
 
+/* === a transform step kind's traverse === */
+
+
+static PyObject *traverse_target = NULL;
+static int traverse_visits = 0;
+
+
+static int count_target_visit(PyObject *obj, void *arg) {
+
+  (void) arg;
+  if (obj == traverse_target)
+    traverse_visits++;
+  return 0;
+}
+
+
+/**
+   A callable answering every element with an awaitable that suspends
+   once, yielding 'tick', and then returns 1. Returns the callable, or
+   NULL with an error set.
+*/
+static PyObject *resume_ticking_callable(void) {
+
+  PyObject *globals = PyDict_New();
+  PyObject *ran, *fn;
+
+  if (! globals)
+    return NULL;
+
+  ran = PyRun_String(
+      "class Tick:\n"
+      "    def __await__(self):\n"
+      "        yield 'tick'\n"
+      "        return 1\n"
+      "def tick(x):\n"
+      "    return Tick()\n",
+      Py_file_input, globals, globals);
+  if (! ran) {
+    Py_DECREF(globals);
+    return NULL;
+  }
+  Py_DECREF(ran);
+
+  fn = PyDict_GetItemString(globals, "tick");
+  Py_XINCREF(fn);
+  Py_DECREF(globals);
+  if (! fn)
+    PyErr_SetString(PyExc_RuntimeError, "the prelude defined no tick");
+  return fn;
+}
+
+
+/**
+   A map's step suspended on its callable's awaitable leaves the step
+   frame on top of the map's own context, naming the map as its state.
+   A stage on the transform's own context holds no reference to it (the
+   map holds the context, so one would be a cycle), and the kind's
+   traverse visits nothing, staged or finished; the finished step
+   leaves the map as it was before the step.
+*/
+static int test_own_context_transform_stage_holds_no_reference(void) {
+
+  PyObject *tick = resume_ticking_callable();
+  PyObject *items, *t, *stepper, *res;
+  KosDynNode *top;
+  const KosResumeKind *kind = NULL;
+  void *state = NULL;
+  Py_ssize_t unheld, baseline, staged_refs, finished_refs;
+  int staged_visits, finished_visits, delivered;
+
+  TEST_ASSERT_NOT_NULL(tick, "build the ticking callable");
+  items = Py_BuildValue("[i]", 1);
+  TEST_ASSERT_NOT_NULL(items, "build the source list");
+
+  t = PyObject_CallFunction((PyObject *) &KosMapType, "OO", tick, items);
+  Py_DECREF(tick);
+  Py_DECREF(items);
+  TEST_ASSERT_NOT_NULL(t, "build the map");
+  unheld = Py_REFCNT(t);
+
+  stepper = PyObject_CallMethod(t, "__anext__", NULL);
+  TEST_ASSERT_NOT_NULL(stepper, "take the map's __anext__");
+  baseline = Py_REFCNT(t);
+
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  TEST_ASSERT_NOT_NULL(res, "the step suspends on the awaitable");
+  Py_DECREF(res);
+
+  top = KosContext_DYN_TOP(kos_transform_pyctx(t));
+  if (top && KosDynNode_IS_FRAME(top)) {
+    kind = KosDynFrame_RESUME_KIND((KosDynFrame *) top);
+    state = KosDynFrame_RESUME_STATE((KosDynFrame *) top);
+  }
+  staged_refs = Py_REFCNT(t);
+
+  traverse_target = t;
+  traverse_visits = 0;
+  (void) kos_resume_traverse(kind, state, count_target_visit, NULL);
+  staged_visits = traverse_visits;
+
+  /* the awaitable returns: the element is delivered and the step
+     finished */
+  res = PyObject_CallMethod(stepper, "send", "O", Py_None);
+  delivered = (! res && PyErr_ExceptionMatches(PyExc_StopIteration));
+  Py_XDECREF(res);
+  PyErr_Clear();
+
+  traverse_visits = 0;
+  (void) kos_resume_traverse(kind, t, count_target_visit, NULL);
+  finished_visits = traverse_visits;
+  finished_refs = Py_REFCNT(t);
+  traverse_target = NULL;
+
+  Py_DECREF(stepper);
+  Py_DECREF(t);
+
+  TEST_ASSERT_NOT_NULL(kind, "the suspended top frame carries a resume");
+  TEST_ASSERT_SAME(state, t, "the step frame's state is the map");
+  TEST_ASSERT_EQ(staged_refs, baseline,
+                 "a stage on the map's own context holds no reference");
+  TEST_ASSERT_EQ(staged_visits, 0,
+                 "the kind's traverse visits no unheld map");
+  TEST_ASSERT(delivered, "the second send delivers the element");
+  TEST_ASSERT_EQ(finished_visits, 0, "a finished step visits nothing");
+  /* the step ended, so the spent stepper let go of the map as well */
+  TEST_ASSERT_EQ(finished_refs, unheld, "the finish releases the map");
+  return 0;
+}
+
+
 /* === Suite === */
 
 
@@ -1249,12 +1595,18 @@ int run_resume_tests(void) {
   RUN_TEST(test_clone_copies_node_resume);
   RUN_TEST(test_capture_restore_clones_and_clears_unapplied);
   RUN_TEST(test_capture_restore_apply_hands_over_the_clone);
+  RUN_TEST(test_clear_resume_unnames_state_before_clear);
+  RUN_TEST(test_free_unnames_resume_before_clear);
+  RUN_TEST(test_capture_restore_apply_unnames_prior_before_clear);
+  RUN_TEST(test_dyndelim_free_unnames_saved_resume_before_clear);
+  RUN_TEST(test_dynchain_free_unnames_delim_saved_resume_before_clear);
   RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_cache_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_returns_value_in_hand);
   RUN_TEST(test_drive_restores_thread_exc_info);
+  RUN_TEST(test_own_context_transform_stage_holds_no_reference);
 
   return 0;
 }

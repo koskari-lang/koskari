@@ -98,6 +98,11 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 
   KOS_DYNF_NONE        - No flags set
   KOS_DYNF_CLONED      - Node was cloned for continuation capture
+  KOS_DYNF_GOAL_WAIT   - A transfer goal waits on this node's thunk
+                         (its frontier); set by the wait, cleared when
+                         the wait ends, never copied to a clone. A
+                         goal's LEAVING that unlinks a node carrying it
+                         voids the waiting goal (see xfer_goal.c)
   KOS_DYNF_INVOCATION  - PROMPT: instance created by a k-invocation
                          (graft instantiation or in-place invoke);
                          no POP_PROMPT instruction pairs with it, so
@@ -106,6 +111,7 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,
+  KOS_DYNF_GOAL_WAIT   = 0x02,
   KOS_DYNF_INVOCATION  = 0x08,
 } KosDynFlags;
 
@@ -193,6 +199,19 @@ typedef struct KosLiveRegs {
 
 
 /**
+   Where the step in flight runs, recorded in KosGenState::busy: on a
+   consumer's chain, or on the generator's own context (a Python
+   adapter's drive). Only a step on its own context can be left there
+   mid-await with nothing driving it.
+*/
+typedef enum KosGenBusy {
+  KOS_GEN_IDLE = 0,
+  KOS_GEN_BUSY_CONSUMER,  /* installed on a consumer's chain */
+  KOS_GEN_BUSY_OWN,       /* on the generator's own context */
+} KosGenBusy;
+
+
+/**
    A generator's state between installs, held by the generator object:
    the span resting out of any chain and what the next install needs
    to put it back. The span is the unstarted frame until the first
@@ -224,8 +243,9 @@ typedef struct KosGenState {
                                   than entering fresh code */
   uint8_t installs;            /* a node of the resting span holds an
                                   effect the install puts back */
-  uint8_t busy;                /* a step is in flight, from the drive's
-                                  start to the owner's finish */
+  uint8_t busy;                /* KosGenBusy: a step is in flight, from
+                                  the drive's start to the owner's
+                                  finish; any nonzero value is busy */
   KosLiveRegs host;
   KosLiveRegs frozen;
 } KosGenState;
@@ -491,8 +511,10 @@ struct KosDynNode {
       /* Frame nesting depth on this context's chain: the enclosing
          frame's depth + 1, the root frame at 1. Set at install and
          renumbered whenever a segment carrying frames is spliced in
-         (continuation landing, generator install), so the recursion
-         limit test at install is one load and one compare. */
+         (continuation landing, generator install), so the frame
+         depth test against the frame depth limit at install is one
+         load and one compare. The limit defaults to 10000 and is
+         settable up to KOS_FRAME_DEPTH_MAX, the width of this field. */
       uint16_t depth;
       /* A caller-owned one-frame cache (KosDynFrame **) this frame
          is stored into when the return path frees it; meaningful
@@ -636,11 +658,14 @@ struct KosDynNode {
     } shift;
     struct {
       /* The generator object whose span this node marks, borrowed. It
-         is alive while the node is installed: the record stepping it
-         sits below the node on the chain or releases its context
-         first, and the object's own context is cleared in its dealloc.
-         The node exists from an install to the freeze or the teardown,
-         and the chain frees it like any other. */
+         is alive while the node is installed on a running chain: the
+         record stepping it sits below the node on the chain or
+         releases its context first, and the object's own context is
+         cleared in its dealloc. A chain that outlives the owner, a
+         consumer's context freed after the record let the generator
+         go, frees the node without reading the owner or its state.
+         The node exists from an install to the freeze or the
+         teardown, and the chain frees it like any other. */
       PyObject *owner;
       /* the owner's state record, borrowed; valid while owner is */
       KosGenState *state;
@@ -1093,8 +1118,9 @@ unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base);
    Renumber the frames on the segment from top down to but excluding
    base so the lowest sits at base_depth + 1 and each frame above it is
    one deeper. Called after a segment carrying frames is spliced onto a
-   chain; the caller has already established that the result fits the
-   recursion limit.
+   chain; the caller has already established that the result fits
+   under the frame depth limit, which never exceeds
+   KOS_FRAME_DEPTH_MAX.
 */
 void kos_dyn_renumber_frames(
     KosDynNode *top,
@@ -1192,9 +1218,10 @@ void kos_dyngen_rest(KosDynGen *gen);
 
 
 /**
-   Free a GEN node: return it to the freelist. The chain free reaches
-   it through kos_dynnode_free, where a node freed with its chain is
-   the end of a step in flight; the state's clear frees a resting one.
+   Free a GEN node: return it to the freelist, touching neither its
+   owner nor the owner's state, which may already be gone. The chain
+   free reaches it through kos_dynnode_free; the state's clear frees a
+   resting one, taking it out of the state first.
 */
 void kos_dyngen_free(KosDynGen *gen);
 
@@ -1221,6 +1248,20 @@ void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen);
    :return: 0 on success, -1 on error
 */
 int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
+
+
+/**
+   Undo an install whose caller failed after the splice, before the
+   installed frame ran: the span goes back to rest in the state through
+   the freeze, and the context's registers return to the consumer, so
+   the generator stays suspended where it was and the next drive finds
+   a resting span. A pending error is kept across the freeze. No-op
+   when the span is not spliced.
+
+   :param ctx: the context the span was installed on
+   :param state: the owner's state record
+*/
+void kos_dyn_gen_unsplice(KosContext *ctx, KosGenState *state);
 
 
 /**
@@ -2121,9 +2162,17 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_DEPTH(f)      (((KosDynNode *)(f))->u.frame.depth)
 
-/* The widest depth a frame can record, and so the ceiling on the
-   per-context recursion limit whatever sys.setrecursionlimit says. */
+/* The widest depth a frame can record, 65535, and the hard cap on the
+   process-wide frame depth limit, which defaults to
+   KOS_FRAME_DEPTH_DEFAULT and is settable from 1 up to this cap. Frames
+   live on the heap, so the limit guards against runaway memory from
+   unbounded non-tail recursion; it is not Python's recursion limit,
+   which sys.setrecursionlimit sets and which CPython enforces by itself
+   where Koskari and Python call each other. */
 #define KOS_FRAME_DEPTH_MAX       UINT16_MAX
+
+/* The frame depth limit in force until one is set. */
+#define KOS_FRAME_DEPTH_DEFAULT   10000u
 
 /* frame is a demand-sync root */
 #define KOS_FRAME_DEMAND          (1u << 0)

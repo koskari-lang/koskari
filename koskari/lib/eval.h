@@ -131,6 +131,7 @@ typedef enum KosContextFlags {
   KOS_CTX_RUNNING         = 0x01,
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
+  KOS_CTX_CLEARED         = 0x08,  /* context_clear began: no eval, no recycle */
 } KosContextFlags;
 
 
@@ -744,8 +745,8 @@ KosOpResult KosContext_NextResume(
   - Resumption injects the result back into the VM via the stack.
 
   Handlers and helpers take the context itself; a drive begins with
-  KosContext_EvalEnter, which sets breaker, recursion_limit and
-  terminal for that drive from the thread state it runs on.
+  KosContext_EvalEnter, which sets breaker and terminal for that drive
+  from the thread state it runs on.
 */
 
 
@@ -796,10 +797,6 @@ struct KosContext {
                          KosContext_EvalEnter; the cooperation points
                          test it and the trampoline polls when it is
                          up */
-  uint16_t recursion_limit; /* the deepest frame this context may
-                         install: sys.getrecursionlimit(), read from
-                         the thread state by KosContext_EvalEnter and
-                         clamped to KOS_FRAME_DEPTH_MAX */
   uint8_t terminal;         /* the result in flight is a boundary that
                          has been through its event: a raise walked to
                          no handler, a suspension recorded for AWAIT or
@@ -931,21 +928,34 @@ static inline KosOpResult kos_call_installed(KosContext *ctx) {
 }
 
 
-#define KosContext_RECURSION_LIMIT(ctx) ((ctx)->recursion_limit)
+/**
+   The process-wide frame depth limit: KOS_FRAME_DEPTH_DEFAULT (10000)
+   until koskari.lib.set_frame_depth_limit sets it, from 1 up to the
+   KOS_FRAME_DEPTH_MAX cap (65535).
+*/
+extern unsigned kos_frame_depth_limit;
 
 /**
-   Raise RecursionError; the cold half of kos_eval_check_frame_room.
-   Always returns -1.
+   Raise RecursionError naming the frame depth limit in force; the cold
+   half of kos_eval_check_frame_room. Always returns -1.
 */
 int kos_eval_recursion_error(void);
 
 /**
    Test whether count more frames fit above base (a frame on the live
-   chain, or NULL for the chain root) under the recursion limit. 0 when
-   they fit; -1 with RecursionError set when they do not. Every site
-   that installs or splices frames asks before touching the chain, so a
-   refused install leaves the chain and the caller's state unchanged and
-   the exception is raised into the caller's frame like any other.
+   chain, or NULL for the chain root) under kos_frame_depth_limit. 0
+   when they fit; -1 with RecursionError set when they do not. Every
+   site that installs or splices frames asks before touching the chain,
+   so a refused install leaves the chain and the caller's state
+   unchanged and the exception is raised into the caller's frame like
+   any other.
+
+   The limit is Koskari's own guard against runaway heap growth from
+   unbounded non-tail recursion. It defaults to 10000 and is settable
+   up to the KOS_FRAME_DEPTH_MAX cap of 65535, the width of a frame's
+   recorded depth. It does not read Python's recursion limit: a Koskari
+   frame takes no C stack and no Python frame object, and CPython
+   enforces its own limit where Koskari and Python call each other.
 */
 static inline int kos_eval_check_frame_room(
     KosContext *ctx,
@@ -954,7 +964,7 @@ static inline int kos_eval_check_frame_room(
 
   unsigned depth = base ? KosDynFrame_DEPTH(base) : 0u;
 
-  if (likely(depth + count <= KosContext_RECURSION_LIMIT(ctx)))
+  if (likely(depth + count <= kos_frame_depth_limit))
     return 0;
   return kos_eval_recursion_error();
 }
@@ -1169,13 +1179,12 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 
 
 /**
-   Begin a drive on ctx: set breaker, recursion_limit and terminal for
-   it. tstate is the calling thread's state, passed by an eval that
-   holds it; NULL resolves it with PyThreadState_Get. The breaker is
-   the eval breaker word located from tstate, and the recursion limit
-   is the one tstate reads. Also run by a site that edits a suspended
+   Begin a drive on ctx: set breaker and terminal for it. tstate is
+   the calling thread's state, passed by an eval that holds it; NULL
+   resolves it with PyThreadState_Get. The breaker is the eval breaker
+   word located from tstate. Also run by a site that edits a suspended
    context's chain outside koskari_eval, since the chain edits read the
-   breaker and the recursion limit.
+   breaker.
 */
 void KosContext_EvalEnter(KosContext *ctx, PyThreadState *tstate);
 
@@ -1269,14 +1278,12 @@ void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val);
    Pop TOS and materialize it as a fast sequence for the UNPACK family.
    need is the required length; exact demands len == need, otherwise
    len >= need. Returns a new reference, or NULL with TypeError (subject
-   not iterable) or ValueError (wrong length) set. who names the opcode
-   in the message.
+   not iterable) or ValueError (wrong length) set.
 */
 PyObject *KosContext_PopUnpackSequence(
     KosContext *ctx,
     Py_ssize_t need,
-    int exact,
-    const char *who);
+    int exact);
 
 
 /* === Context lifecycle === */
@@ -1392,6 +1399,48 @@ PyObject *kos_iter_acquire(PyObject *iterable);
    :param iter: borrowed; NULL is a no-op
 */
 void kos_iter_close(PyObject *iter);
+
+
+/**
+   Close the chain on ctx with GeneratorExit when there is no caller to
+   raise into: the awaitable a mid-await chain holds is closed first,
+   then the throw runs at the suspension point to an outcome. No error
+   is left set; one the close owes is held in the out-params instead,
+   so the caller frees the chain before it reports or raises it.
+
+   :param ctx: the context holding the suspended chain
+   :param typ: receives the held error's type, or NULL
+   :param val: receives the held error's value, or NULL
+   :param tb: receives the held error's traceback, or NULL
+   :return: 0 when the chain wound down, with an error held only when
+     the cleanup raised something other than GeneratorExit,
+     StopIteration or StopAsyncIteration; 1 when the chain was left in
+     place, with RuntimeError("async generator ignored GeneratorExit")
+     held when the body tried to suspend, or the error that kept the
+     throw from being made
+*/
+int kos_close_drive(
+    KosContext *ctx,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb);
+
+
+/**
+   Report a close error held by kos_close_drive through
+   sys.unraisablehook against obj, the object whose close owed it.
+   No-op when nothing is held.
+
+   :param obj: borrowed
+   :param typ: stolen
+   :param val: stolen
+   :param tb: stolen
+*/
+void kos_close_report(
+    PyObject *obj,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb);
 
 
 /**
@@ -1747,26 +1796,16 @@ void kos_eval_prepare_boundary_raise(KosContext *ctx);
 
 
 /**
-   Record the current frame into the in-flight exception's
-   __koskari_dynchain__ metadata (marked "crossed") before the raise walk
-   pops it. PyErr is preserved; decoration is best-effort.
+   Add the current frame to the in-flight exception's traceback, as a
+   synthesized Python frame object whose globals carry the frame's
+   trace data as __koskari_trace__ (marked "crossed"), before the raise
+   walk pops it; at a Koskari handler's entry, the handler's frame at
+   the raising pc. The traceback grows as frames are crossed, so a
+   handler's e.__traceback__ already holds every frame the raise
+   crossed. A frame the most recent entry already shows adds nothing.
+   PyErr is preserved; decoration is best-effort.
 */
 void kos_eval_note_crossed_frame(KosContext *ctx);
-
-
-/**
-   Give the exception a Python traceback entry for every frame in its
-   __koskari_dynchain__ record that has none yet, innermost first.
-   Called with the fetched triple at an eval boundary, and at a
-   Koskari handler's entry so the handler's e.__traceback__ holds the
-   Koskari frames the raise crossed. Entries are marked traced in the
-   record, so a frame is never injected twice. Best-effort: a failure
-   leaves the triple as it was.
-*/
-void kos_eval_inject_recorded_frames(
-    PyObject **exc_type,
-    PyObject **exc_val,
-    PyObject **exc_tb);
 
 
 /**

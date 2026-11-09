@@ -98,12 +98,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(islice_resume_discard_kind, "islice-step",
-                islice_resume_discard, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(islice_resume_emit_kind, "islice-step",
-                islice_resume_emit, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(islice_resume_skip_kind, "islice-step",
-                islice_resume_skip, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(islice_resume_discard_kind, "islice-step",
+    islice_resume_discard);
+KOS_TRANSFORM_STEP_KIND_AS_IS(islice_resume_emit_kind, "islice-step",
+    islice_resume_emit);
+KOS_TRANSFORM_STEP_KIND_AS_IS(islice_resume_skip_kind, "islice-step",
+    islice_resume_skip);
 
 
 /**

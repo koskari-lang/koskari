@@ -124,8 +124,11 @@ struct KosTlsState;         typedef struct KosTlsState         KosTlsState;
     call it. */
 int koskari_lib_init(PyObject *mod);
 
-/** Call all unit clear functions and clear the module dict. Use before
-    releasing the module (e.g. in test harness teardown). */
+/** Call all unit clear functions and clear the module dict. A second
+    call before the next init is a no-op. For a host that tears its own
+    module down, as the native test harness does; the extension module
+    itself never calls it, since the static types outlive the module
+    object. */
 int koskari_lib_clear(PyObject *mod);
 
 

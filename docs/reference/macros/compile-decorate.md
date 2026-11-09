@@ -2,25 +2,25 @@
 
 **Syntax:** `(decorate [DECORATOR ...] FORM)`
 
-| Form | Expands to |
-|------|------------|
-| `(decorate [] FN)` | `FN` |
-| `(decorate [D ...] (def NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
-| `(decorate [D ...] (var NAME VALUE))` | `(var NAME (decorate [D ...] VALUE))` |
-| `(decorate [D ...] (var NAME :: TYPE VALUE))` | `(var NAME :: TYPE (decorate [D ...] VALUE))` |
-| `(decorate [D ...] (global var NAME VALUE))` | `(global var NAME (decorate [D ...] VALUE))` |
-| `(decorate [D ...] (global var NAME :: TYPE VALUE))` | `(global var NAME :: TYPE (decorate [D ...] VALUE))` |
-| `(decorate [D ...] (define NAME VALUE))` | `(var NAME (decorate [D ...] VALUE))` |
-| `(decorate [D ...] (define-global NAME VALUE))` | `(define-global NAME (decorate [D ...] VALUE))` |
+| Form | Behaviour |
+|------|-----------|
+| `(decorate [] FN)` | the value of `FN`, undecorated |
+| `(decorate [D ...] (def NAME FORMALS BODY ...))` | binds `NAME`, as `var` does, to the function with `[D ...]` applied |
+| `(decorate [D ...] (var NAME VALUE))` | binds `NAME`, as `var` does, to `VALUE` with `[D ...]` applied |
+| `(decorate [D ...] (var NAME :: TYPE VALUE))` | binds `NAME :: TYPE`, as `var` does, to `VALUE` with `[D ...]` applied |
+| `(decorate [D ...] (global var NAME VALUE))` | binds `NAME`, as `global var` does, to `VALUE` with `[D ...]` applied |
+| `(decorate [D ...] (global var NAME :: TYPE VALUE))` | binds `NAME :: TYPE`, as `global var` does, to `VALUE` with `[D ...]` applied |
+| `(decorate [D ...] (define NAME VALUE))` | binds `NAME`, as `var` does, to `VALUE` with `[D ...]` applied |
+| `(decorate [D ...] (define-global NAME VALUE))` | binds `NAME`, as `define-global` does, to `VALUE` with `[D ...]` applied |
 | `(decorate [D ...] (var NAME))`, or any other declaration | a `CompilerError`, nothing to decorate |
-| `(decorate [D ...] (global def NAME FORMALS BODY ...))` | `(define-global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
-| `(decorate [D ...] (global class NAME SUPERS BODY ...))` | `(define-global NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
-| `(decorate [D ...] (define [NAME FORMALS ...] BODY ...))` | `(var NAME (decorate [D ...] (function NAME [FORMALS ...] BODY ...)))` |
-| `(decorate [D ...] (define [(NAME :: TYPE) FORMALS ...] BODY ...))` | `(var NAME (decorate [D ...] (function NAME :: TYPE [FORMALS ...] BODY ...)))` |
-| `(decorate [D ...] (class NAME SUPERS BODY ...))` | `(var NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
-| `(decorate [D ...] (define-global [NAME FORMALS ...] BODY ...))` | `(define-global NAME (decorate [D ...] (function NAME [FORMALS ...] BODY ...)))` |
-| `(decorate [D ...] (define-global [(NAME :: TYPE) FORMALS ...] BODY ...))` | `(define-global NAME (decorate [D ...] (function NAME :: TYPE [FORMALS ...] BODY ...)))` |
-| `(decorate [D REST ...] FN)` | `(decorate-subject D (decorate [REST ...] FN))` |
+| `(decorate [D ...] (global def NAME FORMALS BODY ...))` | binds `NAME`, as `define-global` does, to the function with `[D ...]` applied |
+| `(decorate [D ...] (global class NAME SUPERS BODY ...))` | binds `NAME`, as `define-global` does, to the class [`build-class`](../specials/compile-build-class.md) builds, with `[D ...]` applied |
+| `(decorate [D ...] (define [NAME FORMALS ...] BODY ...))` | binds `NAME`, as `var` does, to the function with `[D ...]` applied |
+| `(decorate [D ...] (define [(NAME :: TYPE) FORMALS ...] BODY ...))` | binds `NAME`, as `var` does, to the function with return annotation `TYPE` and `[D ...]` applied |
+| `(decorate [D ...] (class NAME SUPERS BODY ...))` | binds `NAME`, as `var` does, to the class `build-class` builds, with `[D ...]` applied |
+| `(decorate [D ...] (define-global [NAME FORMALS ...] BODY ...))` | binds `NAME`, as `define-global` does, to the function with `[D ...]` applied |
+| `(decorate [D ...] (define-global [(NAME :: TYPE) FORMALS ...] BODY ...))` | binds `NAME`, as `define-global` does, to the function with return annotation `TYPE` and `[D ...]` applied |
+| `(decorate [D REST ...] FN)` | applies `D` to the result of decorating `FN` with `[REST ...]`, behaving like `(decorate-subject D (decorate [REST ...] FN))` |
 
 **Behaviour:** What `@` lines read to, and usable directly. The name of
 a `def`, `var`, `class`, `global var`, `global def`, `global class`,
@@ -42,11 +42,6 @@ not a declaration; it reaches its special and fails as it would
 undecorated, with `SyntaxMatchError`.
 
 **Examples:**
-
-```koskari
->>> (macroexpand-1 '(decorate (d1) (def foo [x] x)))
-(var foo (decorate [d1] (function foo [x] x)))
-```
 
 ```koskari
 import-from functools lru_cache

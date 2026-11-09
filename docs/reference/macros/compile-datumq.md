@@ -5,7 +5,7 @@
 **Behaviour:** Wraps FORM in a `Datum` without evaluating it, recording the
 source position. It is the quoting counterpart of [`datum`](compile-datum.md):
 `datum` captures the value of its argument, `datumq` captures the argument form
-itself, expanding to `(datum (quote FORM) POSITION)`.
+itself.
 
 Without an explicit POSITION, the position recorded is FORM's own, or `None`
 when the form carries none.

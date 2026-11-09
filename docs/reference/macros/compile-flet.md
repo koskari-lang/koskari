@@ -2,7 +2,8 @@
 **Syntax:** **`(flet [[NAME FORMALS BODY ...] ...] FORM ...)`**
 
 **Behaviour:** Binds local functions for the extent of a body. Each declaration
-becomes a **`let`** binding whose value is an anonymous **`lambda`**:
+binds **NAME**, as a **`let`** binding does, to an anonymous function of
+**FORMALS** and **BODY**:
 
 ```koskari
 (flet [[double [x] (* x 2)]
@@ -10,7 +11,7 @@ becomes a **`let`** binding whose value is an anonymous **`lambda`**:
   (double (inc 20)))
 ```
 
-is equivalent to:
+behaves like:
 ```koskari
 (let [[double (lambda [x] (* x 2))]
       [inc (lambda [x] (+ x 1))]]

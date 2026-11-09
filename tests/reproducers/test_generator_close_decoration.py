@@ -24,8 +24,10 @@ surfacing.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import gc
 import sys
+import traceback
 import unittest
 
 import pytest
@@ -87,11 +89,19 @@ class TestGeneratorCloseDecoration(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
         agen = mod["cleanup_raises"]()
         self.assertEqual(await agen.__anext__(), 1)
-        with self.assertRaises(ValueError) as ctx:
+        # caught here rather than by assertRaises, which clears the
+        # traceback the decoration is read from
+        try:
             await agen.aclose()
-        exc = ctx.exception
+        except ValueError as caught:
+            exc = caught
+        else:
+            self.fail("ValueError not raised")
         self.assertIn("cleanup failed", str(exc))
-        self.assertTrue(hasattr(exc, "__koskari_dynchain__"))
+        names = [frame.f_globals["__koskari_trace__"]["name"]
+                 for frame, _ in traceback.walk_tb(exc.__traceback__)
+                 if "__koskari_trace__" in frame.f_globals]
+        self.assertIn("cleanup_raises", names)
 
     async def test_deliberate_generator_exit_still_propagates(self):
         mod = await self.load()
@@ -109,6 +119,10 @@ class TestGeneratorCloseDecoration(unittest.IsolatedAsyncioTestCase):
         try:
             del agen
             gc.collect()
+            # at rest, the dropped generator closes in the aclose the
+            # running loop's finalizer hook schedules
+            for _ in range(5):
+                await asyncio.sleep(0)
         finally:
             sys.unraisablehook = prior
         self.assertEqual(unraisable, [])

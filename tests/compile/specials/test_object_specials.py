@@ -1461,10 +1461,10 @@ class TestOperandLimits(SpecialsTestCase):
         self.assertFalse(await expr())
 
     async def test_finalizer_limit_is_a_positioned_compiler_error(self):
-        src = "b0"
-        for i in reversed(range(70)):
-            src = f"(let [[b{i} {i}]] {src})"
-        src = f"(lambda [] {src})"
+        # a call wider than a segment holds is refused by the finalizer;
+        # the shape is flat, so no nesting limit is met on the way
+        names = [f"a{i}" for i in range(1025)]
+        src = "(lambda [] (f " + " ".join(names) + "))"
         with self.assertRaises(CompilerError) as caught:
             self.compile_to_code(src)
         self.assertNotIsInstance(caught.exception, UncaughtCompilerError)

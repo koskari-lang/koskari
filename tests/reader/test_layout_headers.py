@@ -19,6 +19,7 @@ Strict layout header semantics.
 from textwrap import dedent
 
 from unittest import IsolatedAsyncioTestCase, TestCase
+from unittest.mock import patch
 
 import pytest
 
@@ -29,7 +30,7 @@ from koskari.compile.helpers import pycons
 from koskari.exceptions import LayoutError, ReaderSyntaxError
 from koskari.lib import cons, keyword, kos_repr, nil, symbol
 from koskari.reader import (
-    LINE_END, IndentAwareStream, LayoutReader, source_str)
+    LINE_END, READ_EOF, IndentAwareStream, LayoutReader, source_str)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -482,6 +483,90 @@ class TestQuotePrefixMidLine(IsolatedAsyncioTestCase):
              (symbol('quote-syntax'), symbol('tag')),
              symbol('body')))
         self.assertEqual(read_layout(src), expected)
+
+
+class TestQuotePrefixInFirstElement(IsolatedAsyncioTestCase):
+    """
+    Only the prefix at the first character of a line opens a quote
+    block; a prefix inside that first element quotes its operand
+    """
+
+    async def test_stacked_prefix_quotes_the_head(self):
+        for prefix, head in (("'", 'quote'), ("#'", 'quote-syntax')):
+            with self.subTest(prefix=prefix):
+                src = f"{prefix}'x a:\n  d\n"
+                expected = cons(
+                    symbol(head),
+                    cons(keyword('#block'),
+                         cons(cons(symbol('quote'), symbol('x'), nil),
+                              symbol('a'), nil),
+                         cons(keyword('#line'), symbol('d'), nil),
+                         nil),
+                    nil)
+                self.assertEqual(read_layout(src), expected)
+
+
+    async def test_prefix_under_a_ref_is_not_a_block(self):
+        src = "&'x a:\n  d\n"
+        expected = pycons(
+            ((symbol('ref'), (symbol('quote'), symbol('x'))),
+             symbol('a'),
+             symbol('d')))
+        self.assertEqual(read_layout(src), expected)
+
+
+    async def test_stacked_prefixes_scan_the_line_once(self):
+        reader = LayoutReader(dict(_BUILTIN_REGISTRY))
+        stream = IndentAwareStream.from_source(
+            source_str("'" * 50 + "x\n", '<unittest>'))
+        with patch.object(
+                reader, '_structural_colon_before_line_end',
+                wraps=reader._structural_colon_before_line_end) as scan:
+            result = reader.read(stream)
+
+        expected = symbol('x')
+        for _ in range(50):
+            expected = cons(symbol('quote'), expected, nil)
+        self.assertEqual(result, expected)
+        self.assertEqual(scan.call_count, 1)
+
+
+class TestQuoteLineEndsAtNewline(IsolatedAsyncioTestCase):
+    """
+    A line opened by a quote prefix ends at its newline: the block colon
+    scan and the quote block header do not read into later lines
+    """
+
+    async def test_quoted_line_before_a_block_in_a_body(self):
+        expected = pycons(
+            (symbol('def'), symbol('f'), nil,
+             (symbol('quote'), symbol('c')),
+             (symbol('when'), symbol('x'), symbol('y'))))
+        for between in ('', '\n', '  ; note\n'):
+            with self.subTest(between=between):
+                src = f"def f []:\n  'c\n{between}  when x:\n    y\n"
+                self.assertEqual(read_layout(src), expected)
+
+
+    async def test_quoted_line_before_a_top_level_block(self):
+        reader = LayoutReader(dict(_BUILTIN_REGISTRY))
+        stream = IndentAwareStream.from_source(
+            source_str("'c\nwhen x:\n  y\n", '<unittest>'))
+        first = reader.read(stream)
+        second = reader.read(stream)
+        self.assertEqual(first, pycons((symbol('quote'), symbol('c'))))
+        self.assertEqual(
+            second, pycons((symbol('when'), symbol('x'), symbol('y'))))
+        self.assertIs(reader.read(stream), READ_EOF)
+
+
+    async def test_header_does_not_continue_on_the_next_line(self):
+        reader = LayoutReader(dict(_BUILTIN_REGISTRY))
+        stream = IndentAwareStream.from_source(
+            source_str("'a\n  b:\n  c\n", '<unittest>'))
+        with self.assertRaises(ReaderSyntaxError):
+            while reader.read(stream) is not READ_EOF:
+                pass
 
 
 class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):

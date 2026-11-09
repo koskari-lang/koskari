@@ -44,6 +44,23 @@
 */
 
 
+/**
+   The busy mark. A step staged on a frame naming the transform as its
+   resume state holds one reference to the transform until ki_finish
+   or the step clear, so a holder released while that frame is still
+   on a chain -- a containing transform's clear dropping its source --
+   cannot free the transform under the frame. A frame on the
+   transform's own context holds none (kos_transform_staged).
+*/
+typedef enum KosTransformBusy {
+  KOS_TF_IDLE = 0,
+  KOS_TF_STEPPING,  /* a step runs, or is installed with no frame naming it */
+  KOS_TF_STAGED,    /* a frame names the transform: one reference held */
+  KOS_TF_STAGED_OWN, /* a frame on the transform's own context names
+                        it: no reference held (kos_transform_staged) */
+} KosTransformBusy;
+
+
 typedef struct KosTransform {
   PyObject_HEAD
   KosCallShape fn;       /* callable applied per element, shape
@@ -75,9 +92,10 @@ typedef struct KosTransform {
                             more than once; untouched by providers
                             that fetch a single element per step */
   uint8_t closed;        /* exhausted or closed */
-  uint8_t busy;          /* a step is in flight, from kos_transform_step
-                            entry to its synchronous return, or to
-                            ki_finish or the step clear when installed */
+  uint8_t busy;          /* KosTransformBusy: a step is in flight, from
+                            kos_transform_step entry to its synchronous
+                            return, or to ki_finish or the step clear
+                            when installed */
 } KosTransform;
 
 
@@ -255,10 +273,11 @@ static inline const char *transform_kind(PyTypeObject *type) {
 
 /**
    The suite's ki_busy: 1 with "KIND is already being iterated" set as
-   a ValueError when a step is in flight, else 0. kos_transform_step
-   and the throw refuse a busy transform through it.
+   a ValueError when a step is in flight, else 0, whichever method
+   asks. kos_transform_step and the throw refuse a busy transform
+   through it.
 */
-int kos_transform_busy(PyObject *self);
+int kos_transform_busy(PyObject *self, const char *method);
 
 
 /**
@@ -286,7 +305,7 @@ KOS_OP_INLINE KosIterStepResult kos_transform_step(
     return KOS_ITER_EXHAUSTED;
   }
 
-  if (kos_transform_busy(self))
+  if (kos_transform_busy(self, NULL))
     return KOS_ITER_ERROR;
 
   if (send_val && send_val != Py_None) {
@@ -296,13 +315,13 @@ KOS_OP_INLINE KosIterStepResult kos_transform_step(
     return KOS_ITER_ERROR;
   }
 
-  t->busy = 1;
+  t->busy = KOS_TF_STEPPING;
   result = body(ctx, self, send_val, out);
 
   /* an installed step keeps the mark until ki_finish or the step
      clear; every synchronous outcome releases it here */
   if (result != KOS_ITER_INSTALLED && result != KOS_ITER_INSTALLED_VALUE)
-    t->busy = 0;
+    t->busy = KOS_TF_IDLE;
 
   return result;
 }
@@ -373,7 +392,8 @@ KosIterStepResult kos_transform_step_abort(
    Install the step's resume-carrying frame (from the cache when
    one is there), push value onto it when one is given, and set resume
    as the frame's resume with the transform as its state. The busy
-   mark kos_transform_step set stays on through the install. value is
+   mark kos_transform_step set stays on through the install, and the
+   install takes the stage's reference (kos_transform_staged). value is
    consumed. label names the frame for the capture-refusal message.
    Returns KOS_ITER_INSTALLED_VALUE, or aborts the step to pre_top and
    returns KOS_ITER_ERROR.
@@ -387,6 +407,65 @@ KosIterStepResult kos_transform_stage(
 
 
 /**
+   Mark the step staged, once per step, taking the stage's reference
+   when the frame sits on another context's chain. A frame on the
+   transform's own context (a Python adapter's step) takes none: the
+   transform holds that context, so the reference would be a cycle
+   through it, and the transform dropped mid-await could not be
+   finalized until a collection. Without it the frame never outlives
+   the transform: the transform's clear frees its context before
+   anything else it holds, and a stepper holding the context and the
+   transform drops the context first (stepper_release_state).
+*/
+static inline void kos_transform_staged(KosContext *ctx, KosTransform *t) {
+
+  if (t->busy == KOS_TF_STAGED || t->busy == KOS_TF_STAGED_OWN)
+    return;
+  if (ctx == t->ctx) {
+    t->busy = KOS_TF_STAGED_OWN;
+    return;
+  }
+  t->busy = KOS_TF_STAGED;
+  Py_INCREF(t);
+}
+
+
+/**
+   KosContext_NextOrDefer with the transform as the frame's state and
+   its cache as the frame cache; a frame installed takes the stage's
+   reference
+*/
+KOS_OP_INLINE KosIterRequestStatus kos_transform_next_or_defer(
+    KosContext *ctx,
+    KosTransform *t,
+    const KosIterRequest *req,
+    const KosResumeKind *resume,
+    PyObject **out) {
+
+  KosIterRequestStatus s = KosContext_NextOrDefer(
+      ctx, req, resume, t, &t->cached_frame, out);
+
+  if (s == KOS_IREQ_CONTINUES)
+    kos_transform_staged(ctx, t);
+  return s;
+}
+
+
+/* A provider step kind taking its delivery as it is. No clone: a
+   capture across the step refuses by name. */
+#define KOS_TRANSFORM_STEP_KIND_AS_IS(ident, label, fnp)                \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), kos_transform_step_clear, NULL, NULL, 0,            \
+    kos_transform_step_traverse }
+
+/* A provider step kind taking a call's result, settled first. */
+#define KOS_TRANSFORM_STEP_KIND(ident, label, fnp)                      \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), kos_transform_step_clear, NULL, NULL, 1,            \
+    kos_transform_step_traverse }
+
+
+/**
    The fetch a provider's step makes, with the outcomes every provider
    handles alike: on DELIVERED element is the new reference and the
    step goes on; on EXHAUSTED the provider closes and reports it; on
@@ -397,8 +476,8 @@ KosIterStepResult kos_transform_stage(
 */
 #define KOS_TRANSFORM_FETCH(ctx, t, req, resume, pre_top, out, element)  \
   do {                                                                  \
-    switch (KosContext_NextOrDefer((ctx), (req), (resume), (t),        \
-                                     &(t)->cached_frame, &(element))) { \
+    switch (kos_transform_next_or_defer((ctx), (KosTransform *) (t),  \
+                                        (req), (resume), &(element))) { \
       case KOS_IREQ_DELIVERED:                                          \
         break;                                                          \
       case KOS_IREQ_EXHAUSTED:                                          \
@@ -427,10 +506,13 @@ void kos_transform_finish(PyObject *self, int exhausted);
 /**
    The clear of every provider step kind: a step frame torn down with
    its resume still set releases the record's busy mark and the value
-   in flight, so the transform can be stepped again. Takes the
-   KosTransform the frame's state points at
+   in flight, so the transform can be stepped again, and the stage's
+   reference last. Takes the KosTransform the frame's state points at
 */
 void kos_transform_step_clear(void *state);
+
+/* The traverse of every provider step kind: the staged reference. */
+int kos_transform_step_traverse(void *state, visitproc visit, void *arg);
 KosContext *kos_transform_pyctx(PyObject *self);
 
 

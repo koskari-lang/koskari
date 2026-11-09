@@ -33,7 +33,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   }
 
   PyObject *seq = KosContext_PopUnpackSequence(
-      ctx, (Py_ssize_t) (left + right), 0, "UNPACK_STAR");
+      ctx, (Py_ssize_t) (left + right), 0);
   if (unlikely(! seq))
     RESULT_RAISE();
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);

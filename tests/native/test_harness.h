@@ -180,6 +180,7 @@ int run_partial_tests(void);
 int run_demand_tests(void);
 int run_iter_request_tests(void);
 int run_iterate_tests(void);
+int ready_iterate_test_types(void);
 int run_resume_tests(void);
 int run_breaker_tests(void);
 int run_domain_tests(void);

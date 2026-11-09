@@ -1,14 +1,19 @@
 # cibuildwheel settings for the Pyodide wheel, read by the build-pyodide
-# job in build_wheel.yml and by the pyodide tox environment, so a local
-# build takes the same path as a published one. The native wheels do not
-# read this file.
+# job in build_wheel.yml and by the wheel-pyodide and test-pyodide tox
+# environments, so a local build takes the same path as a published one.
+# The native wheels do not read this file.
 #
 # pyodide-version moves with the Pyodide CDN URL on koskari.org.
+#
+# The tests run from the project root with -I, as the py tox environment
+# runs them, so the installed wheel is what they import. The test-pyodide
+# tox environment overrides test-command with the same line and its
+# posargs as the selection.
 
 [tool.cibuildwheel]
 pyodide-version = "314.0.7"
 test-extras = ["repl", "lsp", "pygments", "sphinx"]
 test-requires = ["pytest", "PyYAML", "jsonschema", "setuptools"]
-test-command = "python -m pytest {project}/tests"
+test-command = "cd {project} && python -BI -m pytest tests"
 
 # The end.

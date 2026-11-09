@@ -101,10 +101,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(cycle_resume_deliver_kind, "cycle-step",
-                cycle_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(cycle_resume_fetch_kind, "cycle-step",
-                cycle_resume_fetch, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(cycle_resume_deliver_kind, "cycle-step",
+    cycle_resume_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(cycle_resume_fetch_kind, "cycle-step",
+    cycle_resume_fetch);
 
 
 /**
@@ -192,8 +192,8 @@ static KosIterStepResult cycle_step_body(
   {
     PyObject *element;
 
-    switch (KosContext_NextOrDefer(ctx, &t->src, &cycle_resume_fetch_kind,
-                                     t, &t->cached_frame, &element)) {
+    switch (kos_transform_next_or_defer(
+        ctx, t, &t->src, &cycle_resume_fetch_kind, &element)) {
       case KOS_IREQ_DELIVERED:
         *out = cycle_keep(c, element);
         return *out ? KOS_ITER_VALUE : KOS_ITER_ERROR;

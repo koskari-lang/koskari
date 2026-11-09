@@ -64,10 +64,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(compress_resume_deliver_kind, "compress-step",
-                compress_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(compress_resume_fetch_kind, "compress-step",
-                compress_resume_fetch, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(compress_resume_deliver_kind, "compress-step",
+    compress_resume_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(compress_resume_fetch_kind, "compress-step",
+    compress_resume_fetch);
 
 
 /**
@@ -166,9 +166,9 @@ static KosIterStepResult compress_step_body(
       KOS_TRANSFORM_FETCH(ctx, t, &t->reqs[COMPRESS_DATA],
                           &compress_resume_fetch_kind, pre_top, out, data);
 
-      switch (KosContext_NextOrDefer(ctx, &t->reqs[COMPRESS_SELECTOR],
-                                       &compress_resume_fetch_kind, c,
-                                       &t->cached_frame, &selector)) {
+      switch (kos_transform_next_or_defer(
+          ctx, t, &t->reqs[COMPRESS_SELECTOR], &compress_resume_fetch_kind,
+          &selector)) {
         case KOS_IREQ_DELIVERED:
           break;
         case KOS_IREQ_EXHAUSTED:

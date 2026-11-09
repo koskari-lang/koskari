@@ -2,9 +2,10 @@
 
 **Syntax:** `(class NAME SUPERS BODY ...)`
 
-**Behaviour:** Expands to `(var NAME (build-class NAME SUPERS BODY ...))`,
-building a class and binding it to **NAME** in the scope the form
-appears in, as [`var`](../specials/compile-var.md) binds. At the top of
+**Behaviour:** Builds a class named **NAME** and binds it to **NAME** in
+the scope the form appears in, as [`var`](../specials/compile-var.md)
+binds. It behaves like `(var NAME (build-class NAME SUPERS BODY ...))`.
+At the top of
 a module **NAME** is a module global; inside a function body it is a
 local of that function. To bind at the module from inside a body, write
 `global class`; see [compile/global](compile-global.md).
@@ -45,7 +46,7 @@ The s-expression form:
 
 ```koskari
 (class Point [] (var x 0))
-;; -> (var Point (build-class Point [] (var x 0)))
+Point.x                   ;; 0
 ```
 
 Subclassing and `super`:

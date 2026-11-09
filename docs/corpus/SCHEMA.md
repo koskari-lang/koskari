@@ -37,6 +37,13 @@ references:
 : Expected results at one or more phases: `read`, `expand`, `compile`, `eval`,
   `error`, or `invalid`.
 
+**verify.warning** (optional)
+: The warning the eval stage must emit, in the `verify.error` shape:
+  `"<WarningClass>: <message substring>"`, for example
+  `"RuntimeWarning: coroutine '<lambda>' was never awaited"`. A record without
+  it must emit no warning during eval. It qualifies the eval stage and is not a
+  stage of its own.
+
 **references**
 : Links to pages under `docs/` (reference, start, guide, etc.).
 

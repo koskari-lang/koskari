@@ -24,6 +24,7 @@ class whose base is unbound.
 :license: GNU General Public License v3
 """
 
+import traceback
 import unittest
 
 import pytest
@@ -37,9 +38,10 @@ pytestmark = pytest.mark.phase_reproducers
 FILENAME = "/nonexistent/toplevel_position.ki"
 
 
-def dynchain_lines(exc):
-    frames = getattr(exc, "__koskari_dynchain__", None) or ()
-    return [f.get("line") for f in frames if isinstance(f, dict)]
+def trace_lines(exc):
+    entries = [frame.f_globals.get("__koskari_trace__")
+               for frame, _ in traceback.walk_tb(exc.__traceback__)]
+    return [e.get("line") for e in entries if isinstance(e, dict)]
 
 
 class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
@@ -47,9 +49,13 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
     async def error_for(self, src, exc_type):
         module = new_module("toplevel_position")
         vars(module)["__file__"] = FILENAME
-        with self.assertRaises(exc_type) as caught:
+        # caught here rather than by assertRaises, which clears the
+        # traceback the lines are read from
+        try:
             await load_module_source_async(module, src)
-        return caught.exception
+        except exc_type as exc:
+            return exc
+        self.fail(f"{exc_type.__name__} not raised")
 
 
     async def test_bare_symbol(self):
@@ -57,7 +63,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
             "var x 6\n"
             "\n"
             "nope\n", NameError)
-        self.assertEqual([3], sorted(set(dynchain_lines(err))))
+        self.assertEqual([3], sorted(set(trace_lines(err))))
 
 
     async def test_macro_call(self):
@@ -65,7 +71,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
             "var x 6\n"
             "\n"
             "incr! x \"s\"\n", TypeError)
-        self.assertEqual([3], sorted(set(dynchain_lines(err))))
+        self.assertEqual([3], sorted(set(trace_lines(err))))
 
 
     async def test_class_unbound_base(self):
@@ -74,7 +80,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
             "\n"
             "class C (Base):\n"
             "    pass\n", NameError)
-        self.assertEqual([3], sorted(set(dynchain_lines(err))))
+        self.assertEqual([3], sorted(set(trace_lines(err))))
 
 
 # The end.

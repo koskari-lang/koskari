@@ -767,6 +767,7 @@ verify:
   read: (defer? (defer (lambda [] 1)))
   expand: (defer? (defer (lambda [] 1)))
   eval: "true"
+  warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
 references:
   - reference/runtime/types-and-predicates.md
 stability: evolving

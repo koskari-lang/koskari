@@ -36,15 +36,6 @@ void KosContext_EvalEnter(KosContext *ctx, PyThreadState *tstate) {
   if (! breaker)
     breaker = &koskari_breaker_always;
   KosContext_BREAKER(ctx) = breaker;
-
-  {
-    int limit = kos_recursion_limit(tstate);
-    if (limit < 1)
-      limit = 1;
-    else if (limit > KOS_FRAME_DEPTH_MAX)
-      limit = KOS_FRAME_DEPTH_MAX;
-    KosContext_RECURSION_LIMIT(ctx) = (uint16_t) limit;
-  }
   ctx->terminal = 0;
 
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
@@ -79,9 +70,16 @@ void KosContext_EvalExit(KosContext *ctx) {
 }
 
 
+/* The frame depth limit, default 10000 and settable up to the
+   KOS_FRAME_DEPTH_MAX cap, distinct from Python's recursion limit. */
+unsigned kos_frame_depth_limit = KOS_FRAME_DEPTH_DEFAULT;
+
+
+/* The message names the limit in force when the install was refused. */
 int kos_eval_recursion_error(void) {
-  PyErr_SetString(PyExc_RecursionError,
-                  "maximum recursion depth exceeded");
+  PyErr_Format(PyExc_RecursionError,
+               "Koskari frame depth exceeded (%u)",
+               kos_frame_depth_limit);
   return -1;
 }
 
@@ -89,17 +87,14 @@ int kos_eval_recursion_error(void) {
 /* Exactly need items from an iterable into a new tuple. One pull past
    need refuses an over-long iterable at its extra item instead of
    draining it. */
-static PyObject *unpack_exact_pull(
-    PyObject *raw,
-    Py_ssize_t need,
-    const char *who) {
+static PyObject *unpack_exact_pull(PyObject *raw, Py_ssize_t need) {
 
   PyObject *it = PyObject_GetIter(raw);
   if (unlikely(! it)) {
     if (PyErr_ExceptionMatches(PyExc_TypeError)) {
       PyErr_Format(PyExc_TypeError,
-                   "%s: cannot unpack non-iterable %.100s object",
-                   who, Py_TYPE(raw)->tp_name);
+                   "cannot unpack non-iterable %.100s object",
+                   Py_TYPE(raw)->tp_name);
     }
     return NULL;
   }
@@ -118,8 +113,8 @@ static PyObject *unpack_exact_pull(
       Py_DECREF(seq);
       if (! PyErr_Occurred()) {
         PyErr_Format(PyExc_ValueError,
-                     "%s: expected %zd elements, got %zd",
-                     who, need, got);
+                     "not enough values to unpack (expected %zd, got %zd)",
+                     need, got);
       }
       return NULL;
     }
@@ -133,7 +128,7 @@ static PyObject *unpack_exact_pull(
     Py_DECREF(extra);
     Py_DECREF(seq);
     PyErr_Format(PyExc_ValueError,
-                 "%s: expected %zd elements, got more", who, need);
+                 "too many values to unpack (expected %zd)", need);
     return NULL;
   }
   if (unlikely(PyErr_Occurred())) {
@@ -147,8 +142,7 @@ static PyObject *unpack_exact_pull(
 PyObject *KosContext_PopUnpackSequence(
     KosContext *ctx,
     Py_ssize_t need,
-    int exact,
-    const char *who) {
+    int exact) {
 
   PyObject *raw = KosContext_StackPopRef(ctx);
   PyObject *seq;
@@ -160,7 +154,7 @@ PyObject *KosContext_PopUnpackSequence(
   if (PyTuple_CheckExact(raw) || PyList_CheckExact(raw)) {
     seq = raw;
   } else if (exact) {
-    seq = unpack_exact_pull(raw, need, who);
+    seq = unpack_exact_pull(raw, need);
     Py_DECREF(raw);
     return seq;
   } else {
@@ -168,8 +162,8 @@ PyObject *KosContext_PopUnpackSequence(
     if (unlikely(! seq)) {
       if (PyErr_ExceptionMatches(PyExc_TypeError)) {
         PyErr_Format(PyExc_TypeError,
-                     "%s: cannot unpack non-iterable %.100s object",
-                     who, Py_TYPE(raw)->tp_name);
+                     "cannot unpack non-iterable %.100s object",
+                     Py_TYPE(raw)->tp_name);
       }
       Py_DECREF(raw);
       return NULL;
@@ -179,9 +173,14 @@ PyObject *KosContext_PopUnpackSequence(
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (unlikely(exact ? (slen != need) : (slen < need))) {
-    PyErr_Format(PyExc_ValueError,
-                 "%s: expected %s%zd elements, got %zd",
-                 who, exact ? "" : "at least ", need, slen);
+    if (slen > need)
+      PyErr_Format(PyExc_ValueError,
+                   "too many values to unpack (expected %zd, got %zd)",
+                   need, slen);
+    else
+      PyErr_Format(PyExc_ValueError,
+                   "not enough values to unpack (expected %s%zd, got %zd)",
+                   exact ? "" : "at least ", need, slen);
     Py_DECREF(seq);
     return NULL;
   }

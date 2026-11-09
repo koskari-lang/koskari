@@ -190,6 +190,26 @@ static PyGetSetDef atom_getset[] = {
 };
 
 
+/**
+   An interned atom is its own value, so copy.copy hands back the atom
+   itself
+*/
+static PyObject *atom_copy(PyObject *self, PyObject *Py_UNUSED(ignored)) {
+  Py_INCREF(self);
+  return self;
+}
+
+
+/**
+   As atom_copy, for copy.deepcopy: the memo has nothing to record
+*/
+static PyObject *atom_deepcopy(PyObject *self, PyObject *memo) {
+  (void) memo;
+  Py_INCREF(self);
+  return self;
+}
+
+
 /* === symbol === */
 
 
@@ -318,6 +338,12 @@ static PyMethodDef symbol_methods[] = {
 
   { "rsplit", (PyCFunction) symbol_rsplit, METH_VARARGS|METH_KEYWORDS,
     "S.rsplit(sep=None, maxsplit=-1) -> list of symbols" },
+
+  { "__copy__", (PyCFunction) atom_copy, METH_NOARGS,
+    "S.__copy__() -> S" },
+
+  { "__deepcopy__", (PyCFunction) atom_deepcopy, METH_O,
+    "S.__deepcopy__(memo) -> S" },
 
   { NULL, NULL, 0, NULL },
 };
@@ -962,6 +988,12 @@ static PyMethodDef keyword_methods[] = {
 
   { "rsplit", (PyCFunction) keyword_rsplit, METH_VARARGS|METH_KEYWORDS,
     "K.rsplit(sep=None, maxsplit=-1) -> list of keywords" },
+
+  { "__copy__", (PyCFunction) atom_copy, METH_NOARGS,
+    "K.__copy__() -> K" },
+
+  { "__deepcopy__", (PyCFunction) atom_deepcopy, METH_O,
+    "K.__deepcopy__(memo) -> K" },
 
   { NULL, NULL, 0, NULL },
 };

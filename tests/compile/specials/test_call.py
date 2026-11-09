@@ -506,6 +506,29 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
     calls must not appear in the sealed bytecode.
     """
 
+    async def test_tail_position_without_yield_emits_tail_call(self):
+        """
+        The premise of the yield case below: without a yield, the else
+        branch call is in tail position and promotes to a tail twin
+        """
+
+        code = self.compile_to_code(
+            """
+            (lambda [x]
+              (cond
+                [x x]
+                [else: (call list 1 2 3)]))
+            """,
+            list=list,
+        )
+        body = self.lambda_body_code(code)
+        ops = [body.oparg(i)[0] for i in range(body.length())]
+        self.assertFalse(YIELD_OPS & set(ops))
+        calls = self.call_ops(body)
+        self.assertEqual(len(calls), 1)
+        self.assertIn(calls[0][1], TAIL_CALL_OPCODES)
+
+
     async def test_yield_and_tail_position_emits_call_not_tail_call(self):
         """
         Else branch is a call in tail position (would promote to a tail
@@ -516,9 +539,9 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
         code = self.compile_to_code(
             """
             (lambda [x]
-              (if x
-                (yield x)
-                (call list 1 2 3)))
+              (cond
+                [x (yield x)]
+                [else: (call list 1 2 3)]))
             """,
             list=list,
         )

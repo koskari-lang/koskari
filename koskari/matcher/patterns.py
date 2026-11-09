@@ -411,7 +411,9 @@ class CAPTURE(Pattern):
         CAPTURE node
         """
 
-        ctx.claim_slot_name(self._slot, self._claim_signature())
+        ctx.claim_slot_name(
+            self._slot, self._claim_signature(),
+            sequence=isinstance(self._sub, REPEAT))
         slot_idx = ctx.intern_slot(self._slot)
         if self._sub is None:
             sub_idx = -1
@@ -899,7 +901,8 @@ class REST(Pattern):
         """
 
         if self._slot is not None:
-            ctx.claim_slot_name(self._slot, ("rest", id(self)))
+            ctx.claim_slot_name(
+                self._slot, ("rest", id(self)), sequence=True)
             slot_idx = ctx.intern_slot(self._slot)
         rest_idx = ctx.append_node(("REST", self._min_tail))
         if self._slot is None:

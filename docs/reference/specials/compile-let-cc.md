@@ -9,6 +9,10 @@ inside that namespace, then evaluates the body forms sequentially. If the
 continuation bound to `K` is invoked later, control resumes just after the
 `compile/let/cc` form with the supplied value. This is the idiomatic way to
 name a continuation for later use without wrapping the body in a lambda.
+Invoked after the evaluation that captured it has returned, or while that
+evaluation is suspended on an `await`, the continuation raises
+`KoskariContinuationDead`; each top-level form of a module is its own
+evaluation.
 
 **Behaviour:** Emits `PUSH_CC`, then opens a `child_namespace` that declares
 `K` as a local. Inside the namespace: `CAPTURE_CC` captures the continuation
@@ -25,6 +29,13 @@ namespace. `K` is not visible after the `compile/let/cc` form.
     (do-step-one)
     (k "done")
     (never-reached)))
+
+;; Separate top-level forms: by the try, the var form's evaluation has returned
+(import-from koskari.lib KoskariContinuationDead)
+(var k (let/cc c c))
+(try (k 2)
+  [[e KoskariContinuationDead] (str e)])
+;; "continuation target context is no longer alive"
 ```
 
 **Errors:** As for [`call/cc`](compile-call-cc.md): a capture from inside a

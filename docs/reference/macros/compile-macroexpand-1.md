@@ -2,9 +2,9 @@
 
 **Syntax:** `(macroexpand-1 FORM)`, `(macroexpand-1 FORM NS)`
 
-**Behaviour:** Expands to a call to the
-[`macroexpand-1`](../runtime/macroexpand-1.md) runtime function, which
-applies one expansion step to `FORM`. With one argument the namespace
+**Behaviour:** Returns `FORM` after one expansion step, as the
+[`macroexpand-1`](../runtime/macroexpand-1.md) runtime function does.
+With one argument the namespace
 is `(globals)`; with two, the given namespace. `FORM` is evaluated, so
 quote it.
 

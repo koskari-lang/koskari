@@ -2,7 +2,8 @@
 
 **Syntax:** `(define-parameter NAME [DEFAULT])`, `(parameterq NAME [DEFAULT])`
 
-**Behaviour:** `define-parameter` binds `NAME` to a `ParamRef`, a
+**Behaviour:** `define-parameter` declares `NAME` in the scope the form
+appears in, as `var` declares, and binds it to a `ParamRef`, a
 re-resolving accessor: every read and store finds the innermost
 [`parameterize`](../specials/compile-parameterize.md) binding of the
 context it runs in, and the root scope of the current domain when there
@@ -48,11 +49,6 @@ def show [] (if verbose "loud" "quiet")
 (show)                                    ;; "quiet"
 (parameterize [[verbose True]] (show))    ;; "loud"
 (parameterq verbose False)                ;; False
-```
-
-```koskari
->>> (macroexpand-1 '(define-parameter verbose False))
-(begin (var verbose) (bindq verbose (ParamRef (quote verbose) False)))
 ```
 
 **See also:** [`parameterize`](../specials/compile-parameterize.md),

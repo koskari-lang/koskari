@@ -2,10 +2,10 @@
 
 **Syntax:** `(del! NAME)`, `(del! (item OBJ KEY))`, `(del! (attr OBJ NAME))`
 
-**Behaviour:** Expands to [`delq`](../specials/compile-delq.md),
+**Behaviour:** Deletes the target as [`delq`](../specials/compile-delq.md),
 [`del-item`](../specials/compile-del-item.md), or
-[`del-attr`](../specials/compile-del-attr.md) by the shape of the
-target. The subscript and dot suffixes read to the item and attribute
+[`del-attr`](../specials/compile-del-attr.md) does, chosen by the shape
+of the target. The subscript and dot suffixes read to the item and attribute
 forms, so `d["k"]` and `obj.attr` are targets. A deleted binding stays
 bound to its ref but empty, and reading it raises `NameError`.
 

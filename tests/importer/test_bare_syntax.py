@@ -28,7 +28,7 @@ import unittest
 import pytest
 
 from koskari.compile import Compiler, CompilerMode
-from koskari.exceptions import SyntaxMatchError
+from koskari.exceptions import CompilerError, SyntaxMatchError
 from koskari.lib import Module, ModuleNamespace, OpCode
 from koskari.reader import default_reader, source_str
 
@@ -144,6 +144,15 @@ class TestMixedBareAndCall(BareSyntaxHelpers):
                 "(syntax pick (syntax-rules [] [(pick x) x]))",
                 "(extend-syntax pick (bare-syntax me (quote alone)))",
                 "(pick 1 2)")
+
+
+    async def test_ellipsis_over_slot_is_refused(self):
+        # the slot is one symbol, never a sequence, so an ellipsis
+        # after it is refused when the bare arm is defined
+        with self.assertRaises(CompilerError) as caught:
+            await self.run_forms(
+                "(syntax bs (bare-syntax me (quote (got me ...))))")
+        self.assertIn("ellipsis", str(caught.exception))
 
 
 class TestHeadPositionLowering(BareSyntaxHelpers):

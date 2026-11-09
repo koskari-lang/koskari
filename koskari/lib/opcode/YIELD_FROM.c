@@ -861,7 +861,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_kos_iter(
 
 
 /* A throw into a provider delegate: through its suite's throw. A
-   StopAsyncIteration closes the delegation quietly. */
+   StopAsyncIteration closes the delegation quietly. A delegate left
+   mid-await on its own context is refused here with the generic busy
+   text, a state no throw reaches in practice: a delegating generator
+   whose delegate is mid-await is mid-step itself and is refused
+   first, and a fresh delegator is refused at its first step. */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_kos_iter(
     KosContext *ctx, void *state, PyObject *exc) {
 

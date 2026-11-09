@@ -346,6 +346,19 @@ class TestCasePatternMatching(unittest.TestCase):
         self.assertTrue(_match_value(pat, 5)[0])
         self.assertFalse(_match_value(pat, 6)[0])
 
+    def test_singleton_literals_match_only_themselves(self):
+        subjects = (1, 0, 1.0, 0.0, True, False, None)
+        for lit in (True, False, None):
+            pat = parse_case_pattern(_delim(lit))
+            hits = [s for s in subjects if _match_value(pat, s)[0]]
+            self.assertEqual(len(hits), 1, lit)
+            self.assertIs(hits[0], lit)
+
+    def test_int_literal_still_matches_true(self):
+        pat = parse_case_pattern(_delim(1))
+        self.assertTrue(_match_value(pat, True)[0])
+        self.assertTrue(_match_value(pat, 1.0)[0])
+
     def test_typed_hit_and_miss(self):
         pat = parse_case_pattern(
             _delim(symbol("x"), keyword("::"), symbol("int")))

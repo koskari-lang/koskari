@@ -61,12 +61,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(starmap_resume_after_result_kind, "starmap-step",
-                starmap_resume_after_result, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(starmap_resume_invoke_kind, "starmap-step",
-                starmap_resume_invoke, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(starmap_resume_start_fetch_kind, "starmap-step",
-                starmap_resume_start_fetch, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND(starmap_resume_after_result_kind, "starmap-step",
+    starmap_resume_after_result);
+KOS_TRANSFORM_STEP_KIND_AS_IS(starmap_resume_invoke_kind, "starmap-step",
+    starmap_resume_invoke);
+KOS_TRANSFORM_STEP_KIND_AS_IS(starmap_resume_start_fetch_kind, "starmap-step",
+    starmap_resume_start_fetch);
 
 
 /**

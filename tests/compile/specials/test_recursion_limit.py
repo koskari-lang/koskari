@@ -12,11 +12,16 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the per-context frame recursion limit.
+Tests for the frame depth limit.
 
-Frame depth is bounded by sys.getrecursionlimit(), read when the
-evaluator is entered. Exceeding it raises RecursionError into the
-calling frame as an ordinary exception.
+Koskari frames live on the heap, so a Koskari-to-Koskari call takes no
+C stack and no Python frame object, and sys.getrecursionlimit() does not
+count it. Frame depth is bounded by a process-wide limit, 10000 by
+default and settable up to 65535, the width of the depth a frame
+records, as a guard against runaway memory; exceeding it raises
+RecursionError into the calling frame as an ordinary exception. Where
+Koskari and Python call into each other, Python's own recursion limit
+applies.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -25,11 +30,17 @@ calling frame as an ordinary exception.
 
 import sys
 
+from koskari.lib import (
+    demand, get_frame_depth_limit, set_frame_depth_limit)
+
 from . import SpecialsTestCase
 
 import pytest
 
 pytestmark = pytest.mark.phase_specials
+
+
+FRAME_DEPTH_MAX = 65535
 
 
 DEEP = """
@@ -43,39 +54,153 @@ DEEP = """
 """
 
 
+DOWN = """
+(begin
+  (var down
+    (lambda [n]
+      (cond [(<= n 0) 0] [True (+ 1 (down (- n 1)))])))
+  (down depth))
+"""
+
+
+TAIL = """
+(begin
+  (var loop
+    (lambda [n acc]
+      (cond [(<= n 0) acc] [True (loop (- n 1) (+ acc 1))])))
+  (loop depth 0))
+"""
+
+
+MUTUAL = """
+(begin
+  (var mut nil)
+  (setq mut
+    (call demand
+      (lambda [n]
+        (begin
+          (call record n)
+          (cond
+            [(<= n 0) 0]
+            [True (+ 1 (call bounce mut (- n 1)))])))))
+  (call mut depth))
+"""
+
+
+def bounce(f, n):
+    """
+    Call f from a Python frame object
+    """
+
+    return f(n)
+
+
 class TestRecursionLimit(SpecialsTestCase):
 
     async def test_deep_recursion_raises(self):
         """
-        non-tail recursion past the limit raises RecursionError at the
-        Python boundary and stops within the limit
+        non-tail recursion past the frame depth limit raises
+        RecursionError naming the frame depth, and stops just short of
+        the limit
         """
 
+        limit = get_frame_depth_limit()
         seen = []
         expr, mod = self.compile_expr(DEEP, record=seen.append)
-        with self.assertRaises(RecursionError):
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
             await expr()
-        self.assertLessEqual(seen[-1], sys.getrecursionlimit())
-        self.assertGreater(seen[-1], sys.getrecursionlimit() - 20)
+        self.assertLessEqual(seen[-1], limit)
+        self.assertGreater(seen[-1], limit - 20)
 
 
-    async def test_limit_follows_sys_setrecursionlimit(self):
+    async def test_depth_past_python_limit_at_default(self):
         """
-        the depth reached tracks the Python recursion limit in force
-        when evaluation starts
+        a Koskari recursion five times deeper than the default Python
+        recursion limit completes; the Python limit does not count
+        Koskari frames
         """
 
-        seen = []
-        expr, mod = self.compile_expr(DEEP, record=seen.append)
-        saved = sys.getrecursionlimit()
-        sys.setrecursionlimit(500)
+        self.assertLess(sys.getrecursionlimit(), 5000)
+        expr, mod = self.compile_expr(DOWN, depth=5000)
+        self.assertEqual(await expr(), 5000)
+
+
+    async def test_depth_just_under_limit(self):
+        depth = get_frame_depth_limit() - 100
+        expr, mod = self.compile_expr(DOWN, depth=depth)
+        self.assertEqual(await expr(), depth)
+
+
+    async def test_depth_past_limit_raises(self):
+        depth = get_frame_depth_limit() + 100
+        expr, mod = self.compile_expr(DOWN, depth=depth)
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
+            await expr()
+
+
+    async def test_depth_at_cap(self):
+        """
+        with the limit raised to the 65535 cap, a recursion just under
+        the cap completes and one past it raises
+        """
+
+        saved = get_frame_depth_limit()
+        set_frame_depth_limit(FRAME_DEPTH_MAX)
         try:
-            with self.assertRaises(RecursionError):
+            expr, mod = self.compile_expr(DOWN, depth=FRAME_DEPTH_MAX - 500)
+            self.assertEqual(await expr(), FRAME_DEPTH_MAX - 500)
+
+            expr, mod = self.compile_expr(DOWN, depth=FRAME_DEPTH_MAX + 500)
+            with self.assertRaisesRegex(RecursionError, "frame depth"):
                 await expr()
         finally:
+            set_frame_depth_limit(saved)
+
+
+    async def test_tail_loop_adds_no_depth(self):
+        expr, mod = self.compile_expr(TAIL, depth=1000000)
+        self.assertEqual(await expr(), 1000000)
+
+
+    async def test_limit_ignores_sys_setrecursionlimit(self):
+        """
+        a Python recursion limit lowered before evaluation starts does
+        not bound Koskari frame depth
+        """
+
+        expr, mod = self.compile_expr(DOWN, depth=500)
+        saved = sys.getrecursionlimit()
+        sys.setrecursionlimit(200)
+        try:
+            result = await expr()
+        finally:
             sys.setrecursionlimit(saved)
-        self.assertLessEqual(seen[-1], 500)
-        self.assertGreater(seen[-1], 480)
+        self.assertEqual(result, 500)
+
+
+    async def test_mutual_recursion_meets_python_limit(self):
+        """
+        a recursion that passes through a Python frame object on each
+        round trip is bounded by Python's recursion limit, below the
+        number of round trips that limit allows
+        """
+
+        limit = sys.getrecursionlimit()
+
+        seen = []
+        expr, mod = self.compile_expr(
+            MUTUAL, depth=50, record=seen.append,
+            demand=demand, bounce=bounce)
+        self.assertEqual(await expr(), 50)
+
+        seen = []
+        expr, mod = self.compile_expr(
+            MUTUAL, depth=limit, record=seen.append,
+            demand=demand, bounce=bounce)
+        with self.assertRaises(RecursionError):
+            await expr()
+        self.assertGreater(len(seen), 1)
+        self.assertLess(len(seen), limit)
 
 
     async def test_recursion_error_is_catchable(self):

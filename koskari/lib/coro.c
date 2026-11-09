@@ -111,6 +111,8 @@ static PyObject *coroutine_new_bound(PyObject *fn, KosDynFrame *frame) {
   coro->param_refs = kos_param_cells_possible()
       ? KosContext_Snapshot(kos_tls_current()) : NULL;
   coro->fn = Py_XNewRef(fn);
+  coro->name = fn ? NULL
+      : Py_NewRef(KosCode_NAME(KosDynFrame_CODE(frame)));
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
@@ -237,6 +239,35 @@ static void coroutine_mark_demand(KosCoroutine *coro) {
 
 
 /**
+   A coroutine dropped with its bound call never entered warns as
+   CPython's does: RuntimeWarning "coroutine '<qualname>' was never
+   awaited", named by the function's __qualname__, or by the code's
+   name for an Expression. A warning that raises (an "error" filter)
+   is reported as unraisable; the pending exception is kept.
+*/
+static void coroutine_warn_unawaited(KosCoroutine *coro) {
+
+  PyObject *typ, *val, *tb;
+  PyObject *name;
+
+  PyErr_Fetch(&typ, &val, &tb);
+
+  if (coro->fn)
+    name = KosFunction_GetQualname(coro->fn);
+  else
+    name = Py_NewRef(coro->name);
+
+  if (! name ||
+      PyErr_WarnFormat(PyExc_RuntimeWarning, 1,
+                       "coroutine '%S' was never awaited", name) < 0)
+    PyErr_WriteUnraisable((PyObject *) coro);
+
+  Py_XDECREF(name);
+  PyErr_Restore(typ, val, tb);
+}
+
+
+/**
    Finalizer: a coroutine dropped while suspended is closed before its
    context is torn down, the way CPython closes an abandoned coroutine,
    so its finally blocks, with exits, and wind after thunks run.
@@ -244,10 +275,16 @@ static void coroutine_mark_demand(KosCoroutine *coro) {
    propagates back out is swallowed here; anything other than the close
    itself is reported as unraisable. The forced free in dealloc follows
    regardless of how the close went. A coroutine never started has
-   entered nothing, and a finished one has nothing left to unwind.
+   entered nothing and only warns; a finished one has nothing left to
+   unwind.
 */
 static void coroutine_finalize(PyObject *self) {
   KosCoroutine *const coro = (KosCoroutine *) self;
+
+  if (coro->state == KOS_CORO_NEW && coro->frame) {
+    coroutine_warn_unawaited(coro);
+    return;
+  }
 
   if (! coro->ctx || coro->in_send || ! coro_str_close)
     return;
@@ -271,40 +308,56 @@ static void coroutine_finalize(PyObject *self) {
 static void coroutine_dealloc(PyObject *self) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
+  PyObject *fn;
 
-  /* run the finalizer first; it may resurrect the coroutine, in which
-     case the dealloc is abandoned here and happens on the next drop.
-     Without a context (never started, or done) the finalizer has
-     nothing to close, so the call is skipped. */
-  if (coro->ctx && PyObject_CallFinalizerFromDealloc(self) < 0)
-    return;
-
+  /* A chain of coroutines, each bound frame holding the previous one,
+     releases one coroutine per link: a frame returning to its
+     function's cache drops its locals in place, and a suspended link's
+     close frees the next link from inside the finalizer. The trashcan
+     wraps the finalizer too, as CPython's subtype_dealloc does, so
+     that recursion is deferred off the C stack. It needs the
+     coroutine untracked. */
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, coroutine_dealloc);
+
+  /* Run the finalizer first. It may resurrect the coroutine, in which
+     case the dealloc is abandoned here and happens on the next drop;
+     a resurrected object must be tracked, so the finalizer runs
+     tracked. A started coroutine has a context to close; one never
+     started still holds its bound call, and warns. With neither (done)
+     the finalizer has nothing to do, so the call is skipped. */
+  if (coro->ctx || coro->frame) {
+    PyObject_GC_Track(self);
+    if (PyObject_CallFinalizerFromDealloc(self) < 0)
+      goto done;
+    PyObject_GC_UnTrack(self);
+  }
 
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
+  Py_CLEAR(coro->name);
 
   /* A function's coroutine is stored on the function when its slot is
      free: untracked, every field clear, refcount zero, the next call
      revives it. The function's own release frees a stored one, so the
      reference dropped here may free both at once. */
-  {
-    PyObject *fn = coro->fn;
-
-    coro->fn = NULL;
-    if (fn) {
-      if (! KosFunction_DEAD_RECORD(fn)) {
-        KosFunction_DEAD_RECORD(fn) = self;
-        KOS_TRACE_FL_RETURN("coroutine", 0);
-        Py_DECREF(fn);
-        return;
-      }
-      KOS_TRACE_FL_RETURN("coroutine", 1);
+  fn = coro->fn;
+  coro->fn = NULL;
+  if (fn) {
+    if (! KosFunction_DEAD_RECORD(fn)) {
+      KosFunction_DEAD_RECORD(fn) = self;
+      KOS_TRACE_FL_RETURN("coroutine", 0);
       Py_DECREF(fn);
+      goto done;
     }
+    KOS_TRACE_FL_RETURN("coroutine", 1);
+    Py_DECREF(fn);
   }
 
   Py_TYPE(self)->tp_free(self);
+
+done:
+  Py_TRASHCAN_END;
 }
 
 
@@ -851,6 +904,45 @@ static PyObject *coroutine_repr(PyObject *self) {
 }
 
 
+/**
+   __name__: the function's __name__, or the code's name for an
+   Expression.
+*/
+static PyObject *coroutine_get_name(PyObject *self, void *closure) {
+
+  KosCoroutine *const coro = (KosCoroutine *) self;
+
+  (void) closure;
+
+  if (coro->fn)
+    return KosFunction_GetName(coro->fn);
+  return Py_NewRef(coro->name);
+}
+
+
+/**
+   __qualname__: the function's __qualname__, or the code's name for an
+   Expression.
+*/
+static PyObject *coroutine_get_qualname(PyObject *self, void *closure) {
+
+  KosCoroutine *const coro = (KosCoroutine *) self;
+
+  (void) closure;
+
+  if (coro->fn)
+    return KosFunction_GetQualname(coro->fn);
+  return Py_NewRef(coro->name);
+}
+
+
+static PyGetSetDef coroutine_getsets[] = {
+  { "__name__", (getter) coroutine_get_name, NULL, NULL, NULL },
+  { "__qualname__", (getter) coroutine_get_qualname, NULL, NULL, NULL },
+  { NULL, },
+};
+
+
 PyTypeObject KosCoroutineType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -868,6 +960,7 @@ PyTypeObject KosCoroutineType = {
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = coroutine_iternext,
   .tp_methods = coroutine_methods,
+  .tp_getset = coroutine_getsets,
 };
 
 

@@ -63,12 +63,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(accumulate_resume_fetch_kind, "accumulate-step",
-                accumulate_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(accumulate_resume_fold_kind, "accumulate-step",
-                accumulate_resume_fold, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step",
-                accumulate_resume_result, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(accumulate_resume_fetch_kind, "accumulate-step",
+    accumulate_resume_fetch);
+KOS_TRANSFORM_STEP_KIND_AS_IS(accumulate_resume_fold_kind, "accumulate-step",
+    accumulate_resume_fold);
+KOS_TRANSFORM_STEP_KIND(accumulate_resume_result_kind, "accumulate-step",
+    accumulate_resume_result);
 
 
 /**

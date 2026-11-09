@@ -404,7 +404,9 @@ counting from **`START`**; a reverse iterator.
 ```
 
 `map`, `filter`, and `zip` are lazy iterators that accept Koskari
-functions; see [map and filter](map-and-filter.md). `py-map`,
+functions; see [map and filter](map-and-filter.md). `zip` takes
+`strict: True` to raise `ValueError` when its sources do not all end
+together, as Python's does. `py-map`,
 `py-filter`, and `py-zip` are Python's.
 
 ## Conversion and display

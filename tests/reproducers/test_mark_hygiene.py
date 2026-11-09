@@ -773,6 +773,57 @@ class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["first-wins"], 3)
 
 
+class TestNamedLambdaInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A named lambda or named let a template writes binds itself under
+    the template's own name: its self-calls recurse, and the use site's
+    binding of the same spelling is not captured
+    """
+
+    SRC = """
+(define-syntax retrying-lambda
+  (syntax-rules []
+    [(retrying-lambda expr)
+     (lambda attempt [n] (if (< n 3) (attempt (+ n 1)) #(n expr)))]))
+
+(define-syntax retrying-let
+  (syntax-rules []
+    [(retrying-let expr)
+     (let attempt [[n 0]] (if (< n 3) (attempt (+ n 1)) #(n expr)))]))
+
+(define-syntax retrying-inner
+  (syntax-rules []
+    [(retrying-inner expr)
+     (lambda attempt [n]
+       ((lambda [] (if (< n 3) (attempt (+ n 1)) #(n expr)))))]))
+
+(var attempt (lambda [n] "caller"))
+(var by-lambda ((retrying-lambda "done") 0))
+(var by-let (retrying-let "done"))
+(var by-inner ((retrying-inner "done") 0))
+(var use-site ((retrying-lambda (attempt 9)) 0))
+"""
+
+    async def test_named_lambda_recurses(self):
+        ns = await load("mh_named_lambda", self.SRC)
+        self.assertEqual(ns["by-lambda"], (3, "done"))
+
+
+    async def test_named_let_recurses(self):
+        ns = await load("mh_named_let", self.SRC)
+        self.assertEqual(ns["by-let"], (3, "done"))
+
+
+    async def test_inner_lambda_self_call_recurses(self):
+        ns = await load("mh_named_inner", self.SRC)
+        self.assertEqual(ns["by-inner"], (3, "done"))
+
+
+    async def test_use_site_binding_is_not_captured(self):
+        ns = await load("mh_named_use_site", self.SRC)
+        self.assertEqual(ns["use-site"], (3, "caller"))
+
+
 class TestParameterNameInTemplate(unittest.IsolatedAsyncioTestCase):
     """
     A parameter name is a label addressed by its spelling: a template

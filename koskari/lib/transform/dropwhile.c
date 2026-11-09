@@ -59,12 +59,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(dropwhile_resume_fetch_kind, "dropwhile-step",
-                dropwhile_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(dropwhile_resume_invoke_kind, "dropwhile-step",
-                dropwhile_resume_invoke, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(dropwhile_resume_verdict_kind, "dropwhile-step",
-                dropwhile_resume_verdict, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(dropwhile_resume_fetch_kind, "dropwhile-step",
+    dropwhile_resume_fetch);
+KOS_TRANSFORM_STEP_KIND_AS_IS(dropwhile_resume_invoke_kind, "dropwhile-step",
+    dropwhile_resume_invoke);
+KOS_TRANSFORM_STEP_KIND(dropwhile_resume_verdict_kind, "dropwhile-step",
+    dropwhile_resume_verdict);
 
 
 /**

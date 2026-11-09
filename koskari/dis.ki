@@ -520,9 +520,14 @@ def dis [x file: None]:
   var name code.name
   var filename code.filename
   var yields code.yields
+  var self_slot code.self_slot
   out.write f"KosCode {(repr name)}\n"
   out.write f"  filename: {(repr filename)}\n"
   out.write f"  yields: {yields}\n"
+  if (< self_slot 0):
+    out.write "  self-slot: (none)\n"
+  else:
+    out.write f"  self-slot: {self_slot} ({local_syms[self_slot]})\n"
   out.write "\n"
 
   out.write f"Constant pool ({(len cpool)}):\n"

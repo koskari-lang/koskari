@@ -100,9 +100,9 @@ static int iterate_acquire_context(
    provider's busy check (ki_busy) runs before the drive begins: the
    context may be the provider's durable one, shared with a drive in
    flight through another adapter, and beginning a drive on it would
-   replace that drive's breaker, recursion limit and terminal flag,
-   and ending one would flush registers into its frame and move its
-   staged delivery.
+   replace that drive's breaker and terminal flag, and ending one would flush registers into its frame and move its
+   staged delivery. method names the Python method driving, for the
+   refusal's wording, or is NULL.
 */
 static KosIterStepResult iterate_suite_step(
     KosContext **ctx_slot,
@@ -110,12 +110,13 @@ static KosIterStepResult iterate_suite_step(
     KosIterSlots *islots,
     PyObject *provider,
     PyObject *send_val,
+    const char *method,
     PyObject **out) {
 
   if (iterate_acquire_context(islots, provider, ctx_slot, ctx_owned) < 0)
     return KOS_ITER_ERROR;
 
-  if (islots->ki_busy && islots->ki_busy(provider))
+  if (islots->ki_busy && islots->ki_busy(provider, method))
     return KOS_ITER_ERROR;
 
   {
@@ -132,7 +133,7 @@ static KosIterStepResult iterate_suite_step(
 /**
    Throw into the provider under a drive on the adapter's context, with
    the busy check ahead of the drive for the reason iterate_suite_step
-   gives
+   gives, worded for method when it is given
 */
 static KosIterStepResult iterate_suite_throw(
     KosContext **ctx_slot,
@@ -141,12 +142,13 @@ static KosIterStepResult iterate_suite_throw(
     PyObject *provider,
     PyObject *throw_typ,
     PyObject *throw_exc,
+    const char *method,
     PyObject **out) {
 
   if (iterate_acquire_context(islots, provider, ctx_slot, ctx_owned) < 0)
     return KOS_ITER_ERROR;
 
-  if (islots->ki_busy && islots->ki_busy(provider))
+  if (islots->ki_busy && islots->ki_busy(provider, method))
     return KOS_ITER_ERROR;
 
   {
@@ -220,9 +222,10 @@ typedef struct {
                              steps, not the provider's durable one */
   uint8_t is_throw;       /* first drive delivers the throw pair */
   uint8_t closing;        /* aclose result mapping at terminal outcomes */
-  uint8_t awaiting;       /* mid-step await in flight: this stepper owns
-                             the provider's busy mark and resumes by
-                             driving ctx->py_await_iter */
+  uint8_t awaiting;       /* mid-step await in flight: this stepper
+                             resumes it by driving ctx->py_await_iter;
+                             dropped, it leaves the step and the busy
+                             mark to the provider */
   uint8_t drive_mode;     /* in-flight work on ctx: 0 provider-flavor
                              (yield is the element, return is
                              exhaustion), 1 value graft (the frame
@@ -242,55 +245,78 @@ static PyTypeObject KosIterStepperType;
 
 
 /**
-   Mid-await abandonment: the live chain sits on the stepper's context,
-   so the provider's own close cannot reach it. Drive GeneratorExit
-   through that context so finally/with cleanup runs, exception-fenced
-   (callable from dealloc mid-unwind); the drive's own outcome is
-   swallowed, and an error from closing the pending await iterator is
-   reported as unraisable.
-   Marks the provider finished-exhausted and clears the awaiting mark.
+   End a mid-await step without running anything of it: mark the
+   provider finished-exhausted, clear the awaiting mark, and free what
+   is left of the chain on the stepper's context, memory only, as a
+   context's clear frees it. No eval.
 */
-static void stepper_abandon_drive(KosIterStepper *st) {
+static void stepper_spend(KosIterStepper *st) {
 
-  PyObject *fence_typ, *fence_val, *fence_tb;
   KosIterSlots *islots;
-
-  PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
-
-  {
-    PyObject *it = KosContext_PY_AWAIT_ITER(st->ctx);
-    if (it) {
-      kos_iter_close(it);
-      Py_CLEAR(KosContext_PY_AWAIT_ITER(st->ctx));
-    }
-  }
-
-  /* A context whose chain is gone has nothing to close: its clear or
-     recycle released the chain already, and the stepper is being
-     dropped from inside that release. */
-  if (KosContext_DYN_TOP(st->ctx)) {
-    PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
-    if (exc) {
-      KosOpResult res = koskari_eval(st->ctx, NULL, NULL, PyExc_GeneratorExit,
-                                     exc);
-      Py_DECREF(exc);
-      Py_XDECREF(res.val);
-    }
-    PyErr_Clear();
-  }
 
   if (st->provider && KosIter_CheckSlots(st->provider, &islots))
     islots->ki_finish(st->provider, 1);
   st->awaiting = 0;
 
-  PyErr_Restore(fence_typ, fence_val, fence_tb);
+  /* the finish recycles a durable context; an owned one, or one whose
+     recycle was refused, still holds what the step left */
+  KosContext_ReleaseChain(st->ctx);
 }
 
 
+/**
+   Mid-await abandonment: the live chain sits on the stepper's context,
+   so the provider's own close cannot reach it. Close the chain through
+   that context (kos_close_drive) so finally/with cleanup runs, then
+   spend the step (stepper_spend). An explicit close of the stepper
+   comes here (CPython 3.13 asend.close semantics); a drop does not.
+   The error the close owes is held in the out-params, for the caller
+   to raise; none is left set.
+*/
+static void stepper_abandon_drive(
+    KosIterStepper *st,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb) {
+
+  *typ = NULL;
+  *val = NULL;
+  *tb = NULL;
+
+  /* A context whose chain is gone has nothing to close: its recycle
+     released the chain already, and the pending awaitable goes with
+     the context. One the collector cleared lost the chain without its
+     cleanup, which the close drive refuses and reports. */
+  if (KosContext_DYN_TOP(st->ctx)
+      || (KosContext_FLAGS(st->ctx) & KOS_CTX_CLEARED))
+    (void) kos_close_drive(st->ctx, typ, val, tb);
+
+  stepper_spend(st);
+}
+
+
+/**
+   Drop what the stepper holds; the clear, the dealloc and a finished
+   step all come here, and nothing here runs the provider. A stepper
+   dropped mid-await releases only its claim, as CPython's asend
+   awaitable does: the step stays in flight on the provider's durable
+   context, the provider still busy, and the provider's own finalizer
+   closes it. The context goes before the provider, so a provider
+   whose last reference this is finds no claim of ours on its context
+   when its finalizer runs. Only a context of the stepper's own, which
+   dies with it, has its step spent here (stepper_spend),
+   exception-fenced: nothing else could reach that chain.
+*/
 static void stepper_release_state(KosIterStepper *st) {
 
-  if (st->awaiting && st->ctx)
-    stepper_abandon_drive(st);
+  if (st->awaiting && st->ctx && st->ctx_owned) {
+    PyObject *fence_typ, *fence_val, *fence_tb;
+
+    PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+    stepper_spend(st);
+    PyErr_Restore(fence_typ, fence_val, fence_tb);
+  }
+  st->awaiting = 0;
 
   Py_CLEAR(st->ctx);
   st->ctx_owned = 0;
@@ -436,9 +462,11 @@ static int stepper_resume_await(
 
     /* the awaitable runs on the provider's behalf: its context is the
        active one for the step */
+    Py_INCREF(it);
     kos_domain_push_scope(st->ctx);
     r = kos_iter_send(it, send_val ? send_val : Py_None, &step);
     kos_domain_pop_scope(st->ctx);
+    Py_DECREF(it);
     Py_XDECREF(send_val);
 
     if (r == PYGEN_NEXT) {
@@ -590,17 +618,22 @@ static PyObject *stepper_drive(
   if (! eval_pending) {
     PyObject *out = NULL;
     KosIterStepResult r;
+    /* the method a refusal answers, worded as CPython's: an asend
+       is refused as anext() is */
+    const char *method = st->closing ? "aclose"
+        : st->is_throw ? "athrow" : "anext";
 
     if (throw_exc && ! durable) {
       r = iterate_suite_throw(&st->ctx, &st->ctx_owned, islots,
-                              st->provider, throw_typ, throw_exc, &out);
+                              st->provider, throw_typ, throw_exc, method,
+                              &out);
       Py_CLEAR(throw_typ);
       Py_CLEAR(throw_exc);
     } else {
       /* A durable provider's throw pair rides the eval ingress below,
          delivered at the suspended point inside its chain. */
       r = iterate_suite_step(&st->ctx, &st->ctx_owned, islots,
-                             st->provider, send_val, &out);
+                             st->provider, send_val, method, &out);
     }
 
     switch (r) {
@@ -927,14 +960,24 @@ static PyObject *stepper_close(PyObject *self) {
   /* Close cascades are terminal (loop shutdown, task destruction, GC
      of an abandoned chain), so closing a step's awaitable closes the
      provider too -- CPython 3.13+ semantics, applied uniformly. A
-     stepper abandoned mid-await drives GeneratorExit through its context
-     (the live chain sits there); otherwise the provider's own close
+     stepper abandoned mid-await closes through its context (the live
+     chain sits there) and raises what the close owes to this caller,
+     once its state is released; otherwise the provider's own close
      runs its teardown (a provider another stepper is actively driving
      declines internally). */
   if (st->awaiting && st->ctx) {
-    stepper_abandon_drive(st);
+    PyObject *typ, *val, *tb;
 
-  } else if (st->provider) {
+    stepper_abandon_drive(st, &typ, &val, &tb);
+    stepper_release_state(st);
+    if (typ) {
+      PyErr_Restore(typ, val, tb);
+      return NULL;
+    }
+    Py_RETURN_NONE;
+  }
+
+  if (st->provider) {
     KosIterSlots *islots;
     if (KosIter_CheckSlots(st->provider, &islots)) {
       PyObject *ftyp, *fval, *ftb;
@@ -1084,10 +1127,13 @@ static KosEvaluatedTypeObject KosPyIterType;
 */
 static void pyiter_drop_state(KosPyIter *gen) {
 
-  Py_CLEAR(gen->provider);
-
+  /* the context before the provider: a chain left on it names the
+     provider through its GEN node and must go while the provider is
+     alive */
   Py_CLEAR(gen->ctx);
   gen->ctx_owned = 0;
+
+  Py_CLEAR(gen->provider);
 }
 
 
@@ -1105,11 +1151,13 @@ static void pyiter_release_state(KosPyIter *gen) {
       PyErr_Clear();
       PyErr_Restore(ftyp, fval, ftb);
     }
-    Py_CLEAR(gen->provider);
   }
 
+  /* the context before the provider, as in pyiter_drop_state */
   Py_CLEAR(gen->ctx);
   gen->ctx_owned = 0;
+
+  Py_CLEAR(gen->provider);
 }
 
 
@@ -1202,11 +1250,12 @@ static PyObject *pyiter_step_run(
 
     if (throw_exc && ! durable) {
       r = iterate_suite_throw(&gen->ctx, &gen->ctx_owned, islots,
-                              gen->provider, throw_typ, throw_exc, &out);
+                              gen->provider, throw_typ, throw_exc, NULL,
+                              &out);
     } else {
       /* A durable provider's throw pair rides the eval ingress below. */
       r = iterate_suite_step(&gen->ctx, &gen->ctx_owned, islots,
-                             gen->provider, send_val, &out);
+                             gen->provider, send_val, NULL, &out);
     }
 
     switch (r) {
@@ -1520,12 +1569,12 @@ static int pyiter_ki_close(PyObject *self) {
 }
 
 
-static int pyiter_ki_busy(PyObject *self) {
+static int pyiter_ki_busy(PyObject *self, const char *method) {
 
   KosPyIter *gen = (KosPyIter *) self;
 
   if (gen->provider && gen->islots->ki_busy)
-    return gen->islots->ki_busy(gen->provider);
+    return gen->islots->ki_busy(gen->provider, method);
   return 0;
 }
 

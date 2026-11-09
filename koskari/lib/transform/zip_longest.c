@@ -86,10 +86,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(zip_longest_resume_deliver_kind, "zip-longest-step",
-                zip_longest_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(zip_longest_resume_fetch_kind, "zip-longest-step",
-                zip_longest_resume_fetch, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(zip_longest_resume_deliver_kind,
+    "zip-longest-step", zip_longest_resume_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(zip_longest_resume_fetch_kind,
+    "zip-longest-step", zip_longest_resume_fetch);
 
 
 /**
@@ -213,9 +213,8 @@ static KosIterStepResult zip_longest_step_body(
         continue;
       }
 
-      switch (KosContext_NextOrDefer(ctx, &t->reqs[i],
-                                       &zip_longest_resume_fetch_kind, z,
-                                       &t->cached_frame, &element)) {
+      switch (kos_transform_next_or_defer(
+          ctx, t, &t->reqs[i], &zip_longest_resume_fetch_kind, &element)) {
         case KOS_IREQ_DELIVERED:
           PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
           continue;

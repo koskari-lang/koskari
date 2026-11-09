@@ -31,8 +31,8 @@ from koskari.lib import (
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import (
-    KIO_MAGIC, CodeFlags, KioHeader, PoolBuilder, PoolKind, SectionTag,
-    code_flags, encode_pool_record_value)
+    HEADER_SIZE, KIO_MAGIC, CodeFlags, KioHeader, PoolBuilder, PoolKind,
+    SectionTag, code_flags, encode_directory, encode_pool_record_value)
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -174,6 +174,44 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertFalse(loaded_plain.caches)
         self.assertTrue(loaded_sealed.protected)
         self.assertTrue(loaded_sealed.caches)
+
+    def test_code_self_slot_roundtrip(self):
+        """a body's self slot, or its absence, is stored and restored"""
+        rows = [['CONST', 1], ['RETURN', 1]]
+        nspec = NamespaceSpec(None, ('a', 'f'), ())
+        instr = build_code(rows).soften()
+        selfed = Code(nspec, instr, 'f', self_slot=1)
+        plain = Code(nspec, instr, 'g')
+        self.assertEqual(selfed.self_slot, 1)
+        self.assertEqual(plain.self_slot, -1)
+        buf = io.BytesIO()
+        dump_kio(buf, [selfed, plain])
+        buf.seek(0)
+        loaded_selfed, loaded_plain = load_kio(buf).codes
+        self.assertEqual(loaded_selfed.self_slot, 1)
+        self.assertEqual(loaded_plain.self_slot, -1)
+
+    def test_code_self_slot_out_of_range_rejected(self):
+        """a self slot names one of the code's locals or none"""
+        nspec = NamespaceSpec(None, ('a',), ())
+        instr = build_code([['CONST', 1], ['RETURN', 1]]).soften()
+        for bad in (1, -2):
+            with self.assertRaises(ValueError):
+                Code(nspec, instr, 'f', self_slot=bad)
+
+    def test_function_spec_self_slot_roundtrip(self):
+        """a nested function body keeps its self slot"""
+        nspec = NamespaceSpec(None, ('f',), ())
+        instr = build_code([['CONST', 7], ['RETURN', 1]]).soften()
+        inner = Code(nspec, instr, 'f', self_slot=0)
+        fspec = FunctionSpec('f', FormalsSpec(), inner)
+        code, _ = build_expr([
+            ['CONST', fspec],
+            ['RETURN', 1],
+        ], name='outer')
+        loaded = self._const_roundtrip_code(code)
+        self.assertIsInstance(loaded, FunctionSpec)
+        self.assertEqual(loaded.code.self_slot, 0)
 
     def test_function_spec_flags_roundtrip(self):
         """a nested function body keeps its protect and cache settings"""
@@ -610,6 +648,61 @@ class TestKioMalformed(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             load_kio(io.BytesIO(data))
         self.assertIn('abi', str(ctx.exception).lower())
+
+
+    def _image(self, pool, codep=struct.pack('<I', 0), meta=b''):
+        """
+        A .kio image holding the given POOL, CODE, and META section bytes
+        """
+
+        body = bytearray()
+        off = HEADER_SIZE
+        entries = []
+        for tag, data in ((SectionTag.POOL, pool), (SectionTag.CODE, codep),
+                          (SectionTag.META, meta)):
+            entries.append((tag, off, len(data)))
+            body += data
+            off += len(data)
+        header = KioHeader.default()
+        header.section_dir_offset = off
+        header.section_dir_count = 3
+        return header.to_bytes() + bytes(body) + encode_directory(entries)
+
+
+    def test_huge_arity_raises_value_error(self):
+        data = self._image(struct.pack('<IBI', 1, PoolKind.TUPLE, 0x40000000))
+        self.assertEqual(len(data), 113)
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(data)
+
+
+    def test_string_past_its_section_raises_value_error(self):
+        spec = NamespaceSpec(None, (), ())
+        code = Code(spec, [[OpCode.CONST, "abc"], [OpCode.RETURN, 1]], "t")
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        data = bytearray(buf.getvalue())
+        _header, sec = KioFile.validate(bytes(data))
+        poff, plen = sec[SectionTag.POOL]
+        pos = data.index(b"abc", poff, poff + plen)
+        # claim 8 bytes where 3 are stored; 5 lie past the POOL end
+        struct.pack_into('<I', data, pos - 4, 8)
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(bytes(data))
+
+
+    def test_section_with_trailing_bytes_raises_value_error(self):
+        data = self._image(struct.pack('<IB', 1, PoolKind.NIL) + b'\x00')
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(data)
+
+
+    def test_arity_past_its_section_raises_value_error(self):
+        # the second index would fall on the CODE section's count word
+        pool = struct.pack('<IB', 2, PoolKind.NIL) \
+            + struct.pack('<BII', PoolKind.TUPLE, 2, 0)
+        with self.assertRaises(ValueError):
+            KioFile.from_bytes(self._image(pool))
 
 
 # The end.

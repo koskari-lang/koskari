@@ -150,8 +150,10 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         coro = mod["add"](arg, 2)
         cycle = [coro]
         cycle.append(cycle)
-        del arg, coro, cycle
-        gc.collect()
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'add' was never awaited$"):
+            del arg, coro, cycle
+            gc.collect()
         self.assertIsNone(ref())
 
     async def test_binding_errors_surface_when_the_defer_is_made(self):
@@ -221,16 +223,20 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         count_down = mod["count_down"]
         limit = sys.getrecursionlimit()
         held = [count_down(1) for _ in range(8)]
-        del held
-        gc.collect()
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'count_down' was never awaited$"):
+            del held
+            gc.collect()
         self.assertEqual(await count_down(limit - 2), limit - 2)
 
     async def test_unstarted_coroutines_dropped_then_called_again(self):
         mod = await self.load()
         mix = mod["mix"]
         held = [mix(i, 3) for i in range(12)]
-        del held
-        gc.collect()
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'mix' was never awaited$"):
+            del held
+            gc.collect()
         self.assertEqual(await mix(4, 5), 129)
 
     async def test_koskari_await_of_python_made_coroutines(self):

@@ -22,7 +22,8 @@ import pytest
 
 from koskari.lib import cons, demand, gensym, keyword, nil, symbol
 from koskari.matcher import (
-    CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, parse_explicit_rule_pattern)
+    CAPTURE, CLASS, FORM, LITERAL, MATCH, REPEAT, REST,
+    parse_explicit_rule_pattern)
 from koskari.matcher.heads import parse_matcher
 from koskari.types import build_proper
 
@@ -93,6 +94,41 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         r = demand(m)((arg,))
         self.assertIsNotNone(r)
         self.assertIs(r["v"], arg)
+
+
+    def test_anonymous_registered_head(self):
+        """
+        (LIST (SYMBOL k)) has no slot name and is still the LIST matcher,
+        not an inline group headed by the literal LIST
+        """
+
+        form = build_proper(
+            symbol("LIST"), build_proper(symbol("SYMBOL"), symbol("k")))
+        p = parse_explicit_rule_pattern(form)
+        self.assertIsInstance(p, FORM)
+        m = MATCH(p).build()
+        r = demand(m)((build_proper(symbol("a")),))
+        self.assertIsNotNone(r)
+        self.assertIs(r["k"].datum, symbol("a"))
+        self.assertIsNone(demand(m)((symbol("LIST"), symbol("a"))))
+
+
+    def test_unregistered_head_is_inline_group(self):
+        """
+        (foo (VALUE x)) with foo not a registered head is a MATCH of the
+        literal foo and the inline cells
+        """
+
+        foo = symbol("foo")
+        form = build_proper(foo, build_proper(symbol("VALUE"), symbol("x")))
+        p = parse_explicit_rule_pattern(form)
+        self.assertIsInstance(p, MATCH)
+        self.assertIsInstance(p._children[0], LITERAL)
+        self.assertIs(p._children[0]._value, foo)
+        m = p.build()
+        r = demand(m)((foo, 1))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["x"], 1)
 
 
     def test_ellipsis_rejected(self):

@@ -21,6 +21,7 @@ Importer path for precompiled .kio modules.
 import importlib.util
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -31,7 +32,8 @@ import pytest
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
 from koskari.lib import (
     FormalsSpec, FunctionSpec, build_flags, cons, demand_call, nil)
-from koskari.serialize.codex import KioFile
+from koskari.serialize.codex import (
+    HEADER_SIZE, KioFile, KioHeader, PoolKind, SectionTag, encode_directory)
 from koskari.serialize.incremental import compile_ki_file_to_kio
 from tests import needs_processes
 
@@ -622,6 +624,34 @@ class TestKioImporterParity(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         loader.exec_module_demand(module)
         self.assertEqual(42, module.parity_answer)
+
+
+    def test_corrupt_kio_import_raises_value_error(self):
+        """
+        Importing a .kio whose tuple arity overruns its POOL section
+        raises ValueError and leaves no module behind
+        """
+
+        pool = struct.pack('<IBI', 1, PoolKind.TUPLE, 0x40000000)
+        codep = struct.pack('<I', 0)
+        code_off = HEADER_SIZE + len(pool)
+        dir_off = code_off + len(codep)
+        entries = [
+            (SectionTag.POOL, HEADER_SIZE, len(pool)),
+            (SectionTag.CODE, code_off, len(codep)),
+            (SectionTag.META, dir_off, 0),
+        ]
+        header = KioHeader.default()
+        header.section_dir_offset = dir_off
+        header.section_dir_count = 3
+        path = os.path.join(self._tmpdir, 'kio_corrupt.kio')
+        with open(path, 'wb') as fh:
+            fh.write(header.to_bytes() + pool + codep
+                     + encode_directory(entries))
+
+        with self.assertRaises(ValueError):
+            importlib.import_module('kio_corrupt')
+        self.assertNotIn('kio_corrupt', sys.modules)
 
 
 # The end.

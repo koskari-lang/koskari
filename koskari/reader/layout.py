@@ -162,9 +162,10 @@ class LayoutReader(Reader):
             predicate=self._layout_colon_predicate)
 
         self._header_scan = False
-        # True while the first form of a layout line is read: the block
-        # quote prefixes open a block only from there
-        self._line_start = False
+        # the position of the first form of a layout line while that form
+        # is read, else None: a block quote prefix opens a block only when
+        # it stands at this position
+        self._line_start = None
 
 
     @property
@@ -424,13 +425,14 @@ class LayoutReader(Reader):
 
 
     @contextmanager
-    def _line_start_mode(self, first):
+    def _line_start_mode(self, position):
         """
-        Record whether the form being read is the first of its line, for
-        the block quote predicates
+        Record the position of the form being read when it is the first
+        of its line, or None when it is not, for the block quote
+        predicates
         """
         old = self._line_start
-        self._line_start = first
+        self._line_start = position
         try:
             yield
         finally:
@@ -472,11 +474,12 @@ class LayoutReader(Reader):
 
     def _layout_block_quote_predicate(self, stream, c, atom_prefix):
         """
-        Allow layout raw-block quote and quasiquote when the prefix is the
-        first element of its line, the line has a structural block colon
-        and the head does not open with a delimiter. Anywhere else on a
-        line the prefix quotes the next form, and the line's colon belongs
-        to the line's own head.
+        Allow layout raw-block quote and quasiquote when the prefix stands
+        at the start of the first element of its line, the line has a
+        structural block colon and the head does not open with a
+        delimiter. Anywhere else on a line, including inside that first
+        element, the prefix quotes the next form, and the line's colon
+        belongs to the line's own head.
 
         :param stream: source stream positioned after the prefix character
         :param c: the prefix character
@@ -485,7 +488,8 @@ class LayoutReader(Reader):
 
         if atom_prefix is not None:
             return True
-        if not self.layout_enabled or not self._line_start:
+        if not self.layout_enabled \
+                or stream.event_position != self._line_start:
             return False
         nxt = stream.peek(1)
         if not nxt or nxt in '([{':
@@ -523,8 +527,9 @@ class LayoutReader(Reader):
         """
         Allow layout raw-block quote-syntax and quasiquote-syntax, spelled
         ``#'`` and ``#```, under the same conditions as the plain block
-        quotes: a structural block colon on the line and a head that does
-        not open with a delimiter. ``#`` is a non-terminating macro
+        quotes: the ``#`` at the start of the first element of its line, a
+        structural block colon on the line and a head that does not open
+        with a delimiter. ``#`` is a non-terminating macro
         character, so this runs at dispatch only and never at an atom
         boundary.
 
@@ -533,7 +538,8 @@ class LayoutReader(Reader):
         :param atom_prefix: atom boundary context; always None here
         """
 
-        if not self.layout_enabled or not self._line_start:
+        if not self.layout_enabled \
+                or stream.event_position != self._line_start:
             return False
         nxt = stream.peek(2)
         if len(nxt) < 2 or nxt[0] not in "'`" or nxt[1] in '([{':
@@ -720,18 +726,21 @@ class LayoutReader(Reader):
         peek = stream.peek(1)
         if not peek or peek in '\n\r' or peek == ';':
             return LINE_END, stream.position(), None
-        with self._header_mode(), self._line_start_mode(first):
+        line_start = stream.position() if first else None
+        with self._header_mode(), self._line_start_mode(line_start):
             return super()._read(stream, vertical_ws=False)
 
 
     def _read_header_args(self, stream):
         """
-        Read header argument forms until a structural COLON or end-of-line.
+        Read header argument forms until a structural COLON or the end of
+        the logical line. Only horizontal whitespace is skipped between
+        forms, so a newline at delimiter depth 0 ends the header.
         """
 
         args = []
         while True:
-            stream.skip_whitespace()
+            self._skip_horizontal_whitespace(stream)
             if stream.dedented:
                 return args, False
 
@@ -758,7 +767,7 @@ class LayoutReader(Reader):
         :raises ReaderSyntaxError: on EOF or missing colon
         """
 
-        with self._header_mode(), self._line_start_mode(True):
+        with self._header_mode(), self._line_start_mode(None):
             event, pos, head = super()._read(stream)
 
         if event is COLON:

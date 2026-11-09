@@ -95,6 +95,11 @@ typedef struct {
      life so the dealloc can store the finished coroutine on it
      (KosFunction_DEAD_RECORD); NULL for an Expression. */
   PyObject *fn;
+
+  /* An Expression coroutine's name, its code's name, owned for the
+     coroutine's whole life; NULL for a function's coroutine, which
+     answers by fn. */
+  PyObject *name;
 } KosCoroutine;
 
 

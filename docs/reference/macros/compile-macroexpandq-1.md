@@ -2,9 +2,9 @@
 
 **Syntax:** `(macroexpandq-1 FORM)`, `(macroexpandq-1 FORM NS)`
 
-**Behaviour:** Expands to `(call macroexpand-1 (quote FORM) ...)`. The
-form is quoted for you, so it is written as surface syntax, and one
-expansion step is applied. With one argument the namespace is
+**Behaviour:** Returns `FORM` after one expansion step, as
+[`macroexpand-1`](compile-macroexpand-1.md) does. The form is quoted
+for you, so it is written as surface syntax. With one argument the namespace is
 `(globals)`; with two, the given namespace.
 
 **Examples:**

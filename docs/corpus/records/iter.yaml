@@ -984,7 +984,7 @@ stability: stable
 tags:
   - iter
   - reader
-notes: brackets and parens produce identical cons pairs; [1 2 3] and (1 2 3) are structurally equal
+notes: brackets and parens produce value-equal lists of different types (bracket-pair and pair); [1 2 3] and (1 2 3) are equal? but not the same type
 ---
 id: iter-reader-bracket-let-style-002
 feature: reader/bracket
@@ -1001,7 +1001,7 @@ stability: stable
 tags:
   - iter
   - reader
-notes: brackets inside quote produce cons pairs identical to parens; car of '[a b c] is a
+notes: brackets inside quote produce a bracket-pair list, value-equal to the paren list but a different type; car of '[a b c] is a
 ---
 id: iter-membership-in-basic-001
 feature: special/compile/in
@@ -1600,6 +1600,7 @@ source: "(len (list (py-filter (lambda [x] False) #[1 2 3])))"
 verify:
   read: "(len (list (py-filter (lambda [x] False) (#list 1 2 3))))"
   eval: "3"
+  warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
 references:
   - reference/runtime/map-and-filter.md
 stability: evolving
@@ -1634,6 +1635,7 @@ source: "(getattr (type (next (py-map (lambda [x] (* x 2)) #[1]))) \"__name__\")
 verify:
   read: "(getattr (type (next (py-map (lambda [x] (* x 2)) (#list 1)))) \"__name__\")"
   eval: '"Coroutine"'
+  warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
 references:
   - reference/runtime/map-and-filter.md
 stability: evolving

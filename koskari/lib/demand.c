@@ -223,6 +223,11 @@ static PyObject *demand_deny_suspended(PyObject *value) {
    same wrapper from its own callee finds the slot emptied by the outer
    install and allocates. A failed delivery propagates, with the frame
    set to return to the slot when the raise walk frees it.
+
+   The slot is not referenced: the Python caller's reference to the
+   wrapper keeps it alive, since the call's context is private and
+   released before KosDemand_CallVector returns. A frame that resumes
+   after its call returned would write into a freed wrapper.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
     KosContext *ctx,

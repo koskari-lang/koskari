@@ -24,7 +24,8 @@ convenience syntax to runtime call forms of builder functions.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...hygiene import extern_atoms, function_constant
+from ...hygiene import (
+    check_template_ellipses, extern_atoms, function_constant)
 from ...lib import FormalsSpec, OpCode, cons, keyword, nil, symbol
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL, VALUE,
@@ -45,12 +46,14 @@ _sym_quote_syntax = symbol("quote-syntax")
 def lower_rule(pattern, pattern_src):
     """
     Lower a rule pattern once: the names of its top-level slots in
-    declaration order, for the formals of a procedural arm, and the
-    tables and analysis its matcher function is built from
+    declaration order, for the formals of a procedural arm, the tables
+    and analysis its matcher function is built from, and the ellipsis
+    depth of each pattern variable, for checking a template
 
     :param pattern: the lowered pattern
     :param pattern_src: the pattern's source form, for errors
-    :return: ``(slot_names, tables, analysis)``
+    :return: ``(slot_names, tables, analysis, depths)``, depths keyed
+        by the variable's symbol as a template names it
     :raises SpecialError: when the pattern is one the core refuses
     """
 
@@ -60,7 +63,9 @@ def lower_rule(pattern, pattern_src):
         analysis = analyse(tables)
     except (TypeError, ValueError) as exc:
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
-    return builder.formal_slot_names, tables, analysis
+    depths = {symbol(name): depth
+              for name, depth in builder.ellipsis_depths.items()}
+    return builder.formal_slot_names, tables, analysis, depths
 
 
 def matcher_function(compiler, parent, tables, analysis, pattern_src, name):
@@ -102,7 +107,7 @@ def emit_build(compiler, called_by, builtin_name, name_str, rows):
     frag = compiler.fragment(called_by)
     frag.instruction(OpCode.CONST, name_str)
     for pattern, pattern_src, lowered, tail_form in rows:
-        _names, tables, analysis = lowered
+        tables, analysis = lowered[1:3]
         constant = matcher_function(
             compiler, frag, tables, analysis, pattern_src, name_str)
         frag.instruction(OpCode.CONST, constant)
@@ -213,9 +218,10 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         pattern = parse_rule_pattern(pattern_src, literals_expr, raw_rule)
+        lowered = lower_rule(pattern, pattern_src)
+        check_template_ellipses(template_expr, lowered[3])
         rows.append((
-            pattern, pattern_src, lower_rule(pattern, pattern_src),
-            quoted(template_expr)))
+            pattern, pattern_src, lowered, quoted(template_expr)))
 
     return emit_build(compiler, called_by, "build-syntax", str(namesym), rows)
 
@@ -246,6 +252,7 @@ def special_compile_bare_syntax(compiler, called_by, name, slot, template):
     ``extend-syntax`` to attach it to an existing syntax.
     """
 
+    check_template_ellipses(template.datum, {symbol(str(slot.datum)): 0})
     return cons(symbol("build-bare-syntax"),
                 str(name.datum), str(slot.datum),
                 cons(_sym_quote_syntax, template.datum, nil),
@@ -309,9 +316,10 @@ def special_compile_syntax_match(compiler, called_by, name, rules):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         pattern = match_rule_pattern(pattern_src, namesym)
+        lowered = lower_rule(pattern, pattern_src)
+        check_template_ellipses(template_expr, lowered[3])
         rows.append((
-            pattern, pattern_src, lower_rule(pattern, pattern_src),
-            quoted(template_expr)))
+            pattern, pattern_src, lowered, quoted(template_expr)))
 
     return emit_build(compiler, called_by, "build-syntax", str(namesym), rows)
 
@@ -469,24 +477,30 @@ def match_rule_pattern(pattern_src, namesym):
     own name lowers to a CALLEDBY capture under that name, a slot bound
     to the symbol the macro was invoked as, with the rest of the spine
     lowered cell by cell; any other pattern lowers whole through
-    parse_explicit_rule_pattern, a literal head included
+    parse_explicit_rule_pattern
 
     :param pattern_src: the rule's pattern datum
     :param namesym: the macro's name symbol
     :return: Pattern instance
+    :raises SpecialError: when a cell of the pattern does not lower
     """
 
-    if is_pair(pattern_src) and not is_nil(pattern_src) \
-       and is_proper(pattern_src):
-        head, rest = pattern_src
-        if is_symbol(head) and strip_mark(head) == strip_mark(namesym):
-            specs = [CALLEDBY(str(head))]
-            while not is_nil(rest):
-                cell, rest = rest
-                specs.append(parse_explicit_rule_pattern(cell, pattern_src))
-            return MATCH(*specs)
+    try:
+        if is_pair(pattern_src) and not is_nil(pattern_src) \
+           and is_proper(pattern_src):
+            head, rest = pattern_src
+            if is_symbol(head) and strip_mark(head) == strip_mark(namesym):
+                specs = [CALLEDBY(str(head))]
+                while not is_nil(rest):
+                    cell, rest = rest
+                    specs.append(
+                        parse_explicit_rule_pattern(cell, pattern_src))
+                return MATCH(*specs)
 
-    return parse_explicit_rule_pattern(pattern_src)
+        return parse_explicit_rule_pattern(pattern_src)
+
+    except (TypeError, ValueError) as exc:
+        raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
 
 
 def parse_macro_rules_rows(literals_expr, raw_rules):

@@ -103,7 +103,7 @@ int kos_transform_init_one(
   t->cached_frame = NULL;
   t->ctx = NULL;
   t->closed = 0;
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   return 0;
 }
 
@@ -127,7 +127,7 @@ void kos_transform_init_view(
   t->cached_frame = NULL;
   t->ctx = NULL;
   t->closed = 0;
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
 }
 
 
@@ -174,10 +174,11 @@ int kos_transform_source_spent(void) {
 }
 
 
-int kos_transform_busy(PyObject *self) {
+int kos_transform_busy(PyObject *self, const char *method) {
 
   KosTransform *t = (KosTransform *) self;
 
+  (void) method;
   if (! t->busy)
     return 0;
 
@@ -225,6 +226,9 @@ KosIterStepResult kos_transform_stage(
     Py_XDECREF(value);
     return kos_transform_step_abort(ctx, t, pre_top);
   }
+  /* the frame names t from here: the stage holds t until the step's
+     finish or clear, unless the frame is on t's own context */
+  kos_transform_staged(ctx, t);
   /* the frame carries the kind and the record from here; an abort
      below tears it down through the kind's clear */
   if (value) {
@@ -274,14 +278,14 @@ KosIterStepResult kos_transform_throw(
   /* A step is in flight and its driver owns the transform's state:
      every second caller is refused, GeneratorExit included -- the
      same rule CPython applies to a running async generator. */
-  if (kos_transform_busy(self))
+  if (kos_transform_busy(self, NULL))
     return KOS_ITER_ERROR;
 
   if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
     /* Generator close semantics: run the source's cleanup, mark
        closed, and let GeneratorExit propagate as the success shape. */
     t->closed = 1;
-    t->busy = 0;
+    t->busy = KOS_TF_IDLE;
     close_sources(t);
   }
 
@@ -303,7 +307,7 @@ int kos_transform_close(PyObject *self) {
     return 0;
 
   t->closed = 1;
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   close_sources(t);
 
   return 0;
@@ -313,20 +317,38 @@ int kos_transform_close(PyObject *self) {
 void kos_transform_finish(PyObject *self, int exhausted) {
 
   KosTransform *t = (KosTransform *) self;
+  int staged = (t->busy == KOS_TF_STAGED);
 
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   Py_CLEAR(t->pending);
   if (exhausted)
     t->closed = 1;
+  /* last: the stage's reference may be the transform's last */
+  if (staged)
+    Py_DECREF(self);
 }
 
 
 void kos_transform_step_clear(void *state) {
 
   KosTransform *t = (KosTransform *) state;
+  int staged = (t->busy == KOS_TF_STAGED);
 
-  t->busy = 0;
+  t->busy = KOS_TF_IDLE;
   Py_CLEAR(t->pending);
+  /* last: the stage's reference may be the transform's last */
+  if (staged)
+    Py_DECREF((PyObject *) t);
+}
+
+
+int kos_transform_step_traverse(void *state, visitproc visit, void *arg) {
+
+  KosTransform *t = (KosTransform *) state;
+
+  if (t->busy == KOS_TF_STAGED)
+    Py_VISIT((PyObject *) t);
+  return 0;
 }
 
 
@@ -366,10 +388,12 @@ int kos_transform_clear(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
-  /* the context goes first: a source generator stepped on it may still
-     have its node on the chain, which lets go before the source does.
-     A stepper mid-step on this context holds its own reference and
-     finishes its drive before letting go; the last holder frees. */
+  /* the context goes first, so a chain no one else holds is freed
+     while the source is still the transform's. A source generator
+     with its node on a chain held elsewhere may go first: the chain's
+     later free does not touch the generator. A source with a step in
+     flight is held by that step's stage reference, so dropping it
+     here frees nothing a live frame names; the last holder frees. */
   Py_CLEAR(t->ctx);
   KosCallShape_Clear(&t->fn);
   Py_CLEAR(t->src.iter);
@@ -381,11 +405,126 @@ int kos_transform_clear(PyObject *self) {
 }
 
 
+/**
+   The owners of the GEN nodes on ctx's chain, innermost first, each a
+   strong reference, so the generators outlive the close of the chain
+   that holds them only borrowed. NULL when the chain carries none or
+   the list cannot be had (the error cleared): the close then runs
+   without them.
+*/
+static PyObject *transform_chain_gens(KosContext *ctx) {
+
+  KosDynNode *n = (KosDynNode *) kos_dyn_find_gen(ctx);
+  PyObject *owners;
+
+  if (! n)
+    return NULL;
+
+  owners = PyList_New(0);
+  if (! owners) {
+    PyErr_Clear();
+    return NULL;
+  }
+  for (; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_IS_GEN(n)
+        && PyList_Append(owners, KosDynGen_OWNER((KosDynGen *) n)) < 0) {
+      PyErr_Clear();
+      break;
+    }
+  }
+  return owners;
+}
+
+
+/**
+   Finalizer: a transform dropped with a step left mid-await on its own
+   context (its stepper dropped first) closes that step before anything
+   is cleared. The step is the context's: the chain is closed from its
+   top through the context (kos_close_drive), so every generator the
+   step installed on it finishes with GeneratorExit and its cleanup
+   runs now, innermost first, as a dropped coroutine closes the
+   generators on its chain. The step is then spent, and what the close
+   owes is reported against the innermost generator when the chain
+   carried one, else against the transform. Each generator on the
+   chain ends closed: a close that reached its GEN node finished it,
+   and one the close could not finish (a cleanup that suspended) is
+   finished here, its span gone with the chain. A step on a
+   consumer's chain leaves this context empty, and belongs to that
+   consumer; one a drive is running is that drive's.
+
+   The close is a drive of its own, begun from the finalizer: the
+   sanctioned exception to flattening, as for the generator's.
+*/
+static void transform_finalize(PyObject *self) {
+
+  KosTransform *t = (KosTransform *) self;
+  KosContext *ctx = t->ctx;
+  PyObject *fence_typ, *fence_val, *fence_tb;
+  PyObject *typ, *val, *tb;
+  PyObject *gens = NULL;
+  KosIterSlots *islots;
+
+  if (t->busy == KOS_TF_IDLE || ! ctx
+      || (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
+    return;
+  if (! KosContext_DYN_TOP(ctx)
+      && ! (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED))
+    return;
+
+  PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+  Py_INCREF(ctx);
+
+  if (! (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED))
+    gens = transform_chain_gens(ctx);
+
+  (void) kos_close_drive(ctx, &typ, &val, &tb);
+  if (KosIter_CheckSlots(self, &islots))
+    islots->ki_finish(self, 1);
+  KosContext_ReleaseChain(ctx);
+
+  if (gens) {
+    Py_ssize_t i;
+
+    for (i = 0; i < PyList_GET_SIZE(gens); i++) {
+      PyObject *owner = PyList_GET_ITEM(gens, i);
+      if (KosIter_CheckSlots(owner, &islots))
+        islots->ki_finish(owner, 1);
+    }
+  }
+
+  kos_close_report(
+      (gens && PyList_GET_SIZE(gens)) ? PyList_GET_ITEM(gens, 0) : self,
+      typ, val, tb);
+
+  Py_XDECREF(gens);
+  Py_DECREF(ctx);
+  PyErr_Restore(fence_typ, fence_val, fence_tb);
+}
+
+
 void kos_transform_dealloc(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
+  /* A transform over a transform over ... releases one link per
+     dealloc, each clear dropping the source that is the next. The
+     trashcan defers that recursion off the C stack, as CPython's own
+     map does; it needs the object untracked. */
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, kos_transform_dealloc);
+
+  /* Only a step in flight gives the finalizer anything to do, so an
+     idle transform pays the busy test alone. The finalizer may
+     resurrect the transform, in which case the dealloc is abandoned
+     here and happens on the next drop; a resurrected object must be
+     tracked, so the finalizer runs tracked. */
+  if (t->busy != KOS_TF_IDLE && t->ctx) {
+    PyObject_GC_Track(self);
+    if (PyObject_CallFinalizerFromDealloc(self) < 0)
+      goto done;
+    PyObject_GC_UnTrack(self);
+  }
+
   /* the type's clear, so a provider's own fields go in the one order
      its tp_clear states. The context teardown runs first: a frame
      still on the chain that KosNativeFrame_CacheOnFree flagged is
@@ -397,6 +536,9 @@ void kos_transform_dealloc(PyObject *self) {
     t->cached_frame = NULL;
   }
   Py_TYPE(self)->tp_free(self);
+
+done:
+  Py_TRASHCAN_END;
 }
 
 
@@ -564,6 +706,8 @@ int koskari_transform_init(PyObject *mod) {
   for (i = 0; i < sizeof(transform_types) / sizeof(*transform_types); i++) {
     PyTypeObject *type = KOS_EVALUATED_PYTYPE(*transform_types[i].type);
 
+    /* every provider shares the one finalizer (transform_finalize) */
+    type->tp_finalize = transform_finalize;
     if (PyType_Ready(type))
       return -1;
     if (PyDict_SetItemString(dict, transform_types[i].cls, (PyObject *) type))

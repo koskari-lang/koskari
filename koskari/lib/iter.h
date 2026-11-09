@@ -50,7 +50,14 @@ struct KosPyAsyncGen {
      life so the dealloc can store the finished generator on it
      (KosFunction_DEAD_RECORD); NULL otherwise */
   PyObject *fn;
-  int closed;        /* generator closed */
+  /* the thread's async generator finalizer hook, taken when the hooks
+     were initialised (PEP 525); the finalizer calls it in place of the
+     synchronous close. NULL when none was set, or once it was called */
+  PyObject *finalizer;
+  PyObject *weakreflist;
+  uint8_t closed;        /* generator closed */
+  /* the PEP 525 hooks were read, on the first method call or drive */
+  uint8_t hooks_inited;
 };
 
 

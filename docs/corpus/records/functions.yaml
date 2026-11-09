@@ -1359,6 +1359,65 @@ tags:
   - surface:block
 notes: a recursive def calls itself through the binding def made
 ---
+id: function-def-tail-loop-009
+feature: macro/compile/def
+source: |-
+  def count-up [n acc]:
+    if (<= n 0):
+      acc
+    else:
+      count-up (- n 1) (+ acc 1)
+
+  count-up 100000 0
+verify:
+  read: "(begin (def count-up [n acc] (cond ((<= n 0) acc) (else: (count-up (- n 1) (+ acc 1))))) (count-up 100000 0))"
+  eval: "100000"
+references:
+  - reference/macros/compile-def.md
+  - guide/functions.md
+  - guide/model-of-evaluation.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+  - recursion
+  - loop
+  - surface:block
+notes: a call in tail position reuses its frame, so a self-recursion far past the frame depth limit, even at its 65535 cap, runs as a loop
+---
+id: function-def-depth-ceiling-010
+feature: macro/compile/def
+source: |-
+  def depth [n]:
+    if (<= n 0):
+      0
+    else:
+      + 1 (depth (- n 1))
+
+  try:
+    depth 20000
+  except [RecursionError as: e]:
+    str e
+verify:
+  read: "(begin (def depth [n] (cond ((<= n 0) 0) (else: (+ 1 (depth (- n 1)))))) (try (begin (depth 20000)) ([RecursionError as: e] (str e))))"
+  eval: "\"Koskari frame depth exceeded (10000)\""
+references:
+  - reference/macros/compile-def.md
+  - guide/functions.md
+  - guide/model-of-evaluation.md
+  - guide/hosting-from-python.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+  - try
+  - recursion
+  - catch
+  - surface:block
+notes: a call not in tail position adds a frame; frame depth is bounded by the process-wide frame depth limit, 10000 by default and settable up to 65535 with koskari.lib.set_frame_depth_limit, whatever sys.setrecursionlimit says, and the call past the limit raises RecursionError naming the limit into the calling frame
+---
 id: function-def-typed-004
 feature: macro/compile/def
 source: "(def half :: float [x] (/ x 2))"

@@ -97,7 +97,7 @@ feature: builtin/create-task
 source: (await (create-task (defer (lambda [] 4))))
 verify:
   read: (await (create-task (defer (lambda [] 4))))
-  invalid: on the demand path an await that must suspend raises KoskariSyncViolation
+  invalid: on the demand path create-task raises RuntimeError when no loop is running, and inside a running loop an await that must suspend raises KoskariSyncViolation
 references:
   - agents/native-builtins.md
   - reference/runtime/functions.md

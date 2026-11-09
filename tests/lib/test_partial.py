@@ -32,7 +32,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import FormalsSpec, KosPartial, demand_call
+from koskari.lib import (
+    FormalsSpec, KosPartial, demand, demand_call, symbol)
+from koskari.types import is_symbol
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
@@ -474,6 +476,157 @@ class TestKosPartialDispatch(unittest.TestCase):
         self.assertTrue(gc.is_tracked(kps[0]))
         del kps
         gc.collect()
+
+
+class TestKosPartialSubclassDispatch(unittest.TestCase):
+    """
+    Calling a heap subclass of KosPartial from koskari bytecode honours a
+    __call__ the subclass defines, and uses the partial's own dispatch
+    when it defines none
+    """
+
+    def test_python_call_override_runs(self):
+        """
+        A Python __call__ on a subclass runs in place of the partial's
+        """
+
+        class Marked(KosPartial):
+            def __call__(self, *args, **kwargs):
+                return ("marker", args, kwargs)
+
+        kp = Marked(_make_concat_fn(), "A")
+        self.assertEqual(
+            _call_through_bytecode(kp, "B"),
+            ("marker", ("B",), {}))
+        self.assertEqual(
+            _call_names_through_bytecode(kp, (), ("b",), ("B",)),
+            ("marker", (), {"b": "B"}))
+
+
+    def test_subclass_without_call_behaves_as_partial(self):
+        """
+        A subclass defining no __call__ merges bound and call-site args as
+        the base partial does
+        """
+
+        class Plain(KosPartial):
+            pass
+
+        kp = Plain(_make_concat_fn(), "A")
+        self.assertEqual(_call_through_bytecode(kp, "B"), "AB")
+        self.assertEqual(
+            _call_names_through_bytecode(kp, (), ("b",), ("B",)),
+            "AB")
+
+
+    def test_assigned_call_then_deleted(self):
+        """
+        A __call__ assigned on a subclass after an instance exists is
+        honoured on the next call; deleting it returns the instance to
+        the partial's own dispatch
+        """
+
+        class Later(KosPartial):
+            pass
+
+        kp = Later(_make_concat_fn(), "A")
+        self.assertEqual(_call_through_bytecode(kp, "B"), "AB")
+
+        Later.__call__ = lambda self, *args: ("marker", args)
+        self.assertEqual(_call_through_bytecode(kp, "B"), ("marker", ("B",)))
+
+        del Later.__call__
+        self.assertEqual(_call_through_bytecode(kp, "B"), "AB")
+
+
+    def test_demand_over_python_call_override(self):
+        """
+        demand over a subclass instance with a Python __call__ calls it
+        as a plain Python callable and returns its value
+        """
+
+        class Marked(KosPartial):
+            def __call__(self, *args):
+                return ("marker", args)
+
+        wrapped = demand(Marked(_make_concat_fn(), "A"))
+        self.assertEqual(wrapped("B"), ("marker", ("B",)))
+
+
+    def test_type_predicate_through_bytecode(self):
+        """
+        A koskari.types predicate answers when called from bytecode
+        """
+
+        self.assertIs(_call_through_bytecode(is_symbol, symbol("x")), True)
+        self.assertIs(_call_through_bytecode(is_symbol, "x"), False)
+
+
+def _swapped(*a, **k):
+    return a, k
+
+
+class Swapper:
+    """
+    An element whose repr replaces the holding partial's args and
+    keywords through __setstate__ while the partial's own repr is still
+    rendering them, then churns the allocator so a released tuple or
+    dict is reused. The first element rendered does the swap; the rest
+    only render, since the fields are already gone
+    """
+
+    def __init__(self, holder, mode):
+        self.holder = holder
+        self.mode = mode
+
+    def __repr__(self):
+        p = self.holder[0]
+        if p is None:
+            return "swapped"
+        self.holder[0] = None
+        if self.mode == "args":
+            p.__setstate__((_swapped, (), None, None))
+        else:
+            p.__setstate__((_swapped, (), {}, None))
+        gc.collect()
+        junk = [object() for _ in range(10000)]
+        del junk
+        return "swapped"
+
+
+class TestReprAcrossSetstate(unittest.TestCase):
+    """
+    repr and __kos_repr__ render the func, args and keywords the partial
+    held when they began, so a __setstate__ from an element's repr
+    cannot release what they are still reading
+    """
+
+    def partial(self, mode):
+        holder = [None]
+        if mode == "args":
+            p = KosPartial(_swapped, Swapper(holder, mode),
+                           *[object() for _ in range(2000)])
+        else:
+            p = KosPartial(_swapped, **{
+                f"k{i}": Swapper(holder, mode) for i in range(2000)})
+        holder[0] = p
+        return p
+
+    def test_repr_survives_setstate_from_element(self):
+        for mode in ("args", "keywords"):
+            with self.subTest(mode=mode):
+                p = self.partial(mode)
+                r = repr(p)
+                self.assertIn("swapped", r)
+                self.assertEqual(p.args, ())
+
+    def test_kos_repr_survives_setstate_from_element(self):
+        for mode in ("args", "keywords"):
+            with self.subTest(mode=mode):
+                p = self.partial(mode)
+                r = p.__kos_repr__()
+                self.assertIn("swapped", r)
+                self.assertEqual(p.args, ())
 
 
 # The end.

@@ -49,10 +49,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND_AS_IS(pairwise_resume_deliver_kind, "pairwise-step",
-                pairwise_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND_AS_IS(pairwise_resume_fetch_kind, "pairwise-step",
-                pairwise_resume_fetch, kos_transform_step_clear, NULL);
+KOS_TRANSFORM_STEP_KIND_AS_IS(pairwise_resume_deliver_kind, "pairwise-step",
+    pairwise_resume_deliver);
+KOS_TRANSFORM_STEP_KIND_AS_IS(pairwise_resume_fetch_kind, "pairwise-step",
+    pairwise_resume_fetch);
 
 
 /**
@@ -154,9 +154,8 @@ static KosIterStepResult pairwise_step_body(
     PyObject *held = p->held;
     Py_INCREF(held);
 
-    switch (KosContext_NextOrDefer(ctx, &t->src,
-                                     &pairwise_resume_fetch_kind, t,
-                                     &t->cached_frame, &element)) {
+    switch (kos_transform_next_or_defer(
+        ctx, t, &t->src, &pairwise_resume_fetch_kind, &element)) {
       case KOS_IREQ_DELIVERED:
         break;
       case KOS_IREQ_EXHAUSTED:

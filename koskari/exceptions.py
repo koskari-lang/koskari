@@ -549,7 +549,7 @@ _FRAME_SUMMARY_HAS_COLUMNS = sys.version_info >= (3, 11)
 def _koskari_frame_summary(entry):
     """
     The FrameSummary for a synthetic koskari native frame, from the
-    dynchain entry its globals carry as __koskari_trace__
+    trace data its globals carry as __koskari_trace__
 
     The summary renders through StackSummary.format, which reads the
     source line via linecache and draws the PEP 657 caret from the
@@ -634,7 +634,7 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb):
     Format an exception traceback, rendering the koskari native frames
     where they sit
 
-    A synthetic native frame carries its own dynchain entry as
+    A synthetic native frame carries its own trace data as
     __koskari_trace__, so one walk of the traceback renders every frame
     in order: a native frame from its entry, with the source line and
     column caret, any other frame as the standard traceback does.  The

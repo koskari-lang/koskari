@@ -117,6 +117,10 @@ class ByteCodeFragment:
         self.annotation_bindings = []
         self.doc = None
 
+        # set by a named lambda: the symbol it binds itself under, marks
+        # and all; None for any other fragment
+        self.self_ref = None
+
         # the source position of the first write, the first declaration
         # (define or define-global) and the first read request of each
         # name, carried along by merge so the fragment that is validated
@@ -1408,7 +1412,7 @@ class Compiler:
         try:
             code = Code(base_nspec, instr, fragment.name, filename,
                         protect=self.protect_code, cache=cache,
-                        allocator=allocator)
+                        allocator=allocator, self_slot=proc.self_slot)
         except (ValueError, OverflowError) as ex:
             raise self.limit_error(fragment, ex) from ex
         if fragment.doc is not None:

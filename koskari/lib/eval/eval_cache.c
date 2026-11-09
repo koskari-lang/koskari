@@ -151,25 +151,40 @@ static PyObject *instance_attr_peek(PyObject *obj, PyObject *name) {
    plain attribute, INSTANCE_DICT);
    anything that invokes a descriptor or custom hook is reported as
    GENERIC_LOOKUP so the caller does not cache a value it cannot safely
-   reproduce from a guarded descriptor.
+   reproduce from a guarded descriptor. A class attribute whose type is
+   mutable is also GENERIC_LOOKUP: that type can gain __get__ or
+   __set__ without moving the receiver type's version.
+
+   When ver is not NULL, *ver is the type's version taken before the
+   instance dict probe, the first point at which user code can run (a
+   key's __eq__), or 0 when none was taken. A version read after the
+   probe could vouch for a class attribute the probe has since
+   replaced, so the caller caches only when the version is unchanged
+   after resolution. The arms that resolve before the probe are
+   GENERIC_LOOKUP and assign no version.
 
    :param obj: object to resolve on (borrowed)
    :param name: attribute name (borrowed, PyUnicode)
    :param out: resolved attribute (new ref on success)
    :param mode: out; cacheable classification
    :param cache_descr: out; borrowed descriptor to cache, or NULL
+   :param ver: out; tp's version before the probe, or 0. NULL when the
+       caller will not cache, in which case no version is assigned
 */
 static int resolve_named_attr_slow(
     PyObject *obj,
     PyObject *name,
     PyObject **out,
     KosMethodMode *mode,
-    PyObject **cache_descr) {
+    PyObject **cache_descr,
+    uint64_t *ver) {
 
   PyTypeObject *tp = Py_TYPE(obj);
 
   *mode = KOS_METHOD_GENERIC_LOOKUP;
   *cache_descr = NULL;
+  if (ver)
+    *ver = 0;
 
   /* Custom __getattribute__: cannot replicate; delegate to tp_getattro. */
   if (tp->tp_getattro != PyObject_GenericGetAttr) {
@@ -201,7 +216,11 @@ static int resolve_named_attr_slow(
     goto done;
   }
 
-  /* Instance attribute: the value is stored directly, no descriptor. */
+  /* Instance attribute: the value is stored directly, no descriptor.
+     A caching caller's guard version is taken here, before the probe
+     can run user code that modifies tp. */
+  if (ver)
+    *ver = kos_type_version_assign(tp);
   {
     PyObject *val = instance_attr_peek(obj, name);
     if (val) {
@@ -250,6 +269,12 @@ static int resolve_named_attr_slow(
   koskari_Err_SetMissingAttribute(obj, name);
 
  done:
+  /* The guard is tp's version, which a class attribute of a mutable
+     type does not move when that type gains __get__ or __set__. */
+  if (descr && ! kos_type_is_immutable(Py_TYPE(descr))) {
+    *mode = KOS_METHOD_GENERIC_LOOKUP;
+    *cache_descr = NULL;
+  }
   Py_XDECREF(descr);
   return res;
 }
@@ -490,14 +515,18 @@ KOS_NOINLINE static int kos_resolve_named_attr_cold(
   /* Slow path. */
   KosMethodMode mode;
   PyObject *descr = NULL;
-  int sv = resolve_named_attr_slow(obj, name, out, &mode, &descr);
+  uint64_t ver = 0;
+  int caching = slot && ! bypass;
+  int sv = resolve_named_attr_slow(
+      obj, name, out, &mode, &descr, caching ? &ver : NULL);
   if (sv < 0)
     return -1;
 
-  /* Update the slot. */
-  if (slot && ! bypass) {
-    uint64_t ver = kos_type_version_assign(tp);
-    int cacheable = (ver != 0) && (mode != KOS_METHOD_GENERIC_LOOKUP);
+  /* Update the slot. The version was taken before resolution could run
+     user code; one that moved since cannot guard this result. */
+  if (caching) {
+    int cacheable = (mode != KOS_METHOD_GENERIC_LOOKUP)
+                    && ver != 0 && kos_type_version(tp) == ver;
 
     if (! cacheable) {
       /* Cannot guard this result: drop any stale entry, leave the slot cold. */
@@ -590,7 +619,9 @@ KOS_OP_INLINE int kos_resolve_named_attr(
    A __slots__ member resolves to SLOT with its byte offset, and on 3.11
    and later a managed-dict type with inline values resolves to
    INSTANCE_VALUE with the value index (compat*.h supplies the layout
-   access). Anything else is GENERIC.
+   access). A class attribute whose type is mutable is GENERIC, since
+   that type can gain __get__ or __set__ without moving the receiver
+   type's version. Anything else is GENERIC.
 */
 static KosFieldMode resolve_attr_location_slow(
     PyObject *obj,
@@ -613,6 +644,12 @@ static KosFieldMode resolve_attr_location_slow(
      directions, so it stays GENERIC. Every other data descriptor
      (property, ...) computes per access and stays GENERIC. */
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
+
+  /* The guard is tp's version, which a class attribute of a mutable
+     type does not move when that type gains __get__ or __set__. */
+  if (descr && ! kos_type_is_immutable(Py_TYPE(descr)))
+    return KOS_FIELD_GENERIC;
+
   if (descr && descr_is_data(descr)) {
     /* The member's offset describes the layout of the descriptor's own
        type; a member of some other class installed as an attribute of

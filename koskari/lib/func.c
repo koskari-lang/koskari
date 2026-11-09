@@ -517,26 +517,7 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
   Py_INCREF(code);
   KosFunctionSpec_CODE(spec) = code;
 
-  spec->self_slot = -1;
-  if (name) {
-    /* the function's own name among the code's locals: the named
-       lambda declares it, and locals head the fast names in
-       declaration order, so its index is its slot */
-    PyObject *nspec = KosCode_NSPEC(code);
-    PyObject *locals = nspec ? KosNamespaceSpec_LOCAL_SYMS(nspec) : NULL;
-
-    if (locals && locals != Py_None) {
-      int bind = PySequence_Contains(locals, name);
-      Py_ssize_t slot = bind > 0 ? PySequence_Index(locals, name) : 0;
-
-      if (bind < 0 || slot < 0) {
-        Py_DECREF(self);
-        return NULL;
-      }
-      if (bind)
-        spec->self_slot = (int) slot;
-    }
-  }
+  spec->self_slot = KosCode_SELF_SLOT(code);
 
   return self;
 }
@@ -631,10 +612,8 @@ function_get_name_dunder(PyObject *self, void *closure) {
 
 /*
   __name__ and __qualname__ writes land in metadata override slots, never
-  in `name`: self-binding keys off `name` through the spec's self_slot
-  (see KosFunction_StoreSelf), so the semantic name stays fixed
-  after construction while wraps-style renames remain visible to
-  introspection.
+  in `name`, so the semantic name stays fixed after construction while
+  wraps-style renames remain visible to introspection.
 */
 static int
 function_set_name_dunder(PyObject *self, PyObject *val, void *closure) {
@@ -1327,6 +1306,8 @@ static void function_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
   Py_TRASHCAN_BEGIN(self, function_dealloc);
+  if (((KosFunction *) self)->weakreflist)
+    PyObject_ClearWeakRefs(self);
   func_drop_cached_frame((KosFunction *) self);
   func_drop_dead_record((KosFunction *) self);
   ((KosFunction *) self)->install_arity = -1;
@@ -1549,6 +1530,16 @@ PyObject *KosFunction_GetCode(PyObject *self) {
 }
 
 
+PyObject *KosFunction_GetName(PyObject *self) {
+  return function_get_name_dunder(self, NULL);
+}
+
+
+PyObject *KosFunction_GetQualname(PyObject *self) {
+  return function_get_qualname_dunder(self, NULL);
+}
+
+
 PyObject *KosFunction_CallNoArgs(PyObject *self) {
   return KosFunction_Call(self, NULL, NULL);
 }
@@ -1571,7 +1562,7 @@ static PyObject *function_repr(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;
   PyObject *name;
 
-  /* display follows a __name__ override (wraps); self-binding does not */
+  /* display follows a __name__ override (wraps); `name` does not */
   name = fn->name_override ? fn->name_override : KosFunction_NAME(fn);
   if (name == NULL)
     name = KosCode_NAME(KosFunction_CODE(fn));
@@ -1579,6 +1570,28 @@ static PyObject *function_repr(PyObject *self) {
     return PyUnicode_FromFormat("<koskari function %R at %p>", name, self);
   return PyUnicode_FromFormat("<koskari function <lambda> at %p>", self);
 }
+
+
+/**
+   A function is pickled by reference, as CPython pickles its own: the
+   qualified name, which pickle finds in __module__. copy.copy and
+   copy.deepcopy take a str reduction as the function itself.
+*/
+static PyObject *function_reduce(
+    PyObject *self,
+    PyObject *Py_UNUSED(ignored)) {
+
+  return function_get_qualname_dunder(self, NULL);
+}
+
+
+static PyMethodDef function_methods[] = {
+  { "__reduce__", function_reduce, METH_NOARGS,
+    "F.__reduce__() -> str\n"
+    "The qualified name, for pickle to find in the function's module." },
+
+  { NULL, NULL, 0, NULL },
+};
 
 
 static PyMemberDef function_members[] = {
@@ -1603,11 +1616,13 @@ KosEvaluatedTypeObject KosFunctionType = {
       | Py_TPFLAGS_METHOD_DESCRIPTOR | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_dictoffset = offsetof(KosFunction, dict),
+  .tp_weaklistoffset = offsetof(KosFunction, weakreflist),
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
              "(*args, **kwargs) binds formals and returns a Coroutine.",
   .tp_traverse = function_traverse,
   .tp_clear = function_clear,
   .tp_new = function_new,
+  .tp_methods = function_methods,
   .tp_members = function_members,
   .tp_getset = function_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

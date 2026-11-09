@@ -270,6 +270,12 @@ int KosMatch_LiteralTest(PyObject *elem, PyObject *lit) {
     Py_DECREF(res);
     return r;
   }
+
+  /* True, False and None compare by identity alone, as PEP 634 has
+     it: 1 is not True, and 0 is not False */
+  if (lit == Py_True || lit == Py_False || lit == Py_None)
+    return 0;
+
   return PyObject_RichCompareBool(lit, got, Py_EQ);
 }
 
@@ -439,6 +445,39 @@ static int step_short_match_args(
 }
 
 
+/**
+   1 when a positional sub-pattern of cls matches the subject itself:
+   cls is a self-matching builtin, or a subclass of one, with no
+   __match_args__ of its own. 0 otherwise, -1 with an error set. A held
+   tuple is a __match_args__, so it answers 0 without a lookup. On 3.9
+   a dataclass or namedtuple synthesis counts as a __match_args__.
+*/
+static int step_match_self(PyObject *cls, PyObject *held) {
+
+  PyObject *match_args;
+  int r;
+
+  if (held || ! PyType_Check(cls)
+      || ! kos_type_matches_self((PyTypeObject *) cls))
+    return 0;
+
+  r = PyObject_GetOptionalAttr(cls, kos_match_args_name, &match_args);
+  Py_XDECREF(match_args);
+#if PY_MINOR_VERSION < 10
+  if (! r) {
+    match_args = synth_match_args_39(cls);
+    if (match_args) {
+      Py_DECREF(match_args);
+      return 0;
+    }
+    if (PyErr_Occurred())
+      return -1;
+  }
+#endif
+  return r < 0 ? -1 : ! r;
+}
+
+
 int KosMatch_ClassArgs(
     PyObject *cls,
     Py_ssize_t npos,
@@ -446,6 +485,18 @@ int KosMatch_ClassArgs(
 
   if (npos <= 0)
     return 0;
+
+  int self = step_match_self(cls, match_args);
+  if (self < 0)
+    return -1;
+  if (self) {
+    if (npos == 1)
+      return 0;
+    PyErr_Format(PyExc_TypeError,
+                 "%s() accepts 1 positional sub-pattern (%zd given)",
+                 ((PyTypeObject *) cls)->tp_name, npos);
+    return -1;
+  }
 
   match_args = step_match_args(cls, npos, match_args);
   if (! match_args)
@@ -480,6 +531,16 @@ int KosMatch_FieldPos(
     Py_ssize_t pos,
     PyObject *match_args,
     PyObject **out) {
+
+  int self = step_match_self(cls, match_args);
+  if (self < 0)
+    return -1;
+  if (self) {
+    /* the gate admitted one positional sub-pattern: pos is 0 */
+    Py_INCREF(elem);
+    *out = elem;
+    return 1;
+  }
 
   match_args = step_match_args(cls, pos + 1, match_args);
   if (! match_args)

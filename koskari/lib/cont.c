@@ -46,10 +46,13 @@ static void delimited_continuation_dealloc(PyObject *self) {
   /* the captured chain's teardown can run arbitrary Python; leave the
      collector's lists and unlink the field before it starts */
   PyObject_GC_UnTrack(self);
+  /* a nest of captures frees the previous one from KosStack_Release */
+  Py_TRASHCAN_BEGIN(self, delimited_continuation_dealloc);
   KosPyDelimitedContinuation_CAPTURED(cont) = NULL;
   kos_continuation_free(k);
 
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -306,10 +309,13 @@ static void continuation_dealloc(PyObject *self) {
   KosContinuation *k = KosPyContinuation_CAPTURED(cont);
 
   PyObject_GC_UnTrack(self);
+  /* a nest of captures frees the previous one from KosStack_Release */
+  Py_TRASHCAN_BEGIN(self, continuation_dealloc);
   KosPyContinuation_CAPTURED(cont) = NULL;
   kos_continuation_free(k);
 
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 

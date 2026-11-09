@@ -155,6 +155,14 @@ def fib [n]:
 `loop` is bound inside the body to a function of the same bindings, and
 calling it is the next iteration.
 
+A call that is not in tail position adds a frame, up to the frame depth
+limit, 10000 by default; one more raises `RecursionError`.
+`koskari.lib.set_frame_depth_limit(n)` raises or lowers that limit for
+the whole process, up to a cap of 65535. `sys.setrecursionlimit` does
+not change it, but Python's limit does bound a recursion that passes
+through Python code on each call; see
+[Model of evaluation](model-of-evaluation.md#evaluate).
+
 ## Decorators
 
 An `@` line above a `def` applies a decorator, as in Python. Koskari
@@ -171,6 +179,18 @@ Python a function that returns the value. That
 applies to any function a Python caller invokes directly, including a
 Python decorator like `lru_cache` that calls what it wraps. The model
 is in [Demand, async, and defer](demand-async-and-defer.md).
+
+`inspect.iscoroutinefunction`, `asyncio.iscoroutinefunction` and
+`inspect.isasyncgenfunction` answer False for a Koskari function, even
+though a call from Python returns a coroutine. For a function that does
+not yield, `coroutine-fn` or, on Python 3.12 and later,
+`inspect.markcoroutinefunction` makes the first two answer True.
+
+The coroutine carries its function's `__name__` and `__qualname__`,
+which asyncio uses when it prints a Task. It has no Python frame
+object, so the `cr_*` and `ag_*` introspection attributes,
+`inspect.getcoroutinestate` and `inspect.getasyncgenstate` do not apply
+to it.
 
 ## Thunks
 

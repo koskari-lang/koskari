@@ -110,6 +110,9 @@ class TestExpression(unittest.IsolatedAsyncioTestCase):
         coro = expr()
         self.assertTrue(hasattr(coro, 'send'))
         self.assertTrue(hasattr(coro, '__await__'))
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'expr' was never awaited$"):
+            del coro
 
 
     async def test_expression_call_completes_with_value(self):
@@ -191,6 +194,9 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         coro = expr()
         self.assertTrue(hasattr(coro, 'send'))
         self.assertTrue(hasattr(coro, '__await__'))
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'expr' was never awaited$"):
+            del coro
 
 
     async def test_code_expression_run_to_completion(self):
@@ -225,6 +231,9 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         coro = fn(1, y=2)
         self.assertTrue(hasattr(coro, 'send'))
         self.assertTrue(hasattr(coro, '__await__'))
+        with self.assertWarnsRegex(
+                RuntimeWarning, "^coroutine 'expr' was never awaited$"):
+            del coro
 
 
     async def test_code_function_run_to_completion(self):

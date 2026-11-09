@@ -5,9 +5,10 @@
 **Syntax:** `(? COND THEN ELSE)`, `(? COND THEN)` with an else arm of
 `False`, or `(? COND)`, a boolean test only.
 
-**Behaviour:** The two- and three-argument forms expand to
-[`cond`](../specials/compile-cond.md) with an `else:` arm. The unary
-form expands to `(truth COND)`.
+**Behaviour:** The two- and three-argument forms evaluate `COND`, then
+`THEN` when it is truthy and the else arm otherwise, as a
+[`cond`](../specials/compile-cond.md) with an `else:` arm does. The
+unary form is the truthiness of `COND`, as `True` or `False`.
 
 **Examples:**
 

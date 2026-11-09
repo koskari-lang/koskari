@@ -204,6 +204,16 @@ the spellings per atom for the life of the resolver.
 
 Ref: `koskari/hygiene.py` (`candidates`, `Resolver.choose`).
 
+### Matcher content backtracking (design)
+
+OPTIONAL, REPEAT and ONEOF commit once their sub-pattern matches, so
+`#[(OPTIONAL a) (b :: int) *: r]` misses `#(1 "s")`. Make them choice
+points: the suffix is emitted once, a later miss resumes at the most
+recent live mark, alternatives keep today's order so every current hit
+is unchanged. REPEAT records per-pass positions; NOT stays committed.
+
+Ref: [matcher-backtracking.md](matcher-backtracking.md).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls
@@ -378,6 +388,15 @@ not at the relay's aclose. Decide whether GeneratorExit should route
 through the resume so the drive can await the delegate's close.
 Ref: [interpreter/yield-from-close.md](interpreter/yield-from-close.md).
 
+### A generator's return value through `yield-from` (design)
+
+A Koskari generator's `(return v)` reaches `(next g)` and every Python
+consumer as the StopIteration or StopAsyncIteration value, but
+`(yield-from g)` is always None and the transforms have not been
+traced. Design the rule under which the value carries across every
+path that reads a generator's end, with `yield-from` evaluating to it.
+Ref: [interpreter/generator-return-value.md](interpreter/generator-return-value.md).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
@@ -410,6 +429,17 @@ module-scoped via `matcher/NAME` namespace resolution. The type and value
 association semantics are deliberately open for deliberation.
 
 Ref: [language/define-matcher.md](language/define-matcher.md).
+
+### Adopt abort-first delimited continuations pattern
+
+A shift captures its segment and aborts to the prompt before the handler
+runs, standing where the region stood; every application lands a copy on
+a DELIM at the application site. Prompts are found by tag, nearest first;
+no instance ids, no stored return-frame pointers, no in-place path. Tags
+become language: `reset-at TAG`, `shift-at TAG K`. Ruled 2026-11-02; one
+question open (a local transfer whose target the abort left).
+
+Ref: [interpreter/delimited-continuations.md](interpreter/delimited-continuations.md).
 
 ### `RETURN` frame-only; `return-shift` for delim continuations
 
@@ -493,6 +523,16 @@ into `__annotations__`, and a body's global binding would reach it too.
 [ideas.md](ideas.md). It has been removed from user-facing docs pending a
 decision.)
 
+### Review the `default!` macro (ref-based or removed)
+
+`default!` runs its location's object and key subforms once in the
+test and again in the store, so `(default! (get-config)["port"] 80)`
+calls `get-config` up to three times. Rewrite it over a ref: capture
+the ref once, check it, store into it when unset, with `default!`
+a macro over that function; or remove the macro.
+
+Ref: [MACROS.md](MACROS.md).
+
 ---
 
 ## Corpus
@@ -509,6 +549,16 @@ The PR's `make test` (`phase_corpus`) is the authoritative backstop.
 
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
 [corpus-schema-philosophy.md](corpus-schema-philosophy.md).
+
+### Corpus harness blind to bracket kind (future)
+
+`form_to_py` maps pair and bracket-pair alike, so about 132 read and
+expand expectations recorded in the wrong bracket style pass. Replace
+the conversion with a strict structural walk over the forms, then
+regenerate the stale expectations through `quick verify` against each
+record's source.
+
+Ref: [corpus-bracket-kind.md](corpus-bracket-kind.md).
 
 ---
 

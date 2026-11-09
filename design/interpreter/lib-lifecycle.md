@@ -12,19 +12,23 @@ and added to the module dict. The contract around them:
   definition says so with `m_size` 0, which tells CPython that a
   re-import after the module object was collected runs `PyInit_lib`
   again instead of restoring a saved dict over emptied statics.
-- **One owner.** The first module `PyInit_lib` makes owns the statics. A
-  later init, from a re-import or a legacy subinterpreter, shares them
-  without taking them over.
-- **Teardown is the owner's.** `koskari_lib_clear` empties every unit's
-  statics and the module dict. It runs through `m_clear` when the
-  collector breaks the cycle between the module and its functions, at
-  `Py_Finalize` for one, and through `m_free` when the module object is
-  deallocated outside a cycle. For any module but the owner it is a
-  no-op.
-- **A host of its own.** The native test harness fills a module it made
-  itself and clears it directly; no owner is named there, so the clear
-  proceeds. `tests/native/test_lifecycle.c` runs init, clear, init over
-  one module and interns a symbol after the second init.
+- **Shared, not owned.** A later init, from a re-import or a legacy
+  subinterpreter, finds the statics in place and fills its own module
+  dict from them.
+- **No module slot tears down.** The module definition leaves `m_clear`
+  and `m_free` NULL. The static types and their instances hold no
+  reference to the module object, so they outlive it: the module dies in
+  the collection that frees the builtins namespace holding its
+  functions, and the interpreter's last collection then runs finalizers
+  that may still intern a symbol or render a pair. A clear from either
+  slot left those readers on NULLed statics. The statics live for the
+  process, as the static types do.
+- **A host of its own.** `koskari_lib_clear` empties every unit's
+  statics and the module dict for a host that fills a module it made
+  itself and tears it down directly, as the native test harness does
+  before finalizing. A second clear before the next init is a no-op.
+  `tests/native/test_lifecycle.c` runs init, clear, init over one module
+  and interns a symbol after the second init.
 
 Isolated subinterpreters, which refuse single-phase modules, are not a
 target. The multi-phase form with per-module state would make every

@@ -3,9 +3,9 @@
 **Syntax:** `(cadr PAIR)`, `(caddr PAIR)`, `(cadddr PAIR)`,
 `(caddddr PAIR)`; `(first PAIR)` through `(fifth PAIR)`
 
-**Behaviour:** `cadr` through `caddddr` are macros that expand to
-nested `car` and `cdr`: `cadr` is the second element, `caddr` the
-third, and so on. Being macros, they expand in call position even when
+**Behaviour:** `cadr` through `caddddr` are macros that take nested
+`car` and `cdr` of PAIR: `cadr` is the second element, `caddr` the
+third, and so on. Being macros, they take effect in call position even when
 a local binding of the same name exists. Each also has a runtime
 function binding of the same name, so `cadr` can be handed to a
 higher-order function as a value.

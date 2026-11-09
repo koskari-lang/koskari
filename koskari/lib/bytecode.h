@@ -679,6 +679,8 @@ struct KosCode {
                            when the block lives in an arena */
 
   uint32_t code_len;    /* instruction count */
+  int32_t self_slot;    /* local slot a named lambda binds itself in,
+                           or -1 when the code does not bind itself */
   KosOp *code;          /* instruction array */
 
   uint32_t pos_len;     /* position entry count */
@@ -916,6 +918,9 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_CODE_LEN(c)                     \
   (((KosCode *) c)->code_len)
+
+#define KosCode_SELF_SLOT(c)                    \
+  (((KosCode *) c)->self_slot)
 
 #define KosCode_CODE(c)                         \
   (((KosCode *) c)->code)

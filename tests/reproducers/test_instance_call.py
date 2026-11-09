@@ -29,6 +29,7 @@ import unittest
 
 import pytest
 
+from koskari.lib import get_frame_depth_limit
 from koskari.module import init_module, load_module_async, new_module
 
 
@@ -86,8 +87,8 @@ class TestInstanceCall(unittest.IsolatedAsyncioTestCase):
 
         mod = await self.load_module()
         self.assertEqual(await mod.bound_deep(200), 200)
-        with self.assertRaises(RecursionError):
-            await mod.bound_deep(2000)
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
+            await mod.bound_deep(get_frame_depth_limit() + 500)
 
 
     async def test_instance_attribute_does_not_shadow(self):

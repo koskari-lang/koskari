@@ -22,7 +22,7 @@ KOS_OP_HANDLER(UNPACK) {
   KOS_SYNC_PC(ctx, insn);
   Py_ssize_t n = (Py_ssize_t) KosOp_ARG(insn);
 
-  PyObject *seq = KosContext_PopUnpackSequence(ctx, n, 1, "UNPACK");
+  PyObject *seq = KosContext_PopUnpackSequence(ctx, n, 1);
   if (unlikely(! seq))
     RESULT_RAISE();
 

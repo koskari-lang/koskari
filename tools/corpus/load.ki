@@ -41,6 +41,7 @@ var _VERIFY_KEY_ORDER #(
     "expand"
     "compile"
     "eval"
+    "warning"
     "error"
     "invalid")
 

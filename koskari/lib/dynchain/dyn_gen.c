@@ -72,23 +72,29 @@ void kos_dyngen_rest(KosDynGen *gen) {
 
 void kos_dyngen_free(KosDynGen *gen) {
 
-  KosGenState *state = KosDynGen_STATE(gen);
-
-  if (state->node == (KosDynNode *) gen)
-    state->node = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
 
 
+/**
+   The one free of a GEN node that knows the owner is alive: the state
+   is the owner's, and it takes its resting node out before freeing
+   it. An installed node is not in the state (kos_dyngen_new took it
+   out), and goes with its chain.
+*/
 void kos_gen_state_clear(KosGenState *state) {
 
   KosDynNode *active = state->active;
+  KosDynNode *node;
 
   state->active = NULL;
   if (active)
     kos_dynchain_free(active, NULL);
-  if (state->node)
-    kos_dyngen_free((KosDynGen *) state->node);
+
+  node = state->node;
+  state->node = NULL;
+  if (node)
+    kos_dyngen_free((KosDynGen *) node);
 }
 
 
@@ -301,8 +307,12 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   {
     KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (! (surfaced && KosDynFrame_RESUME_KIND(surfaced))
-        && KosContext_StackPushRef(ctx, Py_None) < 0)
+        && KosContext_StackPushRef(ctx, Py_None) < 0) {
+      /* the span is spliced and nothing else has run: put it back to
+         rest, so the generator stays suspended where it was */
+      kos_dyn_gen_unsplice(ctx, state);
       return -1;
+    }
   }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p",
@@ -312,6 +322,27 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
            : "NULL",
        (void *) KosContext_FRAME(ctx));
   return 0;
+}
+
+
+void kos_dyn_gen_unsplice(KosContext *ctx, KosGenState *state) {
+
+  KosDynNode *bottom = state->bottom;
+  KosDynGen *gen;
+  PyObject *typ, *val, *tb;
+
+  if (! bottom)
+    return;
+  gen = (KosDynGen *) KosDynNode_PARENT(bottom);
+  if (! gen || KosDynNode_KIND(gen) != KOS_DYN_GEN)
+    return;
+
+  /* the failure's error is the one the caller reports; the freeze's
+     own, should it have one, is not */
+  PyErr_Fetch(&typ, &val, &tb);
+  if (kos_dyn_gen_freeze(ctx, gen) < 0)
+    PyErr_Clear();
+  PyErr_Restore(typ, val, tb);
 }
 
 

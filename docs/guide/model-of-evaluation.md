@@ -106,11 +106,24 @@ reads fine and fails here.
 
 ## Evaluate
 
-The evaluator runs the bytecode. It is stackless: a Koskari call does
-not consume the C stack, so tail calls loop, deep recursion does not
-overflow, and a running function can be suspended and resumed. That
-last property is what makes every function able to await without being
-marked async; see [Demand, async, and defer](demand-async-and-defer.md).
+The evaluator runs the bytecode. It is stackless: frames live on the
+heap, so a Koskari call does not consume the C stack, tail calls loop,
+and a running function can be suspended and resumed. That last property
+is what makes every function able to await without being marked async;
+see [Demand, async, and defer](demand-async-and-defer.md).
+
+Python's recursion limit does not count Koskari frames. The evaluator
+bounds frame depth with its own limit as a guard against runaway memory
+from unbounded recursion; a call that is not in tail position adds a
+frame, a tail call does not, and a call past the limit raises
+`RecursionError` into the calling frame, where `try` catches it. The
+limit is process-wide and defaults to 10000;
+`koskari.lib.get_frame_depth_limit()` reads it and
+`koskari.lib.set_frame_depth_limit(n)` sets it to any `n` from 1 up to
+the cap of 65535. Python's recursion
+limit still applies where Koskari and Python call into each other: a
+recursion that passes through a Python function on each round trip
+stops at Python's limit.
 
 Names are looked up in the namespace the code was compiled in, then its
 parents, then the module's builtins. A name with no binding is a

@@ -55,6 +55,10 @@ class TableBuilder:
         # through these
         self._slot_scopes = [({}, True, None, False)]
         self.in_class_fields = False
+        # per claimed slot name, the number of ellipses a template must
+        # place it under: the repeats around the claim, plus one for a
+        # capture that is itself a sequence
+        self.ellipsis_depths = {}
 
 
     def begin_nested_claims(
@@ -203,15 +207,18 @@ class TableBuilder:
         return idx
 
 
-    def claim_slot_name(self, name, signature):
+    def claim_slot_name(self, name, signature, sequence=False):
         """
         Reject duplicate slot bindings within the current capture scope.
         Repeat a pattern variable with :class:`SAME` instead of a second
         CAPTURE. ONEOF branches use a fresh scope per branch so alternate
-        arms may reuse slot names
+        arms may reuse slot names. The claim's ellipsis depth is recorded
+        in :data:`ellipsis_depths`
 
         :param name: capture slot name
         :param signature: hashable tuple describing this claim
+        :param sequence: the slot captures a sequence of matches, a
+            repeat's iterations or a rest's elements
         """
 
         top = self.capture_scope_stack[-1]
@@ -227,6 +234,9 @@ class TableBuilder:
                 f"duplicate slot name {name!r} in matcher pattern; use SAME "
                 "for repeats")
         top[name] = signature
+
+        repeats = sum(1 for scope in self._slot_scopes if scope[3])
+        self.ellipsis_depths[name] = repeats + (1 if sequence else 0)
 
 
     def lower(self, root):

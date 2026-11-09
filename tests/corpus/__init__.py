@@ -23,9 +23,11 @@ Corpus record loading, expected-value parsing, verify handlers, and test base.
 
 
 import builtins
+import gc
 import json
 import re
 import unittest
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -228,7 +230,7 @@ def load_corpus_cases(records_dir=None, schema_path=None, root=None):
     for record_id in sorted(index):
         verify = index[record_id].get('verify') or {}
         for stage in sorted(verify):
-            if stage == 'invalid':
+            if stage in ('invalid', 'warning'):
                 continue
             cases.append((record_id, stage))
 
@@ -522,13 +524,17 @@ def parse_error_expected(text):
 
 def error_exception_class(class_name):
     """
-    Resolve an exception class name to a Python type
+    Resolve an exception or warning class name to a Python type: a
+    Koskari exception first, else a Python builtin
 
-    :param class_name: exception name such as LayoutError
+    :param class_name: class name such as LayoutError or RuntimeWarning
     :return: exception type
     """
 
-    return getattr(exceptions, class_name)
+    found = getattr(exceptions, class_name, None)
+    if found is None:
+        found = getattr(builtins, class_name)
+    return found
 
 
 def verify_read(case, expected):
@@ -564,6 +570,45 @@ def verify_expand(case, expected):
         % (case.record['id'], got, exp))
 
 
+def verify_eval_warnings(case, caught):
+    """
+    Check the warnings recorded during the eval stage against
+    verify.warning: when present, at least one warning was recorded and
+    every one is the named warning (an eval that drops several
+    coroutines warns once per coroutine); when absent, none was
+
+    :param case: CorpusTestCase instance
+    :param caught: list of warnings.WarningMessage recorded by the eval
+    """
+
+    record = case.record
+    expected = record['verify'].get('warning')
+    seen = [f"{w.category.__name__}: {w.message}" for w in caught]
+
+    if expected is None:
+        case.assertEqual(
+            seen, [],
+            f"unexpected warning for {record['id']}\n seen: {seen!r}")
+        return
+
+    case.assertTrue(
+        caught,
+        f"missing warning for {record['id']}\n exp: {expected!r}")
+
+    cls_name, msg = parse_error_expected(expected)
+    for found in caught:
+        if cls_name:
+            case.assertTrue(
+                issubclass(found.category, error_exception_class(cls_name)),
+                f"warning class mismatch for {record['id']}\n"
+                f" exp: {expected!r}\n seen: {seen!r}")
+        if msg:
+            case.assertIn(
+                msg, str(found.message),
+                f"warning message mismatch for {record['id']}\n"
+                f" exp: {expected!r}\n seen: {seen!r}")
+
+
 def verify_eval(case, expected):
     """
     Verify eval stage expectation for the bound corpus record
@@ -573,7 +618,11 @@ def verify_eval(case, expected):
     """
 
     kind, payload = parse_eval_expected(expected)
-    got = case.eval_source(case.record['source'])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        got = case.eval_source(case.record['source'])
+        gc.collect()
+    verify_eval_warnings(case, caught)
     if kind == 'marked':
         run_marked_eval_check(case, got, payload)
         return

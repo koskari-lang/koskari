@@ -21,7 +21,9 @@ the free ran first.
 
 import asyncio
 import gc
+import sys
 import unittest
+from unittest import mock
 
 import pytest
 
@@ -95,36 +97,56 @@ class TestContextChainRelease(unittest.TestCase):
     def test_teardown_fallback_frees_with_registers_cleared(self):
         """
         A suspended generator whose close awaits is dropped; the close
-        cannot be honored and the chain is freed from the teardown
+        cannot be honored, is reported, and the chain is freed from the
+        teardown
         """
 
         fut = self.loop.create_future()
         box = []
+        seen = []
+
+        def record(u):
+            seen.append((type(u.exc_value), str(u.exc_value)))
+
         agen = self.v["gen_close_awaits"](
             fut, box, Allocating(), [object(), object()])
         self.assertEqual(("stop", 1), step(agen.__anext__()))
-        del agen
-        gc.collect()
+        with mock.patch.object(sys, "unraisablehook", record):
+            del agen
+            gc.collect()
         self.assertEqual("fin", box[0])
+        self.assertEqual(
+            [(RuntimeError, "async generator ignored GeneratorExit")],
+            seen)
 
     def test_abandoned_stepper_recycles_with_registers_cleared(self):
         """
-        A stepper dropped mid-await drives GeneratorExit; the cleanup
-        awaits again and the finish recycles the wrapper's context
+        A generator dropped mid-await after its stepper closes from its
+        finalizer; the cleanup awaits again, is reported, and the
+        chain left on the wrapper's context is freed
         """
 
         fut = self.loop.create_future()
         fut2 = self.loop.create_future()
         box = []
+        seen = []
+
+        def record(u):
+            seen.append((type(u.exc_value), str(u.exc_value)))
+
         agen = self.v["gen_two_awaits"](
             fut, fut2, box, Allocating(), [object(), object()])
         self.assertEqual(("stop", 1), step(agen.__anext__()))
         st = agen.__anext__()
         self.assertEqual("yield", step(st)[0])
-        del st
-        del agen
-        gc.collect()
+        with mock.patch.object(sys, "unraisablehook", record):
+            del st
+            del agen
+            gc.collect()
         self.assertEqual("fin", box[0])
+        self.assertEqual(
+            [(RuntimeError, "async generator ignored GeneratorExit")],
+            seen)
 
 
 # The end.

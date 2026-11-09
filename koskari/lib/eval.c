@@ -92,9 +92,7 @@ static PyObject *str_args = NULL;
 static PyObject *str_continuation = NULL;
 static PyObject *str_target = NULL;
 
-/* The exception's frame record attribute and its entries' keys (see
-   dynchain_frame_meta) */
-static PyObject *str_dynchain = NULL;
+/* The keys of a frame's trace data (see frame_trace_entry) */
 static PyObject *str_rec_name = NULL;
 static PyObject *str_rec_filename = NULL;
 static PyObject *str_rec_line = NULL;
@@ -102,6 +100,10 @@ static PyObject *str_rec_col = NULL;
 static PyObject *str_rec_pc = NULL;
 static PyObject *str_rec_crossed = NULL;
 static PyObject *str_rec_frame = NULL;
+
+/* A synthesized Python frame object's globals (see trace_frame) */
+static PyObject *str_koskari_trace = NULL;
+static PyObject *str_koskari_native = NULL;
 
 
 /*
@@ -244,16 +246,18 @@ static KosOpResult iter_deliver_to_resume(
 
 
 /**
-   Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
-   when set (driver pre-stored await result, e.g. coro.c
-   throw-into-awaitable), else send_val. Complete pending WITH exit if
-   applicable.
+   Revive from AWAIT: push the await result, or deliver a throw. The
+   result is PY_RESUME_INJECT when a driver stored one (coroutine_throw_pair
+   after its throw into the awaitable returned), else send_val. Completes a
+   pending WITH exit when applicable.
 
-   When throw_exc is set and py_await_iter is non-NULL, resolves a callable
-   throw and forwards with single-arg throw(exc) before the VM exception path
-   (align with coroutine_throw WAITING_PY). On StopIteration, completes the
-   await like a normal resume. On non-NULL throw result, returns EVAL_AWAIT
-   with the next awaitable (re-suspend).
+   A throw with py_await_iter set comes from a stepper's throw into a
+   mid-work await (stepper_drive); the coroutine wrapper forwards its own
+   throws before entering the eval. The throw is forwarded to the stored
+   iterator, held across the call, under the drive's active context. A
+   return completes the await like a normal resume; a yield re-suspends
+   with EVAL_AWAIT; a failure clears the iterator and raises at the await.
+   With no iterator stored, the throw raises at the await.
 
    :return: EVAL_NORMAL, EVAL_AWAIT (with re-suspend value), or EVAL_RAISE
 */
@@ -280,12 +284,16 @@ static KosOpResult revive_await(
       PyObject *val = throw_exc;
       PyObject *tb = Py_None;
       PyObject *res = NULL;
+      PyObject *await_iter = KosContext_PythonAwaitIter(ctx);
       PySendResult step;
       Py_INCREF(typ);
       Py_INCREF(val);
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
-      step = kos_iter_throw(KosContext_PythonAwaitIter(ctx), val, &res);
+      /* the iterator is held across the throw, which can run user code */
+      Py_INCREF(await_iter);
+      step = kos_iter_throw(await_iter, val, &res);
+      Py_DECREF(await_iter);
       Py_DECREF(typ);
       Py_DECREF(val);
       Py_XDECREF(tb);
@@ -404,144 +412,200 @@ static KosEvalMode revive_yield(
 
 
 /**
-   Build the trace metadata dict for one frame. crossed marks entries
-   recorded while the raise walk crossed (and popped) the frame, as
-   opposed to frames still live at escape time.
+   The trace data for one frame, carried by its synthesized Python
+   frame object as __koskari_trace__: name, filename, line, col, pc,
+   crossed and frame (the node id). crossed marks a frame the raise
+   walk crossed (and popped), as opposed to one still live when the
+   exception left the context.
 */
-static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
+static PyObject *frame_trace_entry(
+    KosDynFrame *frame,
+    PyObject *name,
+    PyObject *filename,
+    uint16_t line,
+    uint16_t col,
+    uint32_t pc,
+    int crossed) {
 
-  PyObject *meta = PyDict_New();
-  if (! meta)
+  PyObject *entry = PyDict_NewPresized(7);
+  PyObject *line_o = NULL, *col_o = NULL, *pc_o = NULL, *id_o = NULL;
+
+  if (! entry)
     return NULL;
 
-  KosCode *code = KosDynFrame_CODE(frame);
-  uint16_t line = 0, col = 0;
-  uint32_t pc = kos_insn_pc(KosDynFrame_ACTING_PC(frame));
-  if (code)
-    kos_loc_lookup((PyObject *) code, pc, &line, &col);
+  line_o = PyLong_FromUnsignedLong((unsigned long) line);
+  col_o = PyLong_FromUnsignedLong((unsigned long) col);
+  pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
+  id_o = PyLong_FromUnsignedLong(
+      (unsigned long) kos_dynnode_id((KosDynNode *) frame));
 
-  PyObject *name = code ? KosCode_NAME(code) : Py_None;
-  PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
+  if (! line_o || ! col_o || ! pc_o || ! id_o
+      || PyDict_SetItem(entry, str_rec_name, name) < 0
+      || PyDict_SetItem(entry, str_rec_filename, filename) < 0
+      || PyDict_SetItem(entry, str_rec_line, line_o) < 0
+      || PyDict_SetItem(entry, str_rec_col, col_o) < 0
+      || PyDict_SetItem(entry, str_rec_pc, pc_o) < 0
+      || PyDict_SetItem(entry, str_rec_crossed,
+                        crossed ? Py_True : Py_False) < 0
+      || PyDict_SetItem(entry, str_rec_frame, id_o) < 0)
+    Py_CLEAR(entry);
 
-  PyDict_SetItem(meta, str_rec_name, name ? name : Py_None);
-  PyDict_SetItem(meta, str_rec_filename, filename ? filename : Py_None);
-  PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
-  PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
-  PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
-  if (line_o && col_o && pc_o) {
-    PyDict_SetItem(meta, str_rec_line, line_o);
-    PyDict_SetItem(meta, str_rec_col, col_o);
-    PyDict_SetItem(meta, str_rec_pc, pc_o);
-  }
   Py_XDECREF(line_o);
   Py_XDECREF(col_o);
   Py_XDECREF(pc_o);
-  PyDict_SetItem(meta, str_rec_crossed, crossed ? Py_True : Py_False);
-  {
-    PyObject *id_o = PyLong_FromUnsignedLong(
-        (unsigned long) kos_dynnode_id((KosDynNode *) frame));
-    if (id_o) {
-      PyDict_SetItem(meta, str_rec_frame, id_o);
-      Py_DECREF(id_o);
-    }
-  }
-  return meta;
+  Py_XDECREF(id_o);
+  return entry;
 }
 
 
 /**
-   1 when record already holds an entry for frame: a handler's entry
-   recorded the frame when it caught the exception, and a re-raise
-   out of that handler crosses the same frame. Python keeps the
-   original entry for a re-raised exception too.
+   1 when the traceback's most recent entry is frame's: a synthesized
+   Python frame object whose __koskari_trace__ carries frame's id. A
+   handler in a frame adds that frame when it catches the exception,
+   and a re-raise out of the handler with nothing added in between
+   crosses the same frame again; the crossing then adds nothing. A
+   frame crossed again after other entries were added, Koskari or
+   Python, is a second crossing, which CPython lists too, so only the
+   most recent entry is compared. Node ids are fresh per reuse, so a
+   stale entry cannot match.
 */
-static int dynchain_record_has_frame(PyObject *record, KosDynFrame *frame) {
+static int traceback_ends_with_frame(PyObject *tb, KosDynFrame *frame) {
 
-  uint32_t id = kos_dynnode_id((KosDynNode *) frame);
+  PyFrameObject *pyframe;
+  PyObject *globals;
+  PyObject *entry = NULL;
+  PyObject *id_o = NULL;
+  int found = 0;
 
-  for (Py_ssize_t i = 0; i < PyList_GET_SIZE(record); i++) {
-    PyObject *entry = PyList_GET_ITEM(record, i);
-    PyObject *id_o;
+  if (! tb || ! PyTraceBack_Check(tb))
+    return 0;
+  pyframe = ((PyTracebackObject *) tb)->tb_frame;
+  if (! pyframe)
+    return 0;
 
-    if (! PyDict_Check(entry))
-      continue;
+  globals = PyFrame_GetGlobals(pyframe);
+  if (globals && PyDict_Check(globals))
+    entry = PyDict_GetItemWithError(globals, str_koskari_trace);
+  if (entry && PyDict_Check(entry))
     id_o = PyDict_GetItemWithError(entry, str_rec_frame);
-    if (id_o && PyLong_AsUnsignedLong(id_o) == id)
-      return 1;
-    if (! id_o && PyErr_Occurred())
-      PyErr_Clear();
+  if (id_o && PyLong_CheckExact(id_o)) {
+    unsigned long id = PyLong_AsUnsignedLong(id_o);
+
+    found = id == (unsigned long) kos_dynnode_id((KosDynNode *) frame);
   }
-  return 0;
-}
-
-
-static void decorate_exception_with_dynchain(
-    KosContext *ctx,
-    PyObject *exc_val) {
-
-  if (! ctx || ! exc_val || ! PyExceptionInstance_Check(exc_val)) {
-    return;
-  }
-
-  PyObject *frames = PyList_New(0);
-  if (! frames) {
+  Py_XDECREF(globals);
+  if (PyErr_Occurred())
     PyErr_Clear();
-    return;
-  }
-
-  /* Carry forward every previously recorded frame. Crossed entries
-     were popped by the raise walk; the rest were recorded at the
-     escape of an earlier eval, whose context died with that escape
-     (see kos_eval_prepare_boundary_raise). Either way none of them
-     can still be on this context's live chain, so appending the live
-     chain below cannot duplicate them. */
-  {
-    PyObject *prior = NULL;
-
-    if (PyObject_GetOptionalAttr(exc_val, str_dynchain, &prior) < 0) {
-      PyErr_Clear();
-    } else if (prior) {
-      if (PyList_Check(prior)) {
-        for (Py_ssize_t i = 0; i < PyList_GET_SIZE(prior); i++) {
-          PyObject *meta = PyList_GET_ITEM(prior, i);
-          if (PyDict_Check(meta))
-            PyList_Append(frames, meta);
-        }
-      }
-      Py_DECREF(prior);
-    }
-  }
-
-  {
-    for (KosDynNode *node = KosContext_DYN_TOP(ctx); node;
-         node = KosDynNode_PARENT(node)) {
-      if (! KosDynNode_IS_FRAME(node)) {
-        continue;
-      }
-      if (dynchain_record_has_frame(frames, (KosDynFrame *) node))
-        continue;
-      PyObject *meta = dynchain_frame_meta((KosDynFrame *) node, 0);
-      if (! meta) {
-        PyErr_Clear();
-        continue;
-      }
-      PyList_Append(frames, meta);
-      Py_DECREF(meta);
-    }
-  }
-
-  if (PyObject_SetAttr(exc_val, str_dynchain, frames) < 0) {
-    PyErr_Clear();
-  }
-
-  Py_DECREF(frames);
+  return found;
 }
 
 
 /**
-   Record the current frame into the in-flight exception's
-   __koskari_dynchain__ metadata before the raise walk pops it. PyErr is
-   preserved across the call; failures are swallowed (trace decoration is
+   Add a traceback entry for frame to the exception in hand, as
+   CPython adds one for each Python frame a raise leaves: an empty code
+   object naming the file, the function and the line the frame was
+   executing, a Python frame object over it whose globals carry the
+   frame's trace data as __koskari_trace__, and PyTraceBack_Here. Each
+   entry goes in ahead of the ones before, so with frames added
+   innermost first the printed order is the outermost frame first. A
+   frame with no file (the code-less root of a demand drive) adds
+   nothing, nor does the frame the most recent entry already shows
+   (traceback_ends_with_frame). The value's __traceback__ is kept
+   equal to the extended traceback.
+
+   Called with the triple fetched and no error set; a failure to build
+   the entry leaves the triple as it was.
+*/
+static void trace_frame(
+    KosDynFrame *frame,
+    int crossed,
+    PyObject **exc_type,
+    PyObject **exc_val,
+    PyObject **exc_tb) {
+
+  KosCode *code = KosDynFrame_CODE(frame);
+  PyObject *name;
+  PyObject *filename;
+  const char *filename_s;
+  const char *name_s;
+  uint16_t line = 0, col = 0;
+  uint32_t pc;
+  PyObject *entry;
+  PyObject *globals;
+  PyCodeObject *pycode;
+  PyFrameObject *pyframe;
+
+  if (! code)
+    return;
+  filename = KosCode_FILENAME(code);
+  if (! filename || ! PyUnicode_Check(filename))
+    return;
+  if (traceback_ends_with_frame(*exc_tb, frame))
+    return;
+
+  name = KosCode_NAME(code);
+  if (name && ! PyUnicode_Check(name))
+    name = NULL;
+  pc = kos_insn_pc(KosDynFrame_ACTING_PC(frame));
+  kos_loc_lookup((PyObject *) code, pc, &line, &col);
+
+  filename_s = PyUnicode_AsUTF8(filename);
+  name_s = name ? PyUnicode_AsUTF8(name) : "<module>";
+  if (! filename_s || ! name_s) {
+    PyErr_Clear();
+    return;
+  }
+
+  entry = frame_trace_entry(frame, name ? name : Py_None, filename,
+                            line, col, pc, crossed);
+  if (! entry) {
+    PyErr_Clear();
+    return;
+  }
+
+  globals = PyDict_New();
+  if (! globals
+      || PyDict_SetItem(globals, str_name, str_koskari_native) < 0
+      || PyDict_SetItem(globals, str_koskari_trace, entry) < 0) {
+    Py_XDECREF(globals);
+    Py_DECREF(entry);
+    PyErr_Clear();
+    return;
+  }
+  Py_DECREF(entry);
+
+  pycode = PyCode_NewEmpty(filename_s, name_s, (int) line);
+  pyframe = pycode
+      ? PyFrame_New(PyThreadState_Get(), pycode, globals, NULL)
+      : NULL;
+  Py_XDECREF(pycode);
+  Py_DECREF(globals);
+  if (! pyframe) {
+    PyErr_Clear();
+    return;
+  }
+
+  /* PyTraceBack_Here extends the raised exception. On failure it sets
+     its own error in the exception's place, as CPython does for a
+     Python frame. */
+  PyErr_Restore(*exc_type, *exc_val, *exc_tb);
+  (void) PyTraceBack_Here(pyframe);
+  Py_DECREF(pyframe);
+  PyErr_Fetch(exc_type, exc_val, exc_tb);
+
+  /* Before 3.12 PyTraceBack_Here extends only the thread state's
+     traceback. The value's __traceback__, which a handler and coro.c's
+     PyErr_SetObject read, is set here on every version. */
+  if (*exc_tb && *exc_val && PyExceptionInstance_Check(*exc_val)
+      && PyException_SetTraceback(*exc_val, *exc_tb) < 0)
+    PyErr_Clear();
+}
+
+
+/**
+   Add the frame the raise walk is crossing to the in-flight
+   exception's traceback before the walk pops it. PyErr is preserved
+   across the call; failures are swallowed (trace decoration is
    best-effort). See eval.h.
 */
 void kos_eval_note_crossed_frame(KosContext *ctx) {
@@ -555,145 +619,18 @@ void kos_eval_note_crossed_frame(KosContext *ctx) {
   PyErr_Fetch(&typ, &val, &tb);
   PyErr_NormalizeException(&typ, &val, &tb);
 
-  if (val && PyExceptionInstance_Check(val)) {
-    PyObject *frames = NULL;
-    int fresh = 0;
-
-    if (PyObject_GetOptionalAttr(val, str_dynchain, &frames) < 0)
-      PyErr_Clear();
-    if (frames && ! PyList_Check(frames))
-      Py_CLEAR(frames);
-    if (! frames) {
-      frames = PyList_New(0);
-      fresh = 1;
-    }
-
-    if (! frames) {
-      PyErr_Clear();
-    } else if (dynchain_record_has_frame(frames, KosContext_FRAME(ctx))) {
-      /* a handler in this frame recorded it when it caught the
-         exception; the re-raise crossing it adds nothing */
-      Py_DECREF(frames);
-    } else {
-      PyObject *meta = dynchain_frame_meta(KosContext_FRAME(ctx), 1);
-      if (meta) {
-        PyList_Append(frames, meta);
-        Py_DECREF(meta);
-        /* a list the exception already held was appended in place */
-        if (fresh && PyObject_SetAttr(val, str_dynchain, frames) < 0)
-          PyErr_Clear();
-      } else {
-        PyErr_Clear();
-      }
-      Py_DECREF(frames);
-    }
-  }
+  if (val && PyExceptionInstance_Check(val))
+    trace_frame(KosContext_FRAME(ctx), 1, &typ, &val, &tb);
 
   PyErr_Restore(typ, val, tb);
 }
 
 
 /**
-   One traceback entry per recorded frame: an empty code object naming
-   the file, the function and the line the frame was executing, a
-   frame over it, and PyTraceBack_Here. Entries go in innermost first,
-   and each goes in ahead of the ones before, so the printed order is
-   the outermost frame first, as for Python frames. A record entry
-   with no file (the code-less root of a demand drive) adds nothing.
-   The frame's globals carry its own entry as __koskari_trace__, so a
-   formatter walking the traceback renders each frame where it sits.
-   The extended chain is attached to the value as its __traceback__.
+   The exception is leaving the context: add a traceback entry for
+   every frame still live on its chain, innermost first, after the
+   entries the raise walk added as it crossed frames.
 */
-static PyFrameObject *frame_for_record(PyObject *entry) {
-
-  PyObject *filename = PyDict_GetItemString(entry, "filename");
-  PyObject *name = PyDict_GetItemString(entry, "name");
-  PyObject *line_o = PyDict_GetItemString(entry, "line");
-  if (! filename || ! PyUnicode_Check(filename) || ! line_o)
-    return NULL;
-  if (! name || ! PyUnicode_Check(name))
-    name = Py_None;
-
-  PyCodeObject *code = PyCode_NewEmpty(
-      PyUnicode_AsUTF8(filename),
-      name == Py_None ? "<module>" : PyUnicode_AsUTF8(name),
-      (int) PyLong_AsLong(line_o));
-  if (! code)
-    return NULL;
-
-  PyObject *globals = PyDict_New();
-  if (! globals) {
-    Py_DECREF(code);
-    return NULL;
-  }
-  PyObject *modname = PyUnicode_FromString("koskari.native");
-  if (modname) {
-    PyDict_SetItemString(globals, "__name__", modname);
-    Py_DECREF(modname);
-  }
-  PyDict_SetItemString(globals, "__koskari_trace__", entry);
-
-  PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), code, globals,
-                                       NULL);
-  Py_DECREF(globals);
-  Py_DECREF(code);
-  return pyframe;
-}
-
-
-void kos_eval_inject_recorded_frames(
-    PyObject **exc_type,
-    PyObject **exc_val,
-    PyObject **exc_tb) {
-
-  PyObject *record;
-
-  if (! exc_val || ! *exc_val)
-    return;
-  record = PyObject_GetAttrString(*exc_val, "__koskari_dynchain__");
-  if (! record) {
-    PyErr_Clear();
-    return;
-  }
-  if (! PyList_Check(record)) {
-    Py_DECREF(record);
-    return;
-  }
-
-  for (Py_ssize_t i = 0; i < PyList_GET_SIZE(record); i++) {
-    PyObject *entry = PyList_GET_ITEM(record, i);
-    PyFrameObject *pyframe;
-
-    if (! PyDict_Check(entry)
-        || PyDict_GetItemString(entry, "traced") == Py_True)
-      continue;
-    PyDict_SetItemString(entry, "traced", Py_True);
-
-    /* the triple stays in hand while the frame is built, so a failure
-       there cannot displace the exception being decorated */
-    pyframe = frame_for_record(entry);
-    if (! pyframe) {
-      PyErr_Clear();
-      continue;
-    }
-
-    PyErr_Restore(*exc_type, *exc_val, *exc_tb);
-    if (PyTraceBack_Here(pyframe) < 0)
-      PyErr_Clear();
-    Py_DECREF(pyframe);
-    PyErr_Fetch(exc_type, exc_val, exc_tb);
-  }
-  Py_DECREF(record);
-
-  /* PyTraceBack_Here extends the thread-state traceback only. The
-     value's __traceback__, which a handler and coro.c's PyErr_SetObject
-     read, is attached here; before 3.12 PyErr_Restore leaves it alone. */
-  if (*exc_tb && PyExceptionInstance_Check(*exc_val)
-      && PyObject_SetAttrString(*exc_val, "__traceback__", *exc_tb) < 0)
-    PyErr_Clear();
-}
-
-
 static void inject_eval_frame_traceback(
     KosContext *ctx,
     PyObject **exc_type,
@@ -714,8 +651,14 @@ static void inject_eval_frame_traceback(
   PyErr_NormalizeException(exc_type, exc_val, exc_tb);
   #endif
 
-  decorate_exception_with_dynchain(ctx, *exc_val);
-  kos_eval_inject_recorded_frames(exc_type, exc_val, exc_tb);
+  if (! PyExceptionInstance_Check(*exc_val))
+    return;
+
+  for (KosDynNode *node = KosContext_DYN_TOP(ctx); node;
+       node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_FRAME(node))
+      trace_frame((KosDynFrame *) node, 0, exc_type, exc_val, exc_tb);
+  }
 }
 
 
@@ -734,7 +677,7 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
 
    An exact GeneratorExit is not decorated. It is the close protocol's
    signal: every close drive throws one in and clears whatever comes
-   back, so the dynchain record, the faux frame, and the traceback entry
+   back, so the synthesized Python frame object and its traceback entry
    would be built for an exception discarded on the next line, once per
    abandoned generator. A subclass, or any exception a finally raises in
    its place, is a different type and is decorated as usual.
@@ -3537,10 +3480,14 @@ KosOpResult koskari_eval(
      entry can only be a caller without a busy check of its own. Refused
      here, before anything below is set up, so the return has nothing to
      unwind; nothing between this read and the set below releases the
-     GIL, so another thread cannot pass the check in the meantime. */
-  if (unlikely(KosContext_FLAGS(ctx) & KOS_CTX_RUNNING)) {
+     GIL, so another thread cannot pass the check in the meantime. A
+     context the collector cleared, or is clearing, is refused by the
+     same test: what it held is gone. */
+  if (unlikely(KosContext_FLAGS(ctx) & (KOS_CTX_RUNNING | KOS_CTX_CLEARED))) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "eval entered on a context already being evaluated");
+                    (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED)
+                    ? "eval entered on a cleared context"
+                    : "eval entered on a context already being evaluated");
     return EVAL_RAISE();
   }
 
@@ -3797,7 +3744,6 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_package, "__package__");
   STR_CONST(str_empty, "");
   STR_CONST(str_target, "target");
-  STR_CONST(str_dynchain, "__koskari_dynchain__");
   STR_CONST(str_rec_name, "name");
   STR_CONST(str_rec_filename, "filename");
   STR_CONST(str_rec_line, "line");
@@ -3805,6 +3751,8 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_rec_pc, "pc");
   STR_CONST(str_rec_crossed, "crossed");
   STR_CONST(str_rec_frame, "frame");
+  STR_CONST(str_koskari_trace, "__koskari_trace__");
+  STR_CONST(str_koskari_native, "koskari.native");
 
   if (PyType_Ready(&KosContextType) < 0)
     return -1;
@@ -3870,7 +3818,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_package);
   Py_CLEAR(str_empty);
   Py_CLEAR(str_target);
-  Py_CLEAR(str_dynchain);
   Py_CLEAR(str_rec_name);
   Py_CLEAR(str_rec_filename);
   Py_CLEAR(str_rec_line);
@@ -3878,6 +3825,8 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_rec_pc);
   Py_CLEAR(str_rec_crossed);
   Py_CLEAR(str_rec_frame);
+  Py_CLEAR(str_koskari_trace);
+  Py_CLEAR(str_koskari_native);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

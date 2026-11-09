@@ -171,6 +171,37 @@ class TestCallAttrUnboundPath(CevalTest):
         self.assertEqual(result, 42)
 
 
+class TestCallAttrMutableDescriptorType(CevalTest):
+    """
+    A class attribute whose class gains __get__ after a warm call
+    """
+
+    async def test_call_attr_class_attribute_gaining_get_is_bound(self):
+        """
+        CALL_ATTR calls the __get__ result once the class attribute's
+        class gains __get__, not the raw attribute
+        """
+
+        class Callee(object):
+            def __call__(self, *args):
+                return "raw"
+
+        class Host(object):
+            meth = Callee()
+        host = Host()
+        code, ns = build_expr([
+            ["CONST", host],
+            ["CALL_ATTR", ("meth", 0, 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        self.assertEqual(await fn(), "raw")
+        self.assertEqual(await fn(), "raw")
+        Callee.__get__ = lambda self, obj, tp=None: (lambda: "bound")
+        self.assertEqual(host.meth(), "bound")
+        self.assertEqual(await fn(), "bound")
+
+
 class TestCallAttrInstanceDictShadow(CevalTest):
     """
     Instance dict shadows class attribute. Resolver finds name in __dict__.
@@ -648,6 +679,90 @@ class TestCallVarAttr(CevalTest):
         result = await fn(h)
         self.assertEqual(result, h.meth(1))
         self.assertEqual(result, ("descr called", (1,)))
+
+
+    async def test_call_var_attr_class_rebound_during_probe(self):
+        """
+        A key in the instance dict whose __eq__ rebinds the class method
+        runs after the class attribute was found. The first call answers
+        from the attribute found first, as CPython's generic lookup does;
+        later calls at the site see the rebound method
+        """
+
+        class C:
+            def m(self):
+                return "old"
+
+        def new_m(self):
+            return "new"
+
+        class Key:
+            armed = False
+
+            def __hash__(self):
+                return hash("m")
+
+            def __eq__(self, other):
+                if Key.armed:
+                    Key.armed = False
+                    C.m = new_m
+                    C.m
+                return False
+
+        c = C()
+        c.__dict__[Key()] = 1
+        code = build_code([
+            ["CALL_VAR_ATTR", ("obj", "m", 0, 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+
+        Key.armed = True
+        self.assertEqual(await fn(c), "old")
+        self.assertEqual(await fn(c), "new")
+        self.assertEqual(await fn(C()), "new")
+
+
+    async def test_call_var_attr_property_installed_during_probe(self):
+        """
+        A key in the instance dict whose __eq__ installs a property of the
+        same name on the class. The first call answers from the instance
+        value it found; later calls at the site go through the property
+        """
+
+        class D:
+            pass
+
+        class Key:
+            armed = False
+
+            def __hash__(self):
+                return hash("m")
+
+            def __eq__(self, other):
+                if Key.armed:
+                    Key.armed = False
+                    D.m = property(lambda s: lambda: "prop")
+                    D.m
+                return False
+
+        d = D()
+        d.__dict__[Key()] = 1
+        d.__dict__["m"] = lambda: "inst"
+        code = build_code([
+            ["CALL_VAR_ATTR", ("obj", "m", 0, 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+
+        Key.armed = True
+        self.assertEqual(await fn(d), "inst")
+        self.assertEqual(await fn(d), "prop")
+        self.assertEqual(d.m(), "prop")
 
 
 # The end.

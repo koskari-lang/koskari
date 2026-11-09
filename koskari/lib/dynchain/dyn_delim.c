@@ -147,19 +147,25 @@ void kos_dyndelim_free(KosDynDelim *delim) {
   if (! delim)
     return;
 
+  /* the chain's teardown runs Python; the delim no longer names it */
   if (KosDynDelim_RETURN_CHAIN(delim)) {
-    kos_dynchain_free(KosDynDelim_RETURN_CHAIN(delim), NULL);
+    KosDynNode *chain = KosDynDelim_RETURN_CHAIN(delim);
+
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
+    kos_dynchain_free(chain, NULL);
   }
 
-  /* a displaced resume freed with the delimiter gets no delivery */
+  /* a displaced resume freed with the delimiter gets no delivery; the
+     clear can run code (a delegate's close, a release), so the delim
+     no longer names the state it is releasing */
   if (KosDynDelim_SAVED_RESUME_KIND(delim)) {
     const KosResumeKind *kind = KosDynDelim_SAVED_RESUME_KIND(delim);
+    void *state = KosDynDelim_SAVED_RESUME_STATE(delim);
 
-    if (kind->clear)
-      kind->clear(KosDynDelim_SAVED_RESUME_STATE(delim));
     KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
     KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
+    if (kind->clear)
+      kind->clear(state);
   }
 
   kos_dynnode_return_to_freelist(delim);

@@ -9,7 +9,10 @@ evaluated in the scope the form is in, so a class-body name is in
 reach. A `when:` clause keeps only elements whose test is true;
 `unless:` keeps those whose test is false. A body that is a single
 `when` or `unless` form also filters, contributing nothing when its
-test fails. An `await` or a `shift` in the body works.
+test fails. An `await` or a `shift` in the body works. The list is one
+object for the whole loop: a continuation captured in the body and
+invoked again resumes the loop against that same list, so a second shot
+appends to the list the first shot already returned.
 
 **Examples:**
 

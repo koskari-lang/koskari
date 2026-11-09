@@ -28,6 +28,7 @@ handler takes it.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import gc
 import unittest
 import weakref
@@ -107,6 +108,16 @@ class TestYieldFromDelegateTeardown(unittest.IsolatedAsyncioTestCase):
         return vars(module)
 
 
+    async def run_loop(self):
+        """
+        let the loop run the aclose task the finalizer hook schedules
+        for a generator dropped at rest
+        """
+
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+
     async def test_close_runs_the_koskari_delegate_finally(self):
         m = await self.load("yf_close")
         col = []
@@ -132,6 +143,7 @@ class TestYieldFromDelegateTeardown(unittest.IsolatedAsyncioTestCase):
         next(g)
         del g
         gc.collect()
+        await self.run_loop()
         self.assertEqual(["inner finally", "outer finally"], col)
 
 
@@ -179,6 +191,8 @@ class TestYieldFromDelegateTeardown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await gen.__anext__(), 1)
         del gen
         gc.collect()
+        await self.run_loop()
+        gc.collect()
         self.assertEqual(col, ["plain finally"])
         self.assertIsNone(ref())
 
@@ -186,6 +200,7 @@ class TestYieldFromDelegateTeardown(unittest.IsolatedAsyncioTestCase):
     async def test_for_each_break_runs_the_koskari_delegate_finally(self):
         m = await self.load("yf_break")
         col = await m["loop-outer"]([])
+        await self.run_loop()
         self.assertEqual(["inner finally", "outer finally"], col)
 
 

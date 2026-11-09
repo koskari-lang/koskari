@@ -20,7 +20,13 @@ The evaluator is stackless. A Koskari call does not consume the C stack:
 each running code object has a frame on the heap with an **operand
 stack**, and calls, returns, yields, awaits, and continuation jumps move
 between frames without recursion in C. That is what lets tail calls
-loop, deep recursion run, and any function suspend.
+loop and any function suspend. Python's recursion limit does not count
+these frames; frame depth has its own process-wide limit, a guard
+against runaway memory, and an install past it raises `RecursionError`.
+The limit defaults to 10000; `koskari.lib.set_frame_depth_limit(n)`
+sets it from 1 up to a cap of 65535 and
+`koskari.lib.get_frame_depth_limit()` reads it. A tail call reuses its
+frame.
 
 Alongside the operand stack the evaluator keeps a **dynamic chain** of
 nodes: one per active frame, loop, `try`, `finally`, namespace, context

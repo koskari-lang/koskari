@@ -4,8 +4,8 @@
 
 **Behaviour:** Defines a fence handler. NAME is the binding the fence dispatch
 looks up, normally `fence/<format>`; RAW and META name the handler's two
-parameters. The macro expands to a `var` of NAME bound to a `FenceHandler`
-wrapping the body as a demanding function, so the handler runs at compile time.
+parameters. It binds NAME, as `var` does, to a `FenceHandler` wrapping the
+body as a demanding function, so the handler runs at compile time.
 
 RAW is the fence body text, verbatim. META is a dict carrying `name`,
 `filename`, `line`, `col`, and `options`, where `options` is the opener-line

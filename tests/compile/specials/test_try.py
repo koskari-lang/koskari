@@ -385,6 +385,16 @@ class TestTrySpecial(SpecialsTestCase):
         self.assertEqual(accu, [1])
 
 
+    async def test_try_nested_80_deep(self):
+        """
+        A try nest 80 deep compiles and evaluates
+        """
+
+        src = "(try " * 80 + "1" + " ([Exception] 0))" * 80
+        expr, mod = self.compile_expr(src, Exception=Exception)
+        self.assertEqual(await expr(), 1)
+
+
 class TestTryCompoundExceptionType(SpecialsTestCase):
     """
     An exception-type expression that is a compound form must be

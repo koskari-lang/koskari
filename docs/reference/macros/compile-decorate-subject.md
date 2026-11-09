@@ -3,20 +3,19 @@
 **Syntax:** `(decorate-subject DECORATOR SUBJECT)`, where the decorator's
 shape selects the arm:
 
-| Decorator | Expands to |
-|-----------|------------|
-| `(let BINDINGS)` | `(let BINDINGS SUBJECT)` |
-| `(with BINDING)` | `(with BINDING SUBJECT)` |
-| `(parameterize PARAMS)` | `(parameterize PARAMS SUBJECT)` |
+| Decorator | Behaviour |
+|-----------|-----------|
+| `(let BINDINGS)` | evaluates `SUBJECT` within the `let`, behaving like `(let BINDINGS SUBJECT)` |
+| `(with BINDING)` | evaluates `SUBJECT` within the `with`, behaving like `(with BINDING SUBJECT)` |
+| `(parameterize PARAMS)` | evaluates `SUBJECT` within the `parameterize`, behaving like `(parameterize PARAMS SUBJECT)` |
 | `(call-with BINDING)` | a function that enters `(with BINDING ...)` around each call of `SUBJECT` |
 | `(call-parameterize PARAMS)` | a function that enters `(parameterize PARAMS ...)` around each call |
-| `entry-point` | `SUBJECT`, after binding it as the module's `__entry__` |
-| anything else | `(DECORATOR SUBJECT)` |
+| `entry-point` | binds `SUBJECT` as the module's `__entry__`, and delivers it unchanged |
+| anything else | the value of `DECORATOR` called on `SUBJECT` |
 
 **Behaviour:** Applies one decorator to a subject form. A body-less
-extent form, `let`, `with`, or `parameterize`, is completed by grafting
-the subject in as its body, so the extent spans the subject's
-evaluation. The `call-` forms instead wrap the subject in a forwarding
+extent form, `let`, `with`, or `parameterize`, takes the subject as its
+body, so the extent spans the subject's evaluation. The `call-` forms instead wrap the subject in a forwarding
 function that establishes the extent per invocation and copies the
 callable's metadata through `decorate-wraps`, which is
 `functools.update_wrapper`. When the subject is a coroutine function,
@@ -30,13 +29,6 @@ New shape arms are added with [`extend-syntax`](compile-extend-syntax.md)
 and are tried before the invocation arm.
 
 **Examples:**
-
-```koskari
->>> (macroexpand-1 '(decorate-subject (let [[c 0]]) subject))
-(let [[c 0]] subject)
->>> (macroexpand-1 '(decorate-subject d fn))
-(d fn)
-```
 
 ```koskari
 @let [[count 0]]

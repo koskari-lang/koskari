@@ -36,11 +36,13 @@
    above belongs to the thunk.
 
    Goals nest: a continuation invoked from inside a thunk pushes an inner
-   goal while the outer stays waiting. A landing voids every outer goal
-   whose frontier the inner's LEAVING unlinked, since the extent it was
-   moving through is gone; with a NULL seam that is every outer. A raise
-   frees the whole stack; the chain a walk left behind is a chain to
-   raise through.
+   goal while the outer stays waiting. A landing retires every outer
+   goal whose frontier the inner's LEAVING unlinked, since the extent it
+   was moving through is gone; with a NULL seam that is every outer. The
+   wait marks its frontier node, so LEAVING voids the outer as it
+   unlinks that node, and a landing whose LEAVING voided none touches no
+   outer. A raise frees the whole stack; the chain a walk left behind is
+   a chain to raise through.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -104,6 +106,9 @@ struct KosXferGoal {
 
   uint8_t phase;               /* KosXferGoalPhase */
   uint8_t is_cc_unwind;        /* delivery is a boundary raise of payload */
+  /* LEAVING unlinked an outer's frontier; LANDING retires the voided
+     outers */
+  uint8_t voided_outer;
 };
 
 

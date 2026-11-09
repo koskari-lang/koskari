@@ -29,9 +29,6 @@
 #include "lib.h"
 
 
-static int asyncgen_close_drive(KosPyAsyncGen *agen);
-
-
 /* === KosPyAsyncGen type === */
 
 
@@ -70,9 +67,13 @@ static void asyncgen_free_chain_on(KosContext *ctx) {
 
    This is the demand-path close: the GeneratorExit drive runs
    synchronously to completion, and a suspend attempt during close takes
-   the fallback (cannot honor). All koskari generators are async, so
-   dealloc must still run their teardown; a future explicit aclose is
-   where a genuinely suspending close could be honored.
+   the fallback (cannot honor). What the close owes, an ignored
+   GeneratorExit or an error the cleanup raised, is reported as
+   unraisable once the chain and span are freed, as CPython's finalizer
+   reports it (kos_close_drive, kos_close_report). All koskari
+   generators are async, so dealloc must still run their teardown; a
+   future explicit aclose is where a genuinely suspending close could
+   be honored.
 
    Safe at arbitrary points, including dealloc mid-unwind: the caller's
    pending exception is fenced (fetched before the drive, restored
@@ -85,18 +86,14 @@ static void asyncgen_free_chain_on(KosContext *ctx) {
 */
 static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx) {
 
-  PyObject *throw_exc = NULL;
   PyObject *fence_typ = NULL;
   PyObject *fence_val = NULL;
   PyObject *fence_tb = NULL;
+  PyObject *typ = NULL;
+  PyObject *val = NULL;
+  PyObject *tb = NULL;
 
   PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
-
-  throw_exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
-  if (! throw_exc) {
-    PyErr_Clear();
-    goto fallback;
-  }
 
   /* Install the span onto ctx so the chain is restored before eval; in
      the flatten path the chain rests in the state and agen->ctx was
@@ -105,50 +102,21 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   if (kos_dyn_gen_install(ctx, (PyObject *) agen, &agen->state) < 0) {
     KosContext_EvalExit(ctx);
     PyErr_Clear();
-    Py_DECREF(throw_exc);
     goto fallback;
   }
-  /* the eval below begins and ends a drive of its own */
+  /* the close drive begins and ends a drive of its own */
   KosContext_EvalExit(ctx);
 
-  {
-    KosOpResult res = koskari_eval(
-        ctx, NULL, NULL, PyExc_GeneratorExit, throw_exc);
-    Py_DECREF(throw_exc);
+  if (kos_close_drive(ctx, &typ, &val, &tb))
+    goto fallback;
 
-    switch (res.kind) {
-      case KOS_RES_RAISE:
-      case KOS_RES_FATAL:
-        /* GeneratorExit or StopIteration coming back is the close
-           completing; anything else is what the cleanup raised, and
-           is reported as a finalizer's error is. */
-        if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
-            || PyErr_ExceptionMatches(PyExc_StopIteration)
-            || PyErr_ExceptionMatches(PyExc_StopAsyncIteration))
-          PyErr_Clear();
-        else
-          PyErr_WriteUnraisable((PyObject *) agen);
-        goto primary_success;
-      case KOS_RES_RETURN:
-        Py_XDECREF(res.val);
-        goto primary_success;
-      case KOS_RES_AWAIT:
-      case KOS_RES_YIELD:
-        /* Suspend attempt during close; cannot honor */
-        Py_XDECREF(res.val);
-        goto fallback;
-      default:
-        goto fallback;
-    }
-  }
-
-primary_success:
   KosContext_EvalEnter(ctx, NULL);
   if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
     KosContext_EvalExit(ctx);
     goto fallback;
   }
   KosContext_EvalExit(ctx);
+  kos_close_report((PyObject *) agen, typ, val, tb);
   PyErr_Restore(fence_typ, fence_val, fence_tb);
   return;
 
@@ -158,7 +126,32 @@ fallback:
      all; a refused one, or a yield's freeze, left it resting */
   asyncgen_free_chain_on(ctx);
   asyncgen_free_span(agen);
+  kos_close_report((PyObject *) agen, typ, val, tb);
   PyErr_Restore(fence_typ, fence_val, fence_tb);
+}
+
+
+/**
+   Is the generator left mid-await on its own context with nothing
+   driving it? A step is in flight (busy) and its chain sits on the
+   wrapper's context, which no drive is running: the stepper that
+   began the step was dropped. A context the collector cleared
+   while the step was in flight counts too: it lost the chain without
+   the cleanup, which the close reports. A step installed on a
+   consumer's chain is marked so (KOS_GEN_BUSY_CONSUMER), and belongs
+   to that consumer. The chain test stays: a drive on the wrapper's
+   context that ended at a yield froze its span off the chain before
+   its finish, and is not left mid-await.
+*/
+static int asyncgen_parked(KosPyAsyncGen *agen) {
+
+  KosContext *ctx = agen->ctx;
+
+  if (agen->state.busy != KOS_GEN_BUSY_OWN || ! ctx
+      || (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
+    return 0;
+  return KosContext_DYN_TOP(ctx)
+      || (KosContext_FLAGS(ctx) & KOS_CTX_CLEARED);
 }
 
 
@@ -170,16 +163,27 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     return;
   state = &agen->state;
 
-  if (agen->ctx && KosContext_DYN_TOP(agen->ctx) && ! state->busy) {
-    /* Live chain: the generator was abandoned mid-await, where the
-       resting-span teardown below cannot reach it. Demand-drive the
-       close through the suspended context, exception-fenced --
-       teardown runs from dealloc, so every outcome of the drive is
-       swallowed and cleared. */
+  /* a live chain on the wrapper's context with no step marked, or a
+     step left there mid-await */
+  if (state->busy ? asyncgen_parked(agen)
+      : (agen->ctx && KosContext_DYN_TOP(agen->ctx))) {
+    /* Live chain: the generator was left mid-await, where the
+       resting-span teardown below cannot reach it. Close it through
+       the suspended context, exception-fenced; whatever the close
+       left behind, the live chain or a span a yield in its cleanup
+       froze, is freed, and what the close owes is then reported.
+       The step is over either way: a close that wound the chain down
+       finished it through the GEN, and one that could not leaves
+       nothing to resume, so the busy mark goes. */
     PyObject *fence_typ, *fence_val, *fence_tb;
+    PyObject *typ, *val, *tb;
+
     PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
-    (void) asyncgen_close_drive(agen);
-    PyErr_Clear();
+    (void) kos_close_drive(agen->ctx, &typ, &val, &tb);
+    asyncgen_free_chain_on(agen->ctx);
+    asyncgen_free_span(agen);
+    state->busy = KOS_GEN_IDLE;
+    kos_close_report((PyObject *) agen, typ, val, tb);
     PyErr_Restore(fence_typ, fence_val, fence_tb);
   }
 
@@ -219,9 +223,9 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
    Drop the generator's resting span and context without driving the
    body. The close itself belongs to the finalizer, which has already
    run by the time clear or dealloc reaches here. A span installed on
-   a consumer's chain is held there by the record stepping it, which
-   holds the wrapper too, so it is never met here; one on the
-   wrapper's own context goes with the context.
+   a consumer's chain is not in the state while installed, and goes
+   with that chain, whose free touches neither the wrapper nor its
+   state; one on the wrapper's own context goes with the context.
 */
 static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 
@@ -230,27 +234,124 @@ static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 }
 
 
+/* === PEP 525 hooks === */
+
+
+/**
+   Read the thread's async generator hooks once, on the generator's
+   first method call or drive, as CPython's async_gen_init_hooks does:
+   the finalizer is kept for the generator's finalizer, and firstiter
+   is called with the generator, its error failing the call that
+   started it. An event loop registers the generator through firstiter
+   and, through the finalizer, schedules its aclose when it is dropped.
+
+   :return: 0, or -1 with firstiter's error set
+*/
+static int asyncgen_init_hooks(KosPyAsyncGen *agen) {
+
+  PyThreadState *tstate;
+  PyObject *firstiter;
+  PyObject *res;
+
+  if (agen->hooks_inited)
+    return 0;
+  agen->hooks_inited = 1;
+
+  tstate = PyThreadState_Get();
+  if (tstate->async_gen_finalizer)
+    agen->finalizer = Py_NewRef(tstate->async_gen_finalizer);
+
+  firstiter = tstate->async_gen_firstiter;
+  if (! firstiter)
+    return 0;
+
+  Py_INCREF(firstiter);
+  res = PyObject_CallOneArg(firstiter, (PyObject *) agen);
+  Py_DECREF(firstiter);
+  if (! res)
+    return -1;
+  Py_DECREF(res);
+  return 0;
+}
+
+
+/**
+   Hand the dropped generator to its finalizer hook in place of the
+   synchronous close, as CPython's _PyGen_Finalize does; an event
+   loop's hook schedules its aclose. The hook's error is reported as
+   unraisable against the generator, and the caller's pending
+   exception is kept across the call. The reference is let go once
+   called: a finalizer runs once.
+*/
+static void asyncgen_call_finalizer(KosPyAsyncGen *agen) {
+
+  PyObject *finalizer = agen->finalizer;
+  PyObject *typ, *val, *tb;
+  PyObject *res;
+
+  agen->finalizer = NULL;
+
+  PyErr_Fetch(&typ, &val, &tb);
+  res = PyObject_CallOneArg(finalizer, (PyObject *) agen);
+  if (res)
+    Py_DECREF(res);
+  else
+    PyErr_WriteUnraisable((PyObject *) agen);
+  Py_DECREF(finalizer);
+  PyErr_Restore(typ, val, tb);
+}
+
+
 /**
    Finalizer: a generator dropped while suspended is closed before its
    state is torn down, the way CPython closes an abandoned async
    generator, so its finally blocks, with exits and wind after thunks
    run against its frame as it was. GeneratorExit is thrown at the
-   suspension point through the same drive aclose uses, and whatever
-   comes back is swallowed there. A generator never started has
-   entered nothing, a finished or closed one has nothing left to
-   unwind, and one mid-drive belongs to that drive.
+   suspension point through the same drive aclose uses, and nothing
+   comes back out of it: an error the cleanup raises, or a suspend the
+   close cannot honor, is reported as unraisable. A finished or closed
+   generator has nothing left to unwind, and one mid-drive belongs to
+   that drive.
+
+   A step left mid-await on the wrapper's context (asyncgen_parked) is
+   the generator's own to close, synchronously, finalizer hook or
+   not: nothing can resume an abandoned step, and an aclose the hook
+   scheduled would be refused as already running and lose the
+   cleanup. A step installed on a consumer's chain is the consumer's,
+   closed with that chain.
+
+   A generator at rest, suspended at a yield or unstarted with its
+   hooks read, that took a finalizer hook is handed to the hook
+   instead, as CPython hands it: under an event loop its aclose then
+   runs as a task, where a cleanup that awaits completes.
 */
 static void asyncgen_finalize(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
   KosGenState *state = &agen->state;
 
-  if (state->busy || agen->closed)
+  if (agen->closed)
     return;
-  if (state->active && ! state->started)
+  if (state->busy) {
+    if (asyncgen_parked(agen)) {
+      KosPyAsyncGen_Teardown(agen);
+      agen->closed = 1;
+    }
     return;
-  if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx)) && ! state->active)
+  }
+  if (! state->active && ! (agen->ctx && KosContext_DYN_TOP(agen->ctx)))
     return;
+
+  if (agen->finalizer && state->active) {
+    asyncgen_call_finalizer(agen);
+    return;
+  }
+
+  if (state->active && ! state->started) {
+    /* CPython's close marks a never-started frame completed */
+    agen->closed = 1;
+    return;
+  }
 
   KosPyAsyncGen_Teardown(agen);
   agen->closed = 1;
@@ -259,39 +360,58 @@ static void asyncgen_finalize(PyObject *self) {
 
 static void asyncgen_dealloc(PyObject *self) {
 
-  /* run the finalizer first; it may resurrect the generator, in which
-     case the dealloc is abandoned here and happens on the next drop */
-  if (PyObject_CallFinalizerFromDealloc(self) < 0)
-    return;
-
-  PyObject_GC_UnTrack(self);
-
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  PyObject *fn;
+
+  /* A chain of generators, each bound frame holding the previous one,
+     releases one generator per link: a frame returning to its
+     function's cache drops its locals in place, and a suspended link's
+     close frees the next link from inside the finalizer. The trashcan
+     wraps the finalizer too, as CPython's subtype_dealloc does, so
+     that recursion is deferred off the C stack. It needs the
+     generator untracked. */
+  PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, asyncgen_dealloc);
+
+  /* weak references go before the finalizer, as CPython's generators
+     let them go */
+  if (agen->weakreflist)
+    PyObject_ClearWeakRefs(self);
+
+  /* Run the finalizer first. It may resurrect the generator, in which
+     case the dealloc is abandoned here and happens on the next drop;
+     a resurrected object must be tracked, so the finalizer runs
+     tracked. */
+  PyObject_GC_Track(self);
+  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+    goto done;
+  PyObject_GC_UnTrack(self);
 
   asyncgen_drop_state(agen);
   Py_CLEAR(agen->code_name);
+  Py_CLEAR(agen->finalizer);
 
   /* A function's generator is stored on the function when its slot is
      free: untracked, every field clear, refcount zero, the next call
      revives it. The function's own release frees a stored one, so the
      reference dropped here may free both at once. */
-  {
-    PyObject *fn = agen->fn;
-
-    agen->fn = NULL;
-    if (fn) {
-      if (! KosFunction_DEAD_RECORD(fn)) {
-        KosFunction_DEAD_RECORD(fn) = self;
-        KOS_TRACE_FL_RETURN("asyncgen", 0);
-        Py_DECREF(fn);
-        return;
-      }
-      KOS_TRACE_FL_RETURN("asyncgen", 1);
+  fn = agen->fn;
+  agen->fn = NULL;
+  if (fn) {
+    if (! KosFunction_DEAD_RECORD(fn)) {
+      KosFunction_DEAD_RECORD(fn) = self;
+      KOS_TRACE_FL_RETURN("asyncgen", 0);
       Py_DECREF(fn);
+      goto done;
     }
+    KOS_TRACE_FL_RETURN("asyncgen", 1);
+    Py_DECREF(fn);
   }
 
   Py_TYPE(self)->tp_free(self);
+
+done:
+  Py_TRASHCAN_END;
 }
 
 
@@ -302,6 +422,7 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   Py_VISIT(agen->code_name);
   Py_VISIT(agen->fn);
+  Py_VISIT(agen->finalizer);
 
   if (agen->state.active) {
     res = kos_dynchain_traverse(agen->state.active, NULL, visit, arg);
@@ -321,6 +442,7 @@ static int asyncgen_clear(PyObject *self) {
 
   Py_CLEAR(agen->code_name);
   Py_CLEAR(agen->fn);
+  Py_CLEAR(agen->finalizer);
   asyncgen_drop_state(agen);
 
   return 0;
@@ -365,14 +487,50 @@ static PyGetSetDef asyncgen_getsets[] = {
 };
 
 
+/* Each protocol method reads the hooks before it makes its awaitable,
+   as CPython's do, so firstiter sees the generator at the first call */
+
+
+static PyObject *asyncgen_anext(PyObject *self) {
+
+  if (asyncgen_init_hooks((KosPyAsyncGen *) self) < 0)
+    return NULL;
+  return KosIterAdapt_Anext(self);
+}
+
+
+static PyObject *asyncgen_asend(PyObject *self, PyObject *value) {
+
+  if (asyncgen_init_hooks((KosPyAsyncGen *) self) < 0)
+    return NULL;
+  return KosIterAdapt_Asend(self, value);
+}
+
+
+static PyObject *asyncgen_athrow(PyObject *self, PyObject *args) {
+
+  if (asyncgen_init_hooks((KosPyAsyncGen *) self) < 0)
+    return NULL;
+  return KosIterAdapt_Athrow(self, args);
+}
+
+
+static PyObject *asyncgen_aclose(PyObject *self, PyObject *ignored) {
+
+  if (asyncgen_init_hooks((KosPyAsyncGen *) self) < 0)
+    return NULL;
+  return KosIterAdapt_Aclose(self, ignored);
+}
+
+
 static PyMethodDef asyncgen_methods[] = {
-  { "asend", (PyCFunction) KosIterAdapt_Asend, METH_O,
+  { "asend", (PyCFunction) asyncgen_asend, METH_O,
     "Send a value into the async generator; returns an awaitable" },
 
-  { "athrow", (PyCFunction) KosIterAdapt_Athrow, METH_VARARGS,
+  { "athrow", (PyCFunction) asyncgen_athrow, METH_VARARGS,
     "Throw an exception into the async generator; returns an awaitable" },
 
-  { "aclose", (PyCFunction) KosIterAdapt_Aclose, METH_NOARGS,
+  { "aclose", (PyCFunction) asyncgen_aclose, METH_NOARGS,
     "Close the async generator; returns an awaitable" },
 
   { NULL, NULL, 0, NULL },
@@ -381,70 +539,8 @@ static PyMethodDef asyncgen_methods[] = {
 
 static PyAsyncMethods asyncgen_async_methods = {
   .am_aiter = asyncgen_aiter,
-  .am_anext = KosIterAdapt_Anext,
+  .am_anext = asyncgen_anext,
 };
-
-
-
-/**
-   Drive GeneratorExit through a context abandoned mid-await, so its
-   cleanup runs during a synchronous stepper close; the frozen-chain
-   teardown cannot reach a live chain. Mirrors coroutine_close: the
-   pending awaitable is closed first, then the throw is delivered at
-   the suspended AWAIT. Returns 0 when the generator wound down
-   (including a cleanup suspension taking the cannot-honor fallback),
-   -1 with an exception set when the body ignored GeneratorExit or
-   raised something else.
-*/
-static int asyncgen_close_drive(KosPyAsyncGen *agen) {
-
-  PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
-  if (it) {
-    kos_iter_close(it);
-    Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
-  }
-
-  PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
-  if (! exc)
-    return -1;
-
-  KosOpResult res = koskari_eval(
-      agen->ctx, NULL, NULL, PyExc_GeneratorExit, exc);
-  Py_DECREF(exc);
-
-  switch (res.kind) {
-    case KOS_RES_RETURN:
-      Py_XDECREF(res.val);
-      return 0;
-
-    case KOS_RES_AWAIT:
-      /* a synchronous close cannot suspend: cannot-honor fallback */
-      Py_XDECREF(res.val);
-      PyErr_Clear();
-      return 0;
-
-    case KOS_RES_YIELD:
-      Py_XDECREF(res.val);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async generator ignored GeneratorExit");
-      return -1;
-
-    case KOS_RES_RAISE:
-    case KOS_RES_FATAL:
-    default:
-      if (! PyErr_Occurred())
-        return 0;
-      if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
-          || PyErr_ExceptionMatches(PyExc_StopIteration)
-          || PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
-        PyErr_Clear();
-        return 0;
-      }
-      return -1;
-  }
-}
-
-
 
 
 /* === KosIter suite === */
@@ -452,17 +548,25 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen) {
 
 /**
    The suite's ki_busy: 1 with the RuntimeError set while another site
-   is driving the generator, else 0
+   is driving the generator, else 0. A Python method asking gets
+   CPython's wording for it, "anext(): asynchronous generator is
+   already running" and the like; a site with no method behind it
+   gets the generic text.
 */
-static int agen_iter_busy(PyObject *self) {
+static int agen_iter_busy(PyObject *self, const char *method) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   if (! agen->state.busy)
     return 0;
 
-  PyErr_SetString(PyExc_RuntimeError,
-                  "async generator already being iterated");
+  if (method)
+    PyErr_Format(PyExc_RuntimeError,
+                 "%s(): asynchronous generator is already running",
+                 method);
+  else
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
   return 1;
 }
 
@@ -492,7 +596,7 @@ static KosIterStepResult agen_iter_drive(
   KosDynNode *active;
   int started;
 
-  if (agen_iter_busy((PyObject *) agen))
+  if (agen_iter_busy((PyObject *) agen, NULL))
     return KOS_ITER_ERROR;
 
   if (agen->closed) {
@@ -515,7 +619,10 @@ static KosIterStepResult agen_iter_drive(
     return KOS_ITER_EXHAUSTED;
   }
 
-  state->busy = 1;
+  /* where the step runs: a Python adapter's drive on the wrapper's
+     context, or a consumer's chain */
+  state->busy = (ctx == agen->ctx)
+      ? KOS_GEN_BUSY_OWN : KOS_GEN_BUSY_CONSUMER;
 
   if (! active) {
     if (ctx != agen->ctx) {
@@ -574,19 +681,27 @@ static KosIterStepResult agen_iter_drive(
     } else {
       PyObject *popped = KosContext_StackPopRef(ctx);
       if (! popped)
-        goto drive_error;
+        goto install_error;
       Py_DECREF(popped);
       if (KosContext_StackPushRef(ctx, send_val) < 0)
-        goto drive_error;
+        goto install_error;
     }
   }
 
   return KOS_ITER_INSTALLED;
 
+install_error:
+  /* The span is spliced and the frame has not run: put it back to
+     rest, and take back the yield event set above, so the generator
+     stays suspended where it was and the next drive installs afresh. */
+  kos_dyn_gen_unsplice(ctx, state);
+  if (! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
+    KosContext_SetSuspensionEvent(ctx, KOS_SUSP_NONE);
+
 drive_error:
   /* Every failed drive releases the busy mark; a wedged one would
      refuse all further iteration of a still-live generator. */
-  state->busy = 0;
+  state->busy = KOS_GEN_IDLE;
   return KOS_ITER_ERROR;
 }
 
@@ -597,7 +712,13 @@ static KosIterStepResult agen_iter_step(
     PyObject *send_val,
     PyObject **out) {
 
-  return agen_iter_drive(ctx, (KosPyAsyncGen *) self, send_val, 0, out);
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  /* a Koskari consumer's first step reads the hooks, as a Python
+     method's does */
+  if (! agen->hooks_inited && asyncgen_init_hooks(agen) < 0)
+    return KOS_ITER_ERROR;
+  return agen_iter_drive(ctx, agen, send_val, 0, out);
 }
 
 
@@ -610,7 +731,10 @@ static KosIterStepResult agen_iter_throw(
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen_iter_busy(self))
+  if (! agen->hooks_inited && asyncgen_init_hooks(agen) < 0)
+    return KOS_ITER_ERROR;
+
+  if (agen_iter_busy(self, NULL))
     return KOS_ITER_ERROR;
 
   if (agen->closed) {
@@ -657,15 +781,27 @@ static int agen_iter_close(PyObject *self) {
    left nothing on the wrapper's context: the teardown freed the span
    and the node from the consumer's chain. A context whose recycle is
    refused keeps its chain, left for the teardown.
+
+   A step left mid-await on the wrapper's context (asyncgen_parked) is
+   not the finishing consumer's: a consumer letting go of it, its
+   request finished as it unwinds, ends nothing, and the generator
+   stays running until it is closed, as a CPython async generator
+   whose asend awaitable was dropped does.
 */
 static void agen_iter_finish(PyObject *self, int exhausted) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  agen->state.busy = 0;
-  if (! exhausted)
+  if (! exhausted) {
+    /* a step on a consumer's chain ends here on the one compare; one
+       on the wrapper's context is left mid-await only while its chain
+       is still there (asyncgen_parked), a yield having frozen it off */
+    if (agen->state.busy != KOS_GEN_BUSY_OWN || ! asyncgen_parked(agen))
+      agen->state.busy = KOS_GEN_IDLE;
     return;
+  }
 
+  agen->state.busy = KOS_GEN_IDLE;
   agen->closed = 1;
 
   if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
@@ -702,6 +838,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
     .tp_itemsize = 0,
     .tp_dealloc = asyncgen_dealloc,
     .tp_finalize = asyncgen_finalize,
+    .tp_weaklistoffset = offsetof(KosPyAsyncGen, weakreflist),
     .tp_repr = asyncgen_repr,
     .tp_as_async = &asyncgen_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
@@ -752,7 +889,10 @@ PyObject *KosPyAsyncGen_New(
   kos_gen_state_init(&agen->state, frame);
   agen->code_name = NULL;
   agen->fn = Py_XNewRef(fn);
+  agen->finalizer = NULL;
+  agen->weakreflist = NULL;
   agen->closed = 0;
+  agen->hooks_inited = 0;
 
   PyObject_GC_Track((PyObject *) agen);
   return (PyObject *) agen;

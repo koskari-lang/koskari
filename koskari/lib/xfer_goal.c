@@ -64,6 +64,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->restore_count = 0;
   goal->phase = KOS_GOAL_LEAVING;
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
+  goal->voided_outer = 0;
   return goal;
 }
 
@@ -72,21 +73,35 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
 
   if (! goal)
     return;
+
+  /* Detach first, free second: freeing a node or a stack runs Python,
+     and the goal's traverse reads target and every restore entry, so a
+     collection from inside a release must find nothing it has freed.
+     Callers unlink the goal before calling here; the order holds on
+     its own too. */
   if (goal->target) {
-    kos_dynchain_free(goal->target, NULL);
+    KosDynNode *target = goal->target;
+
     goal->target = NULL;
+    kos_dynchain_free(target, NULL);
   }
   Py_CLEAR(goal->payload);
   Py_CLEAR(goal->continuation_ref);
   if (goal->restore) {
     for (size_t i = 0; i < goal->restore_count; i++) {
       KosXferRestore *r = &goal->restore[i];
+      KosSegment *stack = r->stack;
+      const KosResumeKind *kind = r->resume_kind;
+      void *state = r->resume_state;
 
-      if (r->stack)
-        KosStack_Release(r->stack);
+      r->stack = NULL;
+      r->resume_kind = NULL;
+      r->resume_state = NULL;
+      if (stack)
+        KosStack_Release(stack);
       /* a cloned resume state never applied gets its kind's clear */
-      if (r->resume_kind && r->resume_kind->clear)
-        r->resume_kind->clear(r->resume_state);
+      if (kind && kind->clear)
+        kind->clear(state);
     }
     PyMem_Free(goal->restore);
     goal->restore = NULL;
@@ -241,6 +256,10 @@ void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal) {
 
   goal->outer = KosContext_GOAL(ctx);
   KosContext_GOAL(ctx) = goal;
+  /* an outer whose LEAVING voided outers behind it and then waited has
+     not landed to retire them: this goal's landing retires them too */
+  if (goal->outer && goal->outer->voided_outer)
+    goal->voided_outer = 1;
 }
 
 
@@ -261,6 +280,81 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
 
   while (KosContext_GOAL(ctx))
     kos_xfer_goal_pop(ctx);
+}
+
+
+/* === Waits === */
+
+
+/**
+   Make the goal wait on node: its thunk or awaitable is in flight, and the
+   driver does nothing until dyn_top is wait_top again. A FINALLY waits
+   with a NULL top: its body runs in the frame below it, so POP_FINALLY
+   resumes the goal in place of a return to wait_top.
+
+   The node carries KOS_DYNF_GOAL_WAIT for as long as the wait lasts.
+   The one event that voids a waiting goal is a later goal's LEAVING
+   unlinking this node; the mark lets that LEAVING see it as it happens
+   (goal_void_outers_on), so a landing never walks the chain to find
+   out which outers are still live.
+
+   No two goals wait on one node. A LEAVING waits on the node at
+   dyn_top whose leave fired its thunk, or on a FINALLY that took the
+   transfer; a later goal's LEAVING that reaches the same node has
+   already unlinked the thunk's frame above it, so the wind or with is
+   aborted without firing again, and the FINALLY was disabled when it
+   took the transfer, so it is unlinked: either way that goal unlinks
+   the node rather than waiting on it. An ENTERING waits on a node of
+   its own landed target, a fresh clone no other goal's ENTERING spans,
+   since each ENTERING spans only the nodes its own landing put above
+   its seam. The clear when the wait ends therefore drops no other
+   goal's mark. A mark left behind by a goal freed while it waited (a
+   raise abandons every goal) only makes a later LEAVING look through
+   the outers for a waiter that is not there.
+*/
+static void goal_wait(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
+
+  goal->frontier = node;
+  goal->frontier_id = kos_dynnode_id(node);
+  goal->wait_top = top;
+  KosDynNode_FLAGS(node) |= KOS_DYNF_GOAL_WAIT;
+}
+
+
+/**
+   The wait is over and the frontier node is still on the chain: take
+   the mark off it and forget it.
+*/
+static void goal_end_wait(KosXferGoal *goal) {
+
+  KosDynNode_FLAGS(goal->frontier) &= ~KOS_DYNF_GOAL_WAIT;
+  goal->frontier = NULL;
+  goal->frontier_id = 0;
+  goal->wait_top = NULL;
+}
+
+
+/**
+   LEAVING unlinked node, which carried KOS_DYNF_GOAL_WAIT: every outer
+   that waited on it (by address and id, read before the unlink freed
+   it; the node is never dereferenced here) is void. Its frontier is
+   dropped, which is how the landing recognizes it, and the goal notes
+   that its landing has outers to retire. Proportional to the outers,
+   and only for a marked node.
+*/
+static void goal_void_outers_on(
+    KosXferGoal *goal,
+    const KosDynNode *node,
+    uint32_t node_id) {
+
+  for (KosXferGoal *outer = goal->outer; outer; outer = outer->outer) {
+    if (outer->frontier != node || outer->frontier_id != node_id)
+      continue;
+    outer->frontier = NULL;
+    outer->frontier_id = 0;
+    outer->wait_top = NULL;
+    goal->voided_outer = 1;
+  }
 }
 
 
@@ -289,9 +383,7 @@ void kos_xfer_goal_resume_after_finally(KosContext *ctx) {
   if (! goal || ! goal->frontier
       || ! KosDynNode_IS_FINALLY(goal->frontier))
     return;
-  goal->frontier = NULL;
-  goal->frontier_id = 0;
-  goal->wait_top = NULL;
+  goal_end_wait(goal);
 }
 
 
@@ -318,20 +410,6 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
 
 /**
-   Make the goal wait on node: its thunk or awaitable is in flight, and the
-   driver does nothing until dyn_top is wait_top again. A FINALLY waits
-   with a NULL top: its body runs in the frame below it, so POP_FINALLY
-   resumes the goal in place of a return to wait_top.
-*/
-static void goal_wait(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
-
-  goal->frontier = node;
-  goal->frontier_id = kos_dynnode_id(node);
-  goal->wait_top = top;
-}
-
-
-/**
    LEAVING: unlink from dyn_top down to the seam. A flattened generator
    on the way is finished as the raise walk finishes one; a root
    generator is the driver boundary, which only a cc-unwind reaches, as
@@ -353,6 +431,7 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
   while (KosContext_DYN_TOP(ctx) != goal->seam) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
+    uint32_t waited_id;
     KosOpResult r;
 
     if (! top) {
@@ -380,9 +459,16 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
       return r;
     }
 
+    /* an outer waits on this node: its id is read now, as the unlink
+       frees the node */
+    waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)
+        ? kos_dynnode_id(top) : 0;
     r = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_TRANSFER, 1);
-    if (r.kind == KOS_RES_NORMAL)
+    if (r.kind == KOS_RES_NORMAL) {
+      if (waited_id)
+        goal_void_outers_on(goal, top, waited_id);
       continue;
+    }
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
       goal_wait(goal, top, top);
     return r;
@@ -435,22 +521,18 @@ static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
      outer waits on a node whose thunk this transfer started from;
      if that node left the chain, the extent the outer was moving
      through no longer exists, and resuming it later would act on
-     whatever node came to occupy the same address. With a NULL seam
-     the whole chain went, so every outer goes. Pointer reach plus id,
-     as goal_leave checks its seam, so a recycled address cannot pass. */
-  {
+     whatever node came to occupy the same address. LEAVING dropped
+     the frontier of each such outer as it unlinked the node
+     (goal_void_outers_on), so the outers to retire are the ones with
+     no frontier, and a LEAVING that voided none leaves nothing to do.
+     With a NULL seam the whole chain went, so every outer goes. */
+  if (! goal->seam || goal->voided_outer) {
     KosXferGoal **link = &goal->outer;
 
     while (*link) {
       KosXferGoal *outer = *link;
-      /* An outer waits by construction; one with no frontier has
-         no place to resume from and would stall, so it goes too. */
-      int gone = ! goal->seam
-          || ! outer->frontier
-          || ! kos_dyn_reaches(ctx, outer->frontier)
-          || kos_dynnode_id(outer->frontier) != outer->frontier_id;
 
-      if (gone) {
+      if (! goal->seam || ! outer->frontier) {
         *link = outer->outer;
         outer->outer = NULL;
         kos_xfer_goal_free(outer);
@@ -458,7 +540,21 @@ static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
         link = &outer->outer;
       }
     }
+    goal->voided_outer = 0;
   }
+
+#if KOS_EVAL_SAFETYNET
+  /* every outer left waits on a node still on the chain */
+  for (KosXferGoal *outer = goal->outer; outer; outer = outer->outer) {
+    if (! outer->frontier
+        || ! kos_dyn_reaches(ctx, outer->frontier)
+        || kos_dynnode_id(outer->frontier) != outer->frontier_id) {
+      PyErr_SetString(PyExc_SystemError,
+          "transfer: a waiting goal's node left the chain unnoticed");
+      return EVAL_RAISE();
+    }
+  }
+#endif
   return EVAL_NORMAL();
 }
 
@@ -615,9 +711,7 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
 #endif
       if (kos_dyn_extent_settle(ctx, goal->frontier) < 0)
         return EVAL_RAISE();
-      goal->frontier = NULL;
-      goal->frontier_id = 0;
-      goal->wait_top = NULL;
+      goal_end_wait(goal);
     }
 
     switch (goal->phase) {

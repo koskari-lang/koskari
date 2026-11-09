@@ -12,7 +12,9 @@ elements whose test is true; `unless:` keeps those whose test is false.
 A body that is a single `when` or `unless` form also filters,
 contributing nothing when its test fails. An `await` or a `shift` in
 the keys, values or body works as it does in
-[`list-each`](compile-list-each.md).
+[`list-each`](compile-list-each.md), and the dict is likewise one
+object for the whole loop: a continuation invoked again writes into
+the dict the first shot already returned.
 
 **Examples:**
 

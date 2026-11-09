@@ -367,6 +367,50 @@ PyObject *KosCallAdapt_CallAsync(
 }
 
 
+/* === Override suites === */
+
+
+/**
+   KOS install: a heap subclass overriding __call__ with a KosCallable
+   runs it in the calling evaluator, as the instance-call arm of the
+   call dispatch does: a callable that binds its receiver gets the
+   instance injected as its first positional, a non-descriptor is
+   called without it (kos_instance_call_target). A __call__ that is no
+   longer a KosCallable is called through tp_call, the value reported
+   in hand.
+*/
+static KosOpResult kos_call_override_kos_vinstall(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  int binds;
+  PyObject *target = kos_instance_call_target(callable, &binds);
+
+  if (! target) {
+    PyObject *r = PyObject_Vectorcall(callable, args, (size_t) nargs,
+                                      kwnames);
+    return r ? EVAL_RETURN(r) : EVAL_RAISE();
+  }
+  if (binds)
+    return KosContext_CallMethod(ctx, target, callable, args, nargs,
+                                 kwnames, tail_call, NULL, NULL);
+  return KosContext_Call(ctx, target, args, nargs, kwnames, tail_call,
+                         NULL, NULL);
+}
+
+
+/* KOS carries the install above. PY is empty: no install, so the
+   instance is a plain Python callable to every consumer. */
+KosCallSlots kos_call_override_suites[2] = {
+  { .kc_vinstall = kos_call_override_kos_vinstall },
+  { 0 },
+};
+
+
 /* === Unit lifecycle === */
 
 

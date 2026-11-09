@@ -24,6 +24,7 @@ and when it is closed explicitly.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import gc
 import sys
 import unittest
@@ -85,6 +86,10 @@ class TestYieldFromDelegateCloseError(unittest.IsolatedAsyncioTestCase):
         seen = self.capture()
         del gen
         gc.collect()
+        # at rest, the dropped generator closes in the aclose the running
+        # loop's finalizer hook schedules
+        for _ in range(5):
+            await asyncio.sleep(0)
         self.assert_reported(seen)
 
     async def test_explicit_close_reports_close_error(self):

@@ -25,7 +25,7 @@ KOS_OP_HANDLER(UNPACK_VAR) {
   PyObject *name0 = KosExtra_OBJ(row, 0);
   PyObject *name1 = KosExtra_OBJ(row, 1);
 
-  PyObject *seq = KosContext_PopUnpackSequence(ctx, 2, 1, "UNPACK_VAR");
+  PyObject *seq = KosContext_PopUnpackSequence(ctx, 2, 1);
   if (unlikely(! seq))
     RESULT_RAISE();
 

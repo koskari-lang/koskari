@@ -16,4 +16,14 @@ a literal. See
 [Macros and hygiene](../../guide/macros-and-hygiene.md) and
 [`koskari.matcher`](../api/koskari-matcher.md) (surface heads).
 
+**Pattern cells:** within a rule's pattern, an atom is a literal. A list
+headed by a registered matcher head -- `(VALUE x)`, `(LIST ...)`,
+`(OPTIONAL ...)`, and so on -- is always that matcher, with or without a
+slot name: `(h (LIST (SYMBOL k)))` matches `(h (a))` and binds `k` to
+`a`. A malformed matcher head, such as `(VALUE 1)`, is refused when the
+rule is defined. Any other list is an inline group whose cells are matched
+in sequence where it stands: `(h (foo (VALUE x)))` matches `(h foo 1)`,
+not `(h (foo 1))`. To match a matcher head's symbol literally, write
+`(LITERAL_SYM NAME)`.
+
 **Also:** layout handler [`syntax-match`](../layouts/layout-syntax-match.md).

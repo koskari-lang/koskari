@@ -2,8 +2,8 @@
 
 **Syntax:** `(when-main BODY ...)`
 
-**Behaviour:** Expands to `(when (equal? __name__ "__main__") (begin BODY ...))`,
-Python's `if __name__ == "__main__":`. The body runs as part of loading,
+**Behaviour:** Runs the body forms in order when the module's `__name__`
+equals `"__main__"`, as Python's `if __name__ == "__main__":`. The body runs as part of loading,
 while the module is still open, and only when the file is the program.
 
 A program's work belongs in an entry function, not in a body that runs
@@ -13,8 +13,10 @@ exit status, and it stays an ordinary function that can be imported and
 called.
 
 ```koskari
->>> (macroexpand-1 '(when-main (main)))
-(when (equal? __name__ "__main__") (begin (main)))
+def main []:
+  print "running as the program"
+
+(when-main (main))   ;; calls main only when the file is the program
 ```
 
 **See also:** [`entry-point`](compile-entry-point.md),

@@ -58,6 +58,16 @@ static inline PyObject *Py_XNewRef(PyObject *obj) {
 }
 
 
+/* PyFrame_GetGlobals added in 3.11: a new reference to the frame's
+   globals, read from the frame struct frameobject.h declares here */
+#include <frameobject.h>
+
+__attribute__((always_inline))
+static inline PyObject *PyFrame_GetGlobals(PyFrameObject *frame) {
+  return Py_NewRef(frame->f_globals);
+}
+
+
 
 /* === The eval breaker === */
 
@@ -137,14 +147,6 @@ static inline void kos_recursion_leave(PyThreadState *tstate) {
   tstate->recursion_depth--;
   if (tstate->recursion_depth < low)
     tstate->overflowed = 0;
-}
-
-
-/* The recursion limit, the value Py_GetRecursionLimit returns: the
-   interpreter's ceval recursion_limit:
-   https://github.com/python/cpython/blob/v3.9.0/Python/ceval.c */
-static inline int kos_recursion_limit(PyThreadState *tstate) {
-  return KOS_CEVAL_STATE(tstate->interp)->recursion_limit;
 }
 
 
@@ -247,6 +249,14 @@ static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
 }
 
 
+/* True when tp can gain no slot after creation: no attribute can be
+   set on it and no instance can have its __class__ reassigned. 3.9
+   has no immutable heap types, so only a static type qualifies. */
+static inline int kos_type_is_immutable(PyTypeObject *tp) {
+  return ! (tp->tp_flags & Py_TPFLAGS_HEAPTYPE);
+}
+
+
 /* === PEP 634 type tests === */
 
 
@@ -286,6 +296,22 @@ static inline int kos_type_is_mapping(PyObject *obj) {
   if (! cls)
     return -1;
   return PyObject_IsInstance(obj, cls);
+}
+
+
+/* 3.9 predates _Py_TPFLAGS_MATCH_SELF; the eleven types PEP 634 names,
+   and their subclasses, bool through int */
+static inline int kos_type_matches_self(PyTypeObject *tp) {
+  return PyType_IsSubtype(tp, &PyLong_Type)
+      || PyType_IsSubtype(tp, &PyFloat_Type)
+      || PyType_IsSubtype(tp, &PyUnicode_Type)
+      || PyType_IsSubtype(tp, &PyBytes_Type)
+      || PyType_IsSubtype(tp, &PyByteArray_Type)
+      || PyType_IsSubtype(tp, &PyList_Type)
+      || PyType_IsSubtype(tp, &PyTuple_Type)
+      || PyType_IsSubtype(tp, &PyDict_Type)
+      || PyType_IsSubtype(tp, &PySet_Type)
+      || PyType_IsSubtype(tp, &PyFrozenSet_Type);
 }
 
 

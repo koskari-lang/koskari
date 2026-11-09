@@ -68,7 +68,7 @@ def main(argv=None):
 
     except Exception as e:
         # Boundary cleaning for a top-level run: strip koskari machinery
-        # frames and interleave the native dynchain, the same way the REPL
+        # frames and interleave the Koskari frames, the same way the REPL
         # renders a failed form.  SystemExit and other BaseExceptions
         # propagate so scripts control their own exit code.
         lines, tb = format_run_exception(e)

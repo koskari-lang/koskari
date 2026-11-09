@@ -43,6 +43,16 @@ static inline void PyErr_SetHandledException(PyObject *exc) {
 }
 
 
+/* PyFrame_GetGlobals added in 3.11: a new reference to the frame's
+   globals, read from the frame struct frameobject.h declares here */
+#include <frameobject.h>
+
+__attribute__((always_inline))
+static inline PyObject *PyFrame_GetGlobals(PyFrameObject *frame) {
+  return Py_NewRef(frame->f_globals);
+}
+
+
 
 /* === The eval breaker === */
 
@@ -118,14 +128,6 @@ static inline void kos_recursion_leave(PyThreadState *tstate) {
 }
 
 
-/* The recursion limit, the value Py_GetRecursionLimit returns: the
-   interpreter's ceval recursion_limit:
-   https://github.com/python/cpython/blob/v3.10.0/Python/ceval.c */
-static inline int kos_recursion_limit(PyThreadState *tstate) {
-  return KOS_CEVAL_STATE(tstate->interp)->recursion_limit;
-}
-
-
 /* === GC tracked test === */
 
 /* Whether the collector holds op: the _gc_next link word of the PyGC_Head
@@ -188,6 +190,14 @@ static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
 }
 
 
+/* True when tp can gain no slot after creation: no attribute can be
+   set on it and no instance can have its __class__ reassigned. Static
+   types carry the flag from 3.10. */
+static inline int kos_type_is_immutable(PyTypeObject *tp) {
+  return PyType_HasFeature(tp, Py_TPFLAGS_IMMUTABLETYPE);
+}
+
+
 /* === PEP 634 type tests === */
 
 
@@ -202,6 +212,12 @@ static inline int kos_type_is_sequence(PyObject *obj) {
 static inline int kos_type_is_mapping(PyObject *obj) {
   return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MAPPING) ? 1 : 0;
 }
+
+
+/* PEP 634's self-matching builtins and their subclasses: a single
+   positional class sub-pattern matches the subject itself */
+#define kos_type_matches_self(tp) \
+  PyType_HasFeature((tp), _Py_TPFLAGS_MATCH_SELF)
 
 
 /* === Handled exception === */

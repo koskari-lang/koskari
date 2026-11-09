@@ -206,6 +206,65 @@ class TestAttrFieldCache(CevalTest):
         self.assertEqual(await fn(), 2)
 
 
+    async def test_attr_class_attribute_gaining_descriptor_is_honored(self):
+        """
+        ATTR on an instance value shadowing a class attribute answers
+        the descriptor once the attribute's class gains __get__ and
+        __set__
+        """
+
+        class Descr(object):
+            pass
+
+        class Box(object):
+            value = Descr()
+        box = Box()
+        box.value = "instance"
+        code, ns = build_expr([
+            ["CONST", box],
+            ["ATTR", "value"],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        self.assertEqual(await fn(), "instance")
+        self.assertEqual(await fn(), "instance")
+        Descr.__get__ = lambda self, obj, tp=None: "descriptor"
+        Descr.__set__ = lambda self, obj, value: None
+        self.assertEqual(box.value, "descriptor")
+        self.assertEqual(await fn(), "descriptor")
+
+
+    async def test_attr_store_class_attribute_gaining_set_is_honored(self):
+        """
+        ATTR_STORE over a class attribute calls its __set__ once the
+        attribute's class gains one, after warm stores to the instance
+        """
+
+        calls = []
+
+        class Descr(object):
+            pass
+
+        class Box(object):
+            value = Descr()
+        box = Box()
+        box.value = "first"
+        code, ns = build_expr([
+            ["CONST", box],
+            ["CONST", "stored"],
+            ["ATTR_STORE", "value"],
+            ["CONST", None],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        await fn()
+        await fn()
+        Descr.__set__ = lambda self, obj, value: calls.append(value)
+        await fn()
+        self.assertEqual(calls, ["stored"])
+        self.assertEqual(box.__dict__, {"value": "stored"})
+
+
     async def test_attr_unset_slot_falls_back_to_getattr(self):
         """
         ATTR on an unset __slots__ member runs __getattr__

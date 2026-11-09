@@ -839,6 +839,35 @@ class TestElementTests(CevalTest):
             await run(prog, anything), ("base", anything, "hit"))
 
 
+    async def test_literal_singletons_by_identity(self):
+        # True, False and None match only themselves, never an equal
+        # value
+        prog = [
+            ["MATCH_LITERAL", ("miss", True, 0, 0)],
+        ] + hit(2) + miss(2)
+        self.assertEqual(await run(prog, True), ("base", True, "hit"))
+        self.assertEqual(await run(prog, 1), ("base", 1, "miss"))
+        self.assertEqual(await run(prog, 1.0), ("base", 1.0, "miss"))
+        datum = Datum(True)
+        self.assertEqual(await run(prog, datum), ("base", datum, "hit"))
+
+        prog[0] = ["MATCH_LITERAL", ("miss", False, 0, 0)]
+        self.assertEqual(await run(prog, False), ("base", False, "hit"))
+        self.assertEqual(await run(prog, 0), ("base", 0, "miss"))
+        self.assertEqual(await run(prog, 0.0), ("base", 0.0, "miss"))
+        self.assertEqual(await run(prog, ""), ("base", "", "miss"))
+
+        class Anything:
+            def __eq__(self, other):
+                return True
+
+        anything = Anything()
+        prog[0] = ["MATCH_LITERAL", ("miss", None, 0, 0)]
+        self.assertEqual(await run(prog, None), ("base", None, "hit"))
+        self.assertEqual(
+            await run(prog, anything), ("base", anything, "miss"))
+
+
     async def test_core(self):
         prog = [
             ["MATCH_CORE", ("miss", int(CoreType.TUPLE), 0, 0)],
@@ -1022,6 +1051,23 @@ class TestElementTests(CevalTest):
         self.assertEqual([r[2] for r in got], [3, 4])
 
 
+    async def test_class_self_matching_builtin(self):
+        # int has no __match_args__ and admits one positional field
+        prog = [
+            ["MATCH_CLASS_VAR", ("miss", "int", 1, 0)],
+        ] + hit(2) + miss(2)
+        values = {"int": int}
+        self.assertEqual(await run(prog, 5, values), ("base", 5, "hit"))
+        self.assertEqual(await run(prog, "s", values), ("base", "s", "miss"))
+
+        prog[0] = ["MATCH_CLASS_VAR", ("miss", "int", 2, 0)]
+        with self.assertRaises(TypeError) as caught:
+            await run(prog, 5, values)
+        self.assertEqual(
+            str(caught.exception),
+            "int() accepts 1 positional sub-pattern (2 given)")
+
+
     async def test_tests_in_turn_on_one_element(self):
         # the element stays for the next test on either exit: a miss
         # of the first test falls to the second on the same element,
@@ -1090,6 +1136,27 @@ class TestProjections(CevalTest):
         ] + hit(3) + miss(2)
         with self.assertRaises(TypeError):
             await run(prog, Point(3, 4), {"Point": Point})
+
+
+    async def test_field_pos_self_matching_builtin(self):
+        # position 0 of int pushes the subject itself
+        prog = [
+            ["MATCH_FIELD_POS_VAR", ("miss", "int", 0, 0)],
+        ] + hit(3) + miss(2)
+        self.assertEqual(
+            await run(prog, 5, {"int": int}), ("base", 5, 5, "hit"))
+
+
+    async def test_field_pos_self_matching_keeps_a_datum(self):
+        # a Datum subject is pushed as given, box and all
+        prog = [
+            ["MATCH_FIELD_POS_VAR", ("miss", "int", 0, 0)],
+        ] + hit(3) + miss(2)
+        datum = Datum(5)
+        got = await run(prog, datum, {"int": int})
+        self.assertIs(got[1], datum)
+        self.assertIs(got[2], datum)
+        self.assertEqual(got[3], "hit")
 
 
     async def test_field_kw(self):

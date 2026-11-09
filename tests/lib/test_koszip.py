@@ -61,6 +61,32 @@ class ClosingSource:
         self.closed = True
 
 
+class CountingSource:
+    """
+    A sync iterator counting every call to its __next__
+    """
+
+    def __init__(self, items):
+        self.it = iter(items)
+        self.calls = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.calls += 1
+        return next(self.it)
+
+
+class RaisingBool:
+    """
+    A value whose truth test raises
+    """
+
+    def __bool__(self):
+        raise RuntimeError("no truth here")
+
+
 class TestKosZipSync(unittest.TestCase):
     """
     Every source stepping through tp_iternext: the whole row is built
@@ -113,6 +139,70 @@ class TestKosZipSync(unittest.TestCase):
         self.assertEqual(list(z), [])
 
 
+class TestKosZipStrict(unittest.TestCase):
+    """
+    strict=True raises ValueError when the sources do not all end
+    together, worded as builtins.zip words it
+    """
+
+    def assertStrictError(self, z, message):
+        with self.assertRaises(ValueError) as cm:
+            list(z)
+        self.assertEqual(str(cm.exception), message)
+
+    def test_equal_lengths_give_the_same_rows(self):
+        self.assertEqual(list(KosZip([1, 2, 3], "abc", strict=True)),
+                         list(KosZip([1, 2, 3], "abc")))
+
+    def test_argument_two_shorter(self):
+        self.assertStrictError(
+            KosZip([1, 2], [1], strict=True),
+            "zip() argument 2 is shorter than argument 1")
+
+    def test_argument_two_longer(self):
+        self.assertStrictError(
+            KosZip([1], [1, 2], strict=True),
+            "zip() argument 2 is longer than argument 1")
+
+    def test_argument_three_shorter(self):
+        self.assertStrictError(
+            KosZip([1, 2], [1, 2], [1], strict=True),
+            "zip() argument 3 is shorter than arguments 1-2")
+
+    def test_argument_three_longer_after_argument_two_ended(self):
+        self.assertStrictError(
+            KosZip([1], [1], [1, 2], strict=True),
+            "zip() argument 3 is longer than arguments 1-2")
+
+    def test_longer_source_pulled_once_past_the_end(self):
+        longer = CountingSource([1, 2, 3])
+        self.assertStrictError(
+            KosZip([1], longer, strict=True),
+            "zip() argument 2 is longer than argument 1")
+        self.assertEqual(longer.calls, 2)
+
+    def test_strict_false_is_the_default(self):
+        self.assertEqual(list(KosZip([1, 2], [1], strict=False)),
+                         list(KosZip([1, 2], [1])))
+        self.assertEqual(list(KosZip([1, 2], [1], strict=False)), [(1, 1)])
+
+    def test_no_sources_is_empty(self):
+        self.assertEqual(list(KosZip(strict=True)), [])
+
+    def test_strict_error_does_not_latch(self):
+        first = CountingSource([1, 2, 3])
+        z = iter(KosZip(first, [1], strict=True))
+
+        self.assertEqual(next(z), (1, 1))
+        with self.assertRaises(ValueError):
+            next(z)
+        self.assertEqual(first.calls, 2)
+
+        with self.assertRaises(ValueError):
+            next(z)
+        self.assertEqual(first.calls, 3)
+
+
 class TestKosZipConstruction(unittest.TestCase):
     """
     Sources are acquired eagerly, so a bad argument raises where the
@@ -126,6 +216,14 @@ class TestKosZipConstruction(unittest.TestCase):
     def test_keyword_arguments_refused(self):
         with self.assertRaises(TypeError):
             KosZip([1, 2], other=[3, 4])
+
+    def test_strict_with_another_keyword_refused(self):
+        with self.assertRaises(TypeError):
+            KosZip([1, 2], strict=True, other=[1])
+
+    def test_strict_truth_test_error_propagates(self):
+        with self.assertRaises(RuntimeError):
+            KosZip([1, 2], [3, 4], strict=RaisingBool())
 
 
 class TestKosZipDriven(unittest.IsolatedAsyncioTestCase):
@@ -168,6 +266,35 @@ class TestKosZipDriven(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await self.collect(KosZip(*sources)),
                          list(zip(*rows)))
+
+    async def assertStrictError(self, z, message):
+        with self.assertRaises(ValueError) as cm:
+            await self.collect(z)
+        self.assertEqual(str(cm.exception), message)
+
+    async def test_strict_shorter_at_a_driven_source(self):
+        await self.assertStrictError(
+            KosZip([1, 2], agen([1]), strict=True),
+            "zip() argument 2 is shorter than argument 1")
+
+    async def test_strict_driven_first_source_ends_into_the_tail(self):
+        await self.assertStrictError(
+            KosZip(agen([1]), [1, 2], strict=True),
+            "zip() argument 2 is longer than argument 1")
+
+    async def test_strict_longer_at_a_driven_source_in_the_tail(self):
+        await self.assertStrictError(
+            KosZip([1], agen([1, 2]), strict=True),
+            "zip() argument 2 is longer than argument 1")
+
+    async def test_strict_tail_across_a_driven_source_that_ends(self):
+        got = await self.collect(KosZip([1], agen("a"), [9], strict=True))
+        self.assertEqual(got, [(1, 'a', 9)])
+
+    async def test_strict_tail_past_a_driven_source_finds_a_longer(self):
+        await self.assertStrictError(
+            KosZip([1], agen("a"), [9, 8], strict=True),
+            "zip() argument 3 is longer than arguments 1-2")
 
 
 class TestKosZipTeardown(unittest.IsolatedAsyncioTestCase):
