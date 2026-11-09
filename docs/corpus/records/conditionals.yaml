@@ -1033,3 +1033,20 @@ tags:
   - surprising
   - idiom
 notes: "works, but is not the idiom: (when (not EXPR) ...) is spelled (unless EXPR ...). corrective: (unless x \"ran\"). This includes the whole-body filter of list-each, where (unless cond body) is the negated filter."
+---
+id: conditional-switch-identity-nan-001
+feature: special/compile/switch
+source: "(let [[n (float \"nan\")]] (switch n [[n] \"same\"] [else: \"other\"]))"
+verify:
+  read: "(let [[n (float \"nan\")]] (switch n [[n] \"same\"] [else: \"other\"]))"
+  expand: "(let [[n (float \"nan\")]] (switch n [[n] \"same\"] [else: \"other\"]))"
+  eval: '"same"'
+references:
+  - reference/specials/compile-switch.md
+stability: evolving
+tags:
+  - conditional
+  - switch
+  - branch
+  - surprising
+notes: a candidate identical to the value matches before == is asked, so a NaN matches itself although (== n n) is False

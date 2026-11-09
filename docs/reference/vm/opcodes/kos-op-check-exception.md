@@ -17,7 +17,7 @@
 
 ## 9.1 Switch dispatch
 
-Switch dispatch opcodes implement multi-way **equality** branching. A typical
+Switch dispatch opcodes implement multi-way **identity-or-equality** branching. A typical
 **checks** region runs comparisons in order: each comparison **falls through**
 when it does not match so the next check can run without re-pushing the
 scrutinee. A **match** jumps into a shared **body** (or the same body for

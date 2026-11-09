@@ -132,6 +132,30 @@ class TestSwitchSpecial(SpecialsTestCase):
         self.assertEqual(result, 200)
 
 
+    async def test_switch_matches_identity_before_equality(self):
+        class Never:
+            def __eq__(self, other):
+                raise AssertionError("__eq__ called")
+
+        nan = float("nan")
+        never = Never()
+
+        def same(val):
+            return val
+
+        src_str = """
+        (call collect
+          (switch nan [[nan] "nan"] [else: "other"])
+          (switch nan [[(call same nan)] "nan"] [else: "other"])
+          (switch never [[never] "never"] [else: "other"]))
+        """
+        expr, mod = self.compile_expr(
+            src_str, nan=nan, never=never, same=same,
+            collect=lambda *vals: list(vals))
+        result = await expr()
+        self.assertEqual(result, ["nan", "nan", "never"])
+
+
 class TestSwitchLayoutIntegration(SpecialsTestCase):
     """
     End-to-end tests exercising layout/switch -> switch through

@@ -70,7 +70,7 @@ lists each of those with all its pages.
 |------|------|
 | [`begin`](specials/compile-begin.md) | Run forms in order; the value is the last |
 | [`cond`](specials/compile-cond.md) | The first clause whose test is true; what layout `if` reads to |
-| [`switch`](specials/compile-switch.md) | Branch on equality against candidates |
+| [`switch`](specials/compile-switch.md) | Branch on identity or equality against candidates |
 | [`match`](specials/compile-match.md) | Destructure against patterns; see [Match patterns](../guide/match-patterns.md) |
 | [`and`](specials/compile-and.md), [`or`](specials/compile-or.md) | Short-circuit conjunction and disjunction |
 | [`while`](specials/compile-while.md) | Loop while a test is true, with an `else:` clause |

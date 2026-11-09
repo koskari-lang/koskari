@@ -4,8 +4,8 @@
 first arm whose pattern matches binds its captured names and runs its
 body. It is the sibling of
 [`switch`](../reference/specials/compile-switch.md), which dispatches on
-equality. `match` is for the shape of a value; `switch` compares it
-against candidates.
+identity or equality. `match` is for the shape of a value; `switch`
+compares it against candidates.
 
 ```koskari
 match msg:
@@ -209,6 +209,6 @@ Captured names stay bound when a guard fails, as after Python's
 
 - [`compile/match`](../reference/specials/compile-match.md): the special form
 - [`layout/match`](../reference/layouts/layout-match.md): the `match:` block
-- [`compile/switch`](../reference/specials/compile-switch.md): equality dispatch
+- [`compile/switch`](../reference/specials/compile-switch.md): identity-or-equality dispatch
 - [`koskari.matcher`](../reference/api/koskari-matcher.md): the matcher these patterns compile to
 - [Macros and hygiene](macros-and-hygiene.md): the same matcher matching source forms at compile time

@@ -459,10 +459,9 @@ clause test must be a pair/list (`COMPARE-LIST`); otherwise `SpecialError` is
 raised (`"switch compare must be a list of values"`). For each element of that
 list, the compiler emits one compare path against `VALUE`:
 
-- match (`SWITCH_EQ` not taken): emits `JUMP body_label`, then runs the clause
-  body once
-- no match (`SWITCH_EQ` taken): pops only candidate value, keeps `VALUE`, jumps
-  to the next candidate (or next clause after the last candidate)
+- match: `SWITCH_EQ` pops the candidate and `VALUE` and jumps to the clause body
+- no match: `SWITCH_EQ` pops only the candidate, keeps `VALUE`, and falls
+  through to the next candidate (or the next clause after the last candidate)
 
 Clause bodies are compiled via `helper_begin`. The `else:` clause must be last.
 Entering `else:` pops the retained `VALUE` before compiling its body. After any

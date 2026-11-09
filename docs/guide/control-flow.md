@@ -51,10 +51,10 @@ Tests use Python truthiness: `0`, `""`, `#[]`, and `None` are false.
 
 ## Choosing on a value
 
-`switch` compares one value against candidates with `==`. `match`
-destructures it against patterns: sequences, mappings, classes, typed
-captures, with guards. The pattern language has its own page,
-[Match patterns](match-patterns.md).
+`switch` matches one value against candidates that are the same object or
+`==` to it, as Python's `in` does for list items. `match` destructures it
+against patterns: sequences, mappings, classes, typed captures, with guards.
+The pattern language has its own page, [Match patterns](match-patterns.md).
 
 ```koskari
 match msg:

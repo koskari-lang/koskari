@@ -20,7 +20,7 @@
 | Opcodes | `koskari/lib/opcodes.incl` — `SWITCH_EQ`, `SWITCH_EQ_CONST`, `SWITCH_EQ_VAR`, `SWITCH_EQ_FAST`, `SWITCH_EQ_VAR_ATTR`, `SWITCH_EQ_FAST_ATTR` |
 | Handlers | `koskari/lib/opcode/SWITCH_EQ*.c` |
 | Compiler special | `koskari/compile/specials/conditionals.py` — **`compile/switch`** |
-| Peephole fusion | `koskari/compile/compiler.py` — **`_SWITCH_SQUASHES`** in **`compress`** |
+| Peephole fusion | `koskari/compile/processor.py` — **`SWITCH_SQUASHES`** in **`ByteCodeProcessor`** |
 
 ---
 
@@ -36,9 +36,11 @@ awkward with existing opcodes:
 
 A dedicated family keeps **one stack slot for the scrutinee** across the whole
 chain: each arm supplies (or embeds) a key, compares, and either consumes the
-scrutinee and falls into the body or discards only the key and jumps forward.
+scrutinee and jumps to the body or discards only the key and falls through.
 
-Equality should match **CHECK_EQ** (same underlying comparison semantics).
+Equality is `PyObject_RichCompareBool` with `Py_EQ`: identity first, then
+`__eq__`. **CHECK_COMPARE** EQ deliberately skips the identity shortcut, so the
+two differ for an object not equal to itself, such as a NaN.
 
 ## Base opcode: SWITCH_EQ
 
@@ -50,22 +52,25 @@ other control-flow branches; see [OPCODES.md](OPCODES.md) §1.3 / §1.7.
 
 **Behaviour:**
 
-- If `left == right` (per CHECK_EQ equality): pop **two** values; **fall through**
-  to the case body that follows this instruction.
-- If `left != right`: pop **one** value (the key on TOS only); **jump** to `arg`
-  (the next arm’s prelude, or a shared else label).
+- If `left == right` (identity first, then `Py_EQ` via
+  `PyObject_RichCompareBool`): pop **two** values; **jump** to `arg` (the case
+  body).
+- If `left != right`: pop **one** value (the key on TOS only); **fall through**
+  to the next key, or to the else prelude after the last key.
 
 **Net stack effect:**
 
-- Match: depth −2.
-- Mismatch: depth −1, then control transfers to the label.
+- Match: depth −2, then control transfers to the label.
+- Mismatch: depth −1.
 
 **Compiler-shaped lowering (generic keys):**
 
 1. Evaluate discriminant once → stack `[..., s]`.
-2. For each non-final arm: evaluate case key → `[..., s, k]`; emit `SWITCH_EQ
-   L_next`; emit body; emit `JUMP L_done` (or equivalent merge).
-3. Label `L_next`: still `[..., s]` after each failed compare.
+2. For each key of each non-final arm: evaluate case key → `[..., s, k]`; emit
+   `SWITCH_EQ L_body`. Each arm's body sits at `L_body`, followed by
+   `JUMP L_done` (or equivalent merge).
+3. After each failed compare the stack is still `[..., s]` and control falls
+   through to the next key; past the last key it jumps to the else arm.
 4. Else arm: optional `POP 1` if the result must not leak `s`, then body or
    `CONST None` when no else clause (mirroring empty / no-match `compile/cond`).
 
@@ -81,18 +86,20 @@ TOS** before the opcode.
 
 | Opcode | Operand(s) | Match | Mismatch |
 |--------|------------|-------|----------|
-| SWITCH_EQ_CONST | label + const pool index | pop 1 | jump, pop 0 |
-| SWITCH_EQ_VAR | label + var name (cpool) | pop 1 | jump, pop 0 |
-| SWITCH_EQ_FAST | label + fast slot index | pop 1 | jump, pop 0 |
-| SWITCH_EQ_VAR_ATTR | label + EXTRA row (VAR + attr name, same schema family as VAR_ATTR) | pop 1 | jump, pop 0 |
-| SWITCH_EQ_FAST_ATTR | label + EXTRA row (FAST + attr name) | pop 1 | jump, pop 0 |
+| SWITCH_EQ_CONST | label + const pool index | jump, pop 1 | pop 0 |
+| SWITCH_EQ_VAR | label + var name (cpool) | jump, pop 1 | pop 0 |
+| SWITCH_EQ_FAST | label + fast slot index | jump, pop 1 | pop 0 |
+| SWITCH_EQ_VAR_ATTR | label + EXTRA row (VAR + attr name, same schema family as VAR_ATTR) | jump, pop 1 | pop 0 |
+| SWITCH_EQ_FAST_ATTR | label + EXTRA row (FAST + attr name) | jump, pop 1 | pop 0 |
 
 **Semantics:** Each reads the right-hand side at opcode execution (constant pool
-entry, binding, or attribute), compares to `s` using the same equality as
-`SWITCH_EQ` / `CHECK_EQ`, then applies the pop/jump contract above.
+entry, binding, or attribute), compares to `s` using the same test as
+`SWITCH_EQ` (identity first, then `Py_EQ` via `PyObject_RichCompareBool`; unlike
+CHECK_COMPARE EQ, which skips the identity shortcut), then applies the pop/jump
+contract above.
 
 The compiler **`compress`** pass fuses **`CONST`/`VAR`/`VAR_ATTR` + `SWITCH_EQ`**
-into the compressed opcodes via **`_SWITCH_SQUASHES`**.
+into the compressed opcodes via **`SWITCH_SQUASHES`**.
 
 ## Surface syntax: compile/switch
 

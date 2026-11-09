@@ -3,30 +3,26 @@
 
 **Syntax:** `(switch VALUE [COMPARE-LIST BODY...] ... [else: BODY...])`
 
-**Use-case:** Multi-way equality branching against one discriminant value.
-`VALUE` is evaluated once, then each clause compares one or more candidate values
-from `COMPARE-LIST` against `VALUE` in order. On first match, that clause body
-is evaluated and returned. If no clause matches, `else:` is used when present;
-otherwise the form yields `None`.
+**Use-case:** Multi-way branching on one value against lists of candidates.
 
-**Behaviour:** Requires at least one argument (`VALUE`). Compiles `VALUE` once
-and keeps it on the stack across case checks. For each non-else clause, the
-clause test must be a pair/list (`COMPARE-LIST`); otherwise `SpecialError` is
-raised (`"switch compare must be a list of values"`). For each element of that
-list, the compiler emits one compare path against `VALUE`:
+**Behaviour:** `VALUE` is evaluated once. Each clause's `COMPARE-LIST` is a
+list of candidate expressions; the list itself is not evaluated. Clauses are
+tried in order, and a clause's candidates left to right, each evaluated only
+after every earlier candidate failed to match. A candidate matches when it is
+the same object as `VALUE` or when `VALUE == candidate` is true -- the test
+Python's `in` applies to list items. An identical object matches without its
+`__eq__` being called, so a NaN matches itself as a candidate although
+`(== nan nan)` is `False`. An exception raised by `__eq__` propagates.
 
-- match (`SWITCH_EQ` not taken): emits `JUMP body_label`, then runs the clause
-  body once
-- no match (`SWITCH_EQ` taken): pops only candidate value, keeps `VALUE`, jumps
-  to the next candidate (or next clause after the last candidate)
+The first match runs that clause's body, and the body's last value is the
+result; no later candidate is evaluated. `else:` matches anything and must be
+the last clause. With no match and no `else:`, the result is `None`.
 
-Clause bodies are compiled via `helper_begin`. The `else:` clause must be last.
-Entering `else:` pops the retained `VALUE` before compiling its body. After any
-successful clause, control jumps to a shared done label. If no clause matches
-and no else is present, the remaining `VALUE` is popped and `None` is pushed.
+A clause test that is not a non-empty list raises `SpecialError`
+(`"switch compare must be a list of values"`); an `else:` before the last
+clause raises `SpecialError` (`"else: must be last clause"`).
 
-The head may be written as `switch` or `compile/switch`; compiler lookup resolves
-`switch` to `compile/switch`.
+The head may be written as `switch` or `compile/switch`.
 
 **Expected lowered shape from layout/switch:**
 
@@ -36,9 +32,8 @@ The head may be written as `switch` or `compile/switch`; compiler lookup resolve
   (else: (begin BODY...)))
 ```
 
-This shape is valid because each clause body is still a list of forms for
-`helper_begin`; when it contains one `compile/begin` form, that form performs
-the sequencing.
+Each clause body is a sequence of forms; a single `begin` form sequences them
+itself.
 
 **Examples:**
 
@@ -63,6 +58,13 @@ the sequencing.
   [[1] "one"]
   [[2] "two"])
 ;; -> None
+
+;; A NaN matches itself as a candidate
+(let [[n (float "nan")]]
+  (switch n
+    [[n] "same"]
+    [else: "other"]))
+;; -> "same"
 ```
 
 **Also:** layout handler [`switch`](../layouts/layout-switch.md).

@@ -1,8 +1,9 @@
 # layout/switch
 **Symbol:** `layout/switch`
 
-**Use-case:** Multi-way equality dispatch in block syntax. Lowers to `switch`
-clause lists consumed by `compile/switch`.
+**Use-case:** Multi-way dispatch on one value in block syntax; a candidate
+matches by identity or equality, as `compile/switch` describes. Lowers to
+`switch` clause lists consumed by `compile/switch`.
 
 **Behaviour:** Does not accept peers. Header must be exactly
 `switch VALUE:` (one value expression). Inner `case` and `else` blocks are

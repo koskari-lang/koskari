@@ -42,7 +42,7 @@ special, a macro, and a call is in
 |------|------|
 | [`begin`](compile-begin.md) | Run forms in order; the value is the last |
 | [`cond`](compile-cond.md) | The first clause whose test is true; what layout `if` reads to |
-| [`switch`](compile-switch.md) | Branch on equality against candidates |
+| [`switch`](compile-switch.md) | Branch on identity or equality against candidates |
 | [`match`](compile-match.md) | Destructure against patterns; see [Match patterns](../../guide/match-patterns.md) |
 | [`and`](compile-and.md), [`or`](compile-or.md) | Short-circuit conjunction and disjunction |
 | [`while`](compile-while.md) | Loop while a test is true, with an `else:` clause |

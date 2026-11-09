@@ -214,7 +214,7 @@ quick lookup.
 - `KOS_OP_CHECK_COMPARE_VAR`, `KOS_OP_CHECK_COMPARE_FAST`: Arity-2 fused checks with operands from the namespace or fast slots (or the constant pool per the CMPSRC bits)
 - `KOS_OP_CHECK_NIL`: Squashed NILP + JUMP_FALSE; jump if TOS is not an empty-list singleton
 - `KOS_OP_CHECK_EXCEPTION`: Exception matching
-- `KOS_OP_SWITCH_EQ` and the fused `SWITCH_EQ_CONST` / `_VAR` / `_FAST` / `_VAR_ATTR` / `_FAST_ATTR`: Equality dispatch for `switch` arms
+- `KOS_OP_SWITCH_EQ` and the fused `SWITCH_EQ_CONST` / `_VAR` / `_FAST` / `_VAR_ATTR` / `_FAST_ATTR`: Identity-or-equality dispatch for `switch` arms
 
 ### Variables (by name)
 - `KOS_OP_VAR`: Load variable by name (constant index)
