@@ -367,36 +367,35 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
 
 
 /**
-   The await suite's install: a delegating defer stands for what it
-   delegates to. When that value's own suite installs it on the running
-   chain, the handle is spent, as a drive to completion would spend it;
-   otherwise the defer is awaited as the awaitable it is. An implicit
-   site takes a defer as a plain handle (ka_implicit_plain).
+   The await suite's kind: a delegating defer stands for what it
+   delegates to. An inner value with an await suite of its own is
+   handed to that suite's kind on this await frame and the handle is
+   spent, as a drive to completion would spend it; anything else is
+   awaited through the defer's own protocol. An implicit site takes a
+   defer as a plain handle (ka_implicit_plain).
 */
-static int defer_await_install(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult defer_await_resume(
     KosContext *ctx,
-    PyObject *self,
-    PyObject **out,
-    KosOpResult *r) {
+    void *state,
+    PyObject *value) {
 
-  KosDefer *d = (KosDefer *) self;
+  KosDefer *d = (KosDefer *) value;
   KosAwaitSlots *slots;
   PyObject *inner;
 
-  if (d->state != KOS_DEFER_DELEGATING)
-    return 0;
-  inner = d->u.inner;
-  if (! KosAwait_CheckSlots(inner, &slots))
-    return 0;
-  if (! slots->ka_install(ctx, inner, out, r))
-    return 0;
+  if (d->state != KOS_DEFER_DELEGATING
+      || ! KosAwait_CheckSlots(d->u.inner, &slots))
+    TAILCALL(kos_await_python, ctx, state, value);
 
-  /* the handle is consumed: its program runs on this chain */
+  inner = d->u.inner;
   d->u.inner = NULL;
   d->state = KOS_DEFER_SPENT;
-  Py_DECREF(inner);
-  return 1;
+  Py_DECREF(value);
+  TAILCALL(slots->ka_install->fn, ctx, state, inner);
 }
+
+KOS_RESUME_KIND_AS_IS(defer_await_kind, "await defer",
+                      defer_await_resume, NULL, NULL);
 
 
 /* === Coroutine protocol ===
@@ -807,7 +806,7 @@ KosEvaluatedTypeObject KosDeferType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_await = {
-    .ka_install = defer_await_install,
+    .ka_install = &defer_await_kind,
     .ka_implicit_plain = 1,
   },
 };

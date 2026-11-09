@@ -227,25 +227,23 @@ static inline void kos_iter_finish(
 
 
 /**
-   The await suite: how the evaluator installs the work an awaitable
-   of this type stands for onto the running chain, instead of driving
-   the awaitable through its Python protocol. ka_install answers 1 with
-   *r the outcome -- the outcomes kos_settle_value returns: a value in
-   hand as NORMAL with *out, an install as REPROLOGUE or RESUME, AWAIT,
-   RAISE -- when it took self, and 0 when self is already in flight and
-   must be awaited as the awaitable it is. self is borrowed; the
-   caller releases it. ka_implicit_plain says an implicit site takes
-   the value unawaited, as a Defer handle is; only an explicit await
-   installs it.
+   The await suite: how the evaluator takes an awaitable of this type
+   onto the running chain instead of driving it through its Python
+   protocol. An await is a native frame whose resume is ka_install:
+   the settle installs the frame and delivers the owned awaitable to
+   the kind as it is, with no state (the kind does not settle). The
+   kind runs as that frame's resume and completes the frame the way a
+   resume on a native frame does: a value in hand returns from the
+   frame (RESULT_FRAME_RETURN); work it stands for replaces the frame
+   (kos_dyn_swap_frame_for_tail) or sets a resume of its own on it and
+   makes its request; an awaitable already in flight hands itself to
+   kos_await_python, the Python-protocol drive on the same frame. Any
+   reference the kind owes is released before it tails.
+   ka_implicit_plain says an implicit site takes the value unawaited,
+   as a Defer handle is; only an explicit await installs it.
 */
-typedef int (*KosAwaitInstallFunc)(
-    KosContext *ctx,
-    PyObject *self,
-    PyObject **out,
-    KosOpResult *r);
-
 typedef struct KosAwaitSlots {
-  KosAwaitInstallFunc ka_install;
+  const KosResumeKind *ka_install;
   uint8_t ka_implicit_plain;
 } KosAwaitSlots;
 
@@ -389,8 +387,8 @@ static inline int kos_iter_check(PyObject *obj) {
 
 
 /**
-   Check-and-resolve in one: when obj is an awaitable the evaluator
-   installs itself (a KosEvaluated whose suite carries ka_install),
+   Check-and-resolve in one: when obj is an awaitable with an await
+   suite (a KosEvaluated whose suite carries ka_install),
    store the resolved suite into *out_slots and return 1; otherwise
    return 0 with *out_slots untouched.
 */

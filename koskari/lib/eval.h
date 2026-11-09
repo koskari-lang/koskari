@@ -316,6 +316,20 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_resume_live(
     void *insn,
     PyObject *val);
 
+/**
+   The Python-protocol drive of an awaitable, on the live native frame:
+   where an await suite's kind sends an awaitable it cannot take, and
+   where the settle sends one with no suite. awaitable is owned and
+   consumed. The eager first step's completion returns from the frame;
+   a suspension sets the frame's resume to return the revive's
+   delivery and suspends with the yielded value; a failure raises.
+   state is unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_await_python(
+    KosContext *ctx,
+    void *state,
+    PyObject *awaitable);
+
 
 /* === Threaded control transfer === */
 
@@ -719,43 +733,13 @@ KosOpResult KosContext_ThrowResumeBound(
 
 
 /**
-   A next request made from a native frame, the way KosContext_CallInto
-   makes a call from one: a native frame carrying resume, state and
-   frame_flags is installed, and the request is made on it, so its
-   element or end reaches that resume, which completes the frame by
-   returning (RESULT_FRAME_RETURN) or raising. A yield of the bound
-   provider becomes a return to whoever installed the frame. A value
-   in hand is staged for the resume. Returns REPROLOGUE for the staged
-   value, else the request's outcome.
-*/
-KosOpResult KosContext_NextInto(
-    KosContext *ctx,
-    const KosIterRequest *req,
-    const KosResumeKind *resume,
-    void *state,
-    uint32_t frame_flags);
-
-
-/**
-   KosContext_NextInto for a throw into the bound provider.
-*/
-KosOpResult KosContext_ThrowInto(
-    KosContext *ctx,
-    const KosIterRequest *req,
-    PyObject *throw_typ,
-    PyObject *throw_exc,
-    const KosResumeKind *resume,
-    void *state,
-    uint32_t frame_flags);
-
-
-/**
    The resume kinds of a provider step taken for an awaited anext,
-   asend, athrow or aclose on a native frame (KosContext_NextInto):
-   the state is the owned provider. kos_astep_resume_kind returns the
-   element from the frame and raises StopAsyncIteration with the
-   payload at the end; kos_aclose_resume_kind returns None at the end
-   or on a GeneratorExit and refuses an element.
+   asend, athrow or aclose on the await frame (the stepper's await
+   kind, iterate.c): the state is the owned provider.
+   kos_astep_resume_kind returns the element from the frame and raises
+   StopAsyncIteration with the payload at the end;
+   kos_aclose_resume_kind returns None at the end or on a GeneratorExit
+   and refuses an element.
 */
 extern const KosResumeKind kos_astep_resume_kind;
 extern const KosResumeKind kos_aclose_resume_kind;

@@ -18,10 +18,12 @@
 /**
   koskari/lib/eval/eval_await.c
 
-  Awaiting a Python awaitable from the evaluator: the eager first step,
-  the demand-extent suspension denial, push_or_await and its fused
-  CALL* variant, and the PUSH result helpers. Included into eval.c as a
-  segment (see the eval/ includes there).
+  Awaiting from the evaluator: the await frame an awaitable with an
+  await suite is taken on, the Python-protocol drive of every other
+  awaitable (the eager first step, the demand-extent suspension
+  denial), push_or_await and its fused CALL* variant, and the PUSH
+  result helpers. Included into eval.c as a segment (see the eval/
+  includes there).
 
   :author: Christopher O'Brien <obriencj@preoccupied.net>
   :license: GNU General Public License v3
@@ -144,6 +146,72 @@ static int kos_isfuture(PyObject *val) {
 }
 
 
+/* === The await frame === */
+
+
+/**
+   The revive's delivery to a suspended Python await on an await
+   frame: the awaited value returns from the frame; a failed delivery
+   declines, and the raise unwinds the frame.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult await_revive_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  (void) state;
+  if (! value)
+    return EVAL_RAISE();
+  RESULT_FRAME_RETURN(ctx, value, NULL);
+}
+
+KOS_RESUME_KIND_AS_IS(kos_await_revive_resume_kind, "await",
+                      await_revive_resume, NULL, NULL);
+
+
+KOS_PRESERVE_NONE KosOpResult kos_await_python(
+    KosContext *ctx,
+    void *state,
+    PyObject *awaitable) {
+
+  int suspended = 0;
+  PyObject *yielded = NULL;
+  PyObject *result;
+
+  (void) state;
+  result = eager_step_awaitable(awaitable, ctx, &suspended, &yielded);
+  Py_DECREF(awaitable);
+
+  if (result)
+    RESULT_FRAME_RETURN(ctx, result, NULL);
+
+  if (suspended && yielded) {
+    KosDynFrame *frame = KosContext_FRAME(ctx);
+
+    KosDynFrame_RESUME_KIND(frame) = &kos_await_revive_resume_kind;
+    KosDynFrame_RESUME_STATE(frame) = NULL;
+    KosContext_MarkSuspendedNotRunning(ctx);
+    RESULT_AWAIT(ctx, yielded);
+  }
+  RESULT_RAISE();
+}
+
+
+/**
+   Install the await frame for an awaitable with suite slots: a native
+   frame above the live one, carrying kind as its resume when the
+   awaitable is to be staged for the prologue's delivery, or no resume
+   when the caller hops into the kind itself. The frame, or NULL with
+   PyErr set (no frame room).
+*/
+static inline KosDynFrame *kos_await_frame_install(
+    KosContext *ctx,
+    const KosResumeKind *kind) {
+
+  return KosContext_InstallNativeFrame(ctx, kind, NULL, 0, NULL, 0);
+}
+
+
 /**
    CALL* peephole: when the next instruction is POP 1 (discard TOS),
    release val and step past that POP instead of pushing. Returns 1
@@ -179,14 +247,17 @@ static inline KosOpResult push_or_fuse(
 
 /**
    The settle half of push_or_await. A plain value comes back as it
-   is, and so do a Defer and an asyncio future unless await_defer is
-   set. A fresh Koskari coroutine, or a Defer delegating to one under
-   an explicit await, is installed as a call frame on the running
-   chain. Any other awaitable is eagerly stepped to its result, or
-   suspends with the iterator stored on the context. NORMAL with *out
-   the settled value (new reference), REPROLOGUE with a callee
-   installed whose return delivers the value, AWAIT with the yielded
-   value, or RAISE. val is consumed.
+   is, and so do an asyncio future and a type whose await suite marks
+   it plain (a Defer) unless await_defer is set. An awaitable with an
+   await suite is taken on its await frame: the frame is installed
+   with the suite's kind as its resume and the awaitable staged for
+   the prologue's delivery, so the kind runs on the next pass and the
+   frame's return lands the value where the push would have. Any
+   other awaitable is eagerly stepped to its result, or suspends with
+   the iterator stored on the context. NORMAL with *out the settled
+   value (new reference), REPROLOGUE with a frame installed whose
+   return delivers the value, AWAIT with the yielded value, or RAISE.
+   val is consumed.
 */
 static inline KosOpResult kos_settle_value(
     KosContext *ctx,
@@ -212,26 +283,22 @@ static inline KosOpResult kos_settle_value(
     }
   }
 
-  /* An awaitable whose type carries an await suite installs the work
-     it stands for on this chain and answers for the settle: a fresh
-     Koskari coroutine as a call frame, a Defer over one through it, a
-     provider step for an awaited anext. One already in flight falls
-     through to the drive below; one an implicit site takes as a plain
-     handle is the value. */
+  /* An awaitable with an await suite is taken on its await frame; one
+     an implicit site takes as a plain handle is the value. */
   {
     KosAwaitSlots *slots;
 
     if (KosAwait_CheckSlots(val, &slots)) {
-      KosOpResult r;
-
       if (! await_defer && slots->ka_implicit_plain) {
         *out = val;
         return EVAL_NORMAL();
       }
-      if (slots->ka_install(ctx, val, out, &r)) {
+      if (unlikely(! kos_await_frame_install(ctx, slots->ka_install))) {
         Py_DECREF(val);
-        return r;
+        return EVAL_RAISE();
       }
+      KosContext_StageDelivery(ctx, val);
+      return EVAL_REPROLOGUE();
     }
   }
 
@@ -272,8 +339,8 @@ static inline KosOpResult kos_settle_value(
 /**
    Push val. An awaitable val is settled first through
    kos_settle_value: its result is pushed, a suspension returns
-   KOS_RES_AWAIT, and a fresh Koskari coroutine is installed as a
-   callee instead, reported as REPROLOGUE, whose return lands the
+   KOS_RES_AWAIT, and an awaitable with an await suite is taken on its
+   await frame instead, reported as REPROLOGUE, whose return lands the
    value where the push would have. Use only for the result of a call
    (a CALL opcode whose callable returned a coroutine) and for the
    AWAIT opcode (explicitly awaiting TOS). Every other path must use

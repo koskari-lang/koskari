@@ -944,11 +944,30 @@ static PyGetSetDef coroutine_getsets[] = {
 };
 
 
-static int coroutine_await_install(
+/**
+   The await suite's kind: a coroutine that has not been started is a
+   program with nothing to drive, so its prepared frame replaces the
+   await frame, as a tail call's does, and its return lands where the
+   await's value would. One already started keeps its own drive and
+   is awaited through its Python protocol.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     KosContext *ctx,
-    PyObject *self,
-    PyObject **out,
-    KosOpResult *r);
+    void *state,
+    PyObject *value) {
+
+  KosDynFrame *frame;
+
+  if (! KosCoroutine_TakeFresh(value, &frame))
+    TAILCALL(kos_await_python, ctx, state, value);
+
+  Py_DECREF(value);
+  kos_dyn_swap_frame_for_tail(ctx, frame);
+  RESULT_NEXT_POLL(ctx);
+}
+
+KOS_RESUME_KIND_AS_IS(coroutine_await_kind, "await coroutine",
+                      coroutine_await_resume, NULL, NULL);
 
 
 KosEvaluatedTypeObject KosCoroutineType = {
@@ -973,7 +992,7 @@ KosEvaluatedTypeObject KosCoroutineType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_await = {
-    .ka_install = coroutine_await_install,
+    .ka_install = &coroutine_await_kind,
     .ka_implicit_plain = 0,
   },
 };
@@ -995,38 +1014,6 @@ int KosCoroutine_TakeFresh(PyObject *self, KosDynFrame **frame) {
   coro->frame = NULL;
   Py_CLEAR(coro->param_refs);
   coro->state = KOS_CORO_DONE;
-  return 1;
-}
-
-
-/**
-   The await suite's install: a coroutine that has not been started is
-   a program with nothing to drive, so its prepared frame installs on
-   the running chain as a callee's does and its return lands where the
-   await's value would. Refused for room, the frame is released, which
-   offers it back to its function's cache. One already started keeps
-   its own drive.
-*/
-static int coroutine_await_install(
-    KosContext *ctx,
-    PyObject *self,
-    PyObject **out,
-    KosOpResult *r) {
-
-  KosDynFrame *frame;
-
-  (void) out;
-  if (! KosCoroutine_TakeFresh(self, &frame))
-    return 0;
-
-  if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx),
-                                         1) < 0)) {
-    kos_dynframe_free(frame);
-    *r = EVAL_RAISE();
-    return 1;
-  }
-  kos_dyn_push_ready_frame(ctx, frame);
-  *r = EVAL_REPROLOGUE();
   return 1;
 }
 

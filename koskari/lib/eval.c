@@ -2213,6 +2213,15 @@ KosOpResult KosContext_ThrowResumeBound(
       break;
     case KOS_ITER_INSTALLED:
     case KOS_ITER_INSTALLED_VALUE:
+      /* A throw the ingress left raised for the installed frame is
+         processed by the prologue, never threaded past: the resume is
+         set and the prologue's raise phase delivers the exception
+         inside the frame. */
+      if (PyErr_Occurred()) {
+        KosDynFrame_RESUME_KIND(frame) = resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
+        return EVAL_REPROLOGUE();
+      }
       status = KOS_IREQ_CONTINUES;
       break;
     case KOS_ITER_ERROR:

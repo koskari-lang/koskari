@@ -1022,29 +1022,28 @@ static PyObject *stepper_repr(PyObject *self) {
 
 
 /**
-   The await suite's install: a stepper not yet driven stands for one
-   step of its provider, taken here on the running chain as a next or
-   throw request from a native frame, the kind the adapter primed
-   choosing the resume that completes the frame with the element, the
-   end, or the close's None. The provider reference moves to the
-   resume's state and the stepper is spent, so a later await from
-   Python meets the reuse guard. A stepper Python has driven is in
-   flight on its own context and is awaited as the awaitable it is.
+   The await suite's kind: a stepper not yet driven stands for one step
+   of its provider, taken here as a next or throw request on the await
+   frame, with the resume the adapter's priming chose completing the
+   frame with the element, the end, or the close's None. The provider
+   reference moves to the resume's state and the stepper is spent, so
+   a later await from Python meets the reuse guard. A stepper Python
+   has driven is in flight on its own context and is awaited through
+   its protocol.
 */
-static int stepper_await_install(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
     KosContext *ctx,
-    PyObject *self,
-    PyObject **out,
-    KosOpResult *r) {
+    void *state,
+    PyObject *value) {
 
-  KosIterStepper *st = (KosIterStepper *) self;
+  KosIterStepper *st = (KosIterStepper *) value;
   const KosResumeKind *kind;
   KosIterRequest req;
   PyObject *provider;
+  KosOpResult r;
 
-  (void) out;
   if (! st->provider || st->started || st->awaiting || st->running)
-    return 0;
+    TAILCALL(kos_await_python, ctx, state, value);
 
   provider = st->provider;
   st->provider = NULL;
@@ -1053,43 +1052,36 @@ static int stepper_await_install(
   kind = st->closing ? &kos_aclose_resume_kind : &kos_astep_resume_kind;
 
   if (st->is_throw) {
-    *r = KosContext_ThrowInto(ctx, &req, st->throw_typ, st->throw_exc,
-                              kind, provider, 0);
+    r = KosContext_ThrowResumeBound(ctx, &req, st->throw_typ,
+                                    st->throw_exc, kind, provider);
     /* A throw that found the provider already finished did nothing:
-       the end is in hand, StopIteration pending for the resume. An
-       athrow completes quietly with None there, as CPython's does,
-       where a provider that took the throw and then ended raises
-       StopAsyncIteration through the resume; aclose answers None at
-       either end through its own kind. */
-    if (! st->closing && r->kind == KOS_RES_RESUME
+       the end is in hand, StopIteration pending for the resume set on
+       the frame. An athrow completes quietly with None there, as
+       CPython's does, staged for that resume; a provider that took the
+       throw and then ended raises StopAsyncIteration through it; aclose
+       answers None at either end through its own kind. */
+    if (! st->closing && r.kind == KOS_RES_RESUME
         && PyErr_ExceptionMatches(PyExc_StopIteration)) {
       PyErr_Clear();
       KosContext_StageDelivery(ctx, Py_NewRef(Py_None));
-      *r = EVAL_REPROLOGUE();
+      r = EVAL_REPROLOGUE();
     }
   } else {
-    *r = KosContext_NextInto(ctx, &req, kind, provider, 0);
+    r = KosContext_NextResumeBound(ctx, &req, kind, provider);
   }
 
   Py_CLEAR(st->send_value);
   Py_CLEAR(st->throw_typ);
   Py_CLEAR(st->throw_exc);
+  Py_DECREF(value);
 
-  /* The request reports as a handler reads it: NORMAL or POLL for an
-     installed frame to thread into, RESUME for one halted on a resume
-     of its own. The settle's caller reads NORMAL as a value in hand,
-     so every installed shape is the prologue's to run. */
-  switch (r->kind) {
-    case KOS_RES_NORMAL:
-    case KOS_RES_POLL:
-    case KOS_RES_RESUME:
-      *r = EVAL_REPROLOGUE();
-      break;
-    default:
-      break;
-  }
-  return 1;
+  if (r.kind == KOS_RES_REPROLOGUE)
+    RESULT_REPROLOGUE(ctx);
+  RESULT_ENTRY(ctx, r, kind, provider);
 }
+
+KOS_RESUME_KIND_AS_IS(stepper_await_kind, "await step",
+                      stepper_await_resume, NULL, NULL);
 
 
 static KosEvaluatedTypeObject KosIterStepperType = {
@@ -1112,7 +1104,7 @@ static KosEvaluatedTypeObject KosIterStepperType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_await = {
-    .ka_install = stepper_await_install,
+    .ka_install = &stepper_await_kind,
     .ka_implicit_plain = 0,
   },
 };

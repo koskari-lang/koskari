@@ -232,16 +232,18 @@ void kos_close_report(
 
 /**
    Classify a produced result under ambient async: a non-awaitable, a
-   Defer, or a future/task handle is a completed value; anything else
+   type whose await suite marks it plain at an implicit site (a
+   Defer), or a future/task handle is a completed value; anything else
    awaitable must be awaited before use.
 */
 int KosEval_ResultIsValue(PyObject *result) {
 
   PyTypeObject *typ = Py_TYPE(result);
+  KosAwaitSlots *slots;
 
   if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
     return 1;
-  if (KosDefer_Check(result))
+  if (KosAwait_CheckSlots(result, &slots) && slots->ka_implicit_plain)
     return 1;
   return KosEval_IsFuture(result);
 }
@@ -780,14 +782,14 @@ KOS_RESUME_KIND_AS_IS_OWNING(kos_next_default_resume_kind, "next",
                              kos_next_state_traverse);
 
 
-/* === The awaited step: anext, asend, athrow and aclose on a native frame ===
+/* === The awaited step: anext, asend, athrow, aclose on the await frame ===
 
-   An awaited stepper installs through its await suite as a next or
-   throw request made from a native frame (KosContext_NextInto,
-   KosContext_ThrowInto). The element or end reaches the resume on that
-   frame and the resume completes the frame: a yield of the provider
-   returns to whoever awaited. The state is the owned provider, as for
-   a next, so the next kinds' clear and traverse serve. */
+   An awaited stepper's await kind (iterate.c) makes a next or throw
+   request on the await frame with one of these kinds as the resume.
+   The element or end reaches the resume on that frame and the resume
+   completes the frame: a yield of the provider returns to whoever
+   awaited. The state is the owned provider, as for a next, so the
+   next kinds' clear and traverse serve. */
 
 
 /**
