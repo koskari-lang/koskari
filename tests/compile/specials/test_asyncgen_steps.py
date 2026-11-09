@@ -24,6 +24,7 @@ import unittest
 
 import pytest
 
+from koskari.lib import get_frame_depth_limit, set_frame_depth_limit
 from koskari.module import load_module_source_async, new_module
 
 
@@ -170,13 +171,20 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         """
         Each layer's await is a step on the consumer's own chain, so a
         chain of them meets the frame-room check and raises
-        RecursionError instead of exhausting the C stack
+        RecursionError instead of exhausting the C stack. The limit is
+        lowered below the chain's depth for the step, so the test holds
+        whatever the default limit is
         """
 
         v = await self.load()
         g = await v["build"](1200)
-        with self.assertRaises(RecursionError):
-            await v["take_first"](g)
+        saved = get_frame_depth_limit()
+        set_frame_depth_limit(200)
+        try:
+            with self.assertRaises(RecursionError):
+                await v["take_first"](g)
+        finally:
+            set_frame_depth_limit(saved)
 
 
 # The end.
