@@ -201,14 +201,29 @@ KOS_PRESERVE_NONE KosOpResult kos_await_python(
    Install the await frame for an awaitable with suite slots: a native
    frame above the live one, carrying kind as its resume when the
    awaitable is to be staged for the prologue's delivery, or no resume
-   when the caller hops into the kind itself. The frame, or NULL with
-   PyErr set (no frame room).
+   when the caller hops into the kind itself. The frame is scaffolding
+   for the kind and is pushed without the frame-room check: the work
+   the kind installs is what counts against the limit, and a kind
+   refused there has taken its awaitable, so a refused await leaves
+   the awaitable finished, as CPython's does, never fresh and dropped.
+   The frame, or NULL with PyErr set (no memory).
 */
 static inline KosDynFrame *kos_await_frame_install(
     KosContext *ctx,
     const KosResumeKind *kind) {
 
-  return KosContext_InstallNativeFrame(ctx, kind, NULL, 0, NULL, 0);
+  PyObject *empty = KosNamespace_Empty();
+  KosDynFrame *frame;
+
+  if (! empty)
+    return NULL;
+  Py_INCREF(empty);
+  frame = kos_dyn_push_frame_unchecked(ctx, NULL, empty);
+  if (! frame)
+    return NULL;
+  KosDynFrame_RESUME_KIND(frame) = kind;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  return frame;
 }
 
 

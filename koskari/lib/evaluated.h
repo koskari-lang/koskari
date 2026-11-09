@@ -230,8 +230,11 @@ static inline void kos_iter_finish(
    The await suite: how the evaluator takes an awaitable of this type
    onto the running chain instead of driving it through its Python
    protocol. An await is a native frame whose resume is ka_install:
-   the settle installs the frame and delivers the owned awaitable to
-   the kind as it is, with no state (the kind does not settle). The
+   the settle installs the frame, uncounted against the frame limit,
+   and delivers the owned awaitable to the kind as it is, with no
+   state (the kind does not settle). The work the kind installs is
+   what the limit counts, and a kind takes its awaitable before any
+   refusal, so a refused await leaves the awaitable finished. The
    kind runs as that frame's resume and completes the frame the way a
    resume on a native frame does: a value in hand returns from the
    frame (RESULT_FRAME_RETURN); work it stands for replaces the frame

@@ -948,8 +948,12 @@ static PyGetSetDef coroutine_getsets[] = {
    The await suite's kind: a coroutine that has not been started is a
    program with nothing to drive, so its prepared frame replaces the
    await frame, as a tail call's does, and its return lands where the
-   await's value would. One already started keeps its own drive and
-   is awaited through its Python protocol.
+   await's value would. The await frame was pushed uncounted, so the
+   room for the program is checked here, at the frame's own depth;
+   refused, the taken frame is released, which offers it back to its
+   function's cache, and the coroutine is finished, as CPython's is
+   when its first step cannot enter. One already started keeps its
+   own drive and is awaited through its Python protocol.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     KosContext *ctx,
@@ -962,6 +966,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     TAILCALL(kos_await_python, ctx, state, value);
 
   Py_DECREF(value);
+  if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 0) < 0)) {
+    kos_dynframe_free(frame);
+    RESULT_RAISE();
+  }
   kos_dyn_swap_frame_for_tail(ctx, frame);
   RESULT_NEXT_POLL(ctx);
 }
