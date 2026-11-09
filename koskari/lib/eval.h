@@ -745,8 +745,8 @@ KosOpResult KosContext_NextResume(
   - Resumption injects the result back into the VM via the stack.
 
   Handlers and helpers take the context itself; a drive begins with
-  KosContext_EvalEnter, which sets breaker, recursion_limit and
-  terminal for that drive from the thread state it runs on.
+  KosContext_EvalEnter, which sets breaker and terminal for that drive
+  from the thread state it runs on.
 */
 
 
@@ -797,10 +797,6 @@ struct KosContext {
                          KosContext_EvalEnter; the cooperation points
                          test it and the trampoline polls when it is
                          up */
-  uint16_t recursion_limit; /* the deepest frame this context may
-                         install: sys.getrecursionlimit(), read from
-                         the thread state by KosContext_EvalEnter and
-                         clamped to KOS_FRAME_DEPTH_MAX */
   uint8_t terminal;         /* the result in flight is a boundary that
                          has been through its event: a raise walked to
                          no handler, a suspension recorded for AWAIT or
@@ -932,21 +928,34 @@ static inline KosOpResult kos_call_installed(KosContext *ctx) {
 }
 
 
-#define KosContext_RECURSION_LIMIT(ctx) ((ctx)->recursion_limit)
+/**
+   The process-wide frame depth limit: KOS_FRAME_DEPTH_DEFAULT (10000)
+   until koskari.lib.set_frame_depth_limit sets it, from 1 up to the
+   KOS_FRAME_DEPTH_MAX cap (65535).
+*/
+extern unsigned kos_frame_depth_limit;
 
 /**
-   Raise RecursionError; the cold half of kos_eval_check_frame_room.
-   Always returns -1.
+   Raise RecursionError naming the frame depth limit in force; the cold
+   half of kos_eval_check_frame_room. Always returns -1.
 */
 int kos_eval_recursion_error(void);
 
 /**
    Test whether count more frames fit above base (a frame on the live
-   chain, or NULL for the chain root) under the recursion limit. 0 when
-   they fit; -1 with RecursionError set when they do not. Every site
-   that installs or splices frames asks before touching the chain, so a
-   refused install leaves the chain and the caller's state unchanged and
-   the exception is raised into the caller's frame like any other.
+   chain, or NULL for the chain root) under kos_frame_depth_limit. 0
+   when they fit; -1 with RecursionError set when they do not. Every
+   site that installs or splices frames asks before touching the chain,
+   so a refused install leaves the chain and the caller's state
+   unchanged and the exception is raised into the caller's frame like
+   any other.
+
+   The limit is Koskari's own guard against runaway heap growth from
+   unbounded non-tail recursion. It defaults to 10000 and is settable
+   up to the KOS_FRAME_DEPTH_MAX cap of 65535, the width of a frame's
+   recorded depth. It does not read Python's recursion limit: a Koskari
+   frame takes no C stack and no Python frame object, and CPython
+   enforces its own limit where Koskari and Python call each other.
 */
 static inline int kos_eval_check_frame_room(
     KosContext *ctx,
@@ -955,7 +964,7 @@ static inline int kos_eval_check_frame_room(
 
   unsigned depth = base ? KosDynFrame_DEPTH(base) : 0u;
 
-  if (likely(depth + count <= KosContext_RECURSION_LIMIT(ctx)))
+  if (likely(depth + count <= kos_frame_depth_limit))
     return 0;
   return kos_eval_recursion_error();
 }
@@ -1170,13 +1179,12 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 
 
 /**
-   Begin a drive on ctx: set breaker, recursion_limit and terminal for
-   it. tstate is the calling thread's state, passed by an eval that
-   holds it; NULL resolves it with PyThreadState_Get. The breaker is
-   the eval breaker word located from tstate, and the recursion limit
-   is the one tstate reads. Also run by a site that edits a suspended
+   Begin a drive on ctx: set breaker and terminal for it. tstate is
+   the calling thread's state, passed by an eval that holds it; NULL
+   resolves it with PyThreadState_Get. The breaker is the eval breaker
+   word located from tstate. Also run by a site that edits a suspended
    context's chain outside koskari_eval, since the chain edits read the
-   breaker and the recursion limit.
+   breaker.
 */
 void KosContext_EvalEnter(KosContext *ctx, PyThreadState *tstate);
 

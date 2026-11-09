@@ -100,8 +100,7 @@ static int iterate_acquire_context(
    provider's busy check (ki_busy) runs before the drive begins: the
    context may be the provider's durable one, shared with a drive in
    flight through another adapter, and beginning a drive on it would
-   replace that drive's breaker, recursion limit and terminal flag,
-   and ending one would flush registers into its frame and move its
+   replace that drive's breaker and terminal flag, and ending one would flush registers into its frame and move its
    staged delivery. method names the Python method driving, for the
    refusal's wording, or is NULL.
 */

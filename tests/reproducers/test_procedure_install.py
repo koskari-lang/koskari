@@ -28,7 +28,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import KoskariSyncViolation
+from koskari.lib import KoskariSyncViolation, get_frame_depth_limit
 from koskari.module import init_module, load_module_async, new_module
 
 
@@ -80,9 +80,10 @@ class TestProcedureInstall(unittest.IsolatedAsyncioTestCase):
         """
 
         mod = await self.load_module()
-        self.assertIsNone(await mod.chain(800))
-        with self.assertRaises(RecursionError):
-            await mod.chain(1200)
+        limit = get_frame_depth_limit()
+        self.assertIsNone(await mod.chain(limit - 500))
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
+            await mod.chain(limit + 500)
 
 
     async def test_suspension_refused(self):

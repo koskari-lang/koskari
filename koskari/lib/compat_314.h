@@ -191,16 +191,6 @@ static inline void kos_recursion_leave(PyThreadState *tstate) {
 }
 
 
-/* The recursion limit, the value Py_GetRecursionLimit returns:
-   Py_SetRecursionLimit writes it to every thread state's
-   py_recursion_limit:
-   https://github.com/python/cpython/blob/v3.14.0/Python/ceval.c
-   https://github.com/python/cpython/blob/v3.14.0/Include/cpython/pystate.h */
-static inline int kos_recursion_limit(PyThreadState *tstate) {
-  return tstate->py_recursion_limit;
-}
-
-
 /* === GC tracked test === */
 
 /* Whether the collector holds op. The free-threaded build keeps the

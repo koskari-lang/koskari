@@ -102,6 +102,11 @@ static PyObject *str_rec_col = NULL;
 static PyObject *str_rec_pc = NULL;
 static PyObject *str_rec_crossed = NULL;
 static PyObject *str_rec_frame = NULL;
+static PyObject *str_rec_traced = NULL;
+
+/* A synthesized traceback frame's globals (see frame_for_record) */
+static PyObject *str_koskari_trace = NULL;
+static PyObject *str_koskari_native = NULL;
 
 
 /*
@@ -456,89 +461,99 @@ static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
 
 
 /**
-   1 when record already holds an entry for frame: a handler's entry
-   recorded the frame when it caught the exception, and a re-raise
-   out of that handler crosses the same frame. Python keeps the
-   original entry for a re-raised exception too.
+   1 when the record's last entry is frame. A handler in a frame
+   records that frame when it catches the exception, and a re-raise
+   out of the handler with nothing recorded in between crosses the
+   same frame again; the frame is then the last entry and the crossing
+   adds nothing. A frame crossed again after other frames were
+   recorded is a second crossing, which CPython lists too, so only
+   the last entry is compared. Node ids are fresh per reuse, so a
+   stale entry cannot match.
 */
-static int dynchain_record_has_frame(PyObject *record, KosDynFrame *frame) {
+static int dynchain_record_ends_with_frame(
+    PyObject *record,
+    KosDynFrame *frame) {
 
-  uint32_t id = kos_dynnode_id((KosDynNode *) frame);
+  Py_ssize_t count = PyList_GET_SIZE(record);
+  PyObject *entry;
+  PyObject *id_o;
+  unsigned long id;
 
-  for (Py_ssize_t i = 0; i < PyList_GET_SIZE(record); i++) {
-    PyObject *entry = PyList_GET_ITEM(record, i);
-    PyObject *id_o;
+  if (count < 1)
+    return 0;
 
-    if (! PyDict_Check(entry))
-      continue;
-    id_o = PyDict_GetItemWithError(entry, str_rec_frame);
-    if (id_o && PyLong_AsUnsignedLong(id_o) == id)
-      return 1;
-    if (! id_o && PyErr_Occurred())
-      PyErr_Clear();
+  entry = PyList_GET_ITEM(record, count - 1);
+  if (! PyDict_Check(entry))
+    return 0;
+
+  id_o = PyDict_GetItemWithError(entry, str_rec_frame);
+  if (! id_o) {
+    PyErr_Clear();
+    return 0;
   }
-  return 0;
+  if (! PyLong_Check(id_o))
+    return 0;
+
+  id = PyLong_AsUnsignedLong(id_o);
+  if (id == (unsigned long) -1 && PyErr_Occurred()) {
+    PyErr_Clear();
+    return 0;
+  }
+  return id == (unsigned long) kos_dynnode_id((KosDynNode *) frame);
 }
 
 
+/**
+   Append the frames still live on the context's chain to the
+   exception's record, after the entries the raise walk recorded as it
+   crossed frames. The record held by the exception is extended in
+   place, as kos_eval_note_crossed_frame does; it is created and set
+   only when the exception held none.
+*/
 static void decorate_exception_with_dynchain(
     KosContext *ctx,
     PyObject *exc_val) {
 
-  if (! ctx || ! exc_val || ! PyExceptionInstance_Check(exc_val)) {
-    return;
-  }
+  PyObject *frames = NULL;
+  int fresh = 0;
 
-  PyObject *frames = PyList_New(0);
+  if (! ctx || ! exc_val || ! PyExceptionInstance_Check(exc_val))
+    return;
+
+  if (PyObject_GetOptionalAttr(exc_val, str_dynchain, &frames) < 0)
+    PyErr_Clear();
+  if (frames && ! PyList_Check(frames))
+    Py_CLEAR(frames);
   if (! frames) {
-    PyErr_Clear();
-    return;
-  }
-
-  /* Carry forward every previously recorded frame. Crossed entries
-     were popped by the raise walk; the rest were recorded at the
-     escape of an earlier eval, whose context died with that escape
-     (see kos_eval_prepare_boundary_raise). Either way none of them
-     can still be on this context's live chain, so appending the live
-     chain below cannot duplicate them. */
-  {
-    PyObject *prior = NULL;
-
-    if (PyObject_GetOptionalAttr(exc_val, str_dynchain, &prior) < 0) {
+    frames = PyList_New(0);
+    if (! frames) {
       PyErr_Clear();
-    } else if (prior) {
-      if (PyList_Check(prior)) {
-        for (Py_ssize_t i = 0; i < PyList_GET_SIZE(prior); i++) {
-          PyObject *meta = PyList_GET_ITEM(prior, i);
-          if (PyDict_Check(meta))
-            PyList_Append(frames, meta);
-        }
-      }
-      Py_DECREF(prior);
+      return;
     }
+    fresh = 1;
   }
 
-  {
-    for (KosDynNode *node = KosContext_DYN_TOP(ctx); node;
-         node = KosDynNode_PARENT(node)) {
-      if (! KosDynNode_IS_FRAME(node)) {
-        continue;
-      }
-      if (dynchain_record_has_frame(frames, (KosDynFrame *) node))
-        continue;
-      PyObject *meta = dynchain_frame_meta((KosDynFrame *) node, 0);
-      if (! meta) {
-        PyErr_Clear();
-        continue;
-      }
-      PyList_Append(frames, meta);
-      Py_DECREF(meta);
+  for (KosDynNode *node = KosContext_DYN_TOP(ctx); node;
+       node = KosDynNode_PARENT(node)) {
+    PyObject *meta;
+
+    if (! KosDynNode_IS_FRAME(node))
+      continue;
+    if (dynchain_record_ends_with_frame(frames, (KosDynFrame *) node))
+      continue;
+
+    meta = dynchain_frame_meta((KosDynFrame *) node, 0);
+    if (! meta) {
+      PyErr_Clear();
+      continue;
     }
+    if (PyList_Append(frames, meta) < 0)
+      PyErr_Clear();
+    Py_DECREF(meta);
   }
 
-  if (PyObject_SetAttr(exc_val, str_dynchain, frames) < 0) {
+  if (fresh && PyObject_SetAttr(exc_val, str_dynchain, frames) < 0)
     PyErr_Clear();
-  }
 
   Py_DECREF(frames);
 }
@@ -576,9 +591,11 @@ void kos_eval_note_crossed_frame(KosContext *ctx) {
 
     if (! frames) {
       PyErr_Clear();
-    } else if (dynchain_record_has_frame(frames, KosContext_FRAME(ctx))) {
+    } else if (dynchain_record_ends_with_frame(
+        frames, KosContext_FRAME(ctx))) {
       /* a handler in this frame recorded it when it caught the
-         exception; the re-raise crossing it adds nothing */
+         exception, and nothing was recorded since; the re-raise
+         crossing it adds nothing */
       Py_DECREF(frames);
     } else {
       PyObject *meta = dynchain_frame_meta(KosContext_FRAME(ctx), 1);
@@ -612,9 +629,11 @@ void kos_eval_note_crossed_frame(KosContext *ctx) {
 */
 static PyFrameObject *frame_for_record(PyObject *entry) {
 
-  PyObject *filename = PyDict_GetItemString(entry, "filename");
-  PyObject *name = PyDict_GetItemString(entry, "name");
-  PyObject *line_o = PyDict_GetItemString(entry, "line");
+  PyObject *filename = PyDict_GetItemWithError(entry, str_rec_filename);
+  PyObject *name = PyDict_GetItemWithError(entry, str_rec_name);
+  PyObject *line_o = PyDict_GetItemWithError(entry, str_rec_line);
+  if (PyErr_Occurred())
+    return NULL;
   if (! filename || ! PyUnicode_Check(filename) || ! line_o)
     return NULL;
   if (! name || ! PyUnicode_Check(name))
@@ -632,12 +651,12 @@ static PyFrameObject *frame_for_record(PyObject *entry) {
     Py_DECREF(code);
     return NULL;
   }
-  PyObject *modname = PyUnicode_FromString("koskari.native");
-  if (modname) {
-    PyDict_SetItemString(globals, "__name__", modname);
-    Py_DECREF(modname);
+  if (PyDict_SetItem(globals, str_name, str_koskari_native) < 0
+      || PyDict_SetItem(globals, str_koskari_trace, entry) < 0) {
+    Py_DECREF(globals);
+    Py_DECREF(code);
+    return NULL;
   }
-  PyDict_SetItemString(globals, "__koskari_trace__", entry);
 
   PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), code, globals,
                                        NULL);
@@ -652,28 +671,46 @@ void kos_eval_inject_recorded_frames(
     PyObject **exc_val,
     PyObject **exc_tb) {
 
-  PyObject *record;
+  PyObject *record = NULL;
+  Py_ssize_t start;
 
   if (! exc_val || ! *exc_val)
     return;
-  record = PyObject_GetAttrString(*exc_val, "__koskari_dynchain__");
-  if (! record) {
+  if (PyObject_GetOptionalAttr(*exc_val, str_dynchain, &record) < 0) {
     PyErr_Clear();
     return;
   }
+  if (! record)
+    return;
   if (! PyList_Check(record)) {
     Py_DECREF(record);
     return;
   }
 
-  for (Py_ssize_t i = 0; i < PyList_GET_SIZE(record); i++) {
+  /* Entries are only appended, and every inject marks every untraced
+     entry, so the traced entries form a prefix. Walk back from the end
+     to the last traced entry and synthesize forward from there. */
+  for (start = PyList_GET_SIZE(record); start > 0; start--) {
+    PyObject *entry = PyList_GET_ITEM(record, start - 1);
+    PyObject *traced;
+
+    if (! PyDict_Check(entry))
+      continue;
+    traced = PyDict_GetItemWithError(entry, str_rec_traced);
+    if (traced == Py_True)
+      break;
+    if (! traced)
+      PyErr_Clear();
+  }
+
+  for (Py_ssize_t i = start; i < PyList_GET_SIZE(record); i++) {
     PyObject *entry = PyList_GET_ITEM(record, i);
     PyFrameObject *pyframe;
 
-    if (! PyDict_Check(entry)
-        || PyDict_GetItemString(entry, "traced") == Py_True)
+    if (! PyDict_Check(entry))
       continue;
-    PyDict_SetItemString(entry, "traced", Py_True);
+    if (PyDict_SetItem(entry, str_rec_traced, Py_True) < 0)
+      PyErr_Clear();
 
     /* the triple stays in hand while the frame is built, so a failure
        there cannot displace the exception being decorated */
@@ -3815,6 +3852,9 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_rec_pc, "pc");
   STR_CONST(str_rec_crossed, "crossed");
   STR_CONST(str_rec_frame, "frame");
+  STR_CONST(str_rec_traced, "traced");
+  STR_CONST(str_koskari_trace, "__koskari_trace__");
+  STR_CONST(str_koskari_native, "koskari.native");
 
   if (PyType_Ready(&KosContextType) < 0)
     return -1;
@@ -3888,6 +3928,9 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_rec_pc);
   Py_CLEAR(str_rec_crossed);
   Py_CLEAR(str_rec_frame);
+  Py_CLEAR(str_rec_traced);
+  Py_CLEAR(str_koskari_trace);
+  Py_CLEAR(str_koskari_native);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

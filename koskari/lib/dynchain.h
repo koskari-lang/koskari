@@ -505,8 +505,10 @@ struct KosDynNode {
       /* Frame nesting depth on this context's chain: the enclosing
          frame's depth + 1, the root frame at 1. Set at install and
          renumbered whenever a segment carrying frames is spliced in
-         (continuation landing, generator install), so the recursion
-         limit test at install is one load and one compare. */
+         (continuation landing, generator install), so the frame
+         depth test against the frame depth limit at install is one
+         load and one compare. The limit defaults to 10000 and is
+         settable up to KOS_FRAME_DEPTH_MAX, the width of this field. */
       uint16_t depth;
       /* A caller-owned one-frame cache (KosDynFrame **) this frame
          is stored into when the return path frees it; meaningful
@@ -1110,8 +1112,9 @@ unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base);
    Renumber the frames on the segment from top down to but excluding
    base so the lowest sits at base_depth + 1 and each frame above it is
    one deeper. Called after a segment carrying frames is spliced onto a
-   chain; the caller has already established that the result fits the
-   recursion limit.
+   chain; the caller has already established that the result fits
+   under the frame depth limit, which never exceeds
+   KOS_FRAME_DEPTH_MAX.
 */
 void kos_dyn_renumber_frames(
     KosDynNode *top,
@@ -2153,9 +2156,17 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_DEPTH(f)      (((KosDynNode *)(f))->u.frame.depth)
 
-/* The widest depth a frame can record, and so the ceiling on the
-   per-context recursion limit whatever sys.setrecursionlimit says. */
+/* The widest depth a frame can record, 65535, and the hard cap on the
+   process-wide frame depth limit, which defaults to
+   KOS_FRAME_DEPTH_DEFAULT and is settable from 1 up to this cap. Frames
+   live on the heap, so the limit guards against runaway memory from
+   unbounded non-tail recursion; it is not Python's recursion limit,
+   which sys.setrecursionlimit sets and which CPython enforces by itself
+   where Koskari and Python call each other. */
 #define KOS_FRAME_DEPTH_MAX       UINT16_MAX
+
+/* The frame depth limit in force until one is set. */
+#define KOS_FRAME_DEPTH_DEFAULT   10000u
 
 /* frame is a demand-sync root */
 #define KOS_FRAME_DEMAND          (1u << 0)

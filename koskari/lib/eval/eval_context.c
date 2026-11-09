@@ -227,7 +227,6 @@ static int context_clear(PyObject *self) {
   KosContext_PARAM_REFS(ctx) = NULL;
 
   ctx->breaker = NULL;
-  ctx->recursion_limit = 0;
   ctx->terminal = 0;
   KosContext_ENTRY_CALL(ctx) = NULL;
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;

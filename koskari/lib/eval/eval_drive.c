@@ -36,15 +36,6 @@ void KosContext_EvalEnter(KosContext *ctx, PyThreadState *tstate) {
   if (! breaker)
     breaker = &koskari_breaker_always;
   KosContext_BREAKER(ctx) = breaker;
-
-  {
-    int limit = kos_recursion_limit(tstate);
-    if (limit < 1)
-      limit = 1;
-    else if (limit > KOS_FRAME_DEPTH_MAX)
-      limit = KOS_FRAME_DEPTH_MAX;
-    KosContext_RECURSION_LIMIT(ctx) = (uint16_t) limit;
-  }
   ctx->terminal = 0;
 
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
@@ -79,9 +70,16 @@ void KosContext_EvalExit(KosContext *ctx) {
 }
 
 
+/* The frame depth limit, default 10000 and settable up to the
+   KOS_FRAME_DEPTH_MAX cap, distinct from Python's recursion limit. */
+unsigned kos_frame_depth_limit = KOS_FRAME_DEPTH_DEFAULT;
+
+
+/* The message names the limit in force when the install was refused. */
 int kos_eval_recursion_error(void) {
-  PyErr_SetString(PyExc_RecursionError,
-                  "maximum recursion depth exceeded");
+  PyErr_Format(PyExc_RecursionError,
+               "Koskari frame depth exceeded (%u)",
+               kos_frame_depth_limit);
   return -1;
 }
 

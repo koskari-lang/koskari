@@ -142,4 +142,121 @@ class TestInterleavedFrames(unittest.IsolatedAsyncioTestCase):
         self.assertLess(text.index("in relay"), text.index("in inner"), text)
 
 
+RECROSS_SRC = """
+(def leaf [] (raise (ValueError "x")))
+(def mid [] (+ 1 (leaf)))
+(def h [e] (raise e))
+(def g [e] (+ 1 (h e)))
+(def reraise-via []
+  (+ 1 (try (mid)
+            ([ValueError as: e]
+             (g e)))))
+(def outer-via [] (+ 1 (reraise-via)))
+"""
+
+
+def py_leaf():
+    raise ValueError("x")
+
+
+def py_mid():
+    return 1 + py_leaf()
+
+
+def py_h(e):
+    raise e
+
+
+def py_g(e):
+    return 1 + py_h(e)
+
+
+def py_reraise_via():
+    try:
+        return 1 + py_mid()
+    except ValueError as e:
+        return 1 + py_g(e)
+
+
+def py_outer_via():
+    return 1 + py_reraise_via()
+
+
+class TestRecrossedHandlerFrame(unittest.IsolatedAsyncioTestCase):
+    """
+    A handler that calls a function which re-raises the bound exception
+    sends the exception back through the handler's frame. The traceback
+    lists that frame twice, at the handler's call and at the protected
+    call, as CPython does for the same shape
+    """
+
+    async def raise_it(self):
+        mod = new_module("tb_recross")
+        vars(mod)["__file__"] = "<tb_recross>"
+        await load_module_source_async(mod, RECROSS_SRC, layout=False)
+        try:
+            await vars(mod)["outer-via"]()
+        except ValueError as exc:
+            return exc
+        self.fail("no exception")
+
+    def python_names(self):
+        try:
+            py_outer_via()
+        except ValueError as exc:
+            return [f.f_code.co_name[3:].replace("_", "-")
+                    for f, _ in traceback.walk_tb(exc.__traceback__)
+                    if f.f_code.co_name.startswith("py_")]
+        self.fail("no exception")
+
+    async def test_handler_frame_is_listed_twice_in_python_order(self):
+        exc = await self.raise_it()
+        names = []
+        lines = []
+        for frame, _lineno in traceback.walk_tb(exc.__traceback__):
+            entry = frame.f_globals.get("__koskari_trace__")
+            if entry is not None:
+                names.append(entry["name"])
+                lines.append(entry["line"])
+        expected = ["outer-via", "reraise-via", "g", "h",
+                    "reraise-via", "mid", "leaf"]
+        self.assertEqual(self.python_names(), expected)
+        self.assertEqual(names, expected)
+        self.assertEqual(lines[1], 9)
+        self.assertEqual(lines[4], 7)
+
+
+DEEP_SRC = """
+(def boom [n] (if (<= n 0) (raise (ValueError "x")) (+ 1 (boom (- n 1)))))
+(def caught [n] (try (boom n) ([ValueError as: e] e)))
+"""
+
+
+class TestDeepRaiseRecord(unittest.IsolatedAsyncioTestCase):
+    """
+    A raise through thousands of frames caught at the top records each
+    frame once, and the traceback carries one entry per recorded frame
+    """
+
+    async def test_one_entry_per_frame(self):
+        mod = new_module("tb_deep")
+        vars(mod)["__file__"] = "<tb_deep>"
+        await load_module_source_async(mod, DEEP_SRC, layout=False)
+        exc = await vars(mod)["caught"](3000)
+        self.assertIsInstance(exc, ValueError)
+
+        record = exc.__koskari_dynchain__
+        names = [entry["name"] for entry in record]
+        self.assertEqual(names, ["boom"] * 3001 + ["caught"])
+        ids = [entry["frame"] for entry in record]
+        self.assertEqual(len(set(ids)), len(ids))
+
+        traced = [frame.f_globals["__koskari_trace__"]
+                  for frame, _ in traceback.walk_tb(exc.__traceback__)
+                  if "__koskari_trace__" in frame.f_globals]
+        self.assertEqual(len(traced), len(record))
+        self.assertTrue(all(a is b for a, b in
+                            zip(traced, reversed(record))))
+
+
 # The end.

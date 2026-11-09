@@ -15,7 +15,7 @@
 tests.compile.specials.test_tail_call_depth
 
 A call in tail position reuses the frame. The proof is depth: a
-self-recursion far past sys.getrecursionlimit() completes when the
+self-recursion past the frame depth limit completes when the
 recursive call is in tail position, and raises RecursionError when it
 is not, for every call shape the compiler can put in tail position.
 
@@ -24,7 +24,7 @@ is not, for every call shape the compiler can put in tail position.
 """
 
 
-import sys
+from koskari.lib import get_frame_depth_limit
 
 from . import SpecialsTestCase
 
@@ -94,9 +94,9 @@ class Box:
 class TestTailCallDepth(SpecialsTestCase):
 
     def depth(self):
-        return sys.getrecursionlimit() * 4
+        return get_frame_depth_limit() + 1000
 
-    async def test_tail_shapes_run_past_the_recursion_limit(self):
+    async def test_tail_shapes_run_past_the_frame_depth_limit(self):
         for shape, src in TAIL_SHAPES.items():
             with self.subTest(shape=shape):
                 expr, mod = self.compile_expr(
@@ -105,7 +105,7 @@ class TestTailCallDepth(SpecialsTestCase):
 
     async def test_non_tail_recursion_still_raises(self):
         expr, mod = self.compile_expr(NON_TAIL, depth=self.depth())
-        with self.assertRaises(RecursionError):
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
             await expr()
 
 

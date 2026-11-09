@@ -29,7 +29,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import KoskariSyncViolation
+from koskari.lib import KoskariSyncViolation, get_frame_depth_limit
 from koskari.module import init_module, load_module_async, new_module
 
 
@@ -60,15 +60,15 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
 
         mod = await self.load_module()
         self.assertEqual(await mod.via_partial(200), 200)
-        with self.assertRaises(RecursionError):
-            await mod.via_partial(2000)
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
+            await mod.via_partial(get_frame_depth_limit() + 500)
 
 
     async def test_defer_runs_on_the_calling_chain(self):
         mod = await self.load_module()
         self.assertEqual(await mod.via_defer(200), 200)
-        with self.assertRaises(RecursionError):
-            await mod.via_defer(2000)
+        with self.assertRaisesRegex(RecursionError, "frame depth"):
+            await mod.via_defer(get_frame_depth_limit() + 500)
 
 
     async def test_awaited_coroutine_object_is_consumed(self):

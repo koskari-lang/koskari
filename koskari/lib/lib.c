@@ -47,12 +47,55 @@ static PyObject *lib_clear_trace_counters(PyObject *mod, PyObject *unused) {
 }
 
 
+static PyObject *lib_get_frame_depth_limit(PyObject *mod, PyObject *unused) {
+  (void) mod;
+  (void) unused;
+  return PyLong_FromUnsignedLong(kos_frame_depth_limit);
+}
+
+
+static PyObject *lib_set_frame_depth_limit(PyObject *mod, PyObject *arg) {
+  int overflow = 0;
+  long n;
+
+  (void) mod;
+
+  if (! PyLong_Check(arg)) {
+    PyErr_Format(PyExc_TypeError,
+                 "frame depth limit must be an int, not %.200s",
+                 Py_TYPE(arg)->tp_name);
+    return NULL;
+  }
+
+  n = PyLong_AsLongAndOverflow(arg, &overflow);
+  if (n == -1 && PyErr_Occurred())
+    return NULL;
+
+  if (overflow || n < 1 || n > KOS_FRAME_DEPTH_MAX) {
+    PyErr_Format(PyExc_ValueError,
+                 "frame depth limit must be between 1 and %u",
+                 (unsigned) KOS_FRAME_DEPTH_MAX);
+    return NULL;
+  }
+
+  kos_frame_depth_limit = (unsigned) n;
+  Py_RETURN_NONE;
+}
+
+
 static PyMethodDef libmod_methods[] = {
   { "get_trace_report", (PyCFunction) lib_get_trace_report, METH_NOARGS,
     "Return a dict of compile-time tracing report (flags and per-feature data)" },
   { "clear_trace_counters", (PyCFunction) lib_clear_trace_counters, METH_NOARGS,
     "Reset all compile-time trace counters/timers for enabled build features "
     "(same as module init/clear)" },
+  { "get_frame_depth_limit", (PyCFunction) lib_get_frame_depth_limit,
+    METH_NOARGS,
+    "Return the process-wide limit on Koskari frame depth (default 10000)" },
+  { "set_frame_depth_limit", (PyCFunction) lib_set_frame_depth_limit,
+    METH_O,
+    "Set the process-wide limit on Koskari frame depth, from 1 up to "
+    "65535; installing a frame past it raises RecursionError" },
   { NULL, },
 };
 

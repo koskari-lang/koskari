@@ -15,18 +15,18 @@
 tests.lib.test_asyncgen_first_step_failure
 
 A generator whose first step is refused, because installing its frame
-would exceed the recursion limit, keeps its unstarted frame: once the
+would exceed the frame depth limit, keeps its unstarted frame: once the
 stack has unwound it runs from the beginning and yields everything.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
-import sys
 import unittest
 
 import pytest
 
+from koskari.lib import get_frame_depth_limit, set_frame_depth_limit
 from koskari.module import load_module_source_async, new_module
 
 
@@ -53,10 +53,10 @@ class TestAsyncGenFirstStepFailure(unittest.IsolatedAsyncioTestCase):
 
     async def test_generator_survives_a_refused_first_step(self):
         mod = await self.load()
-        limit = sys.getrecursionlimit()
+        limit = get_frame_depth_limit()
         refused = 0
         try:
-            sys.setrecursionlimit(80)
+            set_frame_depth_limit(80)
             for n in range(60, 80):
                 g = mod["produce"](5)
                 try:
@@ -65,7 +65,7 @@ class TestAsyncGenFirstStepFailure(unittest.IsolatedAsyncioTestCase):
                     refused += 1
                     self.assertEqual([x async for x in g], [0, 1, 2, 3, 4])
         finally:
-            sys.setrecursionlimit(limit)
+            set_frame_depth_limit(limit)
         self.assertGreater(refused, 0)
 
 

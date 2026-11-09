@@ -118,14 +118,6 @@ static inline void kos_recursion_leave(PyThreadState *tstate) {
 }
 
 
-/* The recursion limit, the value Py_GetRecursionLimit returns: the
-   interpreter's ceval recursion_limit:
-   https://github.com/python/cpython/blob/v3.10.0/Python/ceval.c */
-static inline int kos_recursion_limit(PyThreadState *tstate) {
-  return KOS_CEVAL_STATE(tstate->interp)->recursion_limit;
-}
-
-
 /* === GC tracked test === */
 
 /* Whether the collector holds op: the _gc_next link word of the PyGC_Head

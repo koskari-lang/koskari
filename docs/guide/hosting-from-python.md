@@ -98,6 +98,23 @@ coro = as_coroutine(mod.greet('world'))        # a Python coroutine
 Which construct fits which situation is the
 [decision table](demand-async-and-defer.md#choosing-a-construct).
 
+Python's tracing, profiling and debugging hooks see no Koskari frames,
+and `sys.monitoring` sees only the call into a Koskari function; see
+[Errors and debugging](../tutorials/from-python/errors-and-debugging.md#tracebacks).
+
+Koskari frame depth has its own process-wide limit, 10000 by default,
+which `sys.setrecursionlimit` does not change. A program that recurses
+deeper sets it from Python, up to a cap of 65535:
+
+```python
+from koskari.lib import get_frame_depth_limit, set_frame_depth_limit
+set_frame_depth_limit(50000)
+get_frame_depth_limit()                        # 50000
+```
+
+A call past the limit raises `RecursionError`; see
+[Model of evaluation](model-of-evaluation.md#evaluate).
+
 ## Summary
 
 | Need | Use |
