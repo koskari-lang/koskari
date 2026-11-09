@@ -721,6 +721,7 @@ RUN_INFRASTRUCTURE_MODULES = frozenset((
     'koskari.importer',
     'koskari.launcher',
     'koskari.module',
+    'koskari.serialize.incremental',
     'asyncio',
     'asyncio.base_events',
     'asyncio.events',

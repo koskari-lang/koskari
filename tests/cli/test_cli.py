@@ -970,6 +970,48 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('other', out)
 
 
+    async def test_main_compile_kio_runs_on_the_loop(self):
+        """
+        --compile-kio awaits each form on the event loop as a script run
+        does, so a top-level form that suspends builds, and the .kio runs
+        it again
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src_path = os.path.join(tmpdir, 'loop_build.ki')
+            with open(src_path, 'w', encoding='utf-8') as fh:
+                fh.write("import asyncio\n"
+                         "await (asyncio.sleep 0)\n"
+                         "print \"built\"\n")
+            out_path = os.path.join(tmpdir, 'loop_build.kio')
+            code, out = await self._capture_main(
+                '--compile-kio', out_path, src_path)
+            self.assertEqual(0, code)
+            self.assertTrue(os.path.exists(out_path))
+            self.assertIn('built', out)
+            code, out = await self._capture_main('--execute-kio', out_path)
+            self.assertEqual(0, code)
+            self.assertIn('built', out)
+
+
+    async def test_main_compile_kio_error_prints_user_frames_only(self):
+        """
+        An error raised by a form while --compile-kio builds prints the
+        user frames, never the build's or the launchpad's own
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = os.path.join(tmpdir, 'divide_by_zero.kio')
+            code, err = await self._capture_main_stderr(
+                '--compile-kio', out_path, _script('divide_by_zero.ki'))
+        self.assertEqual(1, code, err)
+        self.assertNotIn('incremental.py', err)
+        self.assertNotIn('launch.ki', err)
+        lines = [line for line in err.splitlines() if line.strip()]
+        self.assertEqual(
+            'ZeroDivisionError: division by zero', lines[-1], err)
+
+
     async def test_main_run_command_exits_zero(self):
         code, out = await self._capture_main('-c', '(print "Hello, koskari!")')
         self.assertEqual(0, code)

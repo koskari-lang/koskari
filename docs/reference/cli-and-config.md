@@ -75,9 +75,10 @@ is a package segment, the directory above the package root is on the
 import path for the build, and the parent package is imported first, so the
 package pragma in force and any relative import in the body are the ones a
 source load sees. A file under no package is named by its stem. The forms
-run as they compile, so a body guarded by `__name__` does not run and no
-entry point is called; a file named `__main__.ki` outside a package builds
-under a synthetic name for the same reason.
+run as they compile, on the event loop as a script's forms do, so a body
+guarded by `__name__` does not run and no entry point is called; a file
+named `__main__.ki` outside a package builds under a synthetic name for the
+same reason.
 
 A `filename` of `-` reads the whole program from stdin, so a heredoc or a
 pipe runs the same source a file would:

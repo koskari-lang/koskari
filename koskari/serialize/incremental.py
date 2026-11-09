@@ -25,6 +25,7 @@ compiled from; loading a .kio lives in koskari.module.
 import importlib
 import os
 import sys
+from contextlib import contextmanager
 from warnings import warn
 
 from ..lib import demand_call
@@ -55,6 +56,29 @@ def compile_top_level_to_codes(mod, filename, source_stream):
         for code in compile_top_level(*facets, source_stream):
             bodies.append(code)
             demand_call(code.expression(ns))
+
+    return bodies
+
+
+async def compile_top_level_to_codes_async(mod, filename, source_stream):
+    """
+    Read top-level forms from a SourceStream and return compiled Code
+    objects, awaiting each on the event loop as it is compiled, so a
+    form may suspend. Otherwise as compile_top_level_to_codes
+
+    :param mod: module namespace for evaluation side effects
+    :param filename: logical source filename for the load facets
+    :param source_stream: SourceStream from source_open or source_str
+    :return: list of Code objects in source order
+    """
+
+    ns = vars(mod)
+    bodies = []
+
+    with load_facets(mod, filename, seal=True, detach=True) as facets:
+        for code in compile_top_level(*facets, source_stream):
+            bodies.append(code)
+            await code.expression(ns)()
 
     return bodies
 
@@ -126,6 +150,43 @@ def _module_for_build(mod_name, package):
     return new_module(mod_name, package=package, system=False)
 
 
+@contextmanager
+def module_build(ki_path, mod_name, source_filename):
+    """
+    The module a .kio build of ki_path compiles and runs in, initialized
+    from ki_path, with the directory an import would search on sys.path
+    for the duration when mod_name is None and that directory is not
+    already there
+
+    :param ki_path: path to the source file
+    :param mod_name: module name to compile under, or None to derive it
+        from the path
+    :param source_filename: logical source path for diagnostics, or None
+        for ki_path
+    :return: context manager yielding (module, display filename)
+    """
+
+    display = source_filename if source_filename is not None else ki_path
+    search = None
+
+    if mod_name is None:
+        mod_name, package, directory = module_identity(ki_path)
+        if directory not in sys.path:
+            search = directory
+    else:
+        package = mod_name.rpartition('.')[0] or None
+
+    if search is not None:
+        sys.path.insert(0, search)
+    try:
+        mod = _module_for_build(mod_name, package)
+        init_module(mod, ki_path, spec=None)
+        yield mod, display
+    finally:
+        if search is not None and sys.path and sys.path[0] == search:
+            del sys.path[0]
+
+
 def compile_ki_file_to_kio(
         ki_path,
         kio_dest,
@@ -152,6 +213,10 @@ def compile_ki_file_to_kio(
     runtime for ``linecache`` and traceback source lines to resolve. Relative
     paths depend on the process current working directory.
 
+    The forms run on the demand path, as under a synchronous Python
+    entry, so a form that suspends raises KoskariSyncViolation; see
+    :func:`compile_ki_file_to_kio_async` for a build on the event loop.
+
     :param ki_path: path to Koskari source file to open and compile
     :param kio_dest: output .kio path or writable binary stream
     :param mod_name: module name to compile under, or None to derive it
@@ -160,27 +225,36 @@ def compile_ki_file_to_kio(
         source path for diagnostics when it differs from ``ki_path``
     """
 
-    display = source_filename if source_filename is not None else ki_path
-    search = None
-
-    if mod_name is None:
-        mod_name, package, directory = module_identity(ki_path)
-        if directory not in sys.path:
-            search = directory
-    else:
-        package = mod_name.rpartition('.')[0] or None
-
-    if search is not None:
-        sys.path.insert(0, search)
-    try:
-        mod = _module_for_build(mod_name, package)
-        init_module(mod, ki_path, spec=None)
-
+    with module_build(ki_path, mod_name, source_filename) as (mod, display):
         with source_open(ki_path) as source_stream:
             bodies = compile_top_level_to_codes(mod, display, source_stream)
-    finally:
-        if search is not None and sys.path and sys.path[0] == search:
-            del sys.path[0]
+
+    # stamped from the source as it was compiled, so a loader can tell
+    # this file apart from one left behind by an older copy of the .ki
+    KioFile.from_codes(bodies, meta=KioMeta.for_source(ki_path)).write(kio_dest)
+
+
+async def compile_ki_file_to_kio_async(
+        ki_path,
+        kio_dest,
+        mod_name=None,
+        source_filename=None):
+    """
+    As compile_ki_file_to_kio, with each form awaited on the event loop
+    as a script's forms are, so a form may suspend
+
+    :param ki_path: path to Koskari source file to open and compile
+    :param kio_dest: output .kio path or writable binary stream
+    :param mod_name: module name to compile under, or None to derive it
+        from the path
+    :param source_filename: optional string stored per body as the logical
+        source path for diagnostics when it differs from ``ki_path``
+    """
+
+    with module_build(ki_path, mod_name, source_filename) as (mod, display):
+        with source_open(ki_path) as source_stream:
+            bodies = await compile_top_level_to_codes_async(
+                mod, display, source_stream)
 
     # stamped from the source as it was compiled, so a loader can tell
     # this file apart from one left behind by an older copy of the .ki

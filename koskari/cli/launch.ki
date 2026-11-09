@@ -434,8 +434,8 @@ def run []:
       return 2
 
   when options.compile_kio:
-    import-from koskari.serialize.incremental compile_ki_file_to_kio
-    (compile_ki_file_to_kio filename options.compile_kio
+    import-from koskari.serialize.incremental compile_ki_file_to_kio_async
+    (compile_ki_file_to_kio_async filename options.compile_kio
       source_filename: options.compile_kio_source_name)
     return 0
 

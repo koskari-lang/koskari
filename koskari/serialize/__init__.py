@@ -25,12 +25,16 @@ source bytes required).
 
 
 from .codex import KioFile, KioHeader, KioMeta, dump_kio, load_kio
-from .incremental import compile_ki_file_to_kio, compile_ki_source_to_kio
+from .incremental import (
+    compile_ki_file_to_kio, compile_ki_file_to_kio_async,
+    compile_ki_source_to_kio, compile_top_level_to_codes_async)
 
 
 __all__ = (
     'compile_ki_file_to_kio',
+    'compile_ki_file_to_kio_async',
     'compile_ki_source_to_kio',
+    'compile_top_level_to_codes_async',
     'KioFile',
     'KioHeader',
     'KioMeta',

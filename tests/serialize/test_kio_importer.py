@@ -21,6 +21,7 @@ Importer path for precompiled .kio modules.
 import importlib.util
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -31,10 +32,12 @@ import pytest
 
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
 from koskari.lib import (
-    FormalsSpec, FunctionSpec, build_flags, cons, demand_call, nil)
+    FormalsSpec, FunctionSpec, KoskariSyncViolation, build_flags, cons,
+    demand_call, nil)
 from koskari.serialize.codex import (
     HEADER_SIZE, KioFile, KioHeader, PoolKind, SectionTag, encode_directory)
-from koskari.serialize.incremental import compile_ki_file_to_kio
+from koskari.serialize.incremental import (
+    compile_ki_file_to_kio, compile_ki_file_to_kio_async)
 from tests import needs_processes
 
 
@@ -71,7 +74,6 @@ class TestKioImporterParity(unittest.TestCase):
         ]
         for name in to_remove:
             del __import__('sys').modules[name]
-        import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
 
@@ -652,6 +654,57 @@ class TestKioImporterParity(unittest.TestCase):
         with self.assertRaises(ValueError):
             importlib.import_module('kio_corrupt')
         self.assertNotIn('kio_corrupt', sys.modules)
+
+
+class TestKioBuildOnTheLoop(unittest.IsolatedAsyncioTestCase):
+    """
+    A .kio build awaits a top-level form that suspends when it runs on
+    the event loop, and refuses it on the demand path
+    """
+
+    SOURCE = ("import asyncio\n"
+              "await (asyncio.sleep 0)\n"
+              "var who 1\n")
+
+
+    def setUp(self):
+        uninstall()
+        install()
+        self._tmpdir = tempfile.mkdtemp(prefix='koskari_kio_')
+
+
+    def tearDown(self):
+        uninstall()
+        install()
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+
+    def _write(self, name, source):
+        path = os.path.join(self._tmpdir, name)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(source)
+        return path
+
+
+    async def test_async_build_awaits_a_suspending_form(self):
+        ki_path = self._write('loop_src.ki', self.SOURCE)
+        kio_path = os.path.join(self._tmpdir, 'loop_out.kio')
+        await compile_ki_file_to_kio_async(ki_path, kio_path)
+        self.assertTrue(os.path.exists(kio_path))
+
+        loader = KoskariSourceFileLoader('loop_kio', kio_path)
+        spec = importlib.util.spec_from_file_location(
+            'loop_kio', kio_path, loader=loader)
+        module = importlib.util.module_from_spec(spec)
+        await loader.exec_module_async(module)
+        self.assertEqual(1, module.who)
+
+
+    def test_sync_build_refuses_a_suspending_form(self):
+        ki_path = self._write('demand_src.ki', self.SOURCE)
+        kio_path = os.path.join(self._tmpdir, 'demand_out.kio')
+        with self.assertRaises(KoskariSyncViolation):
+            compile_ki_file_to_kio(ki_path, kio_path)
 
 
 # The end.
