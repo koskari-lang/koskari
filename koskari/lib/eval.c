@@ -296,6 +296,9 @@ static KosOpResult revive_await(
         PyObject *throw_exc,
         KosObligation *out_return) {
 
+  /* the suspension is being resumed: what it handed out is spent */
+  Py_CLEAR(KosContext_PY_AWAIT_YIELDED(ctx));
+
   if (throw_exc != NULL) {
     PyObject *typ_eff = throw_typ ? throw_typ
         : (PyObject *) Py_TYPE(throw_exc);
@@ -2253,6 +2256,7 @@ static KosOpResult entry_revive_await(
   if (ra.kind == KOS_RES_AWAIT) {
     KosContext_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT);
     KosContext_MarkSuspendedNotRunning(ctx);
+    Py_XSETREF(KosContext_PY_AWAIT_YIELDED(ctx), Py_NewRef(ra.val));
     return ra;
   }
   *mode = (ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
@@ -2555,6 +2559,7 @@ static KosOpResult eval_event_await(KosContext *ctx, PyObject *val) {
   KosContext_MarkSuspendedNotRunning(ctx);
   KOS_TRACE_POST_OP_WRAP(event_await,
       KosContext_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT));
+  Py_XSETREF(KosContext_PY_AWAIT_YIELDED(ctx), Py_NewRef(val));
   ctx->terminal = 1;
   return EVAL_AWAIT(val);
 }

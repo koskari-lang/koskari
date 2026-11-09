@@ -113,7 +113,30 @@ SRC = """
 
 (def take_first [g]
   (for-each [x g] (return x)))
+
+(def wait_gen []
+  (yield (await (Suspender)))
+  (yield 2))
+
+(def wait_pgen []
+  (await (Suspender))
+  (yield p))
+
+(def take_under [st]
+  (parameterize [[p "inner"]]
+    (await st)))
 """
+
+
+class Suspender:
+    """
+    A Python awaitable that suspends once with "suspended" and
+    completes with "woken"
+    """
+
+    def __await__(self):
+        yield "suspended"
+        return "woken"
 
 
 class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
@@ -121,8 +144,64 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
     async def load(self):
         module = new_module("asyncgen_steps")
         vars(module)["__file__"] = "<asyncgen_steps>"
+        vars(module)["Suspender"] = Suspender
         await load_module_source_async(module, SRC)
         return vars(module)
+
+    async def test_step_parked_mid_await_is_spliced(self):
+        """
+        A step Python started and left parked at an await inside the
+        generator splices under the awaiter; the awaiter suspends on the
+        same await, its driver completes it, and the generator's yield
+        is the awaiter's value
+        """
+
+        v = await self.load()
+        g = v["wait_gen"]()
+        st = g.__anext__()
+        self.assertEqual(st.send(None), "suspended")
+
+        outer = v["take_stepper"](st)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(RuntimeError):
+            st.send(None)
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
+
+        self.assertEqual(2, await g.__anext__())
+        await g.aclose()
+
+    async def test_spliced_step_sees_the_awaiters_parameterize(self):
+        v = await self.load()
+        g = v["wait_pgen"]()
+        st = g.__anext__()
+        self.assertEqual(st.send(None), "suspended")
+
+        outer = v["take_under"](st)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "inner")
+        await g.aclose()
+
+    async def test_generator_is_busy_while_its_spliced_step_is_suspended(self):
+        v = await self.load()
+        g = v["wait_gen"]()
+        st = g.__anext__()
+        self.assertEqual(st.send(None), "suspended")
+
+        outer = v["take_stepper"](st)
+        self.assertEqual(outer.send(None), "suspended")
+        second = g.__anext__()
+        with self.assertRaises(RuntimeError):
+            second.send(None)
+
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
+        self.assertEqual(2, await g.__anext__())
+        await g.aclose()
 
     async def test_anext_sees_the_consumers_parameterize(self):
         v = await self.load()

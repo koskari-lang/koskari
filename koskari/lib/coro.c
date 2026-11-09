@@ -945,33 +945,156 @@ static PyGetSetDef coroutine_getsets[] = {
 
 
 /**
-   The await suite's kind: a coroutine that has not been started is a
-   program with nothing to drive, so its prepared frame replaces the
-   await frame, as a tail call's does, and its return lands where the
-   await's value would. The await frame was pushed uncounted, so the
-   room for the program is checked here, at the frame's own depth;
-   refused, the taken frame is released, which offers it back to its
-   function's cache, and the coroutine is finished, as CPython's is
-   when its first step cannot enter. One already started keeps its
-   own drive and is awaited through its Python protocol.
+   The chain of a spliced coroutine passed the stitch point, by return
+   or by raise: the coroutine is done. The resume on the await frame
+   under the chain: the value returns from the frame, a failed delivery
+   declines. The state is the owned coroutine, active until here.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_stitched_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosCoroutine *coro = (KosCoroutine *) state;
+
+  coro->in_send = 0;
+  coroutine_finish(coro);
+  Py_DECREF(coro);
+  if (! value)
+    return EVAL_RAISE();
+  RESULT_FRAME_RETURN(ctx, value, NULL);
+}
+
+
+/* the await frame left the chain without delivering: a transfer or a
+   teardown took the spliced chain with it, and the coroutine is done */
+static void coroutine_stitched_clear(void *state) {
+
+  KosCoroutine *coro = (KosCoroutine *) state;
+
+  coro->in_send = 0;
+  coroutine_finish(coro);
+  Py_DECREF(coro);
+}
+
+
+static int coroutine_stitched_traverse(
+    void *state,
+    visitproc visit,
+    void *arg) {
+
+  Py_VISIT((PyObject *) state);
+  return 0;
+}
+
+
+KOS_RESUME_KIND_AS_IS_OWNING(coroutine_stitched_kind, "spliced coroutine",
+                             coroutine_stitched_resume,
+                             coroutine_stitched_clear, NULL,
+                             coroutine_stitched_traverse);
+
+
+/**
+   Splice a parked coroutine's chain under the await frame and suspend
+   the awaiter on what the chain was parked on. The room for the chain
+   is checked first, with the chain still parked, so a refusal leaves
+   the coroutine as it was. Then the chain detaches from the
+   coroutine's context and attaches under the await frame, whose resume
+   finishes the coroutine when the chain passes it; the pending Python
+   await moves to the awaiter's context, whose driver steps it from
+   now on; the coroutine is active until then, refusing every entry;
+   and its own context, holding nothing, goes. An attach that fails
+   after the detach puts the chain back on the coroutine's context,
+   or, failing that too, frees it with the coroutine finished. coro is
+   owned: the await frame's resume takes it, or it is released.
+*/
+static KosOpResult coroutine_splice(KosContext *ctx, KosCoroutine *coro) {
+
+  KosContext *own = coro->ctx;
+  KosDynFrame *await_frame = KosContext_FRAME(ctx);
+  KosDynSpan span;
+  PyObject *yielded;
+
+  if (kos_eval_check_frame_room(
+          ctx, await_frame,
+          kos_dyn_frame_count(KosContext_DYN_TOP(own), NULL)) < 0) {
+    Py_DECREF(coro);
+    return EVAL_RAISE();
+  }
+
+  kos_dyn_span_detach(own, &span);
+  if (kos_dyn_span_attach(ctx, &span) < 0) {
+    if (kos_dyn_span_attach(own, &span) < 0) {
+      KosContext_DYN_TOP(own) = span.head;
+      KosContext_ReleaseChain(own);
+      coroutine_finish(coro);
+    }
+    Py_DECREF(coro);
+    return EVAL_RAISE();
+  }
+
+  /* the pending await is the awaiter's now: the iterator its driver
+     steps, and the value it is suspended on again */
+  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), KosContext_PY_AWAIT_ITER(own));
+  KosContext_PY_AWAIT_ITER(own) = NULL;
+  Py_XSETREF(KosContext_PY_RESUME_INJECT(ctx),
+             KosContext_PY_RESUME_INJECT(own));
+  KosContext_PY_RESUME_INJECT(own) = NULL;
+  yielded = KosContext_PY_AWAIT_YIELDED(own);
+  KosContext_PY_AWAIT_YIELDED(own) = NULL;
+
+  KosDynFrame_RESUME_KIND(await_frame) = &coroutine_stitched_kind;
+  KosDynFrame_RESUME_STATE(await_frame) = coro;
+  coro->state = KOS_CORO_RUNNING;
+  coro->in_send = 1;
+  Py_CLEAR(coro->ctx);
+
+  if (unlikely(! yielded)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "parked coroutine with nothing to suspend on");
+    return EVAL_RAISE();
+  }
+  return EVAL_AWAIT(yielded);
+}
+
+
+/**
+   The await suite's kind: the coroutine's chain, in whatever state it
+   is, continues under the await frame. Not started, its prepared frame
+   replaces the await frame, as a tail call's does, and its return
+   lands where the await's value would; the await frame was pushed
+   uncounted, so the room for the program is checked here, at the
+   frame's own depth, and a refusal releases the taken frame to its
+   function's cache with the coroutine finished, as CPython's is when
+   its first step cannot enter. Parked at a Python await, its chain
+   splices under the await frame and the awaiter suspends on the same
+   await (coroutine_splice). Active, on this or any chain, or done, it
+   is awaited through its Python protocol, which refuses it.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     KosContext *ctx,
     void *state,
     PyObject *value) {
 
+  KosCoroutine *coro = (KosCoroutine *) value;
   KosDynFrame *frame;
 
-  if (! KosCoroutine_TakeFresh(value, &frame))
-    TAILCALL(kos_await_python, ctx, state, value);
-
-  Py_DECREF(value);
-  if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 0) < 0)) {
-    kos_dynframe_free(frame);
-    RESULT_RAISE();
+  if (KosCoroutine_TakeFresh(value, &frame)) {
+    Py_DECREF(value);
+    if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 0)
+                 < 0)) {
+      kos_dynframe_free(frame);
+      RESULT_RAISE();
+    }
+    kos_dyn_swap_frame_for_tail(ctx, frame);
+    RESULT_NEXT_POLL(ctx);
   }
-  kos_dyn_swap_frame_for_tail(ctx, frame);
-  RESULT_NEXT_POLL(ctx);
+
+  if (coro->state == KOS_CORO_WAITING_PY && ! coro->in_send
+      && coro->ctx && KosContext_DYN_TOP(coro->ctx))
+    RESULT_RELAY(ctx, coroutine_splice(ctx, coro));
+
+  TAILCALL(kos_await_python, ctx, state, value);
 }
 
 KOS_RESUME_KIND_AS_IS(coroutine_await_kind, "await coroutine",

@@ -871,6 +871,10 @@ struct KosContext {
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
   PyObject *py_await_iter;     /* iterator from __await__() when suspended on AWAIT */
+  PyObject *py_await_yielded;  /* the value the AWAIT suspension handed to
+                                  the driver, kept while suspended so a
+                                  chain moved to another context can be
+                                  suspended on it again; NULL otherwise */
 
   /* --- Entry call (set by a Python-boundary entry on a fresh context):
      koskari_eval installs it at entry, then clears it. Borrowed; the
@@ -902,6 +906,7 @@ extern PyTypeObject KosContextType;
 #define KosContext_PARAM_REFS(c)            (((KosContext *)(c))->param_refs)
 #define KosContext_GOAL(c)                   (((KosContext *)(c))->goal)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
+#define KosContext_PY_AWAIT_YIELDED(c)       (((KosContext *)(c))->py_await_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_ENTRY_CALL(c)             (((KosContext *)(c))->entry_call)
 #define KosContext_EXC_INFO(c)               (&((KosContext *)(c))->exc_info)
@@ -1314,6 +1319,14 @@ KosEvaluatorToken *KosContext_Token(const KosContext *ctx);
 
 void KosContext_PythonAwaitClearIter(KosContext *ctx);
 PyObject *KosContext_PythonAwaitIter(KosContext *ctx);
+
+/**
+   The value the context's AWAIT suspension handed to its driver,
+   borrowed; NULL when the context is not suspended on an await. Set
+   by the await event, replaced by a re-suspension at the revive, and
+   cleared when the revive resumes the chain.
+*/
+PyObject *KosContext_PythonAwaitYielded(KosContext *ctx);
 void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val);
 
 /**

@@ -1022,14 +1022,87 @@ static PyObject *stepper_repr(PyObject *self) {
 
 
 /**
-   The await suite's kind: a stepper not yet driven stands for one step
-   of its provider, taken here as a next or throw request on the await
-   frame, with the resume the adapter's priming chose completing the
-   frame with the element, the end, or the close's None. The provider
-   reference moves to the resume's state and the stepper is spent, so
-   a later await from Python meets the reuse guard. A stepper Python
-   has driven is in flight on its own context and is awaited through
-   its protocol.
+   Splice a step parked mid-await on the stepper's context under the
+   await frame, and suspend the awaiter on what it was parked on. The
+   room for the chain is checked first, with the chain still parked,
+   so a refusal leaves the stepper as it was. The chain detaches from
+   the stepper's context and attaches under the await frame, whose
+   resume is the step kind the priming chose, the provider its state,
+   so the chain's yield or end reaches it as a flattened step's does; a
+   GEN at the chain's root records that its step now runs on a
+   consumer's chain. The pending Python await moves to the awaiter's
+   context, the provider reference moves to the resume, and the stepper
+   is spent. An attach that fails after the detach puts the chain back
+   on the stepper's context, or, failing that too, frees it. st is
+   owned and released here.
+*/
+static KosOpResult stepper_splice(KosContext *ctx, KosIterStepper *st) {
+
+  KosContext *own = st->ctx;
+  KosDynFrame *await_frame = KosContext_FRAME(ctx);
+  const KosResumeKind *kind =
+      st->closing ? &kos_aclose_resume_kind : &kos_astep_resume_kind;
+  KosDynSpan span;
+  PyObject *yielded;
+
+  if (kos_eval_check_frame_room(
+          ctx, await_frame,
+          kos_dyn_frame_count(KosContext_DYN_TOP(own), NULL)) < 0) {
+    Py_DECREF(st);
+    return EVAL_RAISE();
+  }
+
+  kos_dyn_span_detach(own, &span);
+  if (KosDynNode_IS_GEN(span.root))
+    KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_CONSUMER;
+  if (kos_dyn_span_attach(ctx, &span) < 0) {
+    if (KosDynNode_IS_GEN(span.root))
+      KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_OWN;
+    if (kos_dyn_span_attach(own, &span) < 0) {
+      KosContext_DYN_TOP(own) = span.head;
+      KosContext_ReleaseChain(own);
+    }
+    Py_DECREF(st);
+    return EVAL_RAISE();
+  }
+
+  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), KosContext_PY_AWAIT_ITER(own));
+  KosContext_PY_AWAIT_ITER(own) = NULL;
+  Py_XSETREF(KosContext_PY_RESUME_INJECT(ctx),
+             KosContext_PY_RESUME_INJECT(own));
+  KosContext_PY_RESUME_INJECT(own) = NULL;
+  yielded = KosContext_PY_AWAIT_YIELDED(own);
+  KosContext_PY_AWAIT_YIELDED(own) = NULL;
+
+  KosDynFrame_RESUME_KIND(await_frame) = kind;
+  KosDynFrame_RESUME_STATE(await_frame) = st->provider;
+  st->provider = NULL;
+  st->awaiting = 0;
+  st->drive_mode = 0;
+  Py_CLEAR(st->ctx);
+  st->ctx_owned = 0;
+  Py_DECREF(st);
+
+  if (unlikely(! yielded)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "parked step with nothing to suspend on");
+    return EVAL_RAISE();
+  }
+  return EVAL_AWAIT(yielded);
+}
+
+
+/**
+   The await suite's kind: the step the stepper stands for continues
+   on the await frame. Not yet driven, it is taken here as a next or
+   throw request on the frame, with the resume the adapter's priming
+   chose completing the frame with the element, the end, or the close's
+   None; the provider reference moves to the resume's state and the
+   stepper is spent, so a later await from Python meets the reuse
+   guard. Parked mid-await on its own context by a Python drive, its
+   chain splices under the await frame and the awaiter suspends on the
+   same await (stepper_splice). Running, or spent, it is awaited
+   through its protocol, which refuses it.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
     KosContext *ctx,
@@ -1041,6 +1114,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
   KosIterRequest req;
   PyObject *provider;
   KosOpResult r;
+
+  if (st->provider && st->awaiting && ! st->running && st->ctx
+      && KosContext_DYN_TOP(st->ctx))
+    RESULT_RELAY(ctx, stepper_splice(ctx, st));
 
   if (! st->provider || st->started || st->awaiting || st->running)
     TAILCALL(kos_await_python, ctx, state, value);
