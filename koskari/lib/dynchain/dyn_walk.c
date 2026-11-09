@@ -555,8 +555,8 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
 
           /* Flattened generator: the raise propagates INTO the consumer
              at the iteration point, per Python generator semantics. The
-             generator is finished by the exception: record its frame in
-             the trace, unlink frame+GEN (the chain state here -- frame
+             generator is finished by the exception: add its frame to
+             the traceback, unlink frame+GEN (the chain state here -- frame
              on top, GEN parent, consumer below -- is exactly the
              exhaustion shape, and the teardown frees both), then mark
              the owner closed, and continue the walk so the consumer's
@@ -582,7 +582,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
           }
           continue;
         }
-        /* Record the frame into the exception's trace before it goes. */
+        /* Add the frame to the exception's traceback before it goes. */
         kos_eval_note_crossed_frame(ctx);
         if (kos_dyn_pop_frame(ctx) < 0)
           return EVAL_FATAL();
@@ -673,14 +673,12 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
              region nested in the finally body must not disturb. */
           KosExcState raised;
           KosExc_Init(&raised);
-          /* The handler reads e.__traceback__: give the exception a
-             traceback entry for every Koskari frame the raise crossed
-             and for this frame at the raising pc, as the boundary does
-             when an exception leaves to Python. */
+          /* The handler reads e.__traceback__, which holds an entry
+             for every Koskari frame the raise crossed; add this frame
+             at the raising pc, as the boundary does when an exception
+             leaves to Python. */
           kos_eval_note_crossed_frame(ctx);
           KosExc_TakeRaised(&raised);
-          kos_eval_inject_recorded_frames(&raised.type, &raised.value,
-                                          &raised.tb);
           if (KosDynNode_IS_TRY(region)) {
             KosExc_Fetch(KosDynTry_SAVED((KosDynTry *) region));
             KosDynTry_EXC_SAVED((KosDynTry *) region) = 1;

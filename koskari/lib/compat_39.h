@@ -58,6 +58,16 @@ static inline PyObject *Py_XNewRef(PyObject *obj) {
 }
 
 
+/* PyFrame_GetGlobals added in 3.11: a new reference to the frame's
+   globals, read from the frame struct frameobject.h declares here */
+#include <frameobject.h>
+
+__attribute__((always_inline))
+static inline PyObject *PyFrame_GetGlobals(PyFrameObject *frame) {
+  return Py_NewRef(frame->f_globals);
+}
+
+
 
 /* === The eval breaker === */
 

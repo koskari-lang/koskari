@@ -273,7 +273,7 @@ async def _await_user_form(expr):
 
     Compiler errors are re-raised so the Koskari loop can render them via
     ``.explain()``; any other error is wrapped in ``REPLCodeBoundary`` so
-    its cause carries the user-scoped traceback and dynchain.
+    its cause carries the user-scoped traceback, Koskari frames included.
 
     :param expr: zero-argument awaitable produced by
         ``fragment.as_expression(ns)``

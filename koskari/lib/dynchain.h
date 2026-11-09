@@ -98,6 +98,11 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 
   KOS_DYNF_NONE        - No flags set
   KOS_DYNF_CLONED      - Node was cloned for continuation capture
+  KOS_DYNF_GOAL_WAIT   - A transfer goal waits on this node's thunk
+                         (its frontier); set by the wait, cleared when
+                         the wait ends, never copied to a clone. A
+                         goal's LEAVING that unlinks a node carrying it
+                         voids the waiting goal (see xfer_goal.c)
   KOS_DYNF_INVOCATION  - PROMPT: instance created by a k-invocation
                          (graft instantiation or in-place invoke);
                          no POP_PROMPT instruction pairs with it, so
@@ -106,6 +111,7 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,
+  KOS_DYNF_GOAL_WAIT   = 0x02,
   KOS_DYNF_INVOCATION  = 0x08,
 } KosDynFlags;
 

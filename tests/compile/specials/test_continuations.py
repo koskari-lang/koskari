@@ -77,8 +77,8 @@ class TestDelimitedTransferNested(SpecialsTestCase):
         """
         every re-entry of the cloned before-thunk invokes k again, so
         each pass lands another slice above the last. Each landing adds
-        frames, so the frame depth ceiling refuses an invoke once the
-        chain is 65535 frames deep and RecursionError raises
+        frames, so the frame depth limit refuses an invoke once the
+        chain is as deep as the limit and RecursionError raises
         at that invoke site instead of the chain growing without bound
         """
 

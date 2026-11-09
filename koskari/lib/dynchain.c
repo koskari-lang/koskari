@@ -189,8 +189,9 @@ static KosDynNode *kos_dynnode_alloc(void) {
    The node every clone for continuation capture starts from: a fresh
    node of the source's kind and caps with no parent, the source's
    flags plus KOS_DYNF_CLONED, and the source's id, so the clone matches
-   its original by id. The kind's clone fills its own payload after.
-   NULL with an exception set on allocation failure.
+   its original by id. A goal's wait on the source is not the clone's,
+   so KOS_DYNF_GOAL_WAIT stays behind. The kind's clone fills its own
+   payload after. NULL with an exception set on allocation failure.
 */
 static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
   KosDynNode *clone = kos_dynnode_alloc();
@@ -198,7 +199,8 @@ static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
     return NULL;
 
   kos_dynnode_init(clone, KosDynNode_KIND(src), NULL, KosDynNode_CAPS(src));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(src) | KOS_DYNF_CLONED;
+  KosDynNode_FLAGS(clone) =
+      (KosDynNode_FLAGS(src) & ~KOS_DYNF_GOAL_WAIT) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(src);
   return clone;
 }

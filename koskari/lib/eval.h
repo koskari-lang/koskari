@@ -1796,26 +1796,16 @@ void kos_eval_prepare_boundary_raise(KosContext *ctx);
 
 
 /**
-   Record the current frame into the in-flight exception's
-   __koskari_dynchain__ metadata (marked "crossed") before the raise walk
-   pops it. PyErr is preserved; decoration is best-effort.
+   Add the current frame to the in-flight exception's traceback, as a
+   synthesized Python frame object whose globals carry the frame's
+   trace data as __koskari_trace__ (marked "crossed"), before the raise
+   walk pops it; at a Koskari handler's entry, the handler's frame at
+   the raising pc. The traceback grows as frames are crossed, so a
+   handler's e.__traceback__ already holds every frame the raise
+   crossed. A frame the most recent entry already shows adds nothing.
+   PyErr is preserved; decoration is best-effort.
 */
 void kos_eval_note_crossed_frame(KosContext *ctx);
-
-
-/**
-   Give the exception a Python traceback entry for every frame in its
-   __koskari_dynchain__ record that has none yet, innermost first.
-   Called with the fetched triple at an eval boundary, and at a
-   Koskari handler's entry so the handler's e.__traceback__ holds the
-   Koskari frames the raise crossed. Entries are marked traced in the
-   record, so a frame is never injected twice. Best-effort: a failure
-   leaves the triple as it was.
-*/
-void kos_eval_inject_recorded_frames(
-    PyObject **exc_type,
-    PyObject **exc_val,
-    PyObject **exc_tb);
 
 
 /**

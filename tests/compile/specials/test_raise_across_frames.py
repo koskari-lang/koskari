@@ -19,6 +19,8 @@ section (and onward) rather than leaving the eval loop; it only exits at
 the chain root or a generator boundary.
 """
 
+import traceback
+
 import pytest
 
 from . import SpecialsTestCase
@@ -101,10 +103,11 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
         self.assertEqual(result, "caught")
 
 
-    async def test_crossed_frames_recorded_in_dynchain_meta(self):
+    async def test_crossed_frames_added_to_traceback(self):
         """
-        Frames crossed during a raise walk are recorded into the
-        exception's __koskari_dynchain__ metadata before being popped,
+        Frames crossed during a raise walk are added to the exception's
+        traceback before being popped, each a Python frame object whose
+        globals carry the frame's trace data as __koskari_trace__,
         marked "crossed".
         """
 
@@ -124,8 +127,10 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
         try:
             await expr()
         except ValueError as exc:
-            chain = getattr(exc, "__koskari_dynchain__", None)
-            self.assertIsNotNone(chain)
+            chain = [frame.f_globals["__koskari_trace__"]
+                     for frame, _ in traceback.walk_tb(exc.__traceback__)
+                     if "__koskari_trace__" in frame.f_globals]
+            self.assertTrue(chain)
             crossed = [m for m in chain if m.get("crossed")]
             self.assertGreaterEqual(len(crossed), 1)
             for meta in chain:

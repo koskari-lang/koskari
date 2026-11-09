@@ -25,6 +25,7 @@ final return
 
 
 import os
+import traceback
 import unittest
 
 import pytest
@@ -56,18 +57,19 @@ class TestTailExtentDrop(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 0)
 
 
-    async def test_chain_holds_one_ns_node_after_many_hops(self):
-        # each promoted hop opens a fresh let; a raise at the bottom
-        # records the live chain, which must hold only the final hop's
-        # NS node -- stranded nodes from earlier hops would all appear
+    async def test_chain_holds_one_frame_after_many_hops(self):
+        # each promoted hop opens a fresh let and hands its frame to the
+        # next; a raise at the bottom adds every frame still on the
+        # chain to the traceback, which must hold only the final hop's
+        # frame -- a hop that kept its frame would appear too
         mod = await self.load_module()
         try:
             await mod.raising_loop(200)
         except ValueError as exc:
-            chain = getattr(exc, "__koskari_dynchain__", None)
-            self.assertIsNotNone(chain)
-            ns_nodes = [m for m in chain if m.get("kind") == "NS"]
-            self.assertLessEqual(len(ns_nodes), 1)
+            names = [frame.f_globals["__koskari_trace__"]["name"]
+                     for frame, _ in traceback.walk_tb(exc.__traceback__)
+                     if "__koskari_trace__" in frame.f_globals]
+            self.assertEqual(names, ["raising_loop"])
         else:
             self.fail("raising_loop did not raise")
 

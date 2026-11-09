@@ -25,6 +25,7 @@ place.
 :license: GNU General Public License v3
 """
 
+import traceback
 import unittest
 
 import pytest
@@ -43,10 +44,11 @@ FILENAME = "/nonexistent/trailing_return_position.ki"
 
 
 def callee_lines(exc, name):
-    frames = getattr(exc, "__koskari_dynchain__", None) or ()
+    entries = [frame.f_globals.get("__koskari_trace__")
+               for frame, _ in traceback.walk_tb(exc.__traceback__)]
     return sorted(set(
-        f.get("line") for f in frames
-        if isinstance(f, dict) and f.get("name") == name))
+        e.get("line") for e in entries
+        if isinstance(e, dict) and e.get("name") == name))
 
 
 class TestTrailingReturnPosition(unittest.IsolatedAsyncioTestCase):
@@ -54,9 +56,13 @@ class TestTrailingReturnPosition(unittest.IsolatedAsyncioTestCase):
     async def error_for(self, src):
         module = new_module("trailing_return_position")
         vars(module)["__file__"] = FILENAME
-        with self.assertRaises(ValueError) as caught:
+        # caught here rather than by assertRaises, which clears the
+        # traceback the lines are read from
+        try:
             await load_module_source_async(module, src)
-        return caught.exception
+        except ValueError as exc:
+            return exc
+        self.fail("ValueError not raised")
 
 
     async def test_return_tuple_last(self):

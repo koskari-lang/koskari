@@ -26,6 +26,7 @@ focus on type registration, protocol compliance, and basic behavior.
 
 
 import asyncio
+import traceback
 import unittest
 
 import pytest
@@ -210,50 +211,43 @@ class TestAsyncGeneratorIterIntegration(unittest.TestCase):
 
 def _assert_exception_has_traceback_attrs(test_case, exc, expected_type=None):
     """
-    Assert that a raised exception carries __traceback__ and __koskari_dynchain__
-    for traceback formatting, and that the dynchain is usable (has frame data with
-    code names). Optionally assert the exception type.
+    Assert that a raised exception carries a __traceback__ for traceback
+    formatting whose entries include the Koskari frames, each a Python
+    frame object whose globals carry the frame's trace data as
+    __koskari_trace__, and that the trace data is usable (has code
+    names). Optionally assert the exception type.
     """
 
-    print("_assert_exception_has_traceback_attrs: exc=%r" % (exc,))
+    print(f"_assert_exception_has_traceback_attrs: exc={exc!r}")
 
     if expected_type is not None:
         test_case.assertIsInstance(exc, expected_type)
-        print("  type: %s (ok)" % (type(exc).__name__,))
+        print(f"  type: {type(exc).__name__} (ok)")
 
-    has_tb = hasattr(exc, "__traceback__")
-    print("  has __traceback__: %s" % (has_tb,))
-    test_case.assertTrue(has_tb, "exception must have __traceback__")
+    tb = getattr(exc, "__traceback__", None)
+    print(f"  __traceback__: {tb!r}")
+    test_case.assertIsNotNone(tb, "exception must have a __traceback__")
 
-    has_dyn = hasattr(exc, "__koskari_dynchain__")
-    print("  has __koskari_dynchain__: %s" % (has_dyn,))
-    test_case.assertTrue(has_dyn, "exception must have __koskari_dynchain__")
-
-    dynchain = getattr(exc, "__koskari_dynchain__", None)
-    print("  __koskari_dynchain__ value: %r" % (dynchain,))
-    test_case.assertIsNotNone(
-        dynchain,
-        "__koskari_dynchain__ must be set (decorated for native frame display)",
-    )
-
-    test_case.assertIsInstance(
-        dynchain, (list, tuple),
-        "__koskari_dynchain__ must be a list or tuple of frame metadata",
-    )
-    print("  dynchain len: %d" % (len(dynchain),))
+    entries = [frame.f_globals.get("__koskari_trace__")
+               for frame, _lineno in traceback.walk_tb(tb)]
+    entries = [entry for entry in entries if entry is not None]
+    print(f"  Koskari entries: {entries!r}")
     test_case.assertGreater(
-        len(dynchain), 0,
-        "__koskari_dynchain__ must contain at least one frame",
+        len(entries), 0,
+        "__traceback__ must hold at least one Koskari frame",
     )
+    for entry in entries:
+        test_case.assertIsInstance(
+            entry, dict,
+            "__koskari_trace__ must be a dict of frame trace data",
+        )
 
-    frames_with_name = 0
-    for i, frame in enumerate(dynchain):
-        if isinstance(frame, dict) and frame.get("name") is not None:
-            frames_with_name += 1
-    print("  frames with 'name' (code): %d" % (frames_with_name,))
+    frames_with_name = [entry for entry in entries
+                        if entry.get("name") is not None]
+    print(f"  frames with 'name' (code): {len(frames_with_name)}")
     test_case.assertGreater(
-        frames_with_name, 0,
-        "__koskari_dynchain__ must have at least one frame with 'name' (code)",
+        len(frames_with_name), 0,
+        "__traceback__ must hold at least one Koskari frame with 'name'",
     )
 
 
@@ -263,10 +257,23 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
     for traceback formatting under various conditions.
     """
 
+    async def raised_by(self, expr, exc_type):
+        """
+        The exception expr raises, with the traceback that assertRaises
+        would clear
+        """
+
+        try:
+            await expr()
+        except exc_type as exc:
+            return exc
+        self.fail(f"{exc_type.__name__} not raised")
+
+
     async def test_exception_from_called_function_has_inspectable_fields(self):
         """
-        Exception from Python function called by koskari CALL: has traceback
-        and dynchain.
+        Exception from Python function called by koskari CALL: has a
+        traceback holding the Koskari frame.
         """
 
         def boom():
@@ -285,17 +292,15 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
         )
         expr = make_callable(code, ns)
 
-        with self.assertRaises(ValueError) as ctx:
-            await expr()
-
-        exc = ctx.exception
+        exc = await self.raised_by(expr, ValueError)
         self.assertEqual(exc.args, ("intentional test failure",))
         _assert_exception_has_traceback_attrs(self, exc, ValueError)
 
 
     async def test_pure_raise_opcode_has_traceback_attrs(self):
         """
-        Pure RAISE opcode: exception carries __traceback__ and __koskari_dynchain__.
+        Pure RAISE opcode: exception carries a __traceback__ holding the
+        Koskari frame.
         """
 
         from tests import make_callable
@@ -311,10 +316,7 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
         )
         expr = make_callable(code, ns)
 
-        with self.assertRaises(ValueError) as ctx:
-            await expr()
-
-        exc = ctx.exception
+        exc = await self.raised_by(expr, ValueError)
         self.assertEqual(exc.args, ("pure RAISE opcode",))
         _assert_exception_has_traceback_attrs(self, exc, ValueError)
 
@@ -333,10 +335,7 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
         ])
         expr = make_callable(code, ns)
 
-        with self.assertRaises(RuntimeError) as ctx:
-            await expr()
-
-        exc = ctx.exception
+        exc = await self.raised_by(expr, RuntimeError)
         _assert_exception_has_traceback_attrs(self, exc, RuntimeError)
 
 
@@ -355,10 +354,7 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
         ])
         expr = make_callable(code, ns)
 
-        with self.assertRaises(RuntimeError) as ctx:
-            await expr()
-
-        exc = ctx.exception
+        exc = await self.raised_by(expr, RuntimeError)
         _assert_exception_has_traceback_attrs(self, exc, RuntimeError)
 
 
@@ -379,10 +375,7 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
         ])
         expr = make_callable(code, ns)
 
-        with self.assertRaises(ZeroDivisionError) as ctx:
-            await expr()
-
-        exc = ctx.exception
+        exc = await self.raised_by(expr, ZeroDivisionError)
         _assert_exception_has_traceback_attrs(self, exc, ZeroDivisionError)
 
 
