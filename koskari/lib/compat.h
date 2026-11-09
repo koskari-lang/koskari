@@ -88,12 +88,18 @@ static inline void kos_immortalize(PyObject *obj) {
 
    - KOS_BREAKER_WORD(tstate), 3.13 and later: a bit set on the thread
      state, with the bits named KOS_BREAKER_GIL_DROP,
-     KOS_BREAKER_SIGNALS and KOS_BREAKER_GC_SCHEDULED. Which of them
+     KOS_BREAKER_SIGNALS, KOS_BREAKER_CALLS_TO_DO,
+     KOS_BREAKER_ASYNC_EXC and KOS_BREAKER_GC_SCHEDULED. Which of them
      the evaluator services, and how, is the evaluator's decision
      (KOS_BREAKER_MASK and kos_eval_poll_now in eval.h / eval.c).
    - KOS_CEVAL_STATE(interp), before 3.13: the interpreter's ceval
      state, whose eval_breaker is one aggregate int, with
-     gil_drop_request beside it.
+     gil_drop_request beside it and the pending-calls record, whose
+     async_exc flag is one input of the aggregate, after it.
+
+   Each shape also gives koskari_async_exc_take, which takes the
+   exception another thread set on tstate with PyThreadState_SetAsyncExc
+   and lowers the breaker input that announced it.
 
    A version defining neither gets a word that always reads up, so
    every cooperation point polls, and a GIL drop answered as always
@@ -126,6 +132,18 @@ static inline int koskari_gil_drop_requested(void) {
 # endif
 }
 
+
+/* Take the asynchronous exception pending on tstate: a new reference,
+   or NULL when none is. The bit comes down before the exchange, as
+   CPython's own loop does it, so an exception set between the two
+   raises the bit again for the next cooperation point. */
+static inline PyObject *koskari_async_exc_take(PyThreadState *tstate) {
+  __atomic_fetch_and(
+      &KOS_BREAKER_WORD(tstate), ~(KosBreakerWord) KOS_BREAKER_ASYNC_EXC,
+      __ATOMIC_SEQ_CST);
+  return __atomic_exchange_n(&tstate->async_exc, NULL, __ATOMIC_SEQ_CST);
+}
+
 #elif defined(KOS_CEVAL_STATE)
 
 typedef int KosBreakerWord;
@@ -155,6 +173,23 @@ static inline int koskari_gil_drop_requested(void) {
   return KOS_CEVAL_STATE(tstate->interp)->gil_drop_request != 0;
 }
 
+
+/* Take the asynchronous exception pending on tstate: a new reference,
+   or NULL when none is. Taking one clears the interpreter's
+   pending.async_exc flag, as CPython's own loop does. The aggregate
+   word is not recomputed here: its other inputs live in runtime state
+   not mirrored. With the flag clear, the interpreter's next recompute
+   comes out without it; until then a cooperation point still polls
+   and finds nothing to take. */
+static inline PyObject *koskari_async_exc_take(PyThreadState *tstate) {
+  PyObject *exc = __atomic_exchange_n(
+      &tstate->async_exc, NULL, __ATOMIC_SEQ_CST);
+
+  if (exc && tstate->interp)
+    KOS_CEVAL_STATE(tstate->interp)->pending.async_exc = 0;
+  return exc;
+}
+
 #else
 
 typedef int KosBreakerWord;
@@ -180,6 +215,11 @@ static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
 
 static inline int koskari_gil_drop_requested(void) {
   return 1;
+}
+
+static inline PyObject *koskari_async_exc_take(PyThreadState *tstate) {
+  (void) tstate;
+  return NULL;
 }
 #endif
 

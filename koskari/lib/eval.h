@@ -930,15 +930,21 @@ extern PyTypeObject KosContextType;
 
 /* The breaker bits the evaluator services. From 3.13 the word is per
    thread and the bits are named: another thread wants the GIL, a
-   signal is pending, or the interpreter has scheduled a collection,
-   which from 3.12 runs only from its own loop or from
-   PyErr_CheckSignals, so a Koskari stretch has to answer it. The other
-   bits (pending calls, async exception, stop requests) are Python's
-   loop's. Before 3.13 the word is one aggregate the interpreter
-   recomputes, tested whole. */
+   signal is pending, a pending call is queued, another thread set an
+   asynchronous exception on this one, or the interpreter has scheduled
+   a collection, which from 3.12 runs only from its own loop or from
+   PyErr_CheckSignals. A Koskari stretch answers each of them as
+   Python's loop would. A pending call runs through
+   Py_MakePendingCalls, on the main thread only: off it an
+   interpreter-wide call keeps the bit up, and the stretch polls at
+   each point until a Python frame on any thread runs the queue. The
+   stop request and the bits above it stay Python's loop's. Before
+   3.13 the word is one aggregate the interpreter recomputes, tested
+   whole. */
 #if defined(KOS_BREAKER_WORD)
 # define KOS_BREAKER_MASK                                               \
   ((KosBreakerWord) (KOS_BREAKER_GIL_DROP | KOS_BREAKER_SIGNALS          \
+                     | KOS_BREAKER_CALLS_TO_DO | KOS_BREAKER_ASYNC_EXC   \
                      | KOS_BREAKER_GC_SCHEDULED))
 #else
 # define KOS_BREAKER_MASK ((KosBreakerWord) ~0)

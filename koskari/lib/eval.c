@@ -1818,7 +1818,13 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
    otherwise stays up and keeps every cooperation point polling). The
    signals were taken just above, so that call finds none; it is
    skipped when a handler already raised, so nothing runs on top of
-   the pending exception. */
+   the pending exception.
+
+   Last, as in Python's loop, an exception another thread set on this
+   one with PyThreadState_SetAsyncExc is taken and raised, unless a
+   step above already raised; it then stays pending for the next
+   poll. The raise reaches the prologue as a signal's does, so a
+   Koskari try catches it. */
 static void kos_eval_poll_now(void) {
   if (koskari_gil_drop_requested()) {
     Py_BEGIN_ALLOW_THREADS
@@ -1830,6 +1836,14 @@ static void kos_eval_poll_now(void) {
   if (! PyErr_Occurred())
     PyErr_CheckSignals();
 #endif
+
+  if (! PyErr_Occurred()) {
+    PyObject *exc = koskari_async_exc_take(PyThreadState_Get());
+    if (exc) {
+      PyErr_SetNone(exc);
+      Py_DECREF(exc);
+    }
+  }
 }
 
 

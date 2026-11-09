@@ -122,16 +122,26 @@ static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
 */
 
 
-/* struct _ceval_state, struct _gc_runtime_state with the two records
-   it holds, and the struct _is prefix, field for field with their own
-   types so the layout is the compiler's arithmetic at any pointer
-   width:
+/* struct _ceval_state through the pending-calls record's async_exc,
+   struct _gc_runtime_state with the two records it holds, and the
+   struct _is prefix, field for field with their own types so the
+   layout is the compiler's arithmetic at any pointer width:
    https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_ceval_state.h
    https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_interp.h
    https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_gc.h */
 typedef struct {
   int eval_breaker;
   int gil_drop_request;
+  int recursion_limit;
+  void *gil;
+  int own_gil;
+  int gc_scheduled;
+  struct {
+    int busy;
+    void *lock;
+    int calls_to_do;
+    int async_exc;
+  } pending;
 } KosCevalState312;
 
 typedef struct {

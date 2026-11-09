@@ -41,6 +41,14 @@ constant-pool index and looks it up through the frame's namespace chain;
 `convert_fast` lowers a name with a fixed slot to its `FAST*` twin, which
 indexes the frame's local slots directly.
 
+A Koskari stretch that never returns to Python's own loop still
+cooperates with the interpreter: at its next cooperation point (a
+backward jump, a call, or a resume) the evaluator yields the GIL to a
+waiting thread, and a pending signal, a pending call added with
+`Py_AddPendingCall`, or an asynchronous exception set with
+`PyThreadState_SetAsyncExc` is run or raised there. An asynchronous
+exception is an ordinary raise, which a Koskari `try` can catch.
+
 ### 1.2 Notation
 
 - **Stack**: `[a, b, c]` with TOS, the top of stack, on the right.

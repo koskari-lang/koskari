@@ -82,15 +82,19 @@ static inline PyObject *PyFrame_GetGlobals(PyFrameObject *frame) {
 
 /* struct _ceval_state and struct _is prefixes:
    https://github.com/python/cpython/blob/v3.9.0/Include/internal/pycore_interp.h */
-/* The trailing pending-calls lock gives the struct the pointer
-   alignment the real one has, so it lands at the same offset after
-   the interpreter prefix's final int. */
+/* The pending-calls record through async_exc. Its leading lock gives
+   the struct the pointer alignment the real one has, so it lands at
+   the same offset after the interpreter prefix's final int. */
 typedef struct {
   int recursion_limit;
   int tracing_possible;
   int eval_breaker;
   int gil_drop_request;
-  void *pending_lock;
+  struct {
+    void *lock;
+    int calls_to_do;
+    int async_exc;
+  } pending;
 } KosCevalState39;
 
 typedef struct {

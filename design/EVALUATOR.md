@@ -209,7 +209,7 @@ headers; the evaluator never sees a layout.
 
 | CPython | Shape (`compat_3*.h`) | Mask |
 | ------- | --------------------- | ---- |
-| **3.13+** | `KOS_BREAKER_WORD(tstate)`: a bit set on the thread state (`pycore_ceval.h`) | GIL drop request (bit 0), signals pending (bit 1) and GC scheduled (bit 4). The other bits (pending calls, async exception, stop requests) only Python's loop can service and are masked out, so a Koskari loop does not poll on every point for as long as one of them stays up. |
+| **3.13+** | `KOS_BREAKER_WORD(tstate)`: a bit set on the thread state (`pycore_ceval.h`) | GIL drop request (bit 0), signals pending (bit 1), pending calls (bit 2), async exception (bit 3) and GC scheduled (bit 4) are serviced; pending calls run on the main thread only, and off it the bit stays up until Python's loop drains the queue. The stop request and the bits above it are masked out. |
 | **3.9–3.12** | `KOS_CEVAL_STATE(interp)`: the interpreter's ceval state, whose `eval_breaker` is one aggregate int with `gil_drop_request` beside it | Tested whole. |
 | **`Py_GIL_DISABLED`** | The 3.13+ shape; the GIL bit is never set | Signals still work. |
 | **Unmapped version** | `koskari_breaker_always`, a word that always reads up | Every cooperation point polls and every poll yields the GIL: correct, and slow only until the layout is mapped. |
@@ -222,6 +222,7 @@ flowchart TD
     drop{"koskari_gil_drop_requested()?"}
     gil["Py_BEGIN_ALLOW_THREADS<br/>Py_END_ALLOW_THREADS"]
     sig["Py_MakePendingCalls()<br/>PyErr_CheckSignals() on 3.12+"]
+    asx["koskari_async_exc_take()<br/>PyErr_SetNone, unless raised"]
     raised{"PyErr_Occurred()?"}
     pro["tail: kos_eval_prologue<br/>pending PyErr → process_raise"]
     dispatch["KOS_THREAD_NEXT<br/>→ code[pc]->fn"]
@@ -229,7 +230,7 @@ flowchart TD
     poll --> drop
     drop -->|yes| gil --> sig
     drop -->|no| sig
-    sig --> raised
+    sig --> asx --> raised
     raised -->|yes| pro
     raised -->|no| dispatch
 ```
