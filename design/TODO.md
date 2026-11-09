@@ -214,6 +214,25 @@ is unchanged. REPEAT records per-pass positions; NOT stays committed.
 
 Ref: [matcher-backtracking.md](matcher-backtracking.md).
 
+### Consecutive template ellipses (investigate)
+
+R7RS `x ... ...` splices a rank-2 capture flat; Koskari peels one
+dimension per `...` and raises the depth error. Count a run of
+ellipses in the template walker and validator, concatenate the inner
+columns, keep the per-level length check. Contained in hygiene.py.
+Open: wanted at all, or a bootstrap splice macro instead.
+
+Ref: [language/consecutive-ellipses.md](language/consecutive-ellipses.md).
+
+### Patterns over improper lists (investigate)
+
+A dotted rule tail `(m a . rest)` binds the proper remainder and misses
+an improper subject; `match` refuses an improper pattern. A TAIL node
+binding the cdr whatever its shape, used by the rule tail and a dotted
+`match` form; every current match keeps its binding.
+
+Ref: [language/improper-list-patterns.md](language/improper-list-patterns.md).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls
