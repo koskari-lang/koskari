@@ -688,6 +688,10 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(log, [])
         self.assertEqual(reports.seen, [])
 
+    @unittest.skipIf(
+        sys.version_info < (3, 11),
+        "the caller's value stack keeps a reference to a call argument"
+        " until the call returns, so finalized() cannot collect it")
     async def test_finalized_unstarted_generator_is_closed(self):
         """
         A generator finalized before it was started is closed by its

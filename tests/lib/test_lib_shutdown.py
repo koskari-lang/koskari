@@ -44,6 +44,10 @@ OPS = (
 
 
 @needs_processes
+@unittest.skipIf(
+    sys.version_info < (3, 10),
+    "3.9 runs no collection after clearing thread contexts, so the"
+    " probe's finalizer never runs")
 class TestTypesOutliveModule(unittest.TestCase):
     """
     The static types and their instances hold no reference to the
