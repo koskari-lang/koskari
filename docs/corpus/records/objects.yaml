@@ -667,7 +667,7 @@ stability: stable
 tags:
   - object
   - comparison
-notes: chained comparison; equivalent to (and (> 5 3) (> 3 1))
+notes: chained comparison; each adjacent pair must satisfy >, and every operand is evaluated before the pairs are compared
 ---
 id: object-gt-false-003
 feature: special/compile/>
@@ -2395,3 +2395,22 @@ tags:
   - surface:block
   - define-type
 notes: the global prefix on a class block binds Registry at the module even from inside a function body
+---
+id: object-lt-chain-eager-004
+feature: special/compile/<
+source: |-
+  (begin (var seen (list)) (define [mk x] (seen.append x) x) #((< (mk 1) (mk 0) (mk 5)) seen))
+  
+verify:
+  read: (begin (var seen (list)) (define [mk x] ((attr seen append) x) x) (#tuple (< (mk 1) (mk 0) (mk 5)) seen))
+  expand: (begin (var seen (list)) (define [mk x] ((attr seen append) x) x) (#tuple (< (mk 1) (mk 0) (mk 5)) seen))
+  eval: tuple:(false,[1,0,5])
+references:
+  - reference/specials/compile-lt.md
+stability: evolving
+tags:
+  - object
+  - comparison
+  - pitfall
+  - pragma:reader/dot-attrs
+notes: Python's 1 < 0 < 5 would not evaluate the third operand once the first pair is false; Koskari evaluates every operand, left to right, before comparing, so an overloaded operator sees the whole chain. requires reader/dot-attrs for seen.append.

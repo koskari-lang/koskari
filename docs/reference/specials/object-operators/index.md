@@ -22,8 +22,14 @@ the first non-constant argument, which preserves dunder dispatch.
 ## Comparison operators
 
 All comparison specials require at least two arguments and emit a COUNT opcode
-with the number of operands. Chained comparisons follow Python semantics: each
-adjacent pair must satisfy the relation.
+with the number of operands. Every operand is evaluated once, left to right,
+before any comparison runs, as the arguments of a call are. The comparisons
+then run pair by pair and stop at the first false one. The result is that
+comparison's value, or the last comparison's value when every pair holds, as
+Python returns. Unlike Python, `(< 0 n (f n))` calls `f` even when `(< 0 n)` is
+false; write `(and (< 0 n) (< n (f n)))` to guard an operand. A comparison
+operator may be overloaded by the operands' types, so a chain is treated as one
+operation over all its operands rather than a sequence that may be cut short.
 
 | Surface | Alias | Opcode | Chained semantics | Example |
 | ------- | ----- | ------ | ----------------- | ------- |

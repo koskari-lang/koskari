@@ -76,7 +76,7 @@ if (and (>= age 13) (< age 20)):
   print "teen ticket"
 ```
 
-Comparisons chain: `(< 0 x 10)` is `0 < x < 10`.
+Comparisons chain: `(< 0 x 10)` tests `0 < x < 10`, but every operand is evaluated first; guard an operand with `and`.
 
 ## `while`
 

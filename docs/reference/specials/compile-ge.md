@@ -5,7 +5,8 @@
 **Syntax:** `(ge? A B ...)`
 
 **Use-case:** Chained comparison -- at least two values. Succeeds when
-each adjacent pair is ordered descending or equal, like Python chained comparisons.
+each adjacent pair is ordered descending or equal. Every operand is
+evaluated, left to right, before the pairs are compared.
 
 **Behaviour:** Compiles each argument, emits the corresponding `OBJECT_*`
 opcode with operand count.
