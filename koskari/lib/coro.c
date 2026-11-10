@@ -1079,6 +1079,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
   KosCoroutine *coro = (KosCoroutine *) value;
   KosDynFrame *frame;
 
+  /* a failed delivery, a signal taken by the poll ahead of the hop
+     having dropped the staged awaitable: nothing to take, decline */
+  if (! value)
+    return EVAL_RAISE();
+
   if (KosCoroutine_TakeFresh(value, &frame)) {
     Py_DECREF(value);
     if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 0)

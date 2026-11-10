@@ -241,7 +241,10 @@ static inline void kos_iter_finish(
    (kos_dyn_swap_frame_for_tail) or sets a resume of its own on it and
    makes its request; an awaitable already in flight hands itself to
    kos_await_python, the Python-protocol drive on the same frame. Any
-   reference the kind owes is released before it tails.
+   reference the kind owes is released before it tails. A failed
+   delivery, NULL with the error pending, reaches the kind when a poll
+   between the settle and the hop took a signal and dropped the staged
+   awaitable; the kind declines it.
    ka_implicit_plain says an implicit site takes the value unawaited,
    as a Defer handle is; only an explicit await installs it.
 */

@@ -179,6 +179,8 @@ KOS_PRESERVE_NONE KosOpResult kos_await_python(
   PyObject *result;
 
   (void) state;
+  if (! awaitable)
+    return EVAL_RAISE();
   result = eager_step_awaitable(awaitable, ctx, &suspended, &yielded);
   Py_DECREF(awaitable);
 

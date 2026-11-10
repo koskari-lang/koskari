@@ -26,6 +26,7 @@ being driven on its own context.
 import asyncio
 import functools
 import os
+import signal
 import sys
 import unittest
 
@@ -51,6 +52,16 @@ class Suspender:
     def __await__(self):
         yield "suspended"
         return "woken"
+
+
+class Interrupted(Exception):
+    """
+    Raised by the SIGUSR1 handler the signal tests install
+    """
+
+
+def raise_interrupted(signum, frame):
+    raise Interrupted(signum)
 
 
 class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
@@ -186,6 +197,33 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(inside, ValueError)
         self.assertEqual(str(inside), "inside")
         self.assertIsNone(after)
+
+
+    def test_signal_pending_at_the_await_raises_at_the_site(self):
+        """
+        A signal taken by the poll between the settle and the await
+        kind drops the staged awaitable and delivers a failure to the
+        kind, which declines it: the handler's exception raises at the
+        await site, for a fresh coroutine and for a defer over one, and
+        the coroutine never started stays closable
+        """
+
+        mod = asyncio.run(self.load_module())
+        saved = signal.signal(signal.SIGUSR1, raise_interrupted)
+        try:
+            c = mod.add(1, 2)
+            outer = mod.await_after_interrupt(c)
+            with self.assertRaises(Interrupted):
+                outer.send(None)
+            c.close()
+
+            d = mod.make_defer()
+            outer = mod.await_after_interrupt(d)
+            with self.assertRaises(Interrupted):
+                outer.send(None)
+            d.close()
+        finally:
+            signal.signal(signal.SIGUSR1, saved)
 
 
     def test_room_refused_splice_leaves_the_coroutine_parked(self):

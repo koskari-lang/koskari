@@ -20,6 +20,8 @@ the step has been taken.
 """
 
 
+import asyncio
+import signal
 import unittest
 
 import pytest
@@ -32,6 +34,9 @@ pytestmark = pytest.mark.phase_specials
 
 
 SRC = """
+(import _thread)
+(import signal)
+
 (define-parameter p "root")
 
 (def pgen []
@@ -125,6 +130,10 @@ SRC = """
 (def take_under [st]
   (parameterize [[p "inner"]]
     (await st)))
+
+(def take_after_interrupt [st]
+  (_thread.interrupt_main signal.SIGUSR1)
+  (await st))
 """
 
 
@@ -139,6 +148,16 @@ class Suspender:
         return "woken"
 
 
+class Interrupted(Exception):
+    """
+    Raised by the SIGUSR1 handler the signal test installs
+    """
+
+
+def raise_interrupted(signum, frame):
+    raise Interrupted(signum)
+
+
 class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
 
     async def load(self):
@@ -147,6 +166,20 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         vars(module)["Suspender"] = Suspender
         await load_module_source_async(module, SRC)
         return vars(module)
+
+    def test_signal_pending_at_the_await_of_a_step_raises_at_the_site(self):
+        v = asyncio.run(self.load())
+        saved = signal.signal(signal.SIGUSR1, raise_interrupted)
+        try:
+            g = v["two"]()
+            st = g.__anext__()
+            outer = v["take_after_interrupt"](st)
+            with self.assertRaises(Interrupted):
+                outer.send(None)
+            st.close()
+        finally:
+            signal.signal(signal.SIGUSR1, saved)
+        asyncio.run(g.aclose())
 
     async def test_step_parked_mid_await_is_spliced(self):
         """

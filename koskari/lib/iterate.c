@@ -1115,6 +1115,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
   PyObject *provider;
   KosOpResult r;
 
+  if (! value)
+    return EVAL_RAISE();
+
   if (st->provider && st->awaiting && ! st->running && st->ctx
       && KosContext_DYN_TOP(st->ctx))
     RESULT_RELAY(ctx, stepper_splice(ctx, st));

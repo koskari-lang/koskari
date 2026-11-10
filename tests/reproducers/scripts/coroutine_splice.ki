@@ -9,6 +9,8 @@
 ;; by the test.
 
 
+(import _thread)
+(import signal)
 (import-from functools partial)
 (import-from asyncio sleep)
 (import-from koskari.lib defer demand)
@@ -36,6 +38,10 @@
 
 (def add [a b]
   (+ a b))
+
+
+(def make_defer []
+  (defer add 1 2))
 
 
 (def await_object [c]
@@ -90,6 +96,11 @@
 
 (def await_then_handled [c]
   #((await c) (handled)))
+
+
+(def await_after_interrupt [c]
+  (_thread.interrupt_main signal.SIGUSR1)
+  (await c))
 
 
 ;; The end.

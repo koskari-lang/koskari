@@ -383,6 +383,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult defer_await_resume(
   KosAwaitSlots *slots;
   PyObject *inner;
 
+  if (! value)
+    return EVAL_RAISE();
+
   if (d->state != KOS_DEFER_DELEGATING
       || ! KosAwait_CheckSlots(d->u.inner, &slots))
     TAILCALL(kos_await_python, ctx, state, value);
