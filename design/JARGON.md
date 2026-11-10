@@ -212,9 +212,11 @@ EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
 
 The two states a Koskari coroutine's or generator step's chain can be
 in when it is not fresh and not done. Parked: at rest on the object's
-own context, suspended at a Python await or a yield, with nothing
-running on it; a Python `send` drives it there, a Koskari await splices
-it. Active: on a chain being evaluated, its own under a Python drive or
+own context, suspended at a Python await, with nothing running on it;
+a Python `send` drives it there, a Koskari await splices it. A
+coroutine suspended at a yield is driven through its Python protocol,
+which refuses a Koskari await of it. Active: on a chain being
+evaluated, its own under a Python drive or
 an awaiter's after a splice; every entry from anywhere is refused as
 already in progress until the chain passes the point it entered at.
 The object has no suspension state of its own while active: a
