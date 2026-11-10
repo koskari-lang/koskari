@@ -1036,8 +1036,9 @@ static PyObject *stepper_repr(PyObject *self) {
    consumer's chain. The pending Python await moves to the awaiter's
    context, the provider reference moves to the resume, and the stepper
    is spent. An attach that fails after the detach puts the chain back
-   on the stepper's context, or, failing that too, frees it. st is
-   owned and released here.
+   on the stepper's context, or, failing that too, spends the step,
+   finishing the provider and freeing the chain. st is owned and
+   released here.
 */
 static KosOpResult stepper_splice(KosContext *ctx, KosIterStepper *st) {
 
@@ -1062,8 +1063,11 @@ static KosOpResult stepper_splice(KosContext *ctx, KosIterStepper *st) {
     if (KosDynNode_IS_GEN(span.root))
       KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_OWN;
     if (kos_dyn_span_attach(own, &span) < 0) {
+      /* the chain can rest nowhere: the step is spent, which finishes
+         the provider so it is not left busy forever, and frees the
+         chain through the stepper's context */
       KosContext_DYN_TOP(own) = span.head;
-      KosContext_ReleaseChain(own);
+      stepper_spend(st);
     }
     Py_DECREF(st);
     return EVAL_RAISE();
