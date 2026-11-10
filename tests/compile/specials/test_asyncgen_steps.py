@@ -21,7 +21,9 @@ the step has been taken.
 
 
 import asyncio
+import gc
 import signal
+import sys
 import unittest
 
 import pytest
@@ -235,6 +237,33 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             outer.send(None)
         self.assertEqual(done.exception.value, "woken")
         self.assertEqual(2, await g.__anext__())
+        await g.aclose()
+
+    async def test_refused_step_releases_the_generator(self):
+        """
+        A Koskari await of a second step while the generator is busy
+        under a parked first step is refused, and the refusal releases
+        the provider reference the step had taken
+        """
+
+        v = await self.load()
+        g = v["wait_gen"]()
+        first = g.__anext__()
+        self.assertEqual(first.send(None), "suspended")
+        before = sys.getrefcount(g)
+
+        second = g.__anext__()
+        outer = v["take_stepper"](second)
+        del second
+        with self.assertRaises(RuntimeError):
+            outer.send(None)
+        del outer
+        gc.collect()
+        self.assertEqual(sys.getrefcount(g), before)
+
+        with self.assertRaises(StopIteration) as done:
+            first.send(None)
+        self.assertEqual(done.exception.value, "woken")
         await g.aclose()
 
     async def test_spliced_step_sees_the_awaiters_parameterize(self):

@@ -1158,6 +1158,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
   Py_CLEAR(st->throw_exc);
   Py_DECREF(value);
 
+  /* a request that failed before it deferred (the provider busy, a
+     throw into no provider) set no resume, so the provider reference
+     that moved here has no owner but this frame: release it */
+  if (r.kind == KOS_RES_RAISE)
+    Py_DECREF(provider);
   if (r.kind == KOS_RES_REPROLOGUE)
     RESULT_REPROLOGUE(ctx);
   RESULT_ENTRY(ctx, r, kind, provider);
