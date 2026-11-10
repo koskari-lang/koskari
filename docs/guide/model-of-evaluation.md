@@ -120,7 +120,10 @@ frame, a tail call does not, and a call past the limit raises
 limit is process-wide and defaults to 10000;
 `koskari.lib.get_frame_depth_limit()` reads it and
 `koskari.lib.set_frame_depth_limit(n)` sets it to any `n` from 1 up to
-the cap of 65535. Python's recursion
+the cap of 65535. The Pyodide build defaults to 1000 with a cap of 2000;
+see [Supported platforms](../project/platforms.md#webassembly).
+`koskari.lib.build_flags` reports both values as
+`KOS_FRAME_DEPTH_DEFAULT` and `KOS_FRAME_DEPTH_MAX`. Python's recursion
 limit still applies where Koskari and Python call into each other: a
 recursion that passes through a Python function on each round trip
 stops at Python's limit.

@@ -2206,17 +2206,35 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_DEPTH(f)      (((KosDynNode *)(f))->u.frame.depth)
 
-/* The widest depth a frame can record, 65535, and the hard cap on the
-   process-wide frame depth limit, which defaults to
-   KOS_FRAME_DEPTH_DEFAULT and is settable from 1 up to this cap. Frames
-   live on the heap, so the limit guards against runaway memory from
-   unbounded non-tail recursion; it is not Python's recursion limit,
-   which sys.setrecursionlimit sets and which CPython enforces by itself
-   where Koskari and Python call each other. */
-#define KOS_FRAME_DEPTH_MAX       UINT16_MAX
+/* The hard cap on the process-wide frame depth limit, which defaults
+   to KOS_FRAME_DEPTH_DEFAULT and is settable from 1 up to this cap.
+   Frames live on the heap, so the limit guards against runaway memory
+   from unbounded non-tail recursion; it is not Python's recursion
+   limit, which sys.setrecursionlimit sets and which CPython enforces by
+   itself where Koskari and Python call each other. Both values are
+   reported in koskari.lib.build_flags.
+
+   Natively the cap is 65535, the widest depth a frame can record.
+   Under Emscripten it is 2000: every Koskari frame an exception
+   crosses adds a traceback entry, CPython frees a traceback chain by
+   recursing once per entry, and that recursion runs on the JavaScript
+   engine's call stack, which CPython's recursion guard does not
+   measure (the guard reads the linear-memory stack, and the dealloc
+   functions use none of it). A chain of about 6000 entries overflows
+   Node's default stack and ends the interpreter, so the cap keeps
+   every traceback well under that. */
+#ifdef __EMSCRIPTEN__
+# define KOS_FRAME_DEPTH_MAX      2000u
+#else
+# define KOS_FRAME_DEPTH_MAX      UINT16_MAX
+#endif
 
 /* The frame depth limit in force until one is set. */
-#define KOS_FRAME_DEPTH_DEFAULT   10000u
+#ifdef __EMSCRIPTEN__
+# define KOS_FRAME_DEPTH_DEFAULT  1000u
+#else
+# define KOS_FRAME_DEPTH_DEFAULT  10000u
+#endif
 
 /* frame is a demand-sync root */
 #define KOS_FRAME_DEMAND          (1u << 0)

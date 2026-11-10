@@ -48,5 +48,12 @@ await micropip.install("koskari", pre=True)
 - Deep native recursion overflows the JavaScript stack. The interpreter
   dies rather than raising `RecursionError`, and the page has to start a
   new one.
+- The frame depth limit defaults to 1000 and is settable up to 2000,
+  against 10000 and 65535 natively; `koskari.lib.build_flags` reports
+  both as `KOS_FRAME_DEPTH_DEFAULT` and `KOS_FRAME_DEPTH_MAX`. Every
+  Koskari frame an exception crosses adds an entry to its traceback, and
+  releasing a traceback much longer than the cap overflows the
+  JavaScript stack in the same way. A tail call adds no frame, so a
+  recursion written as a tail call or a named `let` is not bounded.
 - A `KeyboardInterrupt` that escapes the main program ends the Pyodide
   process.

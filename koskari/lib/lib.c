@@ -71,7 +71,7 @@ static PyObject *lib_set_frame_depth_limit(PyObject *mod, PyObject *arg) {
   if (n == -1 && PyErr_Occurred())
     return NULL;
 
-  if (overflow || n < 1 || n > KOS_FRAME_DEPTH_MAX) {
+  if (overflow || n < 1 || n > (long) KOS_FRAME_DEPTH_MAX) {
     PyErr_Format(PyExc_ValueError,
                  "frame depth limit must be between 1 and %u",
                  (unsigned) KOS_FRAME_DEPTH_MAX);
@@ -91,11 +91,13 @@ static PyMethodDef libmod_methods[] = {
     "(same as module init/clear)" },
   { "get_frame_depth_limit", (PyCFunction) lib_get_frame_depth_limit,
     METH_NOARGS,
-    "Return the process-wide limit on Koskari frame depth (default 10000)" },
+    "Return the process-wide limit on Koskari frame depth, which starts at "
+    "build_flags['KOS_FRAME_DEPTH_DEFAULT']" },
   { "set_frame_depth_limit", (PyCFunction) lib_set_frame_depth_limit,
     METH_O,
     "Set the process-wide limit on Koskari frame depth, from 1 up to "
-    "65535; installing a frame past it raises RecursionError" },
+    "build_flags['KOS_FRAME_DEPTH_MAX']; installing a frame past it "
+    "raises RecursionError" },
   { NULL, },
 };
 

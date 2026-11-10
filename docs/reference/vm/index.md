@@ -25,7 +25,8 @@ these frames; frame depth has its own process-wide limit, a guard
 against runaway memory, and an install past it raises `RecursionError`.
 The limit defaults to 10000; `koskari.lib.set_frame_depth_limit(n)`
 sets it from 1 up to a cap of 65535 and
-`koskari.lib.get_frame_depth_limit()` reads it. A tail call reuses its
+`koskari.lib.get_frame_depth_limit()` reads it. The Pyodide build
+defaults to 1000 with a cap of 2000. A tail call reuses its
 frame.
 
 Alongside the operand stack the evaluator keeps a **dynamic chain** of

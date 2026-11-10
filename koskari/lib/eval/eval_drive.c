@@ -70,8 +70,9 @@ void KosContext_EvalExit(KosContext *ctx) {
 }
 
 
-/* The frame depth limit, default 10000 and settable up to the
-   KOS_FRAME_DEPTH_MAX cap, distinct from Python's recursion limit. */
+/* The frame depth limit, KOS_FRAME_DEPTH_DEFAULT until set and settable
+   up to the KOS_FRAME_DEPTH_MAX cap, distinct from Python's recursion
+   limit. */
 unsigned kos_frame_depth_limit = KOS_FRAME_DEPTH_DEFAULT;
 
 

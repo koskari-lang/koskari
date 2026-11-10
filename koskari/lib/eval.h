@@ -982,9 +982,9 @@ static inline KosOpResult kos_call_installed(KosContext *ctx) {
 
 
 /**
-   The process-wide frame depth limit: KOS_FRAME_DEPTH_DEFAULT (10000)
-   until koskari.lib.set_frame_depth_limit sets it, from 1 up to the
-   KOS_FRAME_DEPTH_MAX cap (65535).
+   The process-wide frame depth limit: KOS_FRAME_DEPTH_DEFAULT until
+   koskari.lib.set_frame_depth_limit sets it, from 1 up to the
+   KOS_FRAME_DEPTH_MAX cap. dynchain.h gives both per platform.
 */
 extern unsigned kos_frame_depth_limit;
 
@@ -1004,9 +1004,9 @@ int kos_eval_recursion_error(void);
    any other.
 
    The limit is Koskari's own guard against runaway heap growth from
-   unbounded non-tail recursion. It defaults to 10000 and is settable
-   up to the KOS_FRAME_DEPTH_MAX cap of 65535, the width of a frame's
-   recorded depth. It does not read Python's recursion limit: a Koskari
+   unbounded non-tail recursion. It defaults to KOS_FRAME_DEPTH_DEFAULT and
+   is settable up to the KOS_FRAME_DEPTH_MAX cap, both per platform in
+   dynchain.h. It does not read Python's recursion limit: a Koskari
    frame takes no C stack and no Python frame object, and CPython
    enforces its own limit where Koskari and Python call each other.
 */

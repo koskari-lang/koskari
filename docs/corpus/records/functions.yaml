@@ -1389,6 +1389,8 @@ notes: a call in tail position reuses its frame, so a self-recursion far past th
 id: function-def-depth-ceiling-010
 feature: macro/compile/def
 source: |-
+  import-from koskari.lib get_frame_depth_limit
+
   def depth [n]:
     if (<= n 0):
       0
@@ -1396,12 +1398,12 @@ source: |-
       + 1 (depth (- n 1))
 
   try:
-    depth 20000
+    depth 100000
   except [RecursionError as: e]:
-    str e
+    == (str e) (+ "Koskari frame depth exceeded (" (str (get_frame_depth_limit)) ")")
 verify:
-  read: "(begin (def depth [n] (cond ((<= n 0) 0) (else: (+ 1 (depth (- n 1)))))) (try (begin (depth 20000)) ([RecursionError as: e] (str e))))"
-  eval: "\"Koskari frame depth exceeded (10000)\""
+  read: "(begin (import-from koskari.lib get_frame_depth_limit) (def depth [n] (cond ((<= n 0) 0) (else: (+ 1 (depth (- n 1)))))) (try (begin (depth 100000)) ([RecursionError as: e] (== (str e) (+ \"Koskari frame depth exceeded (\" (str (get_frame_depth_limit)) \")\")))))"
+  eval: "true"
 references:
   - reference/macros/compile-def.md
   - guide/functions.md

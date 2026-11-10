@@ -17,11 +17,11 @@ Tests for the frame depth limit.
 Koskari frames live on the heap, so a Koskari-to-Koskari call takes no
 C stack and no Python frame object, and sys.getrecursionlimit() does not
 count it. Frame depth is bounded by a process-wide limit, 10000 by
-default and settable up to 65535, the width of the depth a frame
-records, as a guard against runaway memory; exceeding it raises
-RecursionError into the calling frame as an ordinary exception. Where
-Koskari and Python call into each other, Python's own recursion limit
-applies.
+default and settable up to a cap, 65535 natively, both reported in
+koskari.lib.build_flags, as a guard against runaway memory; exceeding
+it raises RecursionError into the calling frame as an ordinary
+exception. Where Koskari and Python call into each other, Python's own
+recursion limit applies.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -31,7 +31,9 @@ applies.
 import sys
 
 from koskari.lib import (
-    demand, get_frame_depth_limit, set_frame_depth_limit)
+    build_flags, demand, get_frame_depth_limit, set_frame_depth_limit)
+
+from tests import needs_native_stack
 
 from . import SpecialsTestCase
 
@@ -40,7 +42,7 @@ import pytest
 pytestmark = pytest.mark.phase_specials
 
 
-FRAME_DEPTH_MAX = 65535
+FRAME_DEPTH_MAX = build_flags["KOS_FRAME_DEPTH_MAX"]
 
 
 DEEP = """
@@ -113,16 +115,24 @@ class TestRecursionLimit(SpecialsTestCase):
         self.assertGreater(seen[-1], limit - 20)
 
 
-    async def test_depth_past_python_limit_at_default(self):
+    async def test_depth_past_python_limit(self):
         """
-        a Koskari recursion five times deeper than the default Python
-        recursion limit completes; the Python limit does not count
-        Koskari frames
+        a Koskari recursion deeper than the Python recursion limit, five
+        times deeper where the frame depth cap allows, completes; the
+        Python limit does not count Koskari frames
         """
 
-        self.assertLess(sys.getrecursionlimit(), 5000)
-        expr, mod = self.compile_expr(DOWN, depth=5000)
-        self.assertEqual(await expr(), 5000)
+        python_limit = sys.getrecursionlimit()
+        depth = min(5 * python_limit, FRAME_DEPTH_MAX - 500)
+        self.assertGreater(depth, python_limit)
+
+        saved = get_frame_depth_limit()
+        set_frame_depth_limit(max(saved, depth + 100))
+        try:
+            expr, mod = self.compile_expr(DOWN, depth=depth)
+            self.assertEqual(await expr(), depth)
+        finally:
+            set_frame_depth_limit(saved)
 
 
     async def test_depth_just_under_limit(self):
@@ -140,8 +150,8 @@ class TestRecursionLimit(SpecialsTestCase):
 
     async def test_depth_at_cap(self):
         """
-        with the limit raised to the 65535 cap, a recursion just under
-        the cap completes and one past it raises
+        with the limit raised to the cap, a recursion just under the cap
+        completes and one past it raises
         """
 
         saved = get_frame_depth_limit()
@@ -178,11 +188,14 @@ class TestRecursionLimit(SpecialsTestCase):
         self.assertEqual(result, 500)
 
 
+    @needs_native_stack
     async def test_mutual_recursion_meets_python_limit(self):
         """
         a recursion that passes through a Python frame object on each
         round trip is bounded by Python's recursion limit, below the
-        number of round trips that limit allows
+        number of round trips that limit allows. Each round trip takes
+        C stack, which the JavaScript stack under Pyodide cannot hold
+        for as many round trips as Python's limit allows
         """
 
         limit = sys.getrecursionlimit()

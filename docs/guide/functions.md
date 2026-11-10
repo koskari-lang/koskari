@@ -158,9 +158,11 @@ calling it is the next iteration.
 A call that is not in tail position adds a frame, up to the frame depth
 limit, 10000 by default; one more raises `RecursionError`.
 `koskari.lib.set_frame_depth_limit(n)` raises or lowers that limit for
-the whole process, up to a cap of 65535. `sys.setrecursionlimit` does
-not change it, but Python's limit does bound a recursion that passes
-through Python code on each call; see
+the whole process, up to a cap of 65535. The Pyodide build defaults to
+1000 with a cap of 2000; see
+[Supported platforms](../project/platforms.md#webassembly).
+`sys.setrecursionlimit` does not change it, but Python's limit does
+bound a recursion that passes through Python code on each call; see
 [Model of evaluation](model-of-evaluation.md#evaluate).
 
 ## Decorators

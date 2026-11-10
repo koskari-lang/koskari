@@ -104,7 +104,9 @@ and `sys.monitoring` sees only the call into a Koskari function; see
 
 Koskari frame depth has its own process-wide limit, 10000 by default,
 which `sys.setrecursionlimit` does not change. A program that recurses
-deeper sets it from Python, up to a cap of 65535:
+deeper sets it from Python, up to a cap of 65535 (1000 and 2000 on the
+Pyodide build, where `koskari.lib.build_flags` reports both as
+`KOS_FRAME_DEPTH_DEFAULT` and `KOS_FRAME_DEPTH_MAX`):
 
 ```python
 from koskari.lib import get_frame_depth_limit, set_frame_depth_limit

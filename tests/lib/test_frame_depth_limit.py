@@ -14,10 +14,12 @@
 """
 tests.lib.test_frame_depth_limit
 
-The process-wide frame depth limit is 10000 by default and settable
-from 1 up to the 65535 cap through koskari.lib.get_frame_depth_limit
-and koskari.lib.set_frame_depth_limit. A frame installed past it raises
-RecursionError naming the limit in force.
+The process-wide frame depth limit is KOS_FRAME_DEPTH_DEFAULT, 10000
+natively, and settable from 1 up to the KOS_FRAME_DEPTH_MAX cap, 65535
+natively, through koskari.lib.get_frame_depth_limit and
+koskari.lib.set_frame_depth_limit; koskari.lib.build_flags reports both.
+A frame installed past the limit raises RecursionError naming the limit
+in force.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -27,11 +29,16 @@ import unittest
 
 import pytest
 
-from koskari.lib import get_frame_depth_limit, set_frame_depth_limit
+from koskari.lib import (
+    build_flags, get_frame_depth_limit, set_frame_depth_limit)
 from koskari.module import load_module_source_async, new_module
 
 
 pytestmark = pytest.mark.phase_lib
+
+
+FRAME_DEPTH_DEFAULT = build_flags["KOS_FRAME_DEPTH_DEFAULT"]
+FRAME_DEPTH_MAX = build_flags["KOS_FRAME_DEPTH_MAX"]
 
 
 SRC = """
@@ -51,11 +58,11 @@ class TestFrameDepthLimitAccess(unittest.TestCase):
 
 
     def test_default(self):
-        self.assertEqual(get_frame_depth_limit(), 10000)
+        self.assertEqual(get_frame_depth_limit(), FRAME_DEPTH_DEFAULT)
 
 
     def test_round_trip(self):
-        for n in (1, 80, 10000, 65535):
+        for n in (1, 80, FRAME_DEPTH_DEFAULT, FRAME_DEPTH_MAX):
             with self.subTest(n=n):
                 self.assertIsNone(set_frame_depth_limit(n))
                 self.assertEqual(get_frame_depth_limit(), n)
@@ -63,7 +70,7 @@ class TestFrameDepthLimitAccess(unittest.TestCase):
 
     def test_out_of_range_refused(self):
         set_frame_depth_limit(500)
-        for n in (0, 65536, -1, 2 ** 80):
+        for n in (0, FRAME_DEPTH_MAX + 1, -1, 2 ** 80):
             with self.subTest(n=n):
                 with self.assertRaises(ValueError):
                     set_frame_depth_limit(n)

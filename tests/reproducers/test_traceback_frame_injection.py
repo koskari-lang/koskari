@@ -244,14 +244,15 @@ class TestDeepRaiseRecord(unittest.IsolatedAsyncioTestCase):
         mod = new_module("tb_deep")
         vars(mod)["__file__"] = "<tb_deep>"
         await load_module_source_async(mod, DEEP_SRC, layout=False)
-        exc = await vars(mod)["caught"](3000)
+        depth = min(3000, get_frame_depth_limit() - 100)
+        exc = await vars(mod)["caught"](depth)
         self.assertIsInstance(exc, ValueError)
 
         traced = [frame.f_globals["__koskari_trace__"]
                   for frame, _ in traceback.walk_tb(exc.__traceback__)
                   if "__koskari_trace__" in frame.f_globals]
         names = [entry["name"] for entry in traced]
-        self.assertEqual(names, ["caught"] + ["boom"] * 3001)
+        self.assertEqual(names, ["caught"] + ["boom"] * (depth + 1))
         ids = [entry["frame"] for entry in traced]
         self.assertEqual(len(set(ids)), len(ids))
         self.assertTrue(all(entry["crossed"] for entry in traced))

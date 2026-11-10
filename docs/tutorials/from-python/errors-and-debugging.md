@@ -141,8 +141,9 @@ message names it: `Koskari frame depth exceeded (10000)`. A call in
 tail position adds no frame, so rewriting the recursion as a tail call
 or a named `let` removes the bound. Otherwise
 `koskari.lib.set_frame_depth_limit(n)` raises the limit up to a cap of
-65535, and `koskari.lib.get_frame_depth_limit()` reads it.
-`sys.setrecursionlimit` changes neither.
+65535, and `koskari.lib.get_frame_depth_limit()` reads it. The Pyodide
+build defaults to 1000 with a cap of 2000. `sys.setrecursionlimit`
+changes neither.
 :::
 
 ## Finding the problem

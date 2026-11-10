@@ -25,15 +25,23 @@ many are waiting.
 """
 
 import time
+import unittest
 
 import pytest
 
-from koskari.lib import get_frame_depth_limit, set_frame_depth_limit
+from koskari.lib import (
+    build_flags, get_frame_depth_limit, set_frame_depth_limit)
 
 from . import SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials
+
+
+FRAME_DEPTH_MAX = build_flags["KOS_FRAME_DEPTH_MAX"]
+
+# the longer run, in passes; each pass adds two frames
+LONG_PASSES = 16000
 
 
 NESTED_SRC = """
@@ -78,6 +86,9 @@ class TestWaitingGoalRetire(SpecialsTestCase):
             best = elapsed if best is None else min(best, elapsed)
         return best
 
+    @unittest.skipIf(
+        FRAME_DEPTH_MAX < 2 * LONG_PASSES + 100,
+        "the frame depth cap is below the passes the timing needs")
     async def test_cost_per_pass_does_not_grow_with_waiting_invokes(self):
         """
         Four times the passes takes about four times as long. A landing
@@ -94,12 +105,11 @@ class TestWaitingGoalRetire(SpecialsTestCase):
 
         expr, mod = self.compile_expr(NESTED_SRC, tick=tick)
 
-        # each pass adds two frames
         saved = get_frame_depth_limit()
         try:
-            set_frame_depth_limit(65535)
-            short = await self.best_time(expr, bound, 4000)
-            long = await self.best_time(expr, bound, 16000)
+            set_frame_depth_limit(FRAME_DEPTH_MAX)
+            short = await self.best_time(expr, bound, LONG_PASSES // 4)
+            long = await self.best_time(expr, bound, LONG_PASSES)
         finally:
             set_frame_depth_limit(saved)
         self.assertLess(long, short * 10, (short, long))
