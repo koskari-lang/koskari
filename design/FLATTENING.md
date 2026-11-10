@@ -6,8 +6,9 @@ context, no nested `koskari_eval`, and no C stack per level. A path that
 fails to flatten is a bug. The invariant is recorded in
 `koskari/lib/CLAUDE.md` (Core invariant: flattening).
 
-This rollup classifies Koskari-to-Koskari call and drive paths. Current
-corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
+This rollup classifies Koskari-to-Koskari call, drive and await paths.
+Current corrective work:
+[interpreter/demand-flattening.md](interpreter/demand-flattening.md).
 
 ## Flattens
 
@@ -33,10 +34,35 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 - **`Procedure` (class `__init__`) called from Koskari.**
   `KosContext_CallInto` with a resume that completes with None. A
   tail call reuses the live frame.
-- **A fresh Koskari coroutine reaching an await.** `kos_settle_value`
-  installs it as a call frame on the running chain, whether it came
-  from a Python wrapper such as `functools.partial` or from a `defer`
-  awaited directly.
+- **An await of a Koskari awaitable.** The settle (`kos_settle_value`)
+  and the `AWAIT` opcode take an awaitable whose type carries the await
+  suite (`kos_await` on `KosEvaluatedTypeObject`, `evaluated.h`) on an
+  await frame: a native frame pushed above the awaiter, uncounted
+  against the frame limit, whose resume is the suite's kind, entered
+  with the owned awaitable. The kind continues the awaitable's chain
+  under that frame, in whatever state the chain is. A fresh
+  coroutine's prepared frame swaps into the await frame as a tail
+  call's does, whether it came from a Python wrapper such as
+  `functools.partial` or from a `defer` (`coro.c`). A coroutine parked
+  at a Python await, started by a Python `send` and left there, splices
+  its whole chain under the await frame (`kos_dyn_span_detach`,
+  `kos_dyn_span_attach`, `dynchain/dyn_gen.c`); the pending Python
+  await moves to the awaiter's context, and the awaiter suspends on the
+  value the coroutine had handed its driver, which the context records
+  at every suspension (`py_await_yielded`). The coroutine is active
+  until its chain passes the await frame, whose resume finishes it,
+  and refuses every entry meanwhile. A Defer delegating to an awaitable
+  with a suite hands it on and is spent (`defer.c`). An awaited
+  `__anext__`, `asend`, `athrow` or `aclose` stepper over a Koskari
+  async generator is a next or throw request on the await frame with
+  the step kind as its resume (`iterate.c`, `eval/eval_iter.c`), and a
+  step a Python drive left parked mid-await splices as a coroutine's
+  chain does, its generator recording that the step runs on a
+  consumer's chain. A Python awaitable, or a Koskari one that is
+  active or done, goes to the Python-protocol drive on the same frame
+  (`kos_await_python`, `eval/eval_await.c`). A splice refused for frame
+  room leaves the chain parked; a fresh coroutine refused is finished,
+  as CPython's is when its first step cannot enter.
 - **Generator construction.** A generator function call binds arguments
   and returns the generator; nothing is evaluated.
 - **Iteration and delegation over KosIter providers.** `for-each`,
@@ -113,7 +139,14 @@ and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry.
 - **Python drives of Koskari generators.** `next` / `send` / `throw` /
   `close` / `list` / `for` from Python through the sync adapter;
   `__anext__` / `asend` / `athrow` / `aclose` through the async steppers
-  (`iterate.c`); coroutine `send` / `throw` / `close` (`coro.c`).
+  (`iterate.c`); coroutine `send` / `throw` / `close` (`coro.c`). A
+  Python `await` of a Koskari coroutine parked at an inner await is
+  refused at `__await__`, as CPython refuses its own; the Koskari
+  await of the same coroutine splices it (Flattens, above).
+- **A Koskari await of an active or finished Koskari awaitable.** The
+  await kind hands a coroutine or stepper that is running, on this or
+  any chain, or already done, to the Python-protocol drive, whose
+  `send` refuses it as in progress or as reused.
 - **The demand API from Python.** `demand_call`, `demand_apply`,
   `demand(...)(...)` (`demand.c`).
 

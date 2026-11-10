@@ -44,6 +44,7 @@ KosDynForeach *kos_dynforeach_new(
   KosDynForeach_RESULT(node) = NULL;
   KosDynForeach_REQ(node)->iter = NULL;
   KosDynForeach_REQ(node)->islots = NULL;
+  KosDynForeach_REQ(node)->send = NULL;
   KosDynForeach_REQ(node)->kind = KOS_IREQ_KIND_NONE;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;

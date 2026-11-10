@@ -1,6 +1,6 @@
 # DeferCoroutine (`defer`) — single-shot await-handle
 
-**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator (push_or_await skips defer; AWAIT and Python await both drive through `__await__`, which consumes the handle). Tests in `tests/lib/test_defer.py`.
+**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator through the await suite (implicit sites take a defer as a plain value; a Koskari await hands a delegating defer's inner on to that inner's own await kind when it has one, spending the handle, and otherwise drives the defer through `__await__`; a Python await drives through `__await__`, which consumes the handle). Tests in `tests/lib/test_defer.py`.
 
 ## Purpose
 
@@ -62,7 +62,7 @@ This preserves Koskari's flattened/greedy default for ordinary calls while still
 
 ### Explicit await
 
-`DeferCoroutine` is **awaitable**. Explicit await — koskari's AWAIT opcode and Python's `await` alike — drives it through `__await__`, which consumes the handle (see the lifecycle model below).
+`DeferCoroutine` is **awaitable**. Python's `await` drives it through `__await__`, which consumes the handle (see the lifecycle model below). Koskari's AWAIT opcode takes it on an await frame through the type's await kind: a DELEGATING handle whose inner carries an await suite of its own, a Koskari coroutine or an async generator stepper, is spent and the inner continues on the awaiter's chain under its own kind; any other handle is driven through `__await__` on that frame.
 
 ### Implicit greedy await
 

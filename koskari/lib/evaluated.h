@@ -226,10 +226,39 @@ static inline void kos_iter_finish(
 }
 
 
+/**
+   The await suite: how the evaluator takes an awaitable of this type
+   onto the running chain instead of driving it through its Python
+   protocol. An await is a native frame whose resume is ka_install:
+   the settle installs the frame, uncounted against the frame limit,
+   and delivers the owned awaitable to the kind as it is, with no
+   state (the kind does not settle). The work the kind installs is
+   what the limit counts, and a kind takes its awaitable before any
+   refusal, so a refused await leaves the awaitable finished. The
+   kind runs as that frame's resume and completes the frame the way a
+   resume on a native frame does: a value in hand returns from the
+   frame (RESULT_FRAME_RETURN); work it stands for replaces the frame
+   (kos_dyn_swap_frame_for_tail) or sets a resume of its own on it and
+   makes its request; an awaitable already in flight hands itself to
+   kos_await_python, the Python-protocol drive on the same frame. Any
+   reference the kind owes is released before it tails. A failed
+   delivery, NULL with the error pending, reaches the kind when a poll
+   between the settle and the hop took a signal and dropped the staged
+   awaitable; the kind declines it.
+   ka_implicit_plain says an implicit site takes the value unawaited,
+   as a Defer handle is; only an explicit await installs it.
+*/
+typedef struct KosAwaitSlots {
+  const KosResumeKind *ka_install;
+  uint8_t ka_implicit_plain;
+} KosAwaitSlots;
+
+
 typedef struct {
   PyTypeObject type;
   KosCallSlots kos_call;
   KosIterSlots kos_iter;
+  KosAwaitSlots kos_await;
 } KosEvaluatedTypeObject;
 
 
@@ -364,6 +393,28 @@ static inline int kos_iter_check(PyObject *obj) {
 
 
 /**
+   Check-and-resolve in one: when obj is an awaitable with an await
+   suite (a KosEvaluated whose suite carries ka_install),
+   store the resolved suite into *out_slots and return 1; otherwise
+   return 0 with *out_slots untouched.
+*/
+static inline int KosAwait_CheckSlots(
+    PyObject *obj,
+    KosAwaitSlots **out_slots) {
+
+  if (! obj || ! KosEvaluated_Check(obj))
+    return 0;
+
+  KosEvaluatedTypeObject *et = KosEvaluated_Resolve(Py_TYPE(obj));
+  if (! et || ! et->kos_await.ka_install)
+    return 0;
+
+  *out_slots = &et->kos_await;
+  return 1;
+}
+
+
+/**
    Bind iter into req for a next request, classified for the fetch
    (kos_iter_fetch): KOS_IREQ_KIND_PROVIDER with islots its suite,
    else islots NULL and PY_SYNC for a type with tp_iternext, PY_ASYNC
@@ -380,6 +431,7 @@ static inline void kos_iter_request_bind_next(
     PyObject *iter) {
 
   req->iter = iter;
+  req->send = NULL;
   if (KosIter_CheckSlots(iter, &req->islots)) {
     req->kind = KOS_IREQ_KIND_PROVIDER;
     return;
@@ -447,6 +499,20 @@ KosIterStepResult kos_iter_step_provider(
     PyObject *iter,
     KosIterSlots *islots,
     PyObject *send_val,
+    PyObject **out);
+
+
+/**
+   kos_iter_step_provider's twin for a throw: ki_throw, with a
+   StopIteration ending the throw read as exhaustion the same way. The
+   pair is borrowed.
+*/
+KosIterStepResult kos_iter_throw_provider(
+    struct KosContext *ctx,
+    PyObject *iter,
+    KosIterSlots *islots,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
     PyObject **out);
 
 

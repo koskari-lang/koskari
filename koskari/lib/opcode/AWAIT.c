@@ -39,6 +39,23 @@ KOS_OP_HANDLER(AWAIT) {
   if (unlikely(! val))
     RESULT_RAISE();
 
+  /* An awaitable with an await suite is taken on its await frame now:
+     the frame is installed with no resume and the kind is hopped into
+     with the owned awaitable, the delivery the staged settle would
+     have made on the next pass. Everything else goes through the
+     settle. */
+  {
+    KosAwaitSlots *slots;
+
+    if (KosAwait_CheckSlots(val, &slots)) {
+      if (unlikely(! kos_await_frame_install(ctx, NULL))) {
+        Py_DECREF(val);
+        RESULT_RAISE();
+      }
+      RESUME_HOP(slots->ka_install, ctx, NULL, val);
+    }
+  }
+
   RESULT_RELAY(ctx, kos_await_dispatch(ctx, val));
 }
 

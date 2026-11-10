@@ -218,6 +218,7 @@ static int context_clear(PyObject *self) {
   }
 
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+  Py_CLEAR(KosContext_PY_AWAIT_YIELDED(ctx));
   Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
   Py_CLEAR(KosContext_PENDING_VALUE(ctx));
   KosExc_Clear(KosContext_EXC_INFO(ctx));
@@ -284,6 +285,7 @@ int KosContext_Recycle(KosContext *ctx) {
   KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+  Py_CLEAR(KosContext_PY_AWAIT_YIELDED(ctx));
   Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
 
   /* residue of the finished run that the next one must not inherit:
@@ -308,6 +310,7 @@ static int context_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosContext_DOMAIN(ctx));
   Py_VISIT(KosContext_PARAM_REFS(ctx));
   Py_VISIT(ctx->py_await_iter);
+  Py_VISIT(ctx->py_await_yielded);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   if (KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg))
     return -1;

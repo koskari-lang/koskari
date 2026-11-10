@@ -232,16 +232,18 @@ void kos_close_report(
 
 /**
    Classify a produced result under ambient async: a non-awaitable, a
-   Defer, or a future/task handle is a completed value; anything else
+   type whose await suite marks it plain at an implicit site (a
+   Defer), or a future/task handle is a completed value; anything else
    awaitable must be awaited before use.
 */
 int KosEval_ResultIsValue(PyObject *result) {
 
   PyTypeObject *typ = Py_TYPE(result);
+  KosAwaitSlots *slots;
 
   if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
     return 1;
-  if (KosDefer_Check(result))
+  if (KosAwait_CheckSlots(result, &slots) && slots->ka_implicit_plain)
     return 1;
   return KosEval_IsFuture(result);
 }
@@ -350,8 +352,8 @@ KOS_OP_INLINE KosIterRequestStatus kos_iter_fetch(
       /* one step through the suite; the end's payload is dropped,
          since a fetch has no use for it, and yield-from, which does,
          steps the provider itself */
-      switch (kos_iter_step_provider(ctx, req->iter, req->islots, NULL,
-                                     out)) {
+      switch (kos_iter_step_provider(ctx, req->iter, req->islots,
+                                     req->send, out)) {
         case KOS_ITER_VALUE:
           return KOS_IREQ_DELIVERED;
         case KOS_ITER_EXHAUSTED:
@@ -778,6 +780,128 @@ KOS_RESUME_KIND_AS_IS_OWNING(kos_next_default_resume_kind, "next",
                              next_default_step_resume, kos_next_state_clear,
                              kos_resume_clone_object,
                              kos_next_state_traverse);
+
+
+/* === The awaited step: anext, asend, athrow, aclose on the await frame ===
+
+   An awaited stepper's await kind (iterate.c) makes a next or throw
+   request on the await frame with one of these kinds as the resume.
+   The element or end reaches the resume on that frame and the resume
+   completes the frame: a yield of the provider returns to whoever
+   awaited. The state is the owned provider, as for a next, so the
+   next kinds' clear and traverse serve. */
+
+
+/**
+   The anext, asend and athrow kinds' resume: an element is returned
+   from the frame; the end, StopIteration or StopAsyncIteration
+   pending, raises StopAsyncIteration carrying the payload, as the
+   async generator protocol answers; any other failure declines.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult astep_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  PyObject *iter = (PyObject *) state;
+  KosIterSlots *islots;
+  int ended = 0;
+
+  if (! value) {
+    if (unlikely(! PyErr_Occurred())) {
+      Py_DECREF(iter);
+      PyErr_SetString(PyExc_SystemError, "awaited step with no delivery");
+      return EVAL_RAISE();
+    }
+    ended = PyErr_ExceptionMatches(PyExc_StopIteration)
+        || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
+  }
+
+  if (KosIter_CheckSlots(iter, &islots))
+    kos_iter_finish(iter, islots, ended);
+  Py_DECREF(iter);
+
+  if (value)
+    RESULT_FRAME_RETURN(ctx, value, NULL);
+  if (! ended)
+    return EVAL_RAISE();
+
+  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    PyObject *payload = NULL;
+
+    if (PyGen_FetchStopIterationValue(&payload) < 0)
+      return EVAL_RAISE();
+    if (payload && payload != Py_None) {
+      PyObject *exc = koskari_StopAsyncIteration_FromValue(payload);
+
+      Py_DECREF(payload);
+      if (exc) {
+        PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
+        Py_DECREF(exc);
+        return EVAL_RAISE();
+      }
+      if (PyErr_Occurred())
+        return EVAL_RAISE();
+    } else {
+      Py_XDECREF(payload);
+    }
+    PyErr_SetNone(PyExc_StopAsyncIteration);
+  }
+  return EVAL_RAISE();
+}
+
+
+/**
+   The aclose kind's resume: the end, or a GeneratorExit the body let
+   through, returns None from the frame; an element means the body
+   yielded under GeneratorExit, which the protocol refuses; any other
+   failure declines.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult aclose_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  PyObject *iter = (PyObject *) state;
+  KosIterSlots *islots;
+  int ended = 0;
+
+  if (! value) {
+    if (unlikely(! PyErr_Occurred())) {
+      Py_DECREF(iter);
+      PyErr_SetString(PyExc_SystemError, "awaited close with no delivery");
+      return EVAL_RAISE();
+    }
+    ended = PyErr_ExceptionMatches(PyExc_StopIteration)
+        || PyErr_ExceptionMatches(PyExc_StopAsyncIteration)
+        || PyErr_ExceptionMatches(PyExc_GeneratorExit);
+  }
+
+  if (KosIter_CheckSlots(iter, &islots))
+    kos_iter_finish(iter, islots, 1);
+  Py_DECREF(iter);
+
+  if (value) {
+    Py_DECREF(value);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator ignored GeneratorExit");
+    return EVAL_RAISE();
+  }
+  if (! ended)
+    return EVAL_RAISE();
+
+  PyErr_Clear();
+  RESULT_FRAME_RETURN(ctx, Py_NewRef(Py_None), NULL);
+}
+
+
+const KosResumeKind kos_astep_resume_kind = {
+  "anext", astep_resume, kos_next_state_clear, kos_resume_clone_object,
+  NULL, 0, kos_next_state_traverse };
+
+const KosResumeKind kos_aclose_resume_kind = {
+  "aclose", aclose_resume, kos_next_state_clear, kos_resume_clone_object,
+  NULL, 0, kos_next_state_traverse };
 
 
 /**

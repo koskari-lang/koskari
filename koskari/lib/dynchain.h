@@ -264,6 +264,9 @@ typedef struct KosIterRequest {
      bound with iter through kos_dyn_iter_request_bind_iter, so the
      step and delivery paths never re-derive it */
   struct KosIterSlots *islots;
+  /* the value a provider step sends into iter, borrowed for the one
+     fetch; NULL for a plain next, which every bind leaves it as */
+  PyObject *send;
   /* KOS_IREQ_KIND_*: how the step drives iter, classified once at bind
      so no step probes the type again */
   uint8_t kind;
@@ -1224,6 +1227,47 @@ void kos_dyngen_rest(KosDynGen *gen);
    resting one, taking it out of the state first.
 */
 void kos_dyngen_free(KosDynGen *gen);
+
+
+/**
+   A chain at rest between contexts: the span from head, the chain's
+   top, down to root, its bottom node with no parent, each node's
+   outward effect taken back and its frames counted. A parked
+   coroutine's or stepper's chain travels onto an awaiter's chain in
+   one of these; the generator's own resting span is its KosGenState.
+*/
+typedef struct KosDynSpan {
+  struct KosDynNode *head;
+  struct KosDynNode *root;
+  uint16_t nframes;
+  uint8_t installs;
+} KosDynSpan;
+
+
+/**
+   Take ctx's whole chain off it as a resting span. The chain must be
+   at rest, parked at a suspension with nothing running on it. Each
+   node's outward effect is taken back (kos_dyn_extent_freeze), the
+   frames are counted for the attach's room check, and ctx is left
+   with no chain and cleared registers; everything else it holds stays.
+   Cannot fail.
+*/
+void kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span);
+
+
+/**
+   Put a resting span onto ctx's chain under its top. The frames are
+   checked for room above the live frame and renumbered from its
+   depth, each node's effect is put back over ctx's tables, the root
+   is linked under the top with its unwind caches naming the live
+   frame and block, the registers follow the span's head, and every
+   frame of the span takes the live frame's demand bit. Returns 0 with
+   the span emptied, or -1 with PyErr set and the span resting as it
+   was: refused for room before anything moved, or an effect's install
+   failed with the effects put back out. A context with no chain takes
+   the span as its whole chain.
+*/
+int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span);
 
 
 /**

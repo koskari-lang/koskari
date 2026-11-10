@@ -1,12 +1,15 @@
-;; Reproducer: a fresh Koskari coroutine reaching the await path is
-;; installed as a call frame on the running chain, not driven on its
-;; own context. A Python wrapper (functools.partial, a helper) that
-;; calls a Koskari function returns such a coroutine; awaiting it, or a
+;; Reproducer: a Koskari coroutine reaching the await path continues
+;; on the running chain, not driven on its own context. A fresh one, as
+;; a Python wrapper (functools.partial, a helper) calling a Koskari
+;; function returns, is installed as a call frame; awaiting it, or a
 ;; defer over it, runs on the caller's chain and meets the caller's
-;; frame-depth limit. sleeper_partial and make_coroutine are injected by
-;; the test.
+;; frame-depth limit. One Python already started and left parked at an
+;; await splices its chain under the awaiter and continues from its
+;; suspend point. sleeper_partial, Suspender and handled are injected
+;; by the test.
 
 
+(import _thread)
 (import-from functools partial)
 (import-from asyncio sleep)
 (import-from koskari.lib defer demand)
@@ -36,6 +39,10 @@
   (+ a b))
 
 
+(def make_defer []
+  (defer add 1 2))
+
+
 (def await_object [c]
   (await c))
 
@@ -47,6 +54,72 @@
 
 (def demand_over_partial []
   ((demand sleeper_partial)))
+
+
+(define-parameter p "root")
+
+
+(def wait_value []
+  (await (Suspender)))
+
+
+(def wait_on [aw]
+  (await aw))
+
+
+(def wait_then_read []
+  (await (Suspender))
+  p)
+
+
+(def wait_guarded []
+  (try
+    (await (Suspender))
+    ([e ValueError] "caught")))
+
+
+(def await_under [c]
+  (parameterize [[p "inner"]]
+    (await c)))
+
+
+(def deep_wait [n]
+  (if (> n 0)
+      (+ 1 (deep_wait (- n 1)))
+      (begin (await (Suspender)) 0)))
+
+
+(def wait_in_handler []
+  (try
+    (raise (ValueError "inside"))
+    ([e ValueError]
+      (await (Suspender))
+      (handled))))
+
+
+(def await_then_handled [c]
+  #((await c) (handled)))
+
+
+(def catch_await [aw]
+  (try
+    (await aw)
+    ([e Exception] (str (type e)))))
+
+
+(def two_awaits [first second]
+  (define r1 (catch_await first))
+  (define r2 (await second))
+  #(r1 r2))
+
+
+(def demand_await [c]
+  ((demand await_object) c))
+
+
+(def await_after_interrupt [c]
+  (_thread.interrupt_main)
+  (await c))
 
 
 ;; The end.

@@ -23,13 +23,17 @@ being driven on its own context.
 """
 
 
+import asyncio
 import functools
 import os
+import signal
+import sys
 import unittest
 
 import pytest
 
-from koskari.lib import KoskariSyncViolation, get_frame_depth_limit
+from koskari.lib import (
+    KoskariSyncViolation, get_frame_depth_limit, set_frame_depth_limit)
 from koskari.module import init_module, load_module_async, new_module
 
 
@@ -37,6 +41,41 @@ pytestmark = pytest.mark.phase_reproducers
 
 _SCRIPT = os.path.join(
     os.path.dirname(__file__), 'scripts', 'coroutine_splice.ki')
+
+
+class Suspender:
+    """
+    A Python awaitable that suspends once with "suspended" and
+    completes with "woken"
+    """
+
+    def __await__(self):
+        yield "suspended"
+        return "woken"
+
+
+class Twice:
+    """
+    A Python awaitable that suspends with "first", then "second", and
+    completes with "woken"
+    """
+
+    def __await__(self):
+        yield "first"
+        yield "second"
+        return "woken"
+
+
+class Interrupted(Exception):
+    """
+    Raised by the SIGINT handler the signal test installs; the
+    interrupt is raised with _thread.interrupt_main, which took no
+    signal argument before Python 3.10
+    """
+
+
+def raise_interrupted(signum, frame):
+    raise Interrupted(signum)
 
 
 class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
@@ -49,6 +88,9 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         init_module(mod, os.path.abspath(_SCRIPT))
         await load_module_async(mod)
         vars(mod)['sleeper_partial'] = functools.partial(mod.sleeper)
+        vars(mod)['Suspender'] = Suspender
+        vars(mod)['Twice'] = Twice
+        vars(mod)['handled'] = lambda: sys.exc_info()[1]
         return mod
 
 
@@ -84,22 +126,179 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
             coro.send(None)
 
 
-    async def test_started_coroutine_refuses_a_second_awaiter(self):
+    async def test_started_coroutine_is_spliced(self):
         """
-        A coroutine Python already started owes its next reply to the
-        party that received its yield; a Koskari await of it is a second
-        awaiter and is refused, as CPython refuses one, rather than
-        taken fresh onto the chain or driven in the first party's place
+        A coroutine Python started and left parked at an await splices
+        onto the awaiter's chain and completes there; the object is
+        spent for Python afterwards
         """
 
         mod = await self.load_module()
         coro = mod.sleeper()
         coro.send(None)
-        with self.assertRaises(RuntimeError) as caught:
-            await mod.await_object(coro)
+        self.assertEqual(await mod.await_object(coro), "woke")
+        with self.assertRaises(RuntimeError):
+            coro.send(None)
+
+
+    def test_splice_resuspends_on_the_parked_await(self):
+        """
+        The awaiter suspends on the value the parked coroutine handed
+        its driver, and the awaiter's driver completes that await: the
+        result lands at the coroutine's suspend point and its return is
+        the awaiter's value
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_value()
+        self.assertEqual(c.send(None), "suspended")
+
+        outer = mod.await_object(c)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(RuntimeError) as active:
+            c.send(None)
         self.assertEqual(
-            str(caught.exception), "coroutine is being awaited already")
-        coro.close()
+            str(active.exception), "coroutine already being awaited")
+
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
+        with self.assertRaises(RuntimeError) as spent:
+            c.send(None)
+        self.assertEqual(
+            str(spent.exception), "cannot reuse already awaited coroutine")
+
+
+    def test_splice_resuspends_on_the_latest_forwarded_value(self):
+        """
+        A Python driver that forwarded into the parked await and got a
+        second yield leaves the coroutine parked on that one; the splice
+        re-suspends the awaiter on it, not on the first
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_on(mod.Twice())
+        self.assertEqual(c.send(None), "first")
+        self.assertEqual(c.send(None), "second")
+
+        outer = mod.await_object(c)
+        self.assertEqual(outer.send(None), "second")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
+
+
+    def test_spliced_coroutine_sees_the_awaiters_parameterize(self):
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_then_read()
+        self.assertEqual(c.send(None), "suspended")
+
+        outer = mod.await_under(c)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "inner")
+
+
+    def test_throw_from_the_awaiters_driver_lands_at_the_suspend_point(self):
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_guarded()
+        self.assertEqual(c.send(None), "suspended")
+
+        outer = mod.await_object(c)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(StopIteration) as done:
+            outer.throw(ValueError("t"))
+        self.assertEqual(done.exception.value, "caught")
+
+
+    def test_demand_over_a_spliced_chain_refuses_every_frames_await(self):
+        """
+        A chain parked in a callee splices under a demand drive: the
+        callee's await is refused, and so is the await the caller frame
+        beneath it makes once the callee returns, since every spliced
+        frame carries the demand bit
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.two_awaits(Suspender(), Suspender())
+        self.assertEqual(c.send(None), "suspended")
+
+        d = mod.demand_await(c)
+        with self.assertRaises(KoskariSyncViolation):
+            d.send(None)
+
+
+    def test_spliced_handler_keeps_its_handled_exception(self):
+        """
+        A coroutine parked inside an except handler brings the handler's
+        exception with it: handler-visible again on the awaiter's chain
+        after the splice, and gone once the handler is left
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_in_handler()
+        self.assertEqual(c.send(None), "suspended")
+
+        outer = mod.await_then_handled(c)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        inside, after = done.exception.value
+        self.assertIsInstance(inside, ValueError)
+        self.assertEqual(str(inside), "inside")
+        self.assertIsNone(after)
+
+
+    def test_signal_pending_at_the_await_raises_at_the_site(self):
+        """
+        A signal taken by the poll between the settle and the await
+        kind drops the staged awaitable and delivers a failure to the
+        kind, which declines it: the handler's exception raises at the
+        await site, for a fresh coroutine and for a defer over one, and
+        the coroutine never started stays closable
+        """
+
+        mod = asyncio.run(self.load_module())
+        saved = signal.signal(signal.SIGINT, raise_interrupted)
+        try:
+            c = mod.add(1, 2)
+            outer = mod.await_after_interrupt(c)
+            with self.assertRaises(Interrupted):
+                outer.send(None)
+            c.close()
+
+            d = mod.make_defer()
+            outer = mod.await_after_interrupt(d)
+            with self.assertRaises(Interrupted):
+                outer.send(None)
+            d.close()
+        finally:
+            signal.signal(signal.SIGINT, saved)
+
+
+    def test_room_refused_splice_leaves_the_coroutine_parked(self):
+        """
+        A parked chain the awaiter has no room for is refused at the
+        await site and stays where it was, drivable by Python
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.deep_wait(100)
+        self.assertEqual(c.send(None), "suspended")
+
+        saved = get_frame_depth_limit()
+        set_frame_depth_limit(50)
+        try:
+            outer = mod.await_object(c)
+            with self.assertRaisesRegex(RecursionError, "frame depth"):
+                outer.send(None)
+        finally:
+            set_frame_depth_limit(saved)
+
+        with self.assertRaises(StopIteration) as done:
+            c.send(None)
+        self.assertEqual(done.exception.value, 100)
 
 
     async def test_demand_denies_a_wrapped_suspension(self):

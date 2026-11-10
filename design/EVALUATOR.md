@@ -1253,6 +1253,8 @@ flowchart TD
     subgraph py["Plain Python callable"]
         vc["PyObject_Vectorcall on the window;<br/>drop window"]
         poa["push_or_await"]
+        suite{"await suite?"}
+        aframe["push the await frame uncounted;<br/>stage the awaitable for its kind"]
         aw{"awaitable and<br/>not a future?"}
         eager["eager step: __await__, send(None)"]
         done{"StopIteration?"}
@@ -1282,7 +1284,9 @@ flowchart TD
     coop -->|no: NORMAL| relay
     coop -->|yes| repro
 
-    cls -->|Python| vc --> poa --> aw
+    cls -->|Python| vc --> poa --> suite
+    suite -->|yes| aframe --> repro
+    suite -->|no| aw
     aw -->|no: push value| relay
     aw -->|yes| eager --> done
     done -->|yes: push value| relay
@@ -1799,8 +1803,10 @@ It opens with the live registers -- `dyn_top`, `frame`, `code`, **`block`**
 chain), `namespace`, `pc`, `acting_pc` -- then `goal`, `pending_value`,
 `breaker`, `recursion_limit`, `terminal`, `suspension_event` and
 `flags`, followed by `token`, `domain`, `param_refs`, the Python await
-bridge (`py_resume_inject`, `py_await_iter`), `entry_call`, and
-`exc_info`. Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`**
+bridge (`py_resume_inject`, `py_await_iter`, and `py_await_yielded`,
+the value the last AWAIT suspension handed the driver, kept while
+suspended so a chain spliced onto another context can be suspended on
+it again), `entry_call`, and `exc_info`. Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`**
 nodes (`kos_dyndelim_*`, `KosDynDelim_*`), not in separate context slots.
 Async **WITH** enter/exit suspension does **not** use separate `KosContext`
 slots: state lives on the `KosDynWith` node (`phase`, `ob`);
@@ -1829,6 +1835,7 @@ struct KosContext {
   PyObject *param_refs;
   PyObject *py_resume_inject;
   PyObject *py_await_iter;
+  PyObject *py_await_yielded;
   const struct KosEntryCall *entry_call;
   KosExcState exc_info;
 };
@@ -2001,14 +2008,15 @@ template bottom (**`kos_chain_detach_template`**), resolve resume frame
 **KosCoroutine** (coro.c):
 - Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
-- State machine: NEW → RUNNING → WAITING_PY / YIELDED → DONE
-- Created by an Expression (`KosCoroutine_NewFromCode`) or by a Function call from Python (`KosCoroutine_NewFromFrame` over the function's ready frame); the record holds the frame until the first send wraps it in a context, or a Koskari await takes it (`KosCoroutine_TakeFresh`); send and throw call `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
+- State machine: NEW → RUNNING → WAITING_PY / YIELDED → DONE. WAITING_PY is the parked state a Koskari await splices, a chain at rest on the coroutine's own context at a Python await; YIELDED, a chain at rest at a yield, is driven through the Python protocol only, which refuses a Koskari await of it. RUNNING with `in_send` set is active, on its own context under a Python drive or spliced onto an awaiter's chain, and every entry is refused while it lasts.
+- Created by an Expression (`KosCoroutine_NewFromCode`) or by a Function call from Python (`KosCoroutine_NewFromFrame` over the function's ready frame); the record holds the frame until the first send wraps it in a context, or a Koskari await takes it (`KosCoroutine_TakeFresh`, swapped into the await frame); send and throw call `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
+- A Koskari await of a coroutine parked at a Python await splices its chain under the await frame (`coroutine_splice`): the chain detaches from the coroutine's context as a span and attaches under the awaiter's live frame, the pending await iterator and the value it yielded move to the awaiter's context, the await frame's resume finishes the coroutine when the chain passes it by return or raise, and the coroutine's own context is released. The awaiter then suspends on that same yielded value, and its driver completes the await. The Python-side `__await__` of a parked coroutine is still refused, as CPython refuses one with `cr_await` set.
 
 **KosPyAsyncGen** (iter.c):
 - Wraps `KosContext` for async generator protocol
 - `__aiter__` returns self
 - `__anext__` returns a stepper awaitable (`KosIterAdapt_Anext`, `iterate.c`)
-- When stepped from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when stepped from Python (`__anext__`), the stepper enters `koskari_eval` on the adapter's context (see **Eval Entry** for the full `koskari_eval` signature).
+- When stepped from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when stepped from Python (`__anext__`), the stepper enters `koskari_eval` on the adapter's context (see **Eval Entry** for the full `koskari_eval` signature). A stepper awaited from Koskari is taken on an await frame: not yet driven, its step is a next or throw request on that frame with the step kind as the resume; parked mid-await by a Python drive, its chain splices under the frame (`stepper_splice`) and the awaiter suspends on the pending await, the generator's busy mark recording a step on a consumer's chain.
 
 #### Synchronous entry points (demand / tp_iter)
 
@@ -2043,6 +2051,8 @@ The evaluator **auto-awaits** only in two places:
 2. **AWAIT opcode**: The value on TOS is explicitly awaited; the VM suspends or injects the result.
 
 All other opcodes push their result with **no** automatic await. That includes: CONST, VAR, GLOBALS, LOCALS, FAST, getattr, subscript, binary ops, yield-from yielded or final value, and any value that was already awaited or is not an awaitable. The implementation uses a push-only path for every opcode except CALL's Python result and AWAIT (`push_or_await`). This avoids re-awaiting delegate results from YIELD_FROM and keeps semantics predictable.
+
+At both sites an awaitable whose type carries the await suite (`kos_await`, `evaluated.h`) is not eager-stepped: the settle pushes an await frame above the awaiter, uncounted against the frame limit, with the suite's kind as its resume, and stages the awaitable for the prologue's delivery; the AWAIT opcode pushes the frame and hops into the kind directly. The kind continues the awaitable's chain under that frame (`coro.c`, `defer.c`, `iterate.c`), or hands an awaitable it cannot take to `kos_await_python`, the eager step as a thread function on the same frame, whose suspension sets a pass-through resume so the revive's delivery returns from the frame. A type whose suite marks it plain at implicit sites (a Defer) is a value there, and `KosEval_ResultIsValue` reads that flag.
 
 #### AWAIT resume and pending WITH exit
 

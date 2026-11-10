@@ -79,6 +79,11 @@ PyObject *KosContext_PythonAwaitIter(KosContext *ctx) {
 }
 
 
+PyObject *KosContext_PythonAwaitYielded(KosContext *ctx) {
+  return KosContext_PY_AWAIT_YIELDED(ctx);
+}
+
+
 void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val) {
 
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));

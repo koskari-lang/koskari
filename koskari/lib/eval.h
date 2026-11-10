@@ -316,6 +316,20 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_resume_live(
     void *insn,
     PyObject *val);
 
+/**
+   The Python-protocol drive of an awaitable, on the live native frame:
+   where an await suite's kind sends an awaitable it cannot take, and
+   where the settle sends one with no suite. awaitable is owned and
+   consumed. The eager first step's completion returns from the frame;
+   a suspension sets the frame's resume to return the revive's
+   delivery and suspends with the yielded value; a failure raises.
+   state is unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_await_python(
+    KosContext *ctx,
+    void *state,
+    PyObject *awaitable);
+
 
 /* === Threaded control transfer === */
 
@@ -703,6 +717,34 @@ KosOpResult KosContext_NextResume(
     void *state);
 
 
+/**
+   KosContext_NextResumeBound's twin for a throw: the bound provider
+   takes throw_typ and throw_exc through its suite's throw, and what
+   comes back is routed to resume the same way. req must be bound to a
+   provider. The pair is borrowed.
+*/
+KosOpResult KosContext_ThrowResumeBound(
+    KosContext *ctx,
+    const KosIterRequest *req,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    const KosResumeKind *resume,
+    void *state);
+
+
+/**
+   The resume kinds of a provider step taken for an awaited anext,
+   asend, athrow or aclose on the await frame (the stepper's await
+   kind, iterate.c): the state is the owned provider.
+   kos_astep_resume_kind returns the element from the frame and raises
+   StopAsyncIteration with the payload at the end;
+   kos_aclose_resume_kind returns None at the end or on a GeneratorExit
+   and refuses an element.
+*/
+extern const KosResumeKind kos_astep_resume_kind;
+extern const KosResumeKind kos_aclose_resume_kind;
+
+
 /* === KosContext: VM execution context === */
 
 /**
@@ -829,6 +871,10 @@ struct KosContext {
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
   PyObject *py_await_iter;     /* iterator from __await__() when suspended on AWAIT */
+  PyObject *py_await_yielded;  /* the value the AWAIT suspension handed to
+                                  the driver, kept while suspended so a
+                                  chain moved to another context can be
+                                  suspended on it again; NULL otherwise */
 
   /* --- Entry call (set by a Python-boundary entry on a fresh context):
      koskari_eval installs it at entry, then clears it. Borrowed; the
@@ -860,6 +906,7 @@ extern PyTypeObject KosContextType;
 #define KosContext_PARAM_REFS(c)            (((KosContext *)(c))->param_refs)
 #define KosContext_GOAL(c)                   (((KosContext *)(c))->goal)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
+#define KosContext_PY_AWAIT_YIELDED(c)       (((KosContext *)(c))->py_await_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_ENTRY_CALL(c)             (((KosContext *)(c))->entry_call)
 #define KosContext_EXC_INFO(c)               (&((KosContext *)(c))->exc_info)
@@ -1272,6 +1319,15 @@ KosEvaluatorToken *KosContext_Token(const KosContext *ctx);
 
 void KosContext_PythonAwaitClearIter(KosContext *ctx);
 PyObject *KosContext_PythonAwaitIter(KosContext *ctx);
+
+/**
+   The value the context's AWAIT suspension handed to its driver,
+   borrowed; NULL when the context is not suspended on an await. Set
+   by the await event, replaced by a re-suspension at the revive and
+   by a driver's forward into the await iterator that yields again,
+   and cleared when the revive resumes the chain.
+*/
+PyObject *KosContext_PythonAwaitYielded(KosContext *ctx);
 void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val);
 
 /**

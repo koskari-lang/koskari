@@ -322,10 +322,12 @@ elector would add is classifying once per site instead of per step,
 and the ladder it replaces is four checks. Not built: measure before
 building. The region form (`ITER_NEXT`) is node-style below.
 
-**AWAIT**. `push_or_await_plain` is a type-level gate followed by a Defer
-probe, a future probe, and the eager step. Electors keyed on the awaited
-type: `KosCoroutine`, `KosDefer`, `PyCoro`, generic `am_await`. Moderate;
-the gate is already two loads.
+**AWAIT**. The settle is a type-level gate, one await-suite check, a
+future probe, and the eager step; the per-type work is the suite's
+kind, a resume on the await frame, so the suite already is the
+dispatch an elector would add. Electors keyed on the awaited type
+would be `PyCoro` against generic `am_await` on the foreign side only.
+Low; the gate is already two loads.
 
 **OBJECT_OPERAND, OBJECT_INPLACE, FAST_INPLACE, FAST_INPLACE_CONST**.
 Built: the exact `PyLong` pair and the exact `PyFloat` pair per

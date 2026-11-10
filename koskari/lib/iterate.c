@@ -241,7 +241,7 @@ typedef struct {
 } KosIterStepper;
 
 
-static PyTypeObject KosIterStepperType;
+static KosEvaluatedTypeObject KosIterStepperType;
 
 
 /**
@@ -470,6 +470,9 @@ static int stepper_resume_await(
     Py_XDECREF(send_val);
 
     if (r == PYGEN_NEXT) {
+      /* the context's record of what the suspension handed out
+         follows the forward, for a splice of this parked step */
+      Py_XSETREF(KosContext_PY_AWAIT_YIELDED(st->ctx), Py_NewRef(step));
       *still = step;
       return 1;
     }
@@ -1021,22 +1024,181 @@ static PyObject *stepper_repr(PyObject *self) {
 }
 
 
-static PyTypeObject KosIterStepperType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+/**
+   Splice a step parked mid-await on the stepper's context under the
+   await frame, and suspend the awaiter on what it was parked on. The
+   room for the chain is checked first, with the chain still parked,
+   so a refusal leaves the stepper as it was. The chain detaches from
+   the stepper's context and attaches under the await frame, whose
+   resume is the step kind the priming chose, the provider its state,
+   so the chain's yield or end reaches it as a flattened step's does; a
+   GEN at the chain's root records that its step now runs on a
+   consumer's chain. The pending Python await moves to the awaiter's
+   context, the provider reference moves to the resume, and the stepper
+   is spent. An attach that fails after the detach puts the chain back
+   on the stepper's context, or, failing that too, spends the step,
+   finishing the provider and freeing the chain. st is owned and
+   released here.
+*/
+static KosOpResult stepper_splice(KosContext *ctx, KosIterStepper *st) {
 
-  .tp_name = "koskari.lib.async_generator_asend",
-  .tp_basicsize = sizeof(KosIterStepper),
-  .tp_itemsize = 0,
-  .tp_dealloc = stepper_dealloc,
-  .tp_repr = stepper_repr,
-  .tp_as_async = &stepper_async_methods,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "KosIter provider step awaitable",
-  .tp_traverse = stepper_traverse,
-  .tp_clear = stepper_clear,
-  .tp_iter = PyObject_SelfIter,
-  .tp_iternext = stepper_iternext,
-  .tp_methods = stepper_methods,
+  KosContext *own = st->ctx;
+  KosDynFrame *await_frame = KosContext_FRAME(ctx);
+  const KosResumeKind *kind =
+      st->closing ? &kos_aclose_resume_kind : &kos_astep_resume_kind;
+  KosDynSpan span;
+  PyObject *yielded;
+
+  if (kos_eval_check_frame_room(
+          ctx, await_frame,
+          kos_dyn_frame_count(KosContext_DYN_TOP(own), NULL)) < 0) {
+    Py_DECREF(st);
+    return EVAL_RAISE();
+  }
+
+  kos_dyn_span_detach(own, &span);
+  if (KosDynNode_IS_GEN(span.root))
+    KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_CONSUMER;
+  if (kos_dyn_span_attach(ctx, &span) < 0) {
+    if (KosDynNode_IS_GEN(span.root))
+      KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_OWN;
+    if (kos_dyn_span_attach(own, &span) < 0) {
+      /* the chain can rest nowhere: the step is spent, which finishes
+         the provider so it is not left busy forever, and frees the
+         chain through the stepper's context */
+      KosContext_DYN_TOP(own) = span.head;
+      stepper_spend(st);
+    }
+    Py_DECREF(st);
+    return EVAL_RAISE();
+  }
+
+  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), KosContext_PY_AWAIT_ITER(own));
+  KosContext_PY_AWAIT_ITER(own) = NULL;
+  Py_XSETREF(KosContext_PY_RESUME_INJECT(ctx),
+             KosContext_PY_RESUME_INJECT(own));
+  KosContext_PY_RESUME_INJECT(own) = NULL;
+  yielded = KosContext_PY_AWAIT_YIELDED(own);
+  KosContext_PY_AWAIT_YIELDED(own) = NULL;
+
+  KosDynFrame_RESUME_KIND(await_frame) = kind;
+  KosDynFrame_RESUME_STATE(await_frame) = st->provider;
+  st->provider = NULL;
+  st->awaiting = 0;
+  st->drive_mode = 0;
+  Py_CLEAR(st->ctx);
+  st->ctx_owned = 0;
+  Py_DECREF(st);
+
+  if (unlikely(! yielded)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "parked step with nothing to suspend on");
+    return EVAL_RAISE();
+  }
+  return EVAL_AWAIT(yielded);
+}
+
+
+/**
+   The await suite's kind: the step the stepper stands for continues
+   on the await frame. Not yet driven, it is taken here as a next or
+   throw request on the frame, with the resume the adapter's priming
+   chose completing the frame with the element, the end, or the close's
+   None; the provider reference moves to the resume's state and the
+   stepper is spent, so a later await from Python meets the reuse
+   guard. Parked mid-await on its own context by a Python drive, its
+   chain splices under the await frame and the awaiter suspends on the
+   same await (stepper_splice). Running, or spent, it is awaited
+   through its protocol, which refuses it.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosIterStepper *st = (KosIterStepper *) value;
+  const KosResumeKind *kind;
+  KosIterRequest req;
+  PyObject *provider;
+  KosOpResult r;
+
+  if (! value)
+    return EVAL_RAISE();
+
+  if (st->provider && st->awaiting && ! st->running && st->ctx
+      && KosContext_DYN_TOP(st->ctx))
+    RESULT_RELAY(ctx, stepper_splice(ctx, st));
+
+  if (! st->provider || st->started || st->awaiting || st->running)
+    TAILCALL(kos_await_python, ctx, state, value);
+
+  provider = st->provider;
+  st->provider = NULL;
+  kos_iter_request_bind_next(&req, provider);
+  req.send = st->send_value;
+  kind = st->closing ? &kos_aclose_resume_kind : &kos_astep_resume_kind;
+
+  if (st->is_throw) {
+    r = KosContext_ThrowResumeBound(ctx, &req, st->throw_typ,
+                                    st->throw_exc, kind, provider);
+    /* A throw that found the provider already finished did nothing:
+       the end is in hand, StopIteration pending for the resume set on
+       the frame. An athrow completes quietly with None there, as
+       CPython's does, staged for that resume; a provider that took the
+       throw and then ended raises StopAsyncIteration through it; aclose
+       answers None at either end through its own kind. */
+    if (! st->closing && r.kind == KOS_RES_RESUME
+        && PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      PyErr_Clear();
+      KosContext_StageDelivery(ctx, Py_NewRef(Py_None));
+      r = EVAL_REPROLOGUE();
+    }
+  } else {
+    r = KosContext_NextResumeBound(ctx, &req, kind, provider);
+  }
+
+  Py_CLEAR(st->send_value);
+  Py_CLEAR(st->throw_typ);
+  Py_CLEAR(st->throw_exc);
+  Py_DECREF(value);
+
+  /* a request that failed before it deferred (the provider busy, a
+     throw into no provider) set no resume, so the provider reference
+     that moved here has no owner but this frame: release it */
+  if (r.kind == KOS_RES_RAISE)
+    Py_DECREF(provider);
+  if (r.kind == KOS_RES_REPROLOGUE)
+    RESULT_REPROLOGUE(ctx);
+  RESULT_ENTRY(ctx, r, kind, provider);
+}
+
+KOS_RESUME_KIND_AS_IS(stepper_await_kind, "await step",
+                      stepper_await_resume, NULL, NULL);
+
+
+static KosEvaluatedTypeObject KosIterStepperType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.async_generator_asend",
+    .tp_basicsize = sizeof(KosIterStepper),
+    .tp_itemsize = 0,
+    .tp_dealloc = stepper_dealloc,
+    .tp_repr = stepper_repr,
+    .tp_as_async = &stepper_async_methods,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "KosIter provider step awaitable",
+    .tp_traverse = stepper_traverse,
+    .tp_clear = stepper_clear,
+    .tp_iter = PyObject_SelfIter,
+    .tp_iternext = stepper_iternext,
+    .tp_methods = stepper_methods,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_await = {
+    .ka_install = &stepper_await_kind,
+    .ka_implicit_plain = 0,
+  },
 };
 
 
@@ -1054,7 +1216,8 @@ static PyObject *stepper_new_ex(
     PyObject *throw_exc,
     int closing) {
 
-  KosIterStepper *st = PyObject_GC_New(KosIterStepper, &KosIterStepperType);
+  KosIterStepper *st = PyObject_GC_New(
+      KosIterStepper, KOS_EVALUATED_PYTYPE(KosIterStepperType));
   if (! st)
     return NULL;
 
@@ -1701,7 +1864,7 @@ int koskari_iterate_init(PyObject *mod) {
 
   STR_CONST(iterate_str_name, "__name__");
 
-  if (PyType_Ready(&KosIterStepperType) ||
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosIterStepperType)) ||
       PyType_Ready(KOS_EVALUATED_PYTYPE(KosPyIterType)))
     return -1;
 

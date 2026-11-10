@@ -171,9 +171,16 @@ to `KosCoroutine_NewFromFrame`; yielding code goes to
   from the `KosContext` freelist (`eval_context.c`, cap 256, drained by
   `koskari_eval_clear`), starting from the snapshot, and the record lets
   go of both.
-- The Koskari splice (`KosCoroutine_TakeFresh`) takes the frame itself:
-  the awaiter checks frame room and pushes it ready; the snapshot is
-  dropped, the grafted frame runs under the awaiter's dynamic state.
+- The Koskari await of a fresh record (`KosCoroutine_TakeFresh` from
+  the coroutine's await kind) takes the frame itself: it swaps into the
+  await frame as a tail call's does, after a room check at that frame's
+  depth; the snapshot is dropped, the grafted frame runs under the
+  awaiter's dynamic state. A record parked at a Python await after a
+  Python send splices its whole chain under the await frame instead
+  (`coroutine_splice`): the pending await iterator and the value it
+  yielded move to the awaiter's context, the record is active and
+  refuses every entry until the chain passes the await frame, whose
+  resume finishes it, and its own context is released at the splice.
 - Completion (`coroutine_settle`, `coroutine_close`, through
   `coroutine_finish`) marks the record done and releases its context
   then, so a gather holding finished coroutines holds no contexts.

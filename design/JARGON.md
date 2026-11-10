@@ -29,6 +29,16 @@ caller. Futures and Tasks are exempt at implicit sites (they are
 handles by convention; only explicit await drives them), as are Defer
 objects. Contrast: the demand path.
 
+## await frame
+
+The native frame an await of a Koskari awaitable runs on: pushed above
+the awaiter, uncounted against the frame limit, with the awaitable's
+await kind (its type's await suite) as the resume. The kind continues
+the awaitable's chain under it, a fresh coroutine's frame swapped in,
+a parked chain spliced beneath it, a step requested on it, and the
+frame's return lands the awaited value where the awaiter's push would
+have. Reference: FLATTENING.md.
+
 ## boundary
 
 The seam where the python calling convention and the evaluator loop
@@ -111,7 +121,9 @@ Advancing a freshly obtained awaitable by one `send(None)` immediately,
 so an awaitable that completes without suspending yields its value with
 no suspension machinery. Only a genuine suspension records the
 in-flight iterator and suspends the evaluator. The payload that escapes
-to the event loop has therefore always been stepped once already.
+to the event loop has therefore always been stepped once already. A
+Koskari awaitable with an await suite is not eager-stepped; it is taken
+on an await frame.
 
 ## elector
 
@@ -196,6 +208,20 @@ aside while the after thunk or `__exit__` runs, or a RETURN crossing a
 leave in flight. Released at unlink by kind and by event. Reference:
 EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
 
+## parked (active)
+
+The two states a Koskari coroutine's or generator step's chain can be
+in when it is not fresh and not done. Parked: at rest on the object's
+own context, suspended at a Python await, with nothing running on it;
+a Python `send` drives it there, a Koskari await splices it. A
+coroutine suspended at a yield is driven through its Python protocol,
+which refuses a Koskari await of it. Active: on a chain being
+evaluated, its own under a Python drive or
+an awaiter's after a splice; every entry from anywhere is refused as
+already in progress until the chain passes the point it entered at.
+The object has no suspension state of its own while active: a
+suspension inside a spliced chain is the awaiter's context suspending.
+
 ## provider
 
 A KosIter provider: a type whose `kos_iter` suite carries `ki_step`,
@@ -229,12 +255,22 @@ the value. Reference: EVALUATOR.md §4.4, §6.3. Iteration and await
 suspension are not stored obligations; say "suspended" or name the
 mechanism.
 
+## span
+
+A chain at rest between contexts: from its head down to its root node,
+each node's outward effect taken back and its frames counted
+(`KosDynSpan`). A parked coroutine's or step's chain travels onto an
+awaiter's chain as one; the generator's own resting span between
+installs is its `KosGenState`.
+
 ## suite
 
 One of the inline interface structures embedded in a
-`KosEvaluatedTypeObject`: the call suite (`KosCallSlots`, `kc_` slots)
-or the iter suite (`KosIterSlots`, `ki_` slots). Membership in a family
-is by its defining slot, not by pointer presence.
+`KosEvaluatedTypeObject`: the call suite (`KosCallSlots`, `kc_` slots),
+the iter suite (`KosIterSlots`, `ki_` slots) or the await suite
+(`KosAwaitSlots`, `ka_` slots, whose defining slot is a resume kind run
+on the await frame). Membership in a family is by its defining slot,
+not by pointer presence.
 
 ## threaded dispatch
 
