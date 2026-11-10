@@ -64,6 +64,10 @@
   (await (Suspender)))
 
 
+(def wait_on [aw]
+  (await aw))
+
+
 (def wait_then_read []
   (await (Suspender))
   p)

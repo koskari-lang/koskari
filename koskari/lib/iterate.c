@@ -470,6 +470,9 @@ static int stepper_resume_await(
     Py_XDECREF(send_val);
 
     if (r == PYGEN_NEXT) {
+      /* the context's record of what the suspension handed out
+         follows the forward, for a splice of this parked step */
+      Py_XSETREF(KosContext_PY_AWAIT_YIELDED(st->ctx), Py_NewRef(step));
       *still = step;
       return 1;
     }

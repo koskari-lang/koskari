@@ -609,8 +609,13 @@ static int coroutine_step(
       kos_domain_pop_scope(coro->ctx);
       Py_DECREF(await_iter);
       if (step == PYGEN_NEXT) {
+        /* still yielding: the context's record of what the suspension
+           handed out follows, so a later splice suspends the awaiter
+           on this value, not the first */
+        Py_XSETREF(KosContext_PY_AWAIT_YIELDED(coro->ctx),
+                   Py_NewRef(await_result));
         coro->in_send = 0;
-        *out = await_result;   /* still yielding */
+        *out = await_result;
         return 1;
       }
       if (step == PYGEN_ERROR)
@@ -710,6 +715,8 @@ static PyObject *coroutine_throw_pair(
       Py_DECREF(await_iter);
 
       if (step == PYGEN_NEXT) {
+        Py_XSETREF(KosContext_PY_AWAIT_YIELDED(coro->ctx),
+                   Py_NewRef(await_result));
         coro->in_send = 0;
         return await_result;
       }

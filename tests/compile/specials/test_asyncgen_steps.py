@@ -131,6 +131,10 @@ SRC = """
   (parameterize [[p "inner"]]
     (await st)))
 
+(def wait_on_gen [aw]
+  (yield (await aw))
+  (yield 2))
+
 (def take_after_interrupt [st]
   (_thread.interrupt_main signal.SIGUSR1)
   (await st))
@@ -145,6 +149,18 @@ class Suspender:
 
     def __await__(self):
         yield "suspended"
+        return "woken"
+
+
+class Twice:
+    """
+    A Python awaitable that suspends with "first", then "second", and
+    completes with "woken"
+    """
+
+    def __await__(self):
+        yield "first"
+        yield "second"
         return "woken"
 
 
@@ -164,6 +180,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         module = new_module("asyncgen_steps")
         vars(module)["__file__"] = "<asyncgen_steps>"
         vars(module)["Suspender"] = Suspender
+        vars(module)["Twice"] = Twice
         await load_module_source_async(module, SRC)
         return vars(module)
 
@@ -202,6 +219,21 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             outer.send(None)
         self.assertEqual(done.exception.value, "woken")
 
+        self.assertEqual(2, await g.__anext__())
+        await g.aclose()
+
+    async def test_step_splice_resuspends_on_the_latest_forwarded_value(self):
+        v = await self.load()
+        g = v["wait_on_gen"](Twice())
+        st = g.__anext__()
+        self.assertEqual(st.send(None), "first")
+        self.assertEqual(st.send(None), "second")
+
+        outer = v["take_stepper"](st)
+        self.assertEqual(outer.send(None), "second")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
         self.assertEqual(2, await g.__anext__())
         await g.aclose()
 

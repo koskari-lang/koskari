@@ -1323,8 +1323,9 @@ PyObject *KosContext_PythonAwaitIter(KosContext *ctx);
 /**
    The value the context's AWAIT suspension handed to its driver,
    borrowed; NULL when the context is not suspended on an await. Set
-   by the await event, replaced by a re-suspension at the revive, and
-   cleared when the revive resumes the chain.
+   by the await event, replaced by a re-suspension at the revive and
+   by a driver's forward into the await iterator that yields again,
+   and cleared when the revive resumes the chain.
 */
 PyObject *KosContext_PythonAwaitYielded(KosContext *ctx);
 void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val);

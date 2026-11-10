@@ -54,6 +54,18 @@ class Suspender:
         return "woken"
 
 
+class Twice:
+    """
+    A Python awaitable that suspends with "first", then "second", and
+    completes with "woken"
+    """
+
+    def __await__(self):
+        yield "first"
+        yield "second"
+        return "woken"
+
+
 class Interrupted(Exception):
     """
     Raised by the SIGUSR1 handler the signal tests install
@@ -75,6 +87,7 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         await load_module_async(mod)
         vars(mod)['sleeper_partial'] = functools.partial(mod.sleeper)
         vars(mod)['Suspender'] = Suspender
+        vars(mod)['Twice'] = Twice
         vars(mod)['handled'] = lambda: sys.exc_info()[1]
         return mod
 
@@ -152,6 +165,25 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
             c.send(None)
         self.assertEqual(
             str(spent.exception), "cannot reuse already awaited coroutine")
+
+
+    def test_splice_resuspends_on_the_latest_forwarded_value(self):
+        """
+        A Python driver that forwarded into the parked await and got a
+        second yield leaves the coroutine parked on that one; the splice
+        re-suspends the awaiter on it, not on the first
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_on(mod.Twice())
+        self.assertEqual(c.send(None), "first")
+        self.assertEqual(c.send(None), "second")
+
+        outer = mod.await_object(c)
+        self.assertEqual(outer.send(None), "second")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
 
 
     def test_spliced_coroutine_sees_the_awaiters_parameterize(self):
