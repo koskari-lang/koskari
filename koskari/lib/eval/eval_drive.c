@@ -85,6 +85,19 @@ int kos_eval_recursion_error(void) {
 }
 
 
+/* The eval nesting limit, KOS_EVAL_NESTING_MAX until lowered. */
+unsigned kos_eval_nesting_limit = KOS_EVAL_NESTING_MAX;
+
+
+/* The message names the limit in force when the entry was refused. */
+int kos_eval_nesting_error(void) {
+  PyErr_Format(PyExc_RecursionError,
+               "Koskari eval nesting exceeded (%u)",
+               kos_eval_nesting_limit);
+  return -1;
+}
+
+
 /* Exactly need items from an iterable into a new tuple. One pull past
    need refuses an over-long iterable at its extra item instead of
    draining it. */

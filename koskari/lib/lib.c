@@ -83,6 +83,42 @@ static PyObject *lib_set_frame_depth_limit(PyObject *mod, PyObject *arg) {
 }
 
 
+static PyObject *lib_get_eval_nesting_limit(PyObject *mod, PyObject *unused) {
+  (void) mod;
+  (void) unused;
+  return PyLong_FromUnsignedLong(kos_eval_nesting_limit);
+}
+
+
+static PyObject *lib_set_eval_nesting_limit(PyObject *mod, PyObject *arg) {
+  int overflow = 0;
+  long n;
+
+  (void) mod;
+
+  if (! PyLong_Check(arg)) {
+    PyErr_Format(PyExc_TypeError,
+                 "eval nesting limit must be an int, not %.200s",
+                 Py_TYPE(arg)->tp_name);
+    return NULL;
+  }
+
+  n = PyLong_AsLongAndOverflow(arg, &overflow);
+  if (n == -1 && PyErr_Occurred())
+    return NULL;
+
+  if (overflow || n < 1 || n > (long) KOS_EVAL_NESTING_MAX) {
+    PyErr_Format(PyExc_ValueError,
+                 "eval nesting limit must be between 1 and %u",
+                 (unsigned) KOS_EVAL_NESTING_MAX);
+    return NULL;
+  }
+
+  kos_eval_nesting_limit = (unsigned) n;
+  Py_RETURN_NONE;
+}
+
+
 static PyMethodDef libmod_methods[] = {
   { "get_trace_report", (PyCFunction) lib_get_trace_report, METH_NOARGS,
     "Return a dict of compile-time tracing report (flags and per-feature data)" },
@@ -97,6 +133,15 @@ static PyMethodDef libmod_methods[] = {
     METH_O,
     "Set the process-wide limit on Koskari frame depth, from 1 up to "
     "build_flags['KOS_FRAME_DEPTH_MAX']; installing a frame past it "
+    "raises RecursionError" },
+  { "get_eval_nesting_limit", (PyCFunction) lib_get_eval_nesting_limit,
+    METH_NOARGS,
+    "Return the process-wide limit on nested evaluator entries per "
+    "thread, which starts at build_flags['KOS_EVAL_NESTING_MAX']" },
+  { "set_eval_nesting_limit", (PyCFunction) lib_set_eval_nesting_limit,
+    METH_O,
+    "Set the process-wide limit on nested evaluator entries per thread, "
+    "from 1 up to build_flags['KOS_EVAL_NESTING_MAX']; an entry past it "
     "raises RecursionError" },
   { NULL, },
 };

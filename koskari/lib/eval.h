@@ -1021,6 +1021,54 @@ static inline int kos_eval_check_frame_room(
     return 0;
   return kos_eval_recursion_error();
 }
+
+
+/**
+   The cap on contexts active at once on one thread, each a nested
+   entry into the evaluator on the C stack: 65535 natively, where
+   CPython's own C stack guard refuses the recursion long before, and
+   200 under Emscripten, where that guard measures the linear-memory
+   stack and cannot see the JavaScript engine's. A round trip from
+   Koskari through a Python frame back into Koskari costs about 1.3KB
+   of Node's 984KB stack, so 200 of them leave room for the 1000
+   Python frames Python's own limit allows between. The limit in force
+   is this cap until koskari.lib.set_eval_nesting_limit lowers it; the
+   cap is reported in koskari.lib.build_flags.
+*/
+#ifdef __EMSCRIPTEN__
+# define KOS_EVAL_NESTING_MAX     200u
+#else
+# define KOS_EVAL_NESTING_MAX     65535u
+#endif
+
+extern unsigned kos_eval_nesting_limit;
+
+/**
+   Raise RecursionError naming the eval nesting limit in force; the
+   cold half of kos_eval_check_nesting. Always returns -1.
+*/
+int kos_eval_nesting_error(void);
+
+/* The number of contexts active on s's ambient stack: the thread's
+   nested evaluator entries, with the scopes coro.c and iterate.c open
+   around a step they run outside an eval. Defined in domain.c. */
+size_t kos_tls_active_depth(const KosTlsState *s);
+
+
+/**
+   Test whether one more context may become active on the thread s
+   records. 0 when it may; -1 with RecursionError set when the thread
+   already holds kos_eval_nesting_limit of them. Asked at every eval
+   entry before the drive is entered, so a refused entry leaves the
+   thread and the context as they were.
+*/
+static inline int kos_eval_check_nesting(const KosTlsState *s) {
+  if (likely(kos_tls_active_depth(s) < kos_eval_nesting_limit))
+    return 0;
+  return kos_eval_nesting_error();
+}
+
+
 /** The live frame's code: NULL with no frame or a code-less one. */
 static inline KosCode *KosContext_FrameCode(KosContext *ctx) {
   KosDynFrame *frame = KosContext_FRAME(ctx);

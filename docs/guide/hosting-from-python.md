@@ -114,6 +114,12 @@ set_frame_depth_limit(50000)
 get_frame_depth_limit()                        # 50000
 ```
 
+A recursion that passes through Python on every round trip re-enters
+the evaluator each time and is bounded by Python's recursion limit,
+and also by the limit on nested evaluator entries per thread, 65535
+natively and 200 on the Pyodide build. `get_eval_nesting_limit()` and
+`set_eval_nesting_limit(n)` beside the two above read and lower it.
+
 A call past the limit raises `RecursionError`; see
 [Model of evaluation](model-of-evaluation.md#evaluate).
 

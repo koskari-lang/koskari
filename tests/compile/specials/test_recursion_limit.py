@@ -33,8 +33,6 @@ import sys
 from koskari.lib import (
     build_flags, demand, get_frame_depth_limit, set_frame_depth_limit)
 
-from tests import needs_native_stack
-
 from . import SpecialsTestCase
 
 import pytest
@@ -188,14 +186,12 @@ class TestRecursionLimit(SpecialsTestCase):
         self.assertEqual(result, 500)
 
 
-    @needs_native_stack
     async def test_mutual_recursion_meets_python_limit(self):
         """
         a recursion that passes through a Python frame object on each
-        round trip is bounded by Python's recursion limit, below the
-        number of round trips that limit allows. Each round trip takes
-        C stack, which the JavaScript stack under Pyodide cannot hold
-        for as many round trips as Python's limit allows
+        round trip is bounded by Python's recursion limit, or by the
+        eval nesting limit where that is lower, below the number of
+        round trips Python's limit allows
         """
 
         limit = sys.getrecursionlimit()

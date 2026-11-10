@@ -27,7 +27,11 @@ The limit defaults to 10000; `koskari.lib.set_frame_depth_limit(n)`
 sets it from 1 up to a cap of 65535 and
 `koskari.lib.get_frame_depth_limit()` reads it. The Pyodide build
 defaults to 1000 with a cap of 2000. A tail call reuses its
-frame.
+frame. A call from Python into Koskari re-enters the evaluator on the
+C stack, and the entries nested on one thread are capped as well, at
+65535 natively and 200 on the Pyodide build;
+`koskari.lib.set_eval_nesting_limit(n)` lowers that cap and
+`koskari.lib.get_eval_nesting_limit()` reads it.
 
 Alongside the operand stack the evaluator keeps a **dynamic chain** of
 nodes: one per active frame, loop, `try`, `finally`, namespace, context

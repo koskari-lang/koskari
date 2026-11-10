@@ -329,6 +329,11 @@ KosContext *kos_tls_active_context(const KosTlsState *s) {
 }
 
 
+size_t kos_tls_active_depth(const KosTlsState *s) {
+  return s->ctx_depth;
+}
+
+
 KosContext *kos_ctx_current(void) {
   KosTlsState *s = tls_state_current();
   return s ? kos_tls_active_context(s) : NULL;

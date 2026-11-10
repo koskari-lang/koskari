@@ -47,7 +47,11 @@ await micropip.install("koskari", pre=True)
   An embedding page supplies its own input and output.
 - Deep native recursion overflows the JavaScript stack. The interpreter
   dies rather than raising `RecursionError`, and the page has to start a
-  new one.
+  new one. A recursion that re-enters the evaluator from Python on each
+  round trip is caught before that: the limit on nested evaluator
+  entries per thread is 200 here against 65535 natively, reported by
+  `koskari.lib.build_flags` as `KOS_EVAL_NESTING_MAX`, and the entry
+  past it raises `RecursionError` into the Python caller.
 - The frame depth limit defaults to 1000 and is settable up to 2000,
   against 10000 and 65535 natively; `koskari.lib.build_flags` reports
   both as `KOS_FRAME_DEPTH_DEFAULT` and `KOS_FRAME_DEPTH_MAX`. Every

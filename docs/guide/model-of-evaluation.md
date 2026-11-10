@@ -126,7 +126,14 @@ see [Supported platforms](../project/platforms.md#webassembly).
 `KOS_FRAME_DEPTH_DEFAULT` and `KOS_FRAME_DEPTH_MAX`. Python's recursion
 limit still applies where Koskari and Python call into each other: a
 recursion that passes through a Python function on each round trip
-stops at Python's limit.
+stops at Python's limit. Each such round trip also re-enters the
+evaluator on the C stack, and the number of entries nested on one
+thread has its own process-wide limit, which raises `RecursionError`
+into the Python caller when exceeded. It is 65535 natively, where
+Python's limits stop the recursion first, and 200 on the Pyodide
+build; `koskari.lib.get_eval_nesting_limit()` reads it,
+`koskari.lib.set_eval_nesting_limit(n)` lowers it, and
+`koskari.lib.build_flags` reports the cap as `KOS_EVAL_NESTING_MAX`.
 
 Names are looked up in the namespace the code was compiled in, then its
 parents, then the module's builtins. A name with no binding is a

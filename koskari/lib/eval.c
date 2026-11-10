@@ -3634,6 +3634,9 @@ KosOpResult koskari_eval(
     s = kos_tls_current();
   tstate = kos_tls_thread_state(s);
 
+  if (unlikely(kos_eval_check_nesting(s)))
+    return EVAL_RAISE();
+
   if (kos_recursion_enter(tstate, " in koskari_eval"))
     return EVAL_RAISE();
 
