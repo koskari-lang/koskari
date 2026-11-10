@@ -10,7 +10,6 @@
 
 
 (import _thread)
-(import signal)
 (import-from functools partial)
 (import-from asyncio sleep)
 (import-from koskari.lib defer demand)
@@ -119,7 +118,7 @@
 
 
 (def await_after_interrupt [c]
-  (_thread.interrupt_main signal.SIGUSR1)
+  (_thread.interrupt_main)
   (await c))
 
 

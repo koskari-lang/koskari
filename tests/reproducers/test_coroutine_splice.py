@@ -68,7 +68,9 @@ class Twice:
 
 class Interrupted(Exception):
     """
-    Raised by the SIGUSR1 handler the signal tests install
+    Raised by the SIGINT handler the signal test installs; the
+    interrupt is raised with _thread.interrupt_main, which took no
+    signal argument before Python 3.10
     """
 
 
@@ -258,7 +260,7 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         """
 
         mod = asyncio.run(self.load_module())
-        saved = signal.signal(signal.SIGUSR1, raise_interrupted)
+        saved = signal.signal(signal.SIGINT, raise_interrupted)
         try:
             c = mod.add(1, 2)
             outer = mod.await_after_interrupt(c)
@@ -272,7 +274,7 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
                 outer.send(None)
             d.close()
         finally:
-            signal.signal(signal.SIGUSR1, saved)
+            signal.signal(signal.SIGINT, saved)
 
 
     def test_room_refused_splice_leaves_the_coroutine_parked(self):

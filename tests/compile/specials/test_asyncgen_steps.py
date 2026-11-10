@@ -37,7 +37,6 @@ pytestmark = pytest.mark.phase_specials
 
 SRC = """
 (import _thread)
-(import signal)
 
 (define-parameter p "root")
 
@@ -153,7 +152,7 @@ SRC = """
       (await st)))
 
 (def take_after_interrupt [st]
-  (_thread.interrupt_main signal.SIGUSR1)
+  (_thread.interrupt_main)
   (await st))
 """
 
@@ -183,7 +182,9 @@ class Twice:
 
 class Interrupted(Exception):
     """
-    Raised by the SIGUSR1 handler the signal test installs
+    Raised by the SIGINT handler the signal test installs; the
+    interrupt is raised with _thread.interrupt_main, which took no
+    signal argument before Python 3.10
     """
 
 
@@ -203,7 +204,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
 
     def test_signal_pending_at_the_await_of_a_step_raises_at_the_site(self):
         v = asyncio.run(self.load())
-        saved = signal.signal(signal.SIGUSR1, raise_interrupted)
+        saved = signal.signal(signal.SIGINT, raise_interrupted)
         try:
             g = v["two"]()
             st = g.__anext__()
@@ -212,7 +213,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
                 outer.send(None)
             st.close()
         finally:
-            signal.signal(signal.SIGUSR1, saved)
+            signal.signal(signal.SIGINT, saved)
         asyncio.run(g.aclose())
 
     async def test_step_parked_mid_await_is_spliced(self):
