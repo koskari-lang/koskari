@@ -8,6 +8,9 @@ delimited half of [callcc.md](callcc.md). Retires
 [archive/delimited-handler-frame-ownership.md](../archive/delimited-handler-frame-ownership.md)
 and Path A of
 [archive/delimited-invoke-model.md](../archive/delimited-invoke-model.md).
+Supersedes the `RETURN` frame-only proposal (return-return-shift.md,
+removed): a transfer across a continuation boundary is an error, so
+there is no `return-shift` form.
 The user contract it changes is
 [compile-shift](../../docs/reference/specials/compile-shift.md) and
 [compile-reset](../../docs/reference/specials/compile-reset.md).
@@ -86,15 +89,82 @@ application makes its own copy, so k is multi-shot.
   the reset's own frame but outside the reset is not captured (today it
   is, as padding; see section 3).
 - A raise in a landed copy propagates through the DELIM to the
-  application site. A `return` in the copied region ends the application
-  with that value (kept from today: dyn_walk.c:kos_dyn_unwind_return stops
-  at a DELIM). A `break` or `continue` in it reaches only loops inside it
-  (kept: dyn_walk.c:kos_dyn_find_loop stops at a DELIM).
+  application site. A `return`, `break`, `continue` or `yield` in a
+  landed copy does not cross the DELIM (Transfers, below).
 
 The handler body runs outside the region's extents. Exceptions it
 raises are not caught by a TRY inside the region; parameters bound
 inside the region are not visible to it; a FINALLY inside the region
 runs before the handler, not after.
+
+**Transfers.** A `return`, `break`, `continue` or `yield` whose target
+lies across a SHIFT or a DELIM is an error. No transfer takes a second
+meaning at a continuation boundary.
+
+| Transfer | Where | Result |
+|---|---|---|
+| `return` | the frame sitting directly on a DELIM (a landed copy's bottom frame) | error |
+| `return` | a callee handler's frame copy on a SHIFT | error |
+| `return` | a handler in the reset's own function; a callee frame inside a copy | ordinary return |
+| `break`, `continue` | the loop search stops at a SHIFT and at a DELIM | "outside loop" unless the loop is inside the handler or inside the copy |
+| `yield` | the generator search stops at a DELIM | error |
+| `yield` | a handler in the reset's own generator; a generator defined in the handler | suspends that generator |
+| `raise` | anywhere | propagates from the prompt, or through the DELIM |
+
+- `return`. A landed copy's bottom frame is a copy of the prompt's
+  owning frame. Its function boundary is outside the prompt, so outside
+  k. A callee handler's frame copy has a caller that was in the region
+  and has been left. Both are recognised by the returning frame's
+  parent: a DELIM or a SHIFT.
+- `break` and `continue`. The compiler does not resolve a loop; BREAK
+  and CONTINUE take the nearest enabled LOOP or FOREACH at run time
+  (dyn_walk.c:kos_dyn_find_loop). After the abort a loop inside the
+  region is gone, and a search from the handler would find the next
+  loop out. The search stops at the SHIFT. A handler's `break` therefore
+  does not reach a loop around the reset either, though that loop is
+  live: the search cannot tell it from the next loop out of one the
+  abort left.
+- `yield`. A capture across a generator boundary is refused, so a
+  handler always runs in its own generator's activation and yields as a
+  `begin` at the reset would. A landed copy is different: its `yield`
+  would suspend whichever generator is nearest below the application
+  site, or none. The generator search stops at the DELIM.
+
+Both of these work:
+
+```
+def foo []:
+  reset:
+    + 100:
+      shift k:
+        yield (k 1)
+        yield (k 2)
+```
+
+`foo` yields 101 then 102: each copy finishes and delivers to the
+handler before the handler yields.
+
+```
+def foo []:
+  reset:
+    + 100:
+      shift k:
+        def bar []:
+          yield (k 1)
+          yield (k 2)
+        list (bar)
+```
+
+Each application composes on `bar`'s chain and completes before `bar`
+yields; the reset's value is `[101, 102]`.
+
+This one is refused wherever k is applied:
+
+```
+def foo []:
+  reset:
+    + (shift k: ...) (yield 5)
+```
 
 **Mutable state.** A copy shares namespaces with the template and with
 every other copy (dyn_frame.c:kos_dynframe_clone takes a reference to
@@ -294,8 +364,8 @@ if (kos_prompt_is_landed(p))                      /* p->parent frame on a DELIM 
 goal = kos_xfer_goal_new(NULL, p->parent, result, POP_PC(p) + 1, NULL, 0);
 ```
 
-A `return` from h lands on the SHIFT; eval_event_return_at_frame gains
-that one case and delivers as POP_SHIFT does (section 8, the open question).
+A `return` in h raises: h's parent is the SHIFT (Transfer checks,
+below).
 
 **POP_PROMPT:** top is the prompt. If kos_prompt_is_landed, route to the
 DELIM; otherwise pop as today. The walk past INVOCATION prompts goes.
@@ -318,10 +388,26 @@ push the value on the first stack owner below it; set the first FRAME
 below it to RETURN_PC; pop the DELIM. The INPLACE branch goes.
 
 **Abort and unwind through prompts.** A prompt has no leave action;
-raise, return, break and transfer pass it. A DELIM ends a return walk
-and a loop search, and a raise pops it and continues at the application
-site (dyn_walk.c, unchanged except that the "live bookmark" test becomes
-IS_DELIM and the restitch hook in the raise walk is deleted).
+raise, return, break and transfer pass it. A DELIM ends a loop search
+and a generator search, and a raise pops it and continues at the
+application site (dyn_walk.c: the "live bookmark" test becomes IS_DELIM
+and the restitch hook in the raise walk is deleted).
+
+**Transfer checks.**
+
+- `return`: a frame whose parent is a DELIM or a SHIFT raises. The
+  check runs before the unwind walk, so the error is raised at the
+  `return` and a TRY in the region or the handler can catch it. It sits
+  in eval_event_return_unwind and eval_event_return_at_frame; the
+  frame-to-frame return, whose parent is a frame, does not reach it.
+  kos_dyn_unwind_return loses its DELIM stop and its `took` result, and
+  eval_event_return_unwind loses the routing branch.
+  kos_eval_route_delim_return stays for POP_PROMPT and POP_SHIFT.
+- `break`, `continue`: kos_dyn_find_loop stops at a SHIFT as it stops
+  at a DELIM. The same-frame test in kos_dyn_unwind_to_loop already
+  refuses a callee handler.
+- `yield`: kos_dyn_find_gen stops at a DELIM. kos_yield_deliver raises
+  when there is no generator; today it answers EVAL_FATAL.
 
 ## 5. Surface
 
@@ -347,7 +433,9 @@ IS_DELIM and the restitch hook in the raise walk is deleted).
 - Errors: KoskariPromptNotFound ("shift has no enclosing reset") and
   KoskariPromptUnreachable keep their meaning. The `prompt_id` attribute
   becomes `tag`, holding the tag object. The stale mention
-  of INVOKE_K in compile-shift.md goes.
+  of INVOKE_K in compile-shift.md goes. KoskariPromptUnreachable gains
+  RuntimeError as a base and is what a refused `return` or `yield`
+  raises (section 8).
 
 ## 6. What is deleted
 
@@ -367,7 +455,7 @@ IS_DELIM and the restitch hook in the raise walk is deleted).
 | DELIM, SHIFT, prompt, continuation fields, macros, KOS_DYNF_INVOCATION | dynchain.h | 60 |
 
 About 900 lines out, about 250 in (tag type and builtins, abort goal,
-landed check, the return-into-SHIFT case, surface forms).
+landed check, the transfer checks, surface forms).
 
 Tests that exercise only deleted machinery, or assert behavior this
 changes (ruled with the premise, section 8):
@@ -395,6 +483,11 @@ changes (ruled with the premise, section 8):
 - tests/reproducers/test_finally_under_transfer.py:
   test_shift_handler_abandoning_slice expects `["handler", "finally", 10]`;
   abort-first gives `["finally", "handler", 10]`.
+- tests/reproducers/test_break_across_reset.py:
+  test_break_in_shift_handler (9) and test_continue_in_shift_handler
+  (`[1, 2, 3]`) reach the loop around the reset from the handler; the
+  SHIFT stop makes them "break outside loop" and "continue outside
+  loop". The module docstring states the old rule.
 - tests/exceptions/test_continuation_errors.py, test_reset_shift.py:657
   and 707, test_continuations.py:522 and 578: the `prompt_id` attribute.
 - Values that should hold under docstrings naming Path A, grafts or
@@ -410,9 +503,14 @@ shape by hand.
 
 Each step should leave the suite green with the ruled expectations.
 
-1. Delete the never-read KosContinuation fields `one_shot` and
+1. A `yield` with no generator on the chain raises instead of answering
+   EVAL_FATAL. First a test for the suspected path: a reset inside a
+   generator, k escapes, applied outside any generator, and the region
+   yields. Not reproduced yet; if it does not reproduce, the step is
+   dropped.
+2. Delete the never-read KosContinuation fields `one_shot` and
    `resume_stack`. No behavior change.
-2. Compressed template bottom for every delimited
+3. Compressed template bottom for every delimited
    capture; delete the heritage padding. Checked by test_reset_shift's
    param tests, test_delimited_shapes bind/encl groups,
    test_break_across_reset. Changes
@@ -420,46 +518,60 @@ Each step should leave the suite green with the ruled expectations.
    and a TRY outside the reset in the same frame are not re-entered on
    application; a `let` around the reset is readable from a remote
    application.
-3. Tag objects in the VM: PromptTag type, default tag, operand 0 and
+4. Tag objects in the VM: PromptTag type, default tag, operand 0 and
    None, PROMPT `tag`, identity comparison, exception `tag` attribute.
    Independent of the shift model; can go first. The
    encoding and the attribute are ruled. Rewrites the two tagged opcode
    tests. New tests: identity not equality (two equal-looking tags do
    not match); an operand-None tag is not in the captured operands.
-4. Abort-first shift: PUSH_SHIFT capture plus abort goal,
-   handler frame copy for callee shifts, structural POP_SHIFT, return
-   into SHIFT; delete Path A in the same step, because its readiness
-   check would still match a live SHIFT on a live prompt. Checked by
+5. Abort-first shift with the handler-side transfer checks: PUSH_SHIFT
+   capture plus abort goal, handler frame copy for callee shifts,
+   structural POP_SHIFT; the loop search stops at a SHIFT; a `return`
+   in a frame on a SHIFT raises KoskariPromptUnreachable, which gains
+   its RuntimeError base here. Delete Path A in the same step, because
+   its readiness check would still match a live SHIFT on a live prompt.
+   The handler-side checks belong here because the abort would
+   otherwise let a handler's `break` reach the next loop out. Checked by
    test_delimited_reentrant, test_delimited_shapes, test_reset_shift_nested,
    test_delimited_cross_frame, test_delimited_handler_helper,
    tests/solve, the corpus reset/shift records (all value-only, unchanged).
-   Changes the wind, finally and param tests listed in section 6. New
-   tests: a TRY inside the region does not catch a handler raise; a
-   parameter bound inside the region is not visible to the handler; a
-   return in a callee handler completes the shift.
-5. Delete instance identity: the falsification pass, SHIFT
+   Changes the wind, finally, param and handler-loop tests listed in
+   section 6. New tests: the two `yield` examples of section 1; a loop
+   inside the handler breaks and continues; a `return` in a callee
+   handler raises; a TRY inside the region does not catch a handler
+   raise; a parameter bound inside the region is not visible to the
+   handler.
+6. Delete instance identity: the falsification pass, SHIFT
    `prompt_node_id`, KOS_DYNF_INVOCATION, invocation prompts; POP_PROMPT
    uses the landed check. No behavior change. New test: hand-built
    bytecode with two tags where a shift fires inside a copy landed from a
    handler (the shape that today fails with "captured prompt instance
    not on chain").
-6. DELIM reduced to RETURN_PC: delete mode, chain, frame, node, saved
+7. DELIM reduced to RETURN_PC: delete mode, chain, frame, node, saved
    fields, kos_dyn_remap_delim_frames; delimited clones get id 0. No
    behavior change. Delete the two native DELIM tests (ruled). New
    native test: a call/cc captured inside a delimited landing, applied
    after that landing returned, delivers to the frame below the
    re-created DELIM.
-7. Surface: `reset-at`, `shift-at`, layouts, builtins, docs, corpus
-   records; koskari.solve on its own tag. New tests in
-   tests/compile/specials and tests/solve, including a user `reset`
-   inside a solve thunk.
+8. Landed-copy transfer checks: a `return` in a frame on a DELIM raises,
+   and the return walk loses its DELIM stop; the generator search stops
+   at a DELIM. New tests: a `return` in a copy's bottom frame raises and
+   a TRY in the region catches it; a `return` in a callee frame inside
+   a copy returns; a region `yield` raises when k is applied in its own
+   handler, in another generator, and after k escaped.
+9. Surface: `reset-at`, `shift-at`, layouts, builtins, docs, corpus
+   records; koskari.solve on its own tag. The transfer rules go in the
+   user pages for reset, shift, the loops and yield, with a corpus
+   record for each refused shape. New tests in tests/compile/specials
+   and tests/solve, including a user `reset` inside a solve thunk.
 
-Step 4 is the only step that changes cost on the shift path: one extra
-clone per shift (the first application no longer runs in place) and a
-frame copy when the shift is in a callee. Baseline the perf counters
-before step 4 and compare after.
+Step 5 changes cost on the shift path: one extra clone per shift (the
+first application no longer runs in place) and a frame copy when the
+shift is in a callee. Step 8 touches RETURN's unwind path and YIELD's
+generator search. Baseline the perf counters before each and compare
+after.
 
-## 8. Decisions, and the one open question
+## 8. Decisions
 
 Ruled 2026-11-02.
 
@@ -507,14 +619,36 @@ landing.
 - The surface is `reset-at TAG` and `shift-at TAG K`, with `reset` and
   `shift` as the default-tag forms.
 
-**Open: a local transfer whose target was inside the aborted region.**
-A `return` in a handler written in a callee, and a `break` or
-`continue` in a handler whose loop was inside the region, both name a
-target the abort has left. One rule covers both: refuse (at compile
-time where the compiler sees both forms, at the transfer otherwise), or
-redefine (the `return` completes the shift with its value; the `break`
-reaches the next loop out or raises "break outside loop"). The draft
-proposes redefine for `return` and leaves `break` to the same rule.
+**A transfer across a SHIFT or a DELIM is an error.** Ruled
+2026-11-10; the rules are in section 1, Transfers. A `return` in a
+callee handler, a `break` or `continue` in a handler whose loop is not
+inside the handler, and a `return` or `yield` in a landed copy's bottom
+frame all name a target that is not theirs to reach.
+
+Set aside: giving each a second meaning (the `return` completes the
+shift or ends the application with its value; the `break` reaches the
+next loop out). Which meaning is right is unclear, and an error says so.
+The earlier `RETURN` frame-only proposal wanted a separate
+`return-shift` form for the DELIM case; with the error there is nothing
+for it to do. Common Lisp exit points, Smalltalk's `cannotReturn:`,
+Ruby's LocalJumpError and an escape continuation in Racket or Guile
+refuse a transfer whose target's extent has ended (from memory, not
+checked against the sources).
+
+The refusal is at the transfer, not at compile time: the compiler does
+not track loops, and the matching prompt of a shift is dynamic.
+
+**The refused `return` and `yield` raise KoskariPromptUnreachable, which
+becomes a RuntimeError.** Ruled 2026-11-10. The class keeps
+KoskariContinuationError as a base and gains RuntimeError, so the error
+is catchable either way, as "break outside loop" and "continue outside
+loop" (plain RuntimeError, unchanged) already are by the second.
+`boundary` names the node that refused: the DELIM or the SHIFT.
+KoskariContinuationError itself stays outside RuntimeError; its
+docstring's statement that the category is deliberately not one gains
+this exception.
+
+Nothing is open.
 
 ## 9. Sources
 
@@ -554,8 +688,7 @@ Design notes this keeps: the transfer goal, the call/cc seam by id and
 phase, restore records, foreign-token unwind, single-shot WITH policy
 ([callcc.md](callcc.md)); push-time `pop_pc`; the push graft on a DELIM
 (Path B). It retires Path A, the INPLACE delim, the handler snapshot,
-prompt instance identity, invocation prompts and padding.
-[return-return-shift.md](return-return-shift.md) is unaffected: RETURN
-keeps only its stop at a DELIM.
+prompt instance identity, invocation prompts, padding, and RETURN's
+stop at a DELIM.
 
 # The end.

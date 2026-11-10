@@ -455,18 +455,11 @@ A shift captures its segment and aborts to the prompt before the handler
 runs, standing where the region stood; every application lands a copy on
 a DELIM at the application site. Prompts are found by tag, nearest first;
 no instance ids, no stored return-frame pointers, no in-place path. Tags
-become language: `reset-at TAG`, `shift-at TAG K`. Ruled 2026-11-02; one
-question open (a local transfer whose target the abort left).
+become language: `reset-at TAG`, `shift-at TAG K`. A return, break,
+continue or yield across a SHIFT or a DELIM is an error. Ruled
+2026-11-02 and 2026-11-10.
 
 Ref: [interpreter/delimited-continuations.md](interpreter/delimited-continuations.md).
-
-### `RETURN` frame-only; `return-shift` for delim continuations
-
-Split ordinary return from delimited-continuation rebound: `RETURN`
-handles frame boundary only; introduce explicit `return-shift` (name TBD) for
-the delim case; migrate any bundled behavior off `RETURN`.
-
-Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
 ### Multi-dispatch methods (matchers on formals)
 
