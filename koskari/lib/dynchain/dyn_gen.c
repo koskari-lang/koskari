@@ -514,6 +514,12 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
     return -1;
   kos_dyn_renumber_frames_counted(span->head, NULL, base, span->nframes);
 
+  /* a generator's frames were numbered for the base its state records;
+     numbered here for another, the record is void, so the next install
+     at any base renumbers rather than trusting a match */
+  if (KosDynNode_IS_GEN(span->root))
+    KosDynGen_STATE((KosDynGen *) span->root)->base_depth = UINT16_MAX;
+
   /* what the detach took out comes back before the link: a refusal
      here leaves the span resting, nothing linked */
   if (span->installs) {

@@ -137,6 +137,21 @@ SRC = """
   (yield (await aw))
   (yield 2))
 
+(def count_down [n]
+  (if (> n 0)
+      (+ 1 (count_down (- n 1)))
+      0))
+
+(def wait_then_recurse [aw n]
+  (yield "first")
+  (yield (await aw))
+  (yield (count_down n)))
+
+(def take_deep [k st]
+  (if (> k 0)
+      (take_deep (- k 1) st)
+      (await st)))
+
 (def take_after_interrupt [st]
   (_thread.interrupt_main signal.SIGUSR1)
   (await st))
@@ -265,6 +280,46 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             first.send(None)
         self.assertEqual(done.exception.value, "woken")
         await g.aclose()
+
+    def test_generator_depth_is_renumbered_after_a_deep_splice(self):
+        """
+        A step spliced two hundred frames deep is numbered for that
+        depth; the next step driven from Python numbers the generator's
+        frames afresh for its own base instead of trusting the record,
+        so a recursion that fits the limit from the root fits
+        """
+
+        v = asyncio.run(self.load())
+        g = v["wait_then_recurse"](Suspender(), 250)
+        first = g.__anext__()
+        self.assertEqual(asyncio.run(self.step(first)), ("value", "first"))
+
+        parked = g.__anext__()
+        self.assertEqual(parked.send(None), "suspended")
+        outer = v["take_deep"](200, parked)
+        self.assertEqual(outer.send(None), "suspended")
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, "woken")
+
+        saved = get_frame_depth_limit()
+        set_frame_depth_limit(300)
+        try:
+            third = g.__anext__()
+            with self.assertRaises(StopIteration) as element:
+                third.send(None)
+            self.assertEqual(element.exception.value, 250)
+        finally:
+            set_frame_depth_limit(saved)
+        asyncio.run(g.aclose())
+
+    async def step(self, awaitable):
+        """
+        Drive a stepper from Python under asyncio: the element it
+        completes with, as ("value", element)
+        """
+
+        return ("value", await awaitable)
 
     async def test_spliced_step_sees_the_awaiters_parameterize(self):
         v = await self.load()
