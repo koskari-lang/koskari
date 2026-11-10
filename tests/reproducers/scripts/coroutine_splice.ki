@@ -102,6 +102,22 @@
   #((await c) (handled)))
 
 
+(def catch_await [aw]
+  (try
+    (await aw)
+    ([e Exception] (str (type e)))))
+
+
+(def two_awaits [first second]
+  (define r1 (catch_await first))
+  (define r2 (await second))
+  #(r1 r2))
+
+
+(def demand_await [c]
+  ((demand await_object) c))
+
+
 (def await_after_interrupt [c]
   (_thread.interrupt_main signal.SIGUSR1)
   (await c))

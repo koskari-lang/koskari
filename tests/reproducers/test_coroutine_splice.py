@@ -210,6 +210,23 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done.exception.value, "caught")
 
 
+    def test_demand_over_a_spliced_chain_refuses_every_frames_await(self):
+        """
+        A chain parked in a callee splices under a demand drive: the
+        callee's await is refused, and so is the await the caller frame
+        beneath it makes once the callee returns, since every spliced
+        frame carries the demand bit
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.two_awaits(Suspender(), Suspender())
+        self.assertEqual(c.send(None), "suspended")
+
+        d = mod.demand_await(c)
+        with self.assertRaises(KoskariSyncViolation):
+            d.send(None)
+
+
     def test_spliced_handler_keeps_its_handled_exception(self):
         """
         A coroutine parked inside an except handler brings the handler's

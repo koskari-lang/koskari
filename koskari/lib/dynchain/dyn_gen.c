@@ -533,7 +533,19 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
   kos_dynnode_note_parent(span->root);
 
   kos_dyn_commit_dyn_top(ctx, span->head);
-  kos_dyn_gen_inherit_demand(ctx, demand);
+
+  /* The demand bit is drive-state, assigned from the frame beneath the
+     splice to every frame of the span, not only the surfaced one: a
+     frame lower in the span awaits after the one above it returns,
+     and a child frame inherits the bit only at its creation. */
+  for (KosDynNode *n = span->head; n && n != under; n = KosDynNode_PARENT(n)) {
+    if (! KosDynNode_IS_FRAME(n))
+      continue;
+    if (demand)
+      KosDynFrame_FLAGS(n) |= KOS_FRAME_DEMAND;
+    else
+      KosDynFrame_FLAGS(n) &= ~KOS_FRAME_DEMAND;
+  }
 
   span->head = NULL;
   span->root = NULL;

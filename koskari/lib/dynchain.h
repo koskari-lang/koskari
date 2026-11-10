@@ -1260,8 +1260,8 @@ void kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span);
    checked for room above the live frame and renumbered from its
    depth, each node's effect is put back over ctx's tables, the root
    is linked under the top with its unwind caches naming the live
-   frame and block, the registers follow the span's head, and the
-   surfaced frame takes the live frame's demand bit. Returns 0 with
+   frame and block, the registers follow the span's head, and every
+   frame of the span takes the live frame's demand bit. Returns 0 with
    the span emptied, or -1 with PyErr set and the span resting as it
    was: refused for room before anything moved, or an effect's install
    failed with the effects put back out. A context with no chain takes
