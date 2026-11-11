@@ -490,7 +490,8 @@ class KoskariContinuationError(KoskariException):
 
     The catch target for the whole category. Deliberately not a
     RuntimeError subclass: an overbroad except RuntimeError around a
-    continuation-using call must not silently swallow these
+    continuation-using call must not silently swallow these.
+    KoskariPromptUnreachable is the one member that is a RuntimeError
     """
 
     def __init__(self, message, tag=None, operation=None):
@@ -515,13 +516,16 @@ class KoskariPromptNotFound(KoskariContinuationError):
 
 
 @builtin("KoskariPromptUnreachable")
-class KoskariPromptUnreachable(KoskariContinuationError):
+class KoskariPromptUnreachable(KoskariContinuationError, RuntimeError):
     """
-    A matching prompt exists but a crossed node denied capture.
+    A boundary stands between a capture or a transfer and its target.
 
-    Adding a delimiter will not help; the region between the capture
-    point and the delimiter must be restructured. boundary describes
-    the denying node (for example a generator boundary)
+    For a capture, a matching prompt exists but a crossed node denied
+    it. Adding a delimiter will not help; the region between the capture
+    point and the delimiter must be restructured. For a transfer, a
+    return named a caller that a shift had already left. boundary
+    describes the denying node (for example a generator boundary, or
+    shift). Also a RuntimeError, as a break outside a loop is
     """
 
     def __init__(self, message, tag=None, operation=None,

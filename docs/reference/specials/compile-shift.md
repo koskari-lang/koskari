@@ -4,9 +4,9 @@
 **Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
-`compile/reset` prompt and bind it to `K`, then run `BODY`. `K` is a
-`DelimitedContinuation` that cannot be called from Python (only from within a
-Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
+`compile/reset` prompt and bind it to `K`, then run `BODY` in place of the
+captured region. `K` is a `DelimitedContinuation`; it is called from Koskari
+code and cannot be called from Python.
 
 **Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
 `VAR_STORE K` (binds the captured delimited continuation), compiles body with
@@ -23,6 +23,25 @@ in it is the value of the `(k ...)` call, a `raise` in it propagates from
 the `(k ...)` call site, and a `break` or `continue` in it reaches only a
 loop opened inside the slice.
 
+`BODY` runs after the shift has aborted to its `reset`: the captured region
+is left first, as a `raise` would leave it, and `BODY` stands where the
+region stood. A `dyn-wind` around the `shift` runs its after thunk, a `with`
+exits and a `finally` body runs before `BODY` does. A `try` inside the
+region does not catch what `BODY` raises, and a `parameterize` inside the
+region is not in effect for it. Each call of `K` enters a copy of the
+region, so those extents are entered again per call:
+`(reset (dyn-wind before (shift k (k 5)) after))` runs `before` and `after`
+twice, once around the abort and once around the call.
+
+`BODY` has only the loops written inside it. A `break` or `continue` there
+with no loop of its own raises `break outside loop` or `continue outside
+loop`, whatever loop surrounds the `shift` or the `reset`. A `yield` in
+`BODY` suspends the generator the `reset` is in. A `return` in `BODY`
+returns from the function when the `reset` is in that same function. When
+the `shift` is in a function called from the region, that function's caller
+was left with the region, and the `return` raises
+`KoskariPromptUnreachable` with `operation` `return` and `boundary` `shift`.
+
 **Errors:** Capture can fail in two structurally different ways, each with its
 own exception under the `KoskariContinuationError` category (see
 [Error codes](../error-codes.md)):
@@ -34,7 +53,7 @@ own exception under the `KoskariContinuationError` category (see
   the shift and the prompt denied the capture: `shift cannot capture across a
   generator boundary`. Adding a `reset` will not help; restructure so the
   capture does not cross the boundary. The denying boundary is recorded on the
-  exception's `boundary` attribute.
+  exception's `boundary` attribute. It is also a `RuntimeError`.
 
 Both carry `tag` (the prompt tag the capture was seeking, compared by
 identity; `None` is the default tag `reset` and `shift` use) and

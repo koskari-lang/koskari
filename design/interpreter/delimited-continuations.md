@@ -116,8 +116,13 @@ meaning at a continuation boundary.
 - `return`. A landed copy's bottom frame is a copy of the prompt's
   owning frame. Its function boundary is outside the prompt, so outside
   k. A callee handler's frame copy has a caller that was in the region
-  and has been left. Both are recognised by the returning frame's
-  parent: a DELIM or a SHIFT.
+  and has been left. The handler's frame copy records the fact on
+  itself (KOS_FRAME_SHIFT_HANDLER, set when the abort makes it). Its
+  parent being a SHIFT does not identify it: every function the handler
+  calls sits directly on the SHIFT too, and returns to the handler as
+  usual. The copy's bottom frame is on a DELIM; whether that parent test
+  is enough, or the frame needs its own record as the handler's does,
+  is settled when step 8 is built.
 - `break` and `continue`. The compiler does not resolve a loop; BREAK
   and CONTINUE take the nearest enabled LOOP or FOREACH at run time
   (dyn_walk.c:kos_dyn_find_loop). After the abort a loop inside the
@@ -366,8 +371,8 @@ if (kos_prompt_is_landed(p))                      /* p->parent frame on a DELIM 
 goal = kos_xfer_goal_new(NULL, p->parent, result, POP_PC(p) + 1, NULL, 0);
 ```
 
-A `return` in h raises: h's parent is the SHIFT (Transfer checks,
-below).
+A `return` in h raises: h is marked as a handler frame (Transfer
+checks, below).
 
 **POP_PROMPT:** top is the prompt. If kos_prompt_is_landed, route to the
 DELIM; otherwise pop as today. The walk past INVOCATION prompts goes.
@@ -397,10 +402,12 @@ and the restitch hook in the raise walk is deleted).
 
 **Transfer checks.**
 
-- `return`: a frame whose parent is a DELIM or a SHIFT raises. The
-  check runs before the unwind walk, so the error is raised at the
-  `return` and a TRY in the region or the handler can catch it. It sits
-  in eval_event_return_unwind and eval_event_return_at_frame; the
+- `return`: a handler frame copy (KOS_FRAME_SHIFT_HANDLER) raises, and
+  in step 8 so does a landed copy's bottom frame. The check runs before
+  the unwind walk, so the error is raised at the `return` and a TRY in
+  the region or the handler can catch it. It sits at the head of
+  eval_event_return, and the two region-return arms of
+  kos_return_deliver decline such a frame so it reaches there; the
   frame-to-frame return, whose parent is a frame, does not reach it.
   kos_dyn_unwind_return loses its DELIM stop and its `took` result, and
   eval_event_return_unwind loses the routing branch.
@@ -534,7 +541,7 @@ Each step should leave the suite green with the ruled expectations.
 5. Abort-first shift with the handler-side transfer checks: PUSH_SHIFT
    capture plus abort goal, handler frame copy for callee shifts,
    structural POP_SHIFT; the loop search stops at a SHIFT; a `return`
-   in a frame on a SHIFT raises KoskariPromptUnreachable, which gains
+   in a handler's frame copy raises KoskariPromptUnreachable, which gains
    its RuntimeError base here. Delete Path A in the same step, because
    its readiness check would still match a live SHIFT on a live prompt.
    The handler-side checks belong here because the abort would

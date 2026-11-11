@@ -653,15 +653,10 @@ struct KosDynNode {
       KosObligation ob;
       KosExcState saved;
     } with;
-    struct {
-      /* shift: marker delimiting the handler body; owns no block, so
-         handler operands land in the innermost owner below (the
-         prompt's region block, or a frame). prompt_node_id is the
-         instance id of the PROMPT this shift captured against;
-         POP_SHIFT resolves its delimiter by this, never by chain
-         position. */
-      uint32_t prompt_node_id;
-    } shift;
+    /* A SHIFT has no payload. It marks the handler a shift runs after
+       aborting to its prompt, and its parent is that prompt: POP_SHIFT
+       finds the delimiter there. It owns the handler's operand block
+       and carries the namespace live at the shift. */
     struct {
       /* The generator object whose span this node marks, borrowed. It
          is alive while the node is installed on a running chain: the
@@ -769,34 +764,14 @@ struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosOp *resume_pc;             /* the instruction to resume at */
   uint8_t delimited;            /* 1 = shift capture, 0 = call/cc */
-  uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
-
-  /* Capture-time live node identities for in-place (Path A) invoke
-   * detection. Borrowed pointers: dereference only after a pointer +
-   * node_id ancestry match from dyn_top confirms the node is still live
-   * on this chain. Zero for undelimited continuations. */
-  KosDynNode *live_prompt_node;
-  uint32_t live_prompt_node_id;
-  KosDynNode *live_shift_node;
-  uint32_t live_shift_node_id;
 };
 
 
 #define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_DELIMITED(k)       (((KosContinuation *)(k))->delimited)
-#define KosContinuation_LIVE_SLICE_CONSUMED(k) \
-  (((KosContinuation *)(k))->live_slice_consumed)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
-#define KosContinuation_LIVE_PROMPT_NODE(k) \
-  (((KosContinuation *)(k))->live_prompt_node)
-#define KosContinuation_LIVE_PROMPT_NODE_ID(k) \
-  (((KosContinuation *)(k))->live_prompt_node_id)
-#define KosContinuation_LIVE_SHIFT_NODE(k) \
-  (((KosContinuation *)(k))->live_shift_node)
-#define KosContinuation_LIVE_SHIFT_NODE_ID(k) \
-  (((KosContinuation *)(k))->live_shift_node_id)
 
 
 /* === DynNode allocation and lifecycle === */
@@ -1467,17 +1442,29 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
 
 /**
-   Push a SHIFT block onto the dynamic chain.  A shift node pushes a stack
-   block for its body (no frame, no namespace).  Used by PUSH_SHIFT after
-   unwinding to the prompt.
+   Abort a shift to its prompt and start its handler there. Everything
+   above prompt is left, as a raise would leave it; a SHIFT node lands
+   on the prompt carrying the namespace live at the shift, and k is
+   delivered to it at body_pc. When the shift ran in a frame above the
+   prompt, that frame was part of the region and is left with it, so a
+   copy of it (same code, the live namespace, no operands) lands on the
+   SHIFT for the handler to run in. The region's operands on the prompt
+   are dropped: the continuation holds its own copy.
+
+   Pushes a transfer goal; the caller answers REPROLOGUE.
 
    :param ctx: execution context
-   :param prompt_node_id: instance id of the PROMPT the shift captured
-      against; POP_SHIFT resolves the delimiter by this id
+   :param prompt: the prompt the shift captured up to
+   :param k: the continuation object the handler receives; borrowed
+   :param body_pc: the handler's first instruction
 
-   :return: 0 on success, -1 on error
+   :return: 0 on success, -1 with an exception set
 */
-int kos_dyn_push_shift(KosContext *ctx, uint32_t prompt_node_id);
+int kos_shift_abort(
+    KosContext *ctx,
+    KosDynPrompt *prompt,
+    PyObject *k,
+    KosOp *body_pc);
 
 
 /**
@@ -2007,6 +1994,8 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx);
      matched by identity, or NULL for the default tag (never None);
      borrowed
   :param out_k: output for captured continuation
+  :param out_prompt: output for the live prompt the capture stopped at;
+     borrowed
 
   :return: 0 on success, -1 on error
 */
@@ -2014,7 +2003,19 @@ int kos_shift_capture(
    KosContext *ctx,
    PyObject *tag,
    KosOp *resume_pc,
-   KosContinuation **out_k);
+   KosContinuation **out_k,
+   KosDynPrompt **out_prompt);
+
+
+/**
+   Raise KoskariPromptUnreachable at a node that refused a capture or a
+   transfer. fmt takes the boundary word once; operation may be NULL
+   for None.
+*/
+void kos_raise_prompt_unreachable(
+    const char *operation,
+    const char *boundary,
+    const char *fmt);
 
 
 /**
@@ -2250,6 +2251,15 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
    recorded wherever a frame is linked under a parent
    (kos_dynframe_note_parent) */
 #define KOS_FRAME_PARENT_IS_FRAME   (1u << 3)
+
+/* the frame is the copy a shift's handler runs in when the shift was
+   written in a called function (kos_shift_abort). The function's
+   caller was in the region the shift left, so the frame has nothing
+   to return to and a return in it is refused. Its parent is a SHIFT,
+   but so is the parent of any frame the handler calls, which returns
+   to the handler as usual: the frame carries the fact itself. A clone
+   keeps it. */
+#define KOS_FRAME_SHIFT_HANDLER     (1u << 4)
 #define KosDynFrame_CACHE_SLOT(f) (((KosDynNode *)(f))->u.frame.cache_slot)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
@@ -2315,9 +2325,6 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
   (((KosDynNode *)(d))->u.delim.saved_resume_state)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
-
-#define KosDynShift_PROMPT_NODE_ID(s) \
-  (((KosDynNode *)(s))->u.shift.prompt_node_id)
 
 #define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
 #define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)

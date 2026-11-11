@@ -422,15 +422,16 @@ static int kos_raise_prompt_not_found(PyObject *tag) {
 
 
 /**
-   Raise KoskariPromptUnreachable at a node that refused a capture: a
-   node that denied handle(SHIFT), or one whose clone refused because
-   its call is in flight. fmt takes the boundary word once. The refuse
+   Raise KoskariPromptUnreachable at a node that refused a capture or a
+   transfer: a node that denied handle(SHIFT), one whose clone refused
+   because its call is in flight, or a SHIFT a return would have had to
+   cross. fmt takes the boundary word once. A capture's refuse
    site does not know which prompt the walk was seeking, and a clone
    site does not know which construct is capturing, so the tag is
    left None and operation may be NULL for None; kos_capture_note
    fills them in when the capture owner regains control.
 */
-static void kos_raise_prompt_unreachable(
+void kos_raise_prompt_unreachable(
     const char *operation,
     const char *boundary,
     const char *fmt) {
@@ -2568,7 +2569,8 @@ int kos_shift_capture(
     KosContext *ctx,
     PyObject *tag,
     KosOp *resume_pc,
-    KosContinuation **out_k) {
+    KosContinuation **out_k,
+    KosDynPrompt **out_prompt) {
 
   /* One walk from dyn_top locates the nearest matching prompt while
      offering handle(SHIFT) to every node crossed: GEN denies (a shift
@@ -2679,10 +2681,10 @@ int kos_shift_capture(
     if (! k)
       return -1;
 
-    /* A prompt that owns a block holds the region's operands, and the
-       frame copy's block holds the ones pending outside the reset:
-       not region content, so the copy does not keep them. */
-    if (KosDynNode_STACK((KosDynNode *) prompt)) {
+    /* The prompt's block holds the region's operands, and the frame
+       copy's block holds the ones pending outside the reset: not
+       region content, so the copy does not keep them. */
+    {
       KosDynNode *base = KosContinuation_CAPTURED_CHAIN(k);
 
       while (KosDynNode_PARENT(base))
@@ -2702,30 +2704,6 @@ int kos_shift_capture(
                    && kos_dynnode_id(pclone) == live_id))
         pclone = KosDynNode_PARENT(pclone);
 
-      if (pclone) {
-        /* An in-place invocation prompt owns no block -- the live
-         * region's operands sit in the innermost owner below it. The
-         * graft has no live region, so the template's prompt clone
-         * takes a deep copy of those operands: the region-bottom
-         * pending state a fall-through return delivers into. */
-        if (baseline_src && ! KosDynNode_STACK((KosDynNode *) prompt)
-            && ! KosDynNode_STACK(pclone)) {
-          KosDynNode *owner = KosDynNode_PARENT((KosDynNode *) prompt);
-
-          while (owner && ! KosDynNode_STACK(owner))
-            owner = KosDynNode_PARENT(owner);
-          if (owner) {
-            KosSegment *ops =
-                KosStack_DeepCopy(KosDynNode_STACK(owner));
-            if (! ops) {
-              kos_continuation_free(k);
-              return -1;
-            }
-            KosDynNode_STACK(pclone) = ops;
-          }
-        }
-      }
-
       /* Falsify every template prompt's identity, once, here. Invokes
        * clone the template verbatim (node_id and flags preserved), so
        * each graft of this k lands as an instance distinct from the
@@ -2737,9 +2715,7 @@ int kos_shift_capture(
        * walk to the owning frame can pass heritage prompts (a reset
        * inside an outer shift's handler) whose clones ride below as
        * never-executed padding; their originals stay live, so they must
-       * be falsified too or the landed copy shadows the real one. SHIFT
-       * nodes cloned alongside recorded live ids; follow each to its
-       * falsified copy.
+       * be falsified too or the landed copy shadows the real one.
        *
        * The INVOCATION flag goes on the delimiter and the padding below
        * it only. A prompt above the delimiter is region content, a
@@ -2748,33 +2724,18 @@ int kos_shift_capture(
        * the graft's DELIM. */
       for (walk = KosContinuation_CAPTURED_CHAIN(k); walk;
            walk = KosDynNode_PARENT(walk)) {
-        KosDynNode *snode;
-        uint32_t old_id;
-
         if (! KosDynNode_IS_PROMPT(walk))
           continue;
-        old_id = kos_dynnode_id(walk);
         KosDynNode_NODE_ID(walk) = kos_dynnode_mint_id();
         if (walk == pclone)
           below_delim = 1;
         if (below_delim)
           KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
-        for (snode = KosContinuation_CAPTURED_CHAIN(k); snode;
-             snode = KosDynNode_PARENT(snode)) {
-          if (KosDynNode_IS_SHIFT(snode)
-              && KosDynShift_PROMPT_NODE_ID(snode) == old_id)
-            KosDynShift_PROMPT_NODE_ID(snode) = KosDynNode_NODE_ID(walk);
-        }
       }
     }
 
-    /* Live identities for in-place (Path A) invoke detection; the SHIFT
-     * node is recorded by PUSH_SHIFT after it is pushed. */
-    KosContinuation_LIVE_PROMPT_NODE(k) = (KosDynNode *) prompt;
-    KosContinuation_LIVE_PROMPT_NODE_ID(k) =
-        kos_dynnode_id((KosDynNode *) prompt);
-
     *out_k = k;
+    *out_prompt = prompt;
   }
   return 0;
 }

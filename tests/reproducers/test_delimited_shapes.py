@@ -233,12 +233,15 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
         await self.check('shape_try_outside', 6)
 
     async def test_dynwind_around(self):
-        """dyn-wind around the shift, k invoked once"""
-        await self.check('shape_dynwind_around', (6, ['in', 'out']))
+        """dyn-wind around the shift, k invoked once: the shift's abort
+        leaves it, the invoke enters and leaves its copy"""
+        await self.check('shape_dynwind_around',
+                         (6, ['in', 'out', 'in', 'out']))
 
     async def test_dynwind_multishot(self):
-        """dyn-wind around the shift, k invoked twice"""
-        await self.check('shape_dynwind_multishot', (32, 4))
+        """dyn-wind around the shift, k invoked twice: one in and out for
+        the abort, one for each invoke"""
+        await self.check('shape_dynwind_multishot', (32, 6))
 
     async def test_param_around(self):
         """parameterize around the shift"""

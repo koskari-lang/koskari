@@ -520,7 +520,7 @@ class TestCaptureRefusalsAreTyped(SpecialsTestCase):
         self.assertEqual("generator", caught.exception.boundary)
         self.assertEqual("call/cc", caught.exception.operation)
         self.assertIsNone(caught.exception.tag)
-        self.assertNotIsInstance(caught.exception, RuntimeError)
+        self.assertIsInstance(caught.exception, RuntimeError)
 
 
     async def test_call_cc_inside_a_running_exit(self):

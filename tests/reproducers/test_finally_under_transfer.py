@@ -137,7 +137,7 @@ class TestFinallyUnderTransfer(unittest.IsolatedAsyncioTestCase):
     async def test_shift_handler_abandoning_slice(self):
         mod = await self.load()
         self.assertEqual(
-            ["handler", "finally", 10],
+            ["finally", "handler", 10],
             await mod["shift_abandons_slice"]([]))
 
 

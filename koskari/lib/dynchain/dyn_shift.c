@@ -26,22 +26,19 @@
 
 
 /**
-   Marker for shift handler extent (no frame). Owns the handler body's
-   operand segment: the region's own pending operands stay on the
-   prompt and the region nodes below, as they were at capture, so an
-   in-place invoke of the continuation runs the slice over them and
-   finds the handler's operands waiting on this node when it returns.
-   Callers: kos_dyn_push_shift.
+   Marker for a shift handler's extent (no frame), with no parent yet.
+   It owns the handler body's operand segment and carries ns, the
+   namespace live at the shift: the abort leaves the scopes between the
+   prompt and the shift, and the handler body still reads their names.
+   Callers: kos_shift_abort.
 */
-static KosDynShift *kos_dynshift_new(
-    KosDynNode *parent,
-    uint32_t prompt_node_id) {
+static KosDynShift *kos_dynshift_new(PyObject *ns) {
   KosDynShift *shift = (KosDynShift *) kos_dynnode_alloc();
   if (! shift)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, parent, 0);
-  KosDynShift_PROMPT_NODE_ID(shift) = prompt_node_id;
+  kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, NULL, 0);
+  KosDynNode_NS(shift) = KosNamespace_Reveal(ns);
   kos_dynnode_use_inline_segment((KosDynNode *) shift);
   return shift;
 }
@@ -54,13 +51,7 @@ static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
   if (! shift)
     return NULL;
 
-  KosDynShift *clone = (KosDynShift *) kos_dynnode_clone_base(
-      (KosDynNode *) shift);
-  if (! clone)
-    return NULL;
-
-  KosDynShift_PROMPT_NODE_ID(clone) = KosDynShift_PROMPT_NODE_ID(shift);
-  return clone;
+  return (KosDynShift *) kos_dynnode_clone_base((KosDynNode *) shift);
 }
 
 
@@ -76,16 +67,77 @@ static void kos_dynshift_free(KosDynShift *shift) {
 
 
 /**
-   Push SHIFT node via kos_dyn_push. Callers: opcode PUSH_SHIFT.
+   Abort a shift to its prompt. See dynchain.h for the contract.
+   Callers: opcode PUSH_SHIFT.
 */
-int kos_dyn_push_shift(KosContext *ctx, uint32_t prompt_node_id) {
-  // CONTEXT: dirty, touches context directly
-  KosDynShift *shift = kos_dynshift_new(KosContext_DYN_TOP(ctx),
-                                        prompt_node_id);
-  if (! shift)
+int kos_shift_abort(
+    KosContext *ctx,
+    KosDynPrompt *prompt,
+    PyObject *k,
+    KosOp *body_pc) {
+
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+  KosDynFrame *running = NULL;
+  KosDynNode *target;
+  KosDynNode *node;
+  KosXferGoal *goal;
+
+  /* A frame between dyn_top and the prompt is the frame the shift ran
+     in: the first one met is the live frame. */
+  for (node = KosContext_DYN_TOP(ctx);
+       node && node != (KosDynNode *) prompt;
+       node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_FRAME(node)) {
+      running = (KosDynFrame *) node;
+      break;
+    }
+  }
+
+  target = (KosDynNode *) kos_dynshift_new(ns);
+  if (! target)
     return -1;
 
-  return kos_dyn_push(ctx, (KosDynNode *) shift);
+  if (running) {
+    KosDynFrame *handler;
+
+    /* the copy takes the frame's pc fields, which live on the context
+       while the frame runs */
+    KosContext_FlushLiveRegsToFrame(ctx);
+    handler = kos_dynframe_clone(running);
+    if (! handler) {
+      kos_dynchain_free(target, NULL);
+      return -1;
+    }
+
+    /* The handler pushes its own operands; the frame's pending ones
+       belong to the region and are in the continuation. Its namespace
+       is the one live at the shift, as the SHIFT's is. */
+    if (KosDynNode_STACK(handler))
+      KosStack_Clear(&KosDynNode_STACK(handler));
+    if (ns != KosDynFrame_NS(handler)) {
+      PyObject *own = KosDynFrame_NS(handler);
+
+      KosDynFrame_NS(handler) = KosNamespace_Reveal(ns);
+      Py_XDECREF(own);
+    }
+    KosDynNode_PARENT(handler) = target;
+    kos_dynnode_note_parent((KosDynNode *) handler);
+    KosDynFrame_FLAGS(handler) |= KOS_FRAME_SHIFT_HANDLER;
+    target = (KosDynNode *) handler;
+  }
+
+  /* The region's operands are in the continuation; the prompt keeps
+     none for the handler to find. */
+  if (KosDynNode_STACK((KosDynNode *) prompt))
+    KosStack_Clear(&KosDynNode_STACK((KosDynNode *) prompt));
+
+  /* a failure frees target */
+  goal = kos_xfer_goal_new(target, (KosDynNode *) prompt, k, body_pc,
+                           NULL, 0);
+  if (! goal)
+    return -1;
+  kos_xfer_goal_push(ctx, goal);
+  return 0;
 }
 
 
@@ -105,9 +157,8 @@ static int dynnode_traverse_shift(KosDynNode *node, visitproc visit, void *arg) 
 
 static int dynnode_to_dict_shift(KosDynNode *node, PyObject *data) {
 
-  if (snapshot_set_uint(data, "prompt_node_id",
-                        KosDynShift_PROMPT_NODE_ID(node)) < 0)
-    return -1;
+  (void) node;
+  (void) data;
   return 0;
 }
 

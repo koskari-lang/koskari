@@ -309,11 +309,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_thunk_count_invoke_inside_shift_body(self):
         """
-        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5, and
-        an in-shift invoke runs the dyn-wind thunks exactly once: a single
-        [before, after] lifecycle. Regression guard for Path A in
-        design/interpreter/delimited-invoke-model.md (resume in place when
-        the prompt is in live ancestry; no graft, no wind replay).
+        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5.
+        The shift aborts to the reset before its handler runs, leaving
+        the dyn-wind, and the invoke in the handler enters a copy of it:
+        one [before, after] for the abort and one for the invoke.
         """
 
         events = []
@@ -332,7 +331,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, rec=rec)
         result = await expr()
         self.assertEqual(result, 5)
-        self.assertEqual(events, ["before", "after"])
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
     async def test_dyn_wind_thunk_count_remote_invoke(self):
@@ -497,11 +496,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
         """
-        Same single-lifecycle guarantee as
-        test_dyn_wind_thunk_count_invoke_inside_shift_body, but the in-shift
-        invoke happens in a deeper frame (k passed to and called from a
-        lambda inside the shift body). Regression guard for Path A in
-        design/interpreter/delimited-invoke-model.md.
+        Same two lifecycles as
+        test_dyn_wind_thunk_count_invoke_inside_shift_body, with the
+        in-shift invoke happening in a deeper frame (k passed to and
+        called from a lambda inside the shift body)
         """
 
         events = []
@@ -521,15 +519,15 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, rec=rec)
         result = await expr()
         self.assertEqual(result, 5)
-        self.assertEqual(events, ["before", "after"])
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
     async def test_dyn_wind_thunk_count_multishot_in_shift(self):
         """
-        Multi-shot in-shift invoke: the first call runs in place on the live
-        slice (Path A); each re-invoke instantiates the captured template
-        via the PUSH graft (Path B fallback). Every invoke gets exactly one
-        before/after pair, and add(3, 4) = 7 flows out of the reset.
+        Multi-shot in-shift invoke: the abort to the reset leaves the
+        dyn-wind once, and each invoke lands its own copy of the captured
+        region and gets one before/after pair: three pairs in all, and
+        add(3, 4) = 7 flows out of the reset.
         """
 
         events = []
@@ -552,7 +550,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, rec=rec, add=add)
         result = await expr()
         self.assertEqual(result, 7)
-        self.assertEqual(events, ["before", "after", "before", "after"])
+        self.assertEqual(
+            events,
+            ["before", "after", "before", "after", "before", "after"])
 
 
     async def test_recursive_invoke_in_slice_path(self):
@@ -622,9 +622,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_inplace_slice_raise_runs_after_thunk(self):
         """
-        When an in-place (Path A) slice raises, the dyn-wind after thunk
-        wrapping the slice runs exactly once during the raise unwind, before
-        the exception reaches the invoke-site handler.
+        The shift's abort leaves the dyn-wind once. When the slice the
+        handler then invokes raises, the after thunk of its copy of the
+        dyn-wind runs once during the raise unwind, before the exception
+        reaches the invoke-site handler.
         """
 
         events = []
@@ -651,7 +652,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
             src_str, rec=rec, boom=boom, ValueError=ValueError)
         result = await expr()
         self.assertEqual(result, "caught")
-        self.assertEqual(events, ["before", "after"])
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
     async def test_remote_invoke_slice_exception_propagates(self):
@@ -784,7 +785,10 @@ class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
     A delimited return that meets an after thunk on its way to the
     invoke site waits on the wind and finishes once the thunk returns,
     landing the value at the invoke site inside the evaluator; it must
-    never surface at the boundary as a bare result.
+    never surface at the boundary as a bare result. Each shift aborts
+    to its reset and leaves the dyn-wind on the way: the first leaves
+    the original, the second leaves the copy the invoke entered, so the
+    after thunk runs twice.
     """
 
     async def test_second_shift_value_reaches_first_invoke_site(self):
@@ -799,7 +803,7 @@ class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=log.append)
         result = await expr()
         self.assertEqual(result, 10)
-        self.assertEqual(log, ["cleanup"])
+        self.assertEqual(log, ["cleanup", "cleanup"])
 
 
 # The end.

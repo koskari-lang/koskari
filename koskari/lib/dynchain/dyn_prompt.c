@@ -48,34 +48,6 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
 
 
 /**
-   Allocate a fresh invocation-prompt instance for an in-place delimited
-   invoke: the delimiter the resumed slice runs under, per Danvy/Filinski
-   (k = lambda x. <E[x]> -- every invocation re-delimits). Born without
-   a stack block; the in-place invoke gives it a copy of the live
-   prompt's pending operands, so the slice resumes over the region's
-   own operands and POP_SHIFT resolves to this instance. No pop_pc --
-   completion routes through the paired DELIM (KOS_DYNF_INVOCATION),
-   never through a POP_PROMPT resume. Its own node id, not the live prompt's.
-   Callers: kos_delimited_invoke_inplace.
-*/
-static KosDynPrompt *kos_dynprompt_new_invocation(
-    KosDynNode *parent,
-    PyObject *tag) {
-
-  KosDynPrompt *prompt = kos_dynnode_alloc();
-  if (! prompt)
-    return NULL;
-
-  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
-                   KOS_DYN_CAP_BARRIER);
-  KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
-  KosDynPrompt_TAG(prompt) = Py_XNewRef(tag);
-  KosDynPrompt_POP_PC(prompt) = NULL;
-  return prompt;
-}
-
-
-/**
    Clone a prompt for captured segments: the same tag, by a reference
    of its own.
 */

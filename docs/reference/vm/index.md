@@ -4393,9 +4393,9 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_PUSH_SHIFT
 
 - **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT owns the segment the shift body's operands go on; the PROMPT's segment keeps the region's pending operands for the continuation to resume over.
+- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left, as a raise would leave it (a dyn-wind after thunk, a `with` exit and a `finally` body run; a `try` is dropped), a SHIFT marker lands on the prompt, and the captured continuation is delivered to it at the shift block's first instruction. A shift hosted in a callee leaves that callee's frame with the region, and a copy of the frame lands on the SHIFT for the shift block to run in. SHIFT owns the segment the shift body's operands go on; the region's pending operands are in the continuation.
 - **Pushes:** KOS_DYN_SHIFT (bookmark for the shift body: owns its operand segment, no handlers).
-- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
+- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. The SHIFT's parent is the prompt the shift aborted to.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`.
 - **Compiler form:** The arg is the count, `0` or `1`, before and after compilation.
 
@@ -4403,14 +4403,14 @@ between POP_SHIFT and POP_PROMPT.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0        | capture k in place; push SHIFT marker; enter shift block with k on stack |
+| 2     | PUSH_SHIFT| 0   | 0        | capture k; abort to the prompt; land SHIFT marker; enter shift block with k on stack |
 
 ---
 
 ### KOS_OP_POP_SHIFT
 
 - **Style**: NOARG.
-- **Stack**: Pops TOS as result and resolves the delimiter by the prompt instance the SHIFT recorded at capture. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For an invocation prompt (created by invoking a captured k; no POP_PROMPT pairs with it): the result is the value of that k-invocation, delivered at the invoke site through the paired DELIM bookmark.
+- **Stack**: Pops TOS as result. The delimiter is the SHIFT's parent, the prompt the shift aborted to. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For an invocation prompt (created by invoking a captured k; no POP_PROMPT pairs with it): the result is the value of that k-invocation, delivered at the invoke site through the paired DELIM bookmark.
 - **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). The segment owned by the PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
 - **Compiler form:** No argument.
 

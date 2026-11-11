@@ -20,18 +20,20 @@
    Capture the continuation
    from POP_SHIFT+1 to POP_PROMPT (via extent) when the prompt lies in
    acceptable chain heritage (kos_shift_capture locates it and offers
-   handle(SHIFT) en route in one walk), push a SHIFT node on the current
-   dyn_top, push k on stack, and enter the shift block (first instruction
-   = push_pc + 1).  Does not peel nodes above the prompt via a transfer
-   plan.
+   handle(SHIFT) en route in one walk), then abort to that prompt: a
+   transfer leaves everything above it, lands a SHIFT node on it, and
+   delivers k there at the shift block's first instruction (push_pc +
+   1). The handler runs with the region gone.
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *tag;
   KosContinuation *k = NULL;
+  KosDynPrompt *prompt = NULL;
   KosOp *resume;
   int captured;
+  int aborted;
 
   if (get_prompt_tag_from_insn(ctx, insn, &tag) < 0)
     RESULT_RAISE();
@@ -45,7 +47,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   }
 
   /* NULL is the default tag */
-  captured = kos_shift_capture(ctx, tag, resume, &k);
+  captured = kos_shift_capture(ctx, tag, resume, &k, &prompt);
   Py_XDECREF(tag);
   if (captured < 0)
     RESULT_RAISE();
@@ -56,24 +58,14 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     RESULT_RAISE();
   }
 
-  if (kos_dyn_push_shift(ctx, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
-    Py_DECREF(wrapper);
+  /* the shift body starts at the next instruction; the goal holds its
+     own reference to k */
+  aborted = kos_shift_abort(ctx, prompt, wrapper, ((KosOp *) insn) + 1);
+  Py_DECREF(wrapper);
+  if (aborted < 0)
     RESULT_RAISE();
-  }
 
-  /* Record the live SHIFT node identity for in-place (Path A) invoke
-   * detection; capture ran before this node existed. */
-  {
-    KosDynNode *shift_node = KosContext_DYN_TOP(ctx);
-    KosContinuation_LIVE_SHIFT_NODE(k) = shift_node;
-    KosContinuation_LIVE_SHIFT_NODE_ID(k) = kos_dynnode_id(shift_node);
-  }
-
-  if (unlikely(KosContext_StackPUSH(ctx, wrapper) < 0))
-    RESULT_RAISE();
-  /* the shift body starts at the next instruction */
-  KosContext_SET_PC(ctx, ((KosOp *) insn) + 1);
-  RESULT_CONTINUE(ctx);
+  RESULT_REPROLOGUE(ctx);
 }
 
 

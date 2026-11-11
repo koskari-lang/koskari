@@ -61,8 +61,10 @@ def scenario-teardown-supersede []:
     check "supersede context" "original" (str result.__context__)
 
 
-;; 4. In-shift delimited invoke resumes in place: a single before/after
-;;    pair, value delivered to the call site.
+;; 4. In-shift delimited invoke: the shift aborts to its reset, leaving
+;;    the dyn-wind, and the invoke enters a copy of it. One before/after
+;;    pair for the abort, one for the invoke; value delivered to the
+;;    call site.
 
 def scenario-inshift []:
     var events #[]
@@ -74,7 +76,7 @@ def scenario-inshift []:
             (events.append "after"))
 
     check "inshift result" 5 result
-    check "inshift events" #["before" "after"] events
+    check "inshift events" #["before" "after" "before" "after"] events
 
 
 ;; 5. Remote invoke instantiates the captured template: one before/after
@@ -93,8 +95,8 @@ def scenario-remote []:
     check "remote events" #["before" "after" "before" "after"] events
 
 
-;; 6. Multi-shot in-shift invoke: the first call runs in place, the
-;;    re-invoke grafts a fresh template instance; one wind pair each.
+;; 6. Multi-shot in-shift invoke: one wind pair for the shift's abort,
+;;    then one for each invoke's copy of the region.
 
 def scenario-multishot []:
     var events #[]
@@ -106,7 +108,7 @@ def scenario-multishot []:
             (events.append "after"))
 
     check "multishot result" 7 result
-    check "multishot events" #["before" "after" "before" "after"] events
+    check "multishot events" #["before" "after" "before" "after" "before" "after"] events
 
 
 ;; 7. Recursive invoke: k called in the path of k via a stashed alias.

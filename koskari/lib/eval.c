@@ -2743,10 +2743,13 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
 
+  /* a shift handler's frame copy returns nowhere: the general path
+     refuses it */
   parent = KosDynNode_PARENT(child);
   if (! parent
       || KosDynNode_IS_FRAME(parent)
-      || KosDynNode_IS_GEN(parent))
+      || KosDynNode_IS_GEN(parent)
+      || (KosDynFrame_FLAGS(child) & KOS_FRAME_SHIFT_HANDLER))
     return 0;
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
@@ -2826,6 +2829,7 @@ KOS_OP_INLINE int kos_return_is_region_resume(
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
+      || (KosDynFrame_FLAGS(child) & KOS_FRAME_SHIFT_HANDLER)
       || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
     return 0;
 
@@ -2973,6 +2977,24 @@ static KosOpResult eval_event_return_at_frame(
 static inline KosOpResult eval_event_return(
     KosContext *ctx,
     PyObject *val) {
+
+  /* The copy a shift's handler runs in when the shift was written in
+     a called function: the abort left that function's caller with the
+     region, so the frame has nothing to return to. Refused before any
+     extent above it is left: the error is raised at the return. */
+  {
+    KosDynFrame *frame = KosContext_FRAME(ctx);
+
+    if (unlikely(frame
+                 && (KosDynFrame_FLAGS(frame) & KOS_FRAME_SHIFT_HANDLER))) {
+      Py_DECREF(val);
+      kos_raise_prompt_unreachable(
+          "return", "shift",
+          "return cannot leave a %s handler written in a called"
+          " function: its caller was in the captured region");
+      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
+    }
+  }
 
   if (unlikely(KosContext_DYN_TOP(ctx)
                != (KosDynNode *) KosContext_FRAME(ctx)))

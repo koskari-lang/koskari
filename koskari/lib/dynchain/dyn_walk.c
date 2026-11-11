@@ -313,7 +313,11 @@ KosOpResult kos_dyn_unwind_return(
    ends the search: the resumed slice above it is the continuation's
    body, and a loop below it (the one around the reset, or one in the
    shift handler) is outside that body, as a return or a raise in the
-   slice is delivered to the (k ...) call site and not past it.
+   slice is delivered to the (k ...) call site and not past it. A
+   SHIFT ends it too: the shift aborted to its prompt, so a loop the
+   handler was written inside is gone, and the search cannot tell the
+   next loop out from one that was never the handler's. Only a loop
+   inside the handler is the handler's.
    Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
    kos_dyn_unwind_to_loop serving BREAK/CONTINUE.
 */
@@ -322,6 +326,8 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
   while (node) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
+    if (KosDynNode_IS_SHIFT(node))
+      return NULL;
     if (KosDynNode_IS_DELIM(node)
         && KosDynDelim_RETURN_FRAME((KosDynDelim *) node) != NULL)
       return NULL;

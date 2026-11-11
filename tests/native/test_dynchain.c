@@ -520,6 +520,7 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
   KosDynFrame *frame;
   KosContext *ctx;
   KosDynPrompt *invocation;
+  KosDynPrompt *bound = NULL;
   KosContinuation *k = NULL;
   KosDynNode *node;
   int delims = 0;
@@ -553,8 +554,11 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
                          FAKE_INSN(1), frame, NULL),
       "push a graft return delim returning into frame");
 
-  TEST_ASSERT_EQ(kos_shift_capture(ctx, Py_True, FAKE_INSN(0), &k), 0,
-                 "the shift binds at the invocation prompt");
+  TEST_ASSERT_EQ(
+      kos_shift_capture(ctx, Py_True, FAKE_INSN(0), &k, &bound), 0,
+      "the shift binds at the invocation prompt");
+  TEST_ASSERT_SAME(bound, invocation,
+                   "the capture reports the prompt it stopped at");
   TEST_ASSERT_NOT_NULL(k, "a continuation is captured");
 
   for (node = KosContinuation_CAPTURED_CHAIN(k); node;

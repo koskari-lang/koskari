@@ -48,11 +48,13 @@ class TestContinuationErrorHierarchy(unittest.TestCase):
         self.assertFalse(
             issubclass(KoskariPromptUnreachable, KoskariPromptNotFound))
 
-    def test_family_is_not_runtime_error(self):
+    def test_category_and_not_found_are_not_runtime_errors(self):
         for cls in (KoskariContinuationError,
-                    KoskariPromptNotFound,
-                    KoskariPromptUnreachable):
+                    KoskariPromptNotFound):
             self.assertFalse(issubclass(cls, RuntimeError))
+
+    def test_unreachable_is_a_runtime_error(self):
+        self.assertTrue(issubclass(KoskariPromptUnreachable, RuntimeError))
 
 
 class TestContinuationErrorAttributes(unittest.TestCase):

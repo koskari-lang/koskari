@@ -14,11 +14,12 @@
 */
 
 /**
-   POP_SHIFT: Take TOS as result, unwind the SHIFT node (which owned the
-   handler body's operands) and the PROMPT, then deliver
-   the result as the region's value.  The delimiter is resolved by the instance the shift captured
-   against; an invocation prompt delivers through its paired DELIM at the
-   invoke site, a live reset resumes past its POP_PROMPT (the pop_pc the
+   POP_SHIFT: Take TOS as result, unwind the SHIFT node and the PROMPT,
+   then deliver the result as the region's value.  The handler runs on
+   the SHIFT node, or in the frame copy on it when the shift ran in a
+   called function, and the SHIFT's parent is the prompt it aborted to.
+   An invocation prompt delivers through its paired DELIM at the invoke
+   site, a live reset resumes past its POP_PROMPT (the pop_pc the
    prompt recorded at push).
 */
 
@@ -30,6 +31,8 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosXferGoal *goal;
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
+  if (top && KosDynNode_IS_FRAME(top))
+    top = KosDynNode_PARENT(top);
   if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
     RESULT_RAISE();
@@ -48,28 +51,14 @@ KOS_OP_HANDLER(POP_SHIFT) {
     RESULT_RAISE();
   }
 
-  /* Resolve the delimiter by the instance the shift captured against
-     (recorded on the SHIFT node at PUSH_SHIFT). Two prompts with the
-     same tag can coexist on the chain -- a grafted or in-place
-     invocation instance alongside the live original -- so position
-     (nearest) is never the right answer; identity is. */
-  {
-    uint32_t want = KosDynShift_PROMPT_NODE_ID(top);
-    KosDynNode *node = KosDynNode_PARENT(top);
-
-    while (node) {
-      if (KosDynNode_IS_PROMPT(node)
-          && kos_dynnode_id(node) == want) {
-        prompt = (KosDynPrompt *) node;
-        break;
-      }
-      node = KosDynNode_PARENT(node);
-    }
-  }
+  /* The shift aborted to its prompt and its SHIFT node landed on it,
+     so the delimiter is the SHIFT's parent. */
+  if (KosDynNode_PARENT(top) && KosDynNode_IS_PROMPT(KosDynNode_PARENT(top)))
+    prompt = (KosDynPrompt *) KosDynNode_PARENT(top);
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
-                    "POP_SHIFT: captured prompt instance not on chain");
+                    "POP_SHIFT: the shift node is not on its prompt");
     RESULT_RAISE();
   }
 
