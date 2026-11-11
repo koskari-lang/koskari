@@ -551,7 +551,8 @@ struct KosDynNode {
     } frame;
     struct {
       /* the tag a shift finds this prompt by, compared by identity;
-         owned */
+         owned. NULL is the default tag, the one reset and shift use,
+         and the one None names: None itself is never stored. */
       PyObject *tag;
       /* the POP_PROMPT closing this prompt's region, resolved from the
          PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
@@ -845,20 +846,12 @@ void kos_dynframe_free(KosDynFrame *frame);
    Allocate a new prompt node.
 
    :param parent: parent node in dynamic chain
-   :param tag: the prompt's tag, matched by identity; a reference is
-      taken
+   :param tag: the prompt's tag, matched by identity, or NULL for the
+      default tag (never None); a reference is taken
 
    :return: new prompt node, or NULL on error
 */
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag);
-
-
-/**
-   The tag reset and shift use when none is given: the one a prompt
-   instruction's constant 0 names. Borrowed; lives from module init to
-   module clear.
-*/
-PyObject *kos_default_prompt_tag(void);
 
 
 /**
@@ -1353,8 +1346,8 @@ int kos_dyn_pop_frame(KosContext *ctx);
    Push a prompt delimiter onto the dynamic chain.
 
    :param ctx: execution context
-   :param tag: the prompt's tag, matched by identity; a reference is
-      taken
+   :param tag: the prompt's tag, matched by identity, or NULL for the
+      default tag (never None); a reference is taken
    :param pop: the POP_PROMPT closing the region (from the PROMPT
       extent at the push site); POP_SHIFT resumes at pop + 1
 
@@ -2011,7 +2004,8 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx);
 
   :param ctx: context
   :param tag: the tag of the prompt to capture up to, nearest first,
-     matched by identity; borrowed
+     matched by identity, or NULL for the default tag (never None);
+     borrowed
   :param out_k: output for captured continuation
 
   :return: 0 on success, -1 on error

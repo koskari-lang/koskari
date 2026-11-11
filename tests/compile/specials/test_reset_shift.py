@@ -24,8 +24,7 @@ import sys
 import pytest
 
 from koskari.exceptions import KoskariPromptNotFound, KoskariPromptUnreachable
-from koskari.lib import (
-    DelimitedContinuation, ParamRef, default_prompt_tag, values)
+from koskari.lib import DelimitedContinuation, ParamRef, values
 from koskari.module import load_module_source_async, new_module
 from tests.dis.dis import dis
 
@@ -727,7 +726,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(KoskariPromptNotFound) as caught:
             await expr()
-        self.assertIs(caught.exception.tag, default_prompt_tag)
+        self.assertIsNone(caught.exception.tag)
         self.assertEqual(caught.exception.operation, "shift")
 
     async def test_shift_inside_enter_refuses_with_message(self):
@@ -777,7 +776,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
             await expr()
         self.assertEqual(caught.exception.boundary, "generator")
         self.assertEqual(caught.exception.operation, "shift")
-        self.assertIs(caught.exception.tag, default_prompt_tag)
+        self.assertIsNone(caught.exception.tag)
 
 
 class TestDelimitedReturnAcrossLeave(SpecialsTestCase):

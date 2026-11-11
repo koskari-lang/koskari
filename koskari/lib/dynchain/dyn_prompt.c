@@ -40,7 +40,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER);
-  KosDynPrompt_TAG(prompt) = Py_NewRef(tag);
+  KosDynPrompt_TAG(prompt) = Py_XNewRef(tag);
   KosDynPrompt_POP_PC(prompt) = NULL;
   kos_dynnode_use_inline_segment((KosDynNode *) prompt);
   return prompt;
@@ -69,7 +69,7 @@ static KosDynPrompt *kos_dynprompt_new_invocation(
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER);
   KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
-  KosDynPrompt_TAG(prompt) = Py_NewRef(tag);
+  KosDynPrompt_TAG(prompt) = Py_XNewRef(tag);
   KosDynPrompt_POP_PC(prompt) = NULL;
   return prompt;
 }

@@ -249,7 +249,7 @@ static int test_dynforeach_new_free(void) {
 
 static int test_chain_free(void) {
     /* Test freeing a chain of nodes */
-    KosDynPrompt *p1 = kos_dynprompt_new(NULL, Py_None);
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, NULL);
     KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
     KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, Py_False);
 
@@ -266,7 +266,7 @@ static int test_chain_free(void) {
 
 static int test_chain_clone_segment(void) {
     /* Test cloning a chain segment */
-    KosDynPrompt *p1 = kos_dynprompt_new(NULL, Py_None);
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, NULL);
     KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
     KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, Py_False);
 
@@ -533,7 +533,7 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
   KosContext_EvalEnter(ctx, NULL);
 
   /* frame <- invoke's delim <- invocation prompt (tag True) <- prompt
-     (tag None) <- in-place delim <- graft return delim; the last two
+     (default tag) <- in-place delim <- graft return delim; the last two
      return into frame */
   TEST_ASSERT_NOT_NULL(
       kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT, NULL,
@@ -542,8 +542,8 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
   invocation = kos_dyn_push_prompt(ctx, Py_True, NULL);
   TEST_ASSERT_NOT_NULL(invocation, "push the invocation prompt");
   KosDynNode_FLAGS((KosDynNode *) invocation) |= KOS_DYNF_INVOCATION;
-  TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, Py_None, FAKE_INSN(2)),
-                       "push a second prompt of another tag");
+  TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, NULL, FAKE_INSN(2)),
+                       "push a default-tag prompt");
   TEST_ASSERT_NOT_NULL(
       kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_INPLACE, NULL,
                          FAKE_INSN(1), frame, NULL),

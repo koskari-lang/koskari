@@ -26,7 +26,6 @@ import gc
 import weakref
 
 from koskari.exceptions import KoskariPromptUnreachable
-from koskari.lib import default_prompt_tag
 
 from . import SpecialsTestCase
 
@@ -576,7 +575,7 @@ class TestCaptureRefusalsAreTyped(SpecialsTestCase):
             await expr()
         self.assertEqual("exit", caught.exception.boundary)
         self.assertEqual("shift", caught.exception.operation)
-        self.assertIs(caught.exception.tag, default_prompt_tag)
+        self.assertIsNone(caught.exception.tag)
 
 
 # The end.

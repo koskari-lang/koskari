@@ -14,8 +14,9 @@
 */
 
 /**
-   PUSH_PROMPT: arg = constant index of the tag selector: 0 for the
-   default prompt tag, None for a tag popped from the stack. Push a
+   PUSH_PROMPT: arg = 0 (the default prompt tag) or 1 (the tag is
+   popped from the stack, where a popped None is the default tag
+   again). Push a
    delimited prompt onto the dynamic chain for shift/reset. The tag is
    popped before the prompt is pushed, so it is not an operand of the
    region or of the block around it. The region's closing pc is
@@ -36,13 +37,13 @@ KOS_OP_HANDLER(PUSH_PROMPT) {
   /* the POP_PROMPT closing the extent, for POP_SHIFT's live reset */
   if (kos_site_extent_close(ctx, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
                             &pop) < 0) {
-    Py_DECREF(tag);
+    Py_XDECREF(tag);
     RESULT_RAISE();
   }
 
-  /* the prompt takes its own reference */
+  /* the prompt takes its own reference; NULL is the default tag */
   prompt = kos_dyn_push_prompt(ctx, tag, pop);
-  Py_DECREF(tag);
+  Py_XDECREF(tag);
   if (! prompt)
     RESULT_RAISE();
   RESULT_NEXT(ctx);

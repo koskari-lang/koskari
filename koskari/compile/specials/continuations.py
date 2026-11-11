@@ -134,8 +134,9 @@ def special_capture_cc(compiler, called_by, k, body):
 @special("compile/reset", patterns=_BODY_PATTERNS, unpack="kwargs")
 def special_reset(compiler, called_by, body):
     """
-    Compile (compile/reset EXPR...). Establishes a prompt (tag 0), runs body,
-    pops prompt. Enables delimited continuations via compile/shift.
+    Compile (compile/reset EXPR...). Establishes a prompt with the default
+    tag, runs body, pops prompt. Enables delimited continuations via
+    compile/shift.
     """
 
     fragment = compiler.fragment(called_by.datum)
@@ -152,7 +153,7 @@ def special_reset(compiler, called_by, body):
 def special_shift(compiler, called_by, k, body):
     """
     Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
-    handler body. K must be a symbol; tag 0.
+    handler body. K must be a symbol. The capture seeks the default tag.
     """
 
     k_sym = k.datum

@@ -25,8 +25,7 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 import pytest
 
 from koskari.exceptions import KoskariPromptNotFound
-from koskari.lib import (
-    Code, FormalsSpec, NamespaceSpec, default_prompt_tag)
+from koskari.lib import Code, FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, _op, build_code, build_expr
 
@@ -186,11 +185,11 @@ class TestDelimitedContinuations(CevalTest):
 
         code = [
             ["VAR", "tag_a"],
-            ["PUSH_PROMPT", None],
+            ["PUSH_PROMPT", 1],
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["VAR", "tag_a"],
-            ["PUSH_SHIFT", None],
+            ["PUSH_SHIFT", 1],
             ["POP_SHIFT", 0],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
@@ -218,11 +217,11 @@ class TestDelimitedContinuations(CevalTest):
 
         code = [
             ["VAR", "tag_a"],
-            ["PUSH_PROMPT", None],
+            ["PUSH_PROMPT", 1],
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["VAR", "tag_a"],
-            ["PUSH_SHIFT", None],
+            ["PUSH_SHIFT", 1],
             ["CONST", 5],
             ["CALL", 1],
             ["POP_SHIFT", 0],
@@ -250,9 +249,9 @@ class TestDelimitedContinuations(CevalTest):
         tag_b = [1]
         code = [
             ["VAR", "tag_a"],
-            ["PUSH_PROMPT", None],
+            ["PUSH_PROMPT", 1],
             ["VAR", "tag_b"],
-            ["PUSH_SHIFT", None],
+            ["PUSH_SHIFT", 1],
             ["POP_SHIFT", 0],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
@@ -269,15 +268,16 @@ class TestDelimitedContinuations(CevalTest):
         """
         A tag an instruction takes from the stack is gone before the
         prompt is pushed or the continuation captured: the region's one
-        pending operand is the 1, so (k 5) is 6. The default tag given
-        as an object reaches the prompt the constant 0 made
+        pending operand is the 1, so (k 5) is 6. None taken from the
+        stack is the default tag, so it reaches the prompt a count of
+        0 made
         """
 
         code = [
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["VAR", "tag"],
-            ["PUSH_SHIFT", None],
+            ["PUSH_SHIFT", 1],
             ["CONST", 5],
             ["CALL", 1],
             ["POP_SHIFT", 0],
@@ -285,30 +285,52 @@ class TestDelimitedContinuations(CevalTest):
             ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, values={"tag": default_prompt_tag})
+        code_obj, ns = build_expr(code, values={"tag": None})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 6)
 
 
-    async def test_prompt_tag_constant_other_than_0_or_none_refused(self):
+    async def test_none_stack_tag_makes_a_default_prompt(self):
         """
-        A prompt instruction's constant selects the default tag (0) or
-        the stack (None); a tag is never a pool value
+        A prompt pushed with None taken from the stack carries the
+        default tag: a shift whose count is 0 captures up to it
         """
 
         code = [
+            ["VAR", "tag"],
             ["PUSH_PROMPT", 1],
             ["CONST", 1],
+            ["PUSH_SHIFT", 0],
+            ["CONST", 5],
+            ["CALL", 1],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code)
+        code_obj, ns = build_expr(code, values={"tag": None})
         expr = make_callable(code_obj, ns)
-        with self.assertRaises(RuntimeError) as caught:
-            await expr()
-        self.assertEqual("prompt tag constant must be 0 or None",
-                         str(caught.exception))
+        result = await expr()
+        self.assertEqual(result, 6)
+
+
+    async def test_prompt_count_above_1_refused_at_build(self):
+        """
+        A prompt instruction's count is 0 for the default tag or 1 for
+        a tag from the stack; building code with any other count fails
+        """
+
+        for name in ("PUSH_PROMPT", "PUSH_SHIFT"):
+            code = [
+                [name, 2],
+                ["RETURN", 0],
+            ]
+            with self.assertRaises(ValueError) as caught:
+                build_expr(code)
+            self.assertEqual(
+                "Code instruction 0 argument 2 is not 0 or 1",
+                str(caught.exception))
 
 
 class TestUndelimitedContinuations(CevalTest):

@@ -4370,19 +4370,19 @@ between POP_SHIFT and POP_PROMPT.
 
 ### KOS_OP_PUSH_PROMPT
 
-- **Style**: CONST. Arg = tag selector (constant pool index, post-compile): `0` for the default prompt tag, `None` for a tag the instruction pops from the stack. Any other constant is refused. Tags match by identity.
+- **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
 - **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pc + 1), then pushes the prompt node onto the dynamic chain.
 - **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
 - **Invariants**: PUSH_SHIFT captures up to this prompt. An exception unwinding past a PROMPT drops the segment and unlinks the node in one step.
-- **Compiler form:** Pre-compile arg is the selector value (`0` or `None`); post-compile arg = pool index.
+- **Compiler form:** The arg is the count, `0` or `1`, before and after compilation.
 
-**Example:** reset (push prompt). Pool: 0 = the default tag selector.
+**Example:** reset (push prompt). The count `0` is the default tag.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
-| 0     | PUSH_PROMPT| 0   | 0 (tag)  | push prompt (owning its segment) onto chain |
+| 0     | PUSH_PROMPT| 0   | 0        | push prompt (owning its segment) onto chain |
 | 1     | ...          | ...   | ...        | body before shift (continuation prefix) |
-| 2     | PUSH_SHIFT | 0   | 0 (tag)  | capture k; enter shift block with k on stack |
+| 2     | PUSH_SHIFT | 0   | 0        | capture k; enter shift block with k on stack |
 | 3     | ...          | ...   | ...        | shift body (k available) |
 | 4     | POP_SHIFT  | 0   | 0        | return from shift without invoking |
 | 5     | ...          | ...   | ...        | continuation (body after shift) |
@@ -4392,18 +4392,18 @@ between POP_SHIFT and POP_PROMPT.
 
 ### KOS_OP_PUSH_SHIFT
 
-- **Style**: CONST. Arg = tag selector (constant pool index, post-compile): `0` for the default prompt tag, `None` for a tag the instruction pops from the stack. Any other constant is refused. Tags match by identity.
+- **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
 - **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT owns the segment the shift body's operands go on; the PROMPT's segment keeps the region's pending operands for the continuation to resume over.
 - **Pushes:** KOS_DYN_SHIFT (bookmark for the shift body: owns its operand segment, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`.
-- **Compiler form:** Pre-compile arg is the selector value (`0` or `None`); post-compile arg = pool index.
+- **Compiler form:** The arg is the count, `0` or `1`, before and after compilation.
 
-**Example:** shift k: body. Capture k, run shift body with k on stack. Pool: 0 = the default tag selector.
+**Example:** shift k: body. Capture k, run shift body with k on stack. The count `0` is the default tag.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0 (tag)  | capture k in place; push SHIFT marker; enter shift block with k on stack |
+| 2     | PUSH_SHIFT| 0   | 0        | capture k in place; push SHIFT marker; enter shift block with k on stack |
 
 ---
 

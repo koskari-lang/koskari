@@ -939,45 +939,32 @@ static KosOpResult process_raise(KosContext *ctx) {
 
 
 /**
-   The prompt tag a PUSH_PROMPT or PUSH_SHIFT names. Its constant is 0
-   for the default tag, or None for a tag the instruction pops from the
-   stack; any other constant is refused, so a tag is never a pool
-   value. Returns -1 with an exception set, or 0 with a new reference
-   in *out_tag.
+   The prompt tag a PUSH_PROMPT or PUSH_SHIFT names. Its count is 0 for
+   the default tag, or 1 for a tag the instruction pops from the stack;
+   Code construction refuses any other count. The default tag is NULL,
+   and a popped None names it too. Returns -1 with an exception set, or
+   0 with *out_tag a new reference or NULL.
 */
 static int get_prompt_tag_from_insn(
     KosContext *ctx,
     KosOp *insn,
     PyObject **out_tag) {
 
-  PyObject *cid = KosOp_OBJ(insn);
+  PyObject *tag = NULL;
 
-  if (cid == Py_None) {
-    PyObject *tag = KosContext_StackPopRef(ctx);
-
+  if (KosOp_ARG(insn)) {
+    tag = KosContext_StackPopRef(ctx);
     if (! tag) {
       if (! PyErr_Occurred())
         PyErr_SetString(PyExc_RuntimeError, "prompt tag pop underrun");
       return -1;
     }
-    *out_tag = tag;
-    return 0;
+    if (tag == Py_None)
+      Py_CLEAR(tag);
   }
 
-  if (cid && PyLong_CheckExact(cid)) {
-    long zero = PyLong_AsLong(cid);
-
-    if (zero == -1 && PyErr_Occurred())
-      PyErr_Clear();
-    else if (zero == 0) {
-      *out_tag = Py_NewRef(kos_default_prompt_tag());
-      return 0;
-    }
-  }
-
-  PyErr_SetString(PyExc_RuntimeError,
-                  "prompt tag constant must be 0 or None");
-  return -1;
+  *out_tag = tag;
+  return 0;
 }
 
 

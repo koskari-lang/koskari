@@ -37,7 +37,8 @@ own exception under the `KoskariContinuationError` category (see
   exception's `boundary` attribute.
 
 Both carry `tag` (the prompt tag the capture was seeking, compared by
-identity) and `operation` (the surface construct, `shift`). A library that
+identity; `None` is the default tag `reset` and `shift` use) and
+`operation` (the surface construct, `shift`). A library that
 establishes its own delimiter can use `tag` to recognize failures against it and
 translate them into its own vocabulary, as `koskari.solve` does with
 `NoActiveSearch`.

@@ -48,9 +48,11 @@ nearest first, and nothing needs instance identity.
 
 **Tags.** A prompt tag is any Python object, compared by identity, as
 Racket compares prompt tags with `eq?` and as Common Lisp compares catch
-tags. `default-prompt-tag` is the tag `reset` and `shift` use when none
-is given. `make-prompt-tag` returns a fresh opaque tag, so a library
-delimiter (koskari.solve) cannot be intercepted by a user's `reset`.
+tags. The default tag, the one `reset` and `shift` use when none is
+given, is None: a prompt for it holds a NULL tag, None is never stored,
+and there is no default tag object. A fresh opaque tag is a gensym, so
+a library delimiter (koskari.solve) cannot be intercepted by a user's
+`reset`; there is no tag type.
 
 **Prompt.** `(reset-at TAG BODY...)` installs a delimiter for TAG and
 runs BODY under it (Racket `call-with-continuation-prompt`, DPJS
@@ -222,7 +224,7 @@ snapshots (dynchain.c:dynnode_to_dict_generic, tests/lib/test_domain.py).
 
 | Item | Today | Decision |
 |---|---|---|
-| PROMPT `prompt_id` (uint32) | tag number | becomes `tag` (PyObject *, owned) |
+| PROMPT `prompt_id` (uint32) | tag number | becomes `tag` (PyObject *, owned; NULL is the default tag) |
 | PROMPT `pop_pc` | POP_PROMPT of the region | keep |
 | PROMPT block | region operands | keep; the shift's abort empties it (those operands are in the template) |
 | KOS_DYNF_INVOCATION | marks prompts with no POP_PROMPT | delete; "landed" is structural: the prompt's parent is a FRAME whose parent is a DELIM |
@@ -337,7 +339,7 @@ No remap, no falsification, no backfill.
 already uses):
 
 ```c
-tag = OPERAND(insn) is 0 ? default_tag : pop();   /* set aside before capture */
+tag = COUNT(insn) ? pop() : NULL;                 /* set aside before capture */
 kos_shift_capture(ctx, tag, kos_shift_ic_for(...), &k);
 shift = kos_dynshift_new(); shift->ns = live ns;  target = shift;
 if (FRAME(ctx) is above p) {                      /* shift ran in a callee */
@@ -412,20 +414,23 @@ and the restitch hook in the raise walk is deleted).
 ## 5. Surface
 
 - `(reset BODY...)` and `(shift K BODY...)` keep their meaning with
-  `default-prompt-tag`, under the abort-first rule.
+  the default tag, under the abort-first rule.
 - `(reset-at TAG BODY...)` and `(shift-at TAG K BODY...)` take an
   evaluated TAG, after racket/control. Separate names avoid the
   ambiguity of an optional first argument in `(reset x (f))`. Layout
   forms `reset-at TAG:` and `shift-at TAG k:` follow the existing
   `reset:` and `shift k:` handlers.
-- Builtins: `default-prompt-tag`, `make-prompt-tag [name]`. Any object
-  works as a tag; keywords are interned, so `:search` is a stable tag.
-- Operands: PUSH_PROMPT and PUSH_SHIFT keep CONST encoding. Constant 0
-  means the default tag, so every compiled reset and shift and every
-  existing .kio is unchanged. Constant None means "the tag is on TOS";
-  the instruction pops it before pushing the prompt or capturing. Other
-  constants are refused. Opcode names are unchanged.
-- koskari.solve: `(var search-tag (make-prompt-tag "solve"))`, `solve`
+- No tag builtins. None is the default tag, so `(reset-at None ...)` is
+  `(reset ...)`; `gensym` makes a fresh one. Any object works as a tag;
+  keywords are interned, so `:search` is a stable tag.
+- Operands: PUSH_PROMPT and PUSH_SHIFT are COUNT style, the count being
+  how many operands name the tag, as YIELD and BREAK count their value.
+  0 is the default tag. 1 pops the tag before pushing the prompt or
+  capturing, and a popped None is the default tag. Any other count is
+  refused when the code is built. No constant is involved. `reset` and
+  `shift` emit 0; `reset-at` and `shift-at` compile TAG and emit 1.
+  Opcode names are unchanged.
+- koskari.solve: `(var search-tag (gensym "solve"))`, `solve`
   and `solve-first` use `reset-at search-tag`, `amb` and `fail` use
   `shift-at search-tag`, and the NoActiveSearch translation tests
   `(is e.tag search-tag)`. A user `reset` inside a solve thunk no longer
@@ -454,7 +459,7 @@ and the restitch hook in the raise walk is deleted).
 | POP_PROMPT bookmark walk | opcode/POP_PROMPT.c | 25, replaced by about 8 |
 | DELIM, SHIFT, prompt, continuation fields, macros, KOS_DYNF_INVOCATION | dynchain.h | 60 |
 
-About 900 lines out, about 250 in (tag type and builtins, abort goal,
+About 900 lines out, about 250 in (tag objects, abort goal,
 landed check, the transfer checks, surface forms).
 
 Tests that exercise only deleted machinery, or assert behavior this
@@ -518,12 +523,14 @@ Each step should leave the suite green with the ruled expectations.
    and a TRY outside the reset in the same frame are not re-entered on
    application; a `let` around the reset is readable from a remote
    application.
-4. Tag objects in the VM: PromptTag type, default tag, operand 0 and
-   None, PROMPT `tag`, identity comparison, exception `tag` attribute.
+4. Tag objects in the VM: NULL default tag, count 0 and 1, PROMPT
+   `tag`, identity comparison, exception `tag` attribute (None for the
+   default tag).
    Independent of the shift model; can go first. The
    encoding and the attribute are ruled. Rewrites the two tagged opcode
    tests. New tests: identity not equality (two equal-looking tags do
-   not match); an operand-None tag is not in the captured operands.
+   not match); a tag taken from the stack is not in the captured
+   operands; a count above 1 is refused at build.
 5. Abort-first shift with the handler-side transfer checks: PUSH_SHIFT
    capture plus abort goal, handler frame copy for callee shifts,
    structural POP_SHIFT; the loop search stops at a SHIFT; a `return`
@@ -559,7 +566,7 @@ Each step should leave the suite green with the ruled expectations.
    a TRY in the region catches it; a `return` in a callee frame inside
    a copy returns; a region `yield` raises when k is applied in its own
    handler, in another generator, and after k escaped.
-9. Surface: `reset-at`, `shift-at`, layouts, builtins, docs, corpus
+9. Surface: `reset-at`, `shift-at`, layouts, docs, corpus
    records; koskari.solve on its own tag. The transfer rules go in the
    user pages for reset, shift, the loops and yield, with a corpus
    record for each refused shape. New tests in tests/compile/specials
@@ -607,8 +614,9 @@ landing.
 - The template is the segment through the prompt on one copy of the
   owning frame, so extents outside the reset in the same frame are not
   part of k. The one test asserting otherwise was asserting the padding.
-- PUSH_PROMPT and PUSH_SHIFT constants are 0 (default tag) or None (tag
-  on TOS). Any other constant would be a third tag namespace.
+- PUSH_PROMPT and PUSH_SHIFT take a count, 0 (default tag) or 1 (tag on
+  TOS). An argument is a count or a constant, never both, so a tag is
+  never a pool value.
 - `prompt_id` becomes `tag`, no alias.
 - koskari.solve delimits with a private tag, so a user `reset` cannot
   intercept `amb`.

@@ -1885,6 +1885,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           goto failure;
         }
       }
+
+      /* A prompt instruction's count is the number of operands naming
+         its tag: none for the default tag, or the one tag. */
+      if ((op == KOS_OP_PUSH_PROMPT || op == KOS_OP_PUSH_SHIFT)
+          && val > 1) {
+        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
+                     " is not 0 or 1", i, b);
+        goto failure;
+      }
     }
 
     di++;
