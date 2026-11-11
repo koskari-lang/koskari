@@ -520,7 +520,7 @@ The closing paragraph of [extent-wind-unwind.md](../interpreter/extent-wind-unwi
 `step_resume_inject` protocol, which is D2. Replaced by §3.2 and §3.3; its
 per-kind table is replaced by §3.4.
 
-Related: [callcc.md](../interpreter/callcc.md),
+Related: [callcc.md](callcc.md),
 [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md),
 [with-dyn-with.md](../interpreter/with-dyn-with.md),
 [pending-return-across-suspension.md](pending-return-across-suspension.md),

@@ -12,7 +12,7 @@ cleanup is tracked in
 
 This document specified the redesign of the Koskari dynamic node system into a clean, unified API. It was intended as an **implementation prompt**: a fresh implementer could execute this specification without additional context.
 
-**Existing reference material:** `dynchain.c`, `dynchain.h`, `eval.c`, [callcc.md](../interpreter/callcc.md), [with-dyn-with.md](../interpreter/with-dyn-with.md), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md).
+**Existing reference material:** `dynchain.c`, `dynchain.h`, `eval.c`, [callcc.md](callcc.md), [with-dyn-with.md](../interpreter/with-dyn-with.md), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md).
 
 ## Implementation Status
 

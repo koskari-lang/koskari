@@ -802,6 +802,13 @@ or `EVAL_NORMAL()`). When the frame has no parent or its parent is the generator
 node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
 delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
+Two frames have no caller and a RETURN in them raises
+`KoskariPromptUnreachable` before any extent is left: the frame copy a
+`shift` handler runs in when the shift is in a called function
+(`KOS_FRAME_SHIFT_HANDLER`, `boundary` `shift`), and the bottom frame of a
+applied delimited continuation, whose parent is a DELIM (`boundary`
+`continuation`).
+
 **Examples:**
 
 ```scheme
@@ -1067,6 +1074,11 @@ optionally with a result value.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
+The target is the nearest enabled loop of the same frame, found at run time
+(`kos_dyn_find_loop`). The search passes a PROMPT and stops at a SHIFT and
+at a DELIM: a `shift` handler and a applied continuation reach only loops
+opened inside them. With no loop found it raises
+`RuntimeError("break outside loop")`.
 
 **Examples:**
 
@@ -1086,7 +1098,9 @@ optionally with a result value.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits CONTINUE with
 count 0 or 1. Runtime jumps to the loop's continue target (loop head for while,
-ITER_NEXT for for-each).
+ITER_NEXT for for-each). The loop is found as BREAK finds it: the search
+stops at a SHIFT and at a DELIM, and with no loop found it raises
+`RuntimeError("continue outside loop")`.
 
 **Examples:**
 
@@ -1134,6 +1148,12 @@ no parent, the generator consumes the yield: the dynamic chain is frozen, the
 generator suspends, and control returns to the driver as a yield. On resume,
 the sent value is pushed onto the stack and execution continues at the next
 instruction.
+
+The generator is the nearest GEN outward from the running frame
+(`kos_dyn_yield_gen`). The search stops at a DELIM: a YIELD in the bottom
+frame of a applied delimited continuation raises `KoskariPromptUnreachable`
+(`operation` `yield`, `boundary` `continuation`). With no GEN and no DELIM
+it raises `RuntimeError("yield outside generator")`.
 
 **Examples:**
 
@@ -2949,8 +2969,8 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 `compile/shift` inside the body can capture the continuation up to (but not
 including) this prompt.
 
-**Behaviour:** Emits `PUSH_PROMPT 0`, compiles the body with `helper_begin`,
-emits `POP_PROMPT 0`.
+**Behaviour:** Emits `PUSH_PROMPT 0` (count 0: the default tag), compiles the
+body with `helper_begin`, emits `POP_PROMPT 0`.
 
 **Examples:**
 
@@ -2962,6 +2982,8 @@ emits `POP_PROMPT 0`.
     (shift k (call k 5))))
 ```
 
+**Tests:** `tests/compile/specials/test_reset_shift.py`
+
 ## compile/shift
 
 **Symbol:** `compile/shift`
@@ -2969,13 +2991,31 @@ emits `POP_PROMPT 0`.
 **Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
-`compile/reset` prompt and bind it to `K`, then run `BODY`. `K` is a
-`DelimitedContinuation` that cannot be called from Python (only from within a
-Koskari eval loop, through CALL).
+`compile/reset` prompt and bind it to `K`, then run `BODY` in place of the
+captured region. `K` is a `DelimitedContinuation` that cannot be called from
+Python (only from within a Koskari eval loop, through CALL).
 
-**Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
-`VAR_STORE K` (binds the captured delimited continuation), compiles body with
-`helper_begin`, emits `POP_SHIFT 0`.
+**Behaviour:** Emits `PUSH_SHIFT 0` (count 0: the default tag), declares `K`
+as a local variable, emits `VAR_STORE K` (binds the captured delimited
+continuation), compiles body with `helper_begin`, emits `POP_SHIFT 0`.
+
+At runtime PUSH_SHIFT captures the region, then aborts to the prompt: every
+node above the prompt is left as a raise leaves it (a WIND after thunk, a
+WITH exit and a FINALLY body run; a TRY is dropped), and `BODY` runs on a
+SHIFT node pushed on the prompt. `BODY` is outside the region's extents: a
+TRY in the region does not catch its raises, and a PARAM in the region is
+not bound for it. Each call of `K` installs a copy of the region on a DELIM at
+the call site and enters the copy's extents.
+
+- `break`, `continue` in `BODY`: reach only a loop opened inside `BODY`.
+- `yield` in `BODY`: suspends the generator the reset is in.
+- `return` in `BODY`: returns from the function when the reset is in the
+  same function. When the shift is in a called function, `BODY` runs in a
+  copy of that function's frame, and the return raises
+  `KoskariPromptUnreachable`.
+- `return`, `yield` in the resumed region, in the reset's own function:
+  raise `KoskariPromptUnreachable`. A function the region calls returns
+  normally.
 
 **Examples:**
 
@@ -2985,6 +3025,63 @@ Koskari eval loop, through CALL).
   (shift k
     (call k "value")))
 ```
+
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_shift_abort_first.py`
+
+## compile/reset-at
+
+**Symbol:** `compile/reset-at`
+
+**Syntax:** `(reset-at TAG BODY ...)`
+
+**Use-case:** Establish a prompt delimiter carrying `TAG`, for a
+`compile/shift-at` seeking the same tag.
+
+**Behaviour:** Compiles `TAG`, emits `PUSH_PROMPT 1` (count 1: the tag is
+popped from the stack), compiles the body with `helper_begin`, emits
+`POP_PROMPT 0`. A tag is any object, matched by identity. `None` is the
+default tag: `(reset-at None BODY ...)` is `(reset BODY ...)`. `gensym`
+makes a tag no other code can name.
+
+**Examples:**
+
+```scheme
+(let [[t (gensym "t")]]
+  (reset-at t (+ 1 (shift-at t k (call k 5)))))
+```
+
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_reset_at_layout.py`
+
+## compile/shift-at
+
+**Symbol:** `compile/shift-at`
+
+**Syntax:** `(shift-at TAG K BODY ...)`
+
+**Use-case:** `compile/shift` with the delimiter chosen by tag: capture up to
+the nearest `compile/reset-at` carrying `TAG`.
+
+**Behaviour:** Compiles `TAG`, emits `PUSH_SHIFT 1` (count 1: the tag is
+popped before the capture and is not among the captured operands), declares
+`K`, emits `VAR_STORE K`, compiles body with `helper_begin`, emits
+`POP_SHIFT 0`. Prompts of other tags between the shift and its prompt are
+crossed and become part of the continuation. The capture failure
+`KoskariPromptNotFound` carries the tag sought as `tag`. Everything else is
+as `compile/shift`.
+
+**Examples:**
+
+```scheme
+;; k is (lambda [v] (reset-at a (+ 100 (reset-at b (+ 10 v))))) => 111
+(let [[a (gensym "a")] [b (gensym "b")]]
+  (reset-at a
+    (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+```
+
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_reset_at_layout.py`
 
 ## import
 

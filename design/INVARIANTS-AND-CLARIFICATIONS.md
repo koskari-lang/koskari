@@ -255,7 +255,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Async generator   | (this doc, evaluator.md)         | koskari/lib/iter.c, iter.h              |
 | Demand path       | (this doc)                       | koskari/lib/demand.c, demand.h; `as_coroutine` in koskari/types.py |
 | Dynamic chain     | EVALUATOR.md §11                  | koskari/lib/dynchain.c, dynchain.h, dynchain/dyn_*.c, dynchain/dyn_walk.c |
-| Continuations     | interpreter/callcc.md, archive/interrupted-transfer-plans.md | dynchain.c, dynchain/xfer_plan.c, eval.c, eval/eval_chain.c |
+| Continuations     | archive/callcc.md, archive/interrupted-transfer-plans.md | dynchain.c, dynchain/xfer_plan.c, eval.c, eval/eval_chain.c |
 | Bytecode          | interpreter/bytecode.md, archive/bytecode-metadata-tables.md | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |
 | Types             | api/types.md                     | koskari/lib/*.c, koskari/types.py       |
 | Builtins/API      | api/builtins.md, api/runtime.md   | koskari/lib/lib.c, operator.c           |

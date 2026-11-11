@@ -398,7 +398,7 @@ delimited continuation semantics.
 
 * [evaluator.md](evaluator.md) — Evaluation model and VM structures
 * [../archive/introspection-trace.md](../archive/introspection-trace.md) (archived) — the TraceView proposal, never built
-* [callcc.md](callcc.md) — Delimited continuation implementation
+* [callcc.md](../archive/callcc.md) — Delimited continuation implementation
 * [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 * [../language/async.md](../language/async.md) — Async and coroutine language

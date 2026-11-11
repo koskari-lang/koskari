@@ -51,7 +51,7 @@ Maintainers working on the raise paths: `eval.c` (`process_raise`),
 
 | Document | Relationship |
 |----------|----------------|
-| [callcc.md](../interpreter/callcc.md) | Delimited continuation machinery the raise paths must respect |
+| [callcc.md](callcc.md) | Delimited continuation machinery the raise paths must respect |
 | [delimited-invoke-model.md](delimited-invoke-model.md) | Two-path invoke; the INPLACE DELIM restitch is folded into this design |
 | [boundary-control-reemit.md](boundary-control-reemit.md) | Capacity-driven dispatch precedent (§5.2) |
 | [../TODO.md](../TODO.md) | Single rollup entry pointing here |

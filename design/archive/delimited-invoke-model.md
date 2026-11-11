@@ -35,7 +35,7 @@ and transfer-plan policy.
 
 | Document | Relationship |
 |----------|----------------|
-| [callcc.md](../interpreter/callcc.md) | Current implementation (PUSH model, DELIM markers) |
+| [callcc.md](callcc.md) | Current implementation (PUSH model, DELIM markers) |
 | [interrupted-transfer-plans.md](interrupted-transfer-plans.md) | Transfer-plan follow-ups, heritage capture, §6.6 forbid |
 | [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) | Wind/unwind thunk execution |
 | [../TODO.md](../TODO.md) | Open work rollup |
@@ -62,7 +62,7 @@ Shift capture (`kos_shift_capture`) clones from `segment_top = dyn_top` with
 `stop = NULL` (to chain root), detaches the bottom, and stores the template on
 `KosContinuation`. `PUSH_SHIFT` captures in place (no peel-to-prompt plan).
 
-See [callcc.md](../interpreter/callcc.md) § Continuation Invocation and § Plan structure
+See [callcc.md](callcc.md) § Continuation Invocation and § Plan structure
 (delimited / PUSH).
 
 ---

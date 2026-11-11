@@ -19,7 +19,7 @@ continuation + dyn-wind integration.
 | Document | Relationship |
 |----------|----------------|
 | [../TODO.md](../TODO.md) | Status rollup; follow-up items |
-| [callcc.md](../interpreter/callcc.md) | Re-entrant transfers, plan structure, `original_target` |
+| [callcc.md](callcc.md) | Re-entrant transfers, plan structure, `original_target` |
 | [delimited-invoke-model.md](delimited-invoke-model.md) | Target delimited invoke (lineage fork, double-wind fix) |
 | [../EVALUATOR.md](../EVALUATOR.md) | Eval loop, `revive_plan`, transfer draining |
 | [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md) | `plan` / `plan_stack`, transfer atomicity |

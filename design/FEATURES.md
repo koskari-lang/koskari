@@ -29,7 +29,7 @@ Highlights (not an exhaustive list):
 | Values | `define-values`, `setq-values` |
 | Collections | `#tuple`, `#list`, `#list-append`, `bracket-cons`, `bracket-proper` |
 | Import | `import`, `import-from`, `import-all-from`, `use` |
-| Continuations | `call/cc`, `let/cc`, `capture/cc`, `reset`, `shift` |
+| Continuations | `call/cc`, `let/cc`, `capture/cc`, `reset`, `shift`, `reset-at`, `shift-at` |
 | Macros (lowering) | `syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`, `special-rules`, `special-match` |
 | Operators | `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `divmod`, comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not-in`, `is`, `is-not`, aliased `equal?`, `not-equal?`, `lt?`, `le?`, `gt?`, `ge?`, `in?`, `not-in?`, `is?`, `is-not?`), **`instance?`**, **`subclass?`**, `not`, `repr`, `truth`, `iter`, `next`, `#str`, `format`, `len`, `type`, `dir`, `vars` (zero operands: the frame namespace) |
 | Fences | `apply-fence` (see § Fenced foreign literals) |
@@ -186,7 +186,7 @@ Loaded via **`koskari.bootstrap.make_builtins()`** / **`make_builtins_demand()`*
 
 ### Evaluator
 
-- **`koskari_eval`** eval loop; it returns at the boundary events **RETURN**, **RAISE**, **YIELD**, **AWAIT**, while handler results such as reprologue, dispatch, poll and resume stay inside the loop; delimited **reset/shift** and undelimited **call/cc** ([interpreter/callcc.md](interpreter/callcc.md)).
+- **`koskari_eval`** eval loop; it returns at the boundary events **RETURN**, **RAISE**, **YIELD**, **AWAIT**, while handler results such as reprologue, dispatch, poll and resume stay inside the loop; delimited **reset/shift** and undelimited **call/cc** ([EVALUATOR.md](EVALUATOR.md) §6).
 - **Per-thread record** holding the ambient context stack, for ambient dynamic context and parameters. The domain answering on a thread is the active context's, else the innermost `with Domain():` scope's, else the thread default domain.
 - **GIL cooperation**: the cooperation points (`CONTINUE`, frame install) test CPython's eval breaker and tail into **`kos_eval_poll`** when it is up. The poll releases the GIL with paired **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** when another thread asks, then runs **`Py_MakePendingCalls()`** and, on 3.12+, **`PyErr_CheckSignals()`**; the prologue polls in place ([EVALUATOR.md](EVALUATOR.md) §1.6).
 - Flattened async-gen attach, eager-step awaitables, **YIELD_FROM** driver.
@@ -229,20 +229,37 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 
 ### Continuations (summary)
 
-- **Delimited**: `reset`, `shift`; invoked through the **CALL** family, resuming in place when the capture-time prompt is live and grafting otherwise ([interpreter/callcc.md](interpreter/callcc.md)).
+- **Delimited**: `reset`, `shift`, and `reset-at` / `shift-at`, which take
+  an evaluated tag matched by identity (`None` is the default tag). A shift
+  captures its region and aborts to its prompt before the handler runs, so
+  the handler stands where the region stood. Each call of the continuation,
+  through the **CALL** family, installs a copy of the region on a DELIM at the
+  call site. Extents inside the region are left at the shift and entered
+  again per call. A delimited continuation cannot be called from Python
+  ([EVALUATOR.md](EVALUATOR.md) §6.4).
+- **Transfers at a continuation boundary**: a `break` or `continue` in a
+  shift handler reaches only a loop inside the handler. A `return` in a
+  handler written in a called function, and a `return` or `yield` in a
+  installed copy's own frame, raise `KoskariPromptUnreachable`, which is a
+  `RuntimeError` ([EVALUATOR.md](EVALUATOR.md) §6.5).
 - **Undelimited**: `call/cc`, `let/cc`, `capture/cc`; Python invoke via **`KoskariContinuationApply`**.
 - **Dynamic wind**: `dyn-wind`; **PUSH_WIND** / **POP_WIND** on transfer.
-- **Transfer goals (done):** a continuation invoke pushes a goal recording
-  where control is going; the prologue re-derives each step from the live
-  chain, waits while a thunk or `__exit__` runs, nests when a thunk invokes
-  another continuation, and frees every goal on a failed step before the
-  raise walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md)
-  and [archive/transfer-plan-rework.md](archive/transfer-plan-rework.md);
-  tests in **`TestDynWindContinuations`** and **`TestDelimitedTransferNested`**.
-- **Recursion limit (done):** frame depth per context is bounded by
-  `sys.getrecursionlimit()`; an install, a continuation landing, or a
-  generator resume that would exceed it raises `RecursionError` into the
-  calling frame. See [EVALUATOR.md §7.7](EVALUATOR.md).
+- **`koskari.solve`**: `amb`, `fail`, `require`, `solve`, `solve-first`,
+  delimited by a gensym tag of the module's own, so a `reset` in the thunk
+  being solved is not a search delimiter.
+- **Transfer goals (done):** a continuation invoke, a shift's abort and a
+  handler's completion each push a goal recording where control is going;
+  the prologue re-derives each step from the live chain, waits while a
+  thunk or `__exit__` runs, nests when a thunk invokes another
+  continuation, and frees every goal on a failed step before the raise
+  walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md); tests
+  in **`TestDynWindContinuations`** and **`TestDelimitedTransferNested`**.
+- **Frame depth limit (done):** frame depth is bounded by the process-wide
+  frame depth limit (default 10000, set through
+  `koskari.lib.set_frame_depth_limit`), not by `sys.getrecursionlimit()`;
+  an install, a continuation call, or a generator resume that would exceed
+  it raises `RecursionError` into the calling frame. See
+  [EVALUATOR.md §7.7](EVALUATOR.md).
 
 ---
 
