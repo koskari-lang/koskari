@@ -1459,11 +1459,23 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 /**
    The GEN node of the generator the running frame belongs to: the
    nearest GEN walking outward from the frame, or NULL when the frame
-   is not in a generator. Callers: kos_yield_deliver and the
-   trampoline's YIELD arm, which then freeze it through
-   kos_dyn_gen_freeze.
+   is not in a generator. It crosses every node, a DELIM included: a
+   caller that wants the chain's generators starts from it.
 */
 KosDynGen *kos_dyn_find_gen(KosContext *ctx);
+
+
+/**
+   The GEN node a yield in the running frame suspends: the nearest GEN
+   walking outward from the frame, without crossing a DELIM. NULL with
+   an exception set when there is none to suspend: a
+   KoskariPromptUnreachable when a DELIM ended the search (the region
+   of a landed continuation is yielding, and no generator is inside
+   it), a RuntimeError when the chain ran out. Callers:
+   kos_yield_deliver and the trampoline's YIELD arm, which then freeze
+   the node through kos_dyn_gen_freeze.
+*/
+KosDynGen *kos_dyn_yield_gen(KosContext *ctx);
 
 
 /**
@@ -1659,10 +1671,11 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
    FINALLY consumes the return, taking val onto its block and branching
-   to its handler, and the walk answers EVAL_REPROLOGUE. A live DELIM
-   invoke bookmark stops the walk: it is left at dyn_top, stored in
-   *took, and the walk answers EVAL_NORMAL with val still the caller's to
-   route. A suspension stores val on the in-flight node as a RETURN
+   to its handler, and the walk answers EVAL_REPROLOGUE. It meets no
+   DELIM: the frame of a landed continuation that sits on one is
+   refused its return before the walk starts, and every other frame
+   above a DELIM has its own caller above it too. EVAL_NORMAL leaves val
+   the caller's. A suspension stores val on the in-flight node as a RETURN
    obligation carrying the given kind before answering; the loop walk
    stores a break or continue the same way. val is consumed on every
    answer but EVAL_NORMAL.
@@ -1684,8 +1697,7 @@ KosOpResult kos_dyn_unwind_return(
     KosContext *ctx,
     KosDynFrame *frame,
     PyObject *val,
-    KosPendingReturnKind kind,
-    KosDynDelim **took);
+    KosPendingReturnKind kind);
 
 KosOpResult kos_dyn_unwind_to_loop(
     KosContext *ctx,

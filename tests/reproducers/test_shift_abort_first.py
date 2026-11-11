@@ -101,6 +101,47 @@ def param_in_handler []:
     reset:
         (parameterize [[depth 5]]
             (shift k depth))
+
+def region_return []:
+    reset:
+        (+ 1 (shift k (k 5)) (return 99))
+
+def region_return_caught []:
+    reset:
+        (+ 1 (shift k (k 5))
+             (try (return 99) ((e RuntimeError) 100)))
+
+def add_one [v]:
+    return (+ v 1)
+
+def region_callee_return []:
+    reset:
+        (add_one (shift k (k 5)))
+
+def region_yield_own_handler []:
+    reset:
+        (+ (shift k (k 1)) (yield 5))
+
+def run_region_yield_own_handler []:
+    try:
+        (list (region_yield_own_handler))
+    except [e KoskariPromptUnreachable]:
+        #[e.operation e.boundary]
+
+def region_yield_escaping [out]:
+    (out.append (reset (+ (shift k k) (yield 5))))
+
+def other_generator [k]:
+    yield (k 1)
+
+def run_region_yield_other_generator []:
+    var out #[]
+    (list (region_yield_escaping out))
+    var k (out.pop)
+    try:
+        (list (other_generator k))
+    except [e KoskariPromptUnreachable]:
+        #[e.operation e.boundary]
 """
 
 
@@ -160,6 +201,38 @@ class TestShiftAbortFirst(unittest.IsolatedAsyncioTestCase):
     async def test_param_inside_the_region_is_not_the_handlers(self):
         mod = await self.load()
         self.assertEqual(0, await mod["param_in_handler"]())
+
+
+    async def test_return_in_a_resumed_region_is_refused(self):
+        mod = await self.load()
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
+            await mod["region_return"]()
+        self.assertEqual("return", caught.exception.operation)
+        self.assertEqual("continuation", caught.exception.boundary)
+
+
+    async def test_refused_region_return_is_raised_at_the_return(self):
+        mod = await self.load()
+        self.assertEqual(106, await mod["region_return_caught"]())
+
+
+    async def test_return_in_a_function_called_by_the_region(self):
+        mod = await self.load()
+        self.assertEqual(6, await mod["region_callee_return"]())
+
+
+    async def test_region_yield_applied_in_its_own_handler(self):
+        mod = await self.load()
+        self.assertEqual(
+            ["yield", "continuation"],
+            await mod["run_region_yield_own_handler"]())
+
+
+    async def test_region_yield_applied_in_another_generator(self):
+        mod = await self.load()
+        self.assertEqual(
+            ["yield", "continuation"],
+            await mod["run_region_yield_other_generator"]())
 
 
 # The end.

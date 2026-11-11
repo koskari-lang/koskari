@@ -235,10 +235,8 @@ KosOpResult kos_dyn_unwind_return(
     KosContext *ctx,
     KosDynFrame *frame,
     PyObject *val,
-    KosPendingReturnKind kind,
-    KosDynDelim **took) {
+    KosPendingReturnKind kind) {
 
-  *took = NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_return: target frame=%p", (void *) frame);
 
@@ -246,17 +244,6 @@ KosOpResult kos_dyn_unwind_return(
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
     KosOpResult r;
-
-    /* Stopping node: a live delimited-invoke bookmark.  The return has
-       reached the delimiting reset; leave the DELIM at dyn_top and let the
-       caller route val to the k-invocation site.  val is NOT consumed. */
-    if (KosDynNode_IS_DELIM(top)) {
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] unwind_return: stopped at DELIM bookmark node=%p",
-             (void *) top);
-      *took = (KosDynDelim *) top;
-      return EVAL_NORMAL();
-    }
 
     /* Handle phase: offer RETURN before unwind */
     {

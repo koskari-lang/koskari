@@ -1764,17 +1764,17 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
     void *insn,
     PyObject *val) {
 
-  KosDynGen *gen = kos_dyn_find_gen(ctx);
+  KosDynGen *gen = kos_dyn_yield_gen(ctx);
   KosOpResult r;
   int flattened;
 
   (void) insn;
 
   if (unlikely(! gen)) {
-    /* an applied continuation's region can yield where no generator
-       runs: an ordinary error at the yield */
+    /* the region of a landed continuation yielding, which has no
+       generator of its own to suspend: an ordinary error at the
+       yield, already set */
     Py_DECREF(val);
-    PyErr_SetString(PyExc_RuntimeError, "yield outside generator");
     RESULT_RAISE();
   }
 
@@ -2512,7 +2512,7 @@ static KosOpResult eval_phase_transfer(KosContext *ctx) {
 /**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
    generator dead-after-yield, freezes gen (the running frame's GEN, from
-   kos_dyn_find_gen), delivers to the live frame's resume when there is
+   kos_dyn_yield_gen), delivers to the live frame's resume when there is
    one, and otherwise tags the suspension event.  val is a new
    reference; ownership transfers to the caller or consumer.
 
@@ -2593,23 +2593,13 @@ static inline KosOpResult eval_event_return_unwind(
     KosContext *ctx,
     PyObject *val) {
 
-  KosDynDelim *took = NULL;
   KosOpResult unw = kos_dyn_unwind_return(ctx, KosContext_FRAME(ctx), val,
-                                          KOS_PENDING_RETURN_FRAME, &took);
+                                          KOS_PENDING_RETURN_FRAME);
 
   /* a FINALLY took the return, a leave is in flight with val stored, or
      a leave raised; the walk consumed val on each */
   if (unw.kind != KOS_RES_NORMAL)
     return kos_eval_walk_outcome(ctx, unw);
-  if (took) {
-    /* The return crossed a delimiting reset: the walk stopped at a DELIM
-       with a live invoke bookmark (at dyn_top).  Deliver val to the
-       k-invocation site instead of the frame's parent. */
-    KosOpResult rr = kos_eval_route_delim_return(ctx, took, val);
-    if (rr.kind == KOS_RES_NORMAL)
-      return EVAL_REPROLOGUE();
-    return kos_eval_walk_outcome(ctx, rr);
-  }
 
   return eval_event_return_at_frame(ctx, val);
 }
@@ -2739,12 +2729,13 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
 
-  /* a shift handler's frame copy returns nowhere: the general path
-     refuses it */
+  /* a shift handler's frame copy and the frame of a landed
+     continuation return nowhere: the general path refuses them */
   parent = KosDynNode_PARENT(child);
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
+      || KosDynNode_IS_DELIM(parent)
       || (KosDynFrame_FLAGS(child) & KOS_FRAME_SHIFT_HANDLER))
     return 0;
 
@@ -2825,6 +2816,7 @@ KOS_OP_INLINE int kos_return_is_region_resume(
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
+      || KosDynNode_IS_DELIM(parent)
       || (KosDynFrame_FLAGS(child) & KOS_FRAME_SHIFT_HANDLER)
       || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
     return 0;
@@ -2974,12 +2966,22 @@ static inline KosOpResult eval_event_return(
     KosContext *ctx,
     PyObject *val) {
 
-  /* The copy a shift's handler runs in when the shift was written in
+  /* Two frames have nothing to return to, and are refused before any
+     extent above them is left, so the error is raised at the return.
+
+     The copy a shift's handler runs in when the shift was written in
      a called function: the abort left that function's caller with the
-     region, so the frame has nothing to return to. Refused before any
-     extent above it is left: the error is raised at the return. */
+     region.
+
+     The frame of a landed continuation, the one sitting on its DELIM:
+     it is a copy of the frame the reset was in, and that function's
+     boundary lies outside the reset, so outside the continuation.
+     Nothing else is ever a frame directly on a DELIM: the copy lands
+     as the application pushes it, and a thunk the landing runs sits
+     above the copy. */
   {
     KosDynFrame *frame = KosContext_FRAME(ctx);
+    KosDynNode *under = frame ? KosDynNode_PARENT(frame) : NULL;
 
     if (unlikely(frame
                  && (KosDynFrame_FLAGS(frame) & KOS_FRAME_SHIFT_HANDLER))) {
@@ -2988,6 +2990,14 @@ static inline KosOpResult eval_event_return(
           "return", "shift",
           "return cannot leave a %s handler written in a called"
           " function: its caller was in the captured region");
+      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
+    }
+    if (unlikely(under && KosDynNode_IS_DELIM(under))) {
+      Py_DECREF(val);
+      kos_raise_prompt_unreachable(
+          "return", "continuation",
+          "return cannot leave a resumed %s: its function's caller"
+          " is outside the captured region");
       return kos_eval_walk_outcome(ctx, EVAL_RAISE());
     }
   }
@@ -3290,11 +3300,11 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
 
   case KOS_RES_YIELD: {
     KosOpResult r;
-    KosDynGen *gen = kos_dyn_find_gen(ctx);
+    KosDynGen *gen = kos_dyn_yield_gen(ctx);
 
     if (unlikely(! gen)) {
+      /* the lookup set the error */
       Py_DECREF(res.val);
-      PyErr_SetString(PyExc_RuntimeError, "yield outside generator");
       KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
       return apply_resume_result(ctx, r);
     }

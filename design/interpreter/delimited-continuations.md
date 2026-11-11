@@ -120,9 +120,10 @@ meaning at a continuation boundary.
   itself (KOS_FRAME_SHIFT_HANDLER, set when the abort makes it). Its
   parent being a SHIFT does not identify it: every function the handler
   calls sits directly on the SHIFT too, and returns to the handler as
-  usual. The copy's bottom frame is on a DELIM; whether that parent test
-  is enough, or the frame needs its own record as the handler's does,
-  is settled when step 8 is built.
+  usual. The copy's bottom frame is recognised by its parent being a
+  DELIM, and there the parent test is sound: the copy lands as the
+  application pushes the DELIM, and a thunk the landing runs sits above
+  the copy, so nothing else is ever a frame directly on a DELIM.
 - `break` and `continue`. The compiler does not resolve a loop; BREAK
   and CONTINUE take the nearest enabled LOOP or FOREACH at run time
   (dyn_walk.c:kos_dyn_find_loop). After the abort a loop inside the
@@ -415,8 +416,10 @@ and the restitch hook in the raise walk is deleted).
 - `break`, `continue`: kos_dyn_find_loop stops at a SHIFT as it stops
   at a DELIM. The same-frame test in kos_dyn_unwind_to_loop already
   refuses a callee handler.
-- `yield`: kos_dyn_find_gen stops at a DELIM. kos_yield_deliver raises
-  when there is no generator; today it answers EVAL_FATAL.
+- `yield`: a lookup of its own, kos_dyn_yield_gen, stops at a DELIM and
+  raises KoskariPromptUnreachable there. kos_dyn_find_gen is left
+  crossing every node: transform.c starts from it to collect every
+  generator on the chain.
 
 ## 5. Surface
 

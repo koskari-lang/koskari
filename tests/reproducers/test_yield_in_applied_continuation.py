@@ -18,7 +18,9 @@ tests.reproducers.test_yield_in_applied_continuation
 A delimited continuation captured inside a generator can outlive it.
 Applied where no generator is running, a yield in the resumed region
 has nothing to suspend: it is an ordinary error, raised at the yield,
-which a try around the application catches and a finally sees.
+which a try around the application catches and a finally sees. The
+resumed region has no generator of its own, so the error names the
+continuation as what the yield could not leave.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,6 +30,7 @@ import unittest
 
 import pytest
 
+from koskari.exceptions import KoskariPromptUnreachable
 from koskari.module import load_module_source_async, new_module
 
 
@@ -48,7 +51,7 @@ def caught []:
     try:
         (k 1)
     except [e RuntimeError]:
-        (str e)
+        #[e.operation e.boundary]
 
 def cleaned [log]:
     var k (escaped)
@@ -70,15 +73,16 @@ class TestYieldInAppliedContinuation(unittest.IsolatedAsyncioTestCase):
 
     async def test_yield_with_no_generator_is_caught(self):
         mod = await self.load()
-        self.assertEqual("yield outside generator", await mod["caught"]())
+        self.assertEqual(["yield", "continuation"], await mod["caught"]())
 
 
     async def test_yield_with_no_generator_runs_finally(self):
         mod = await self.load()
         log = []
-        with self.assertRaises(RuntimeError) as caught:
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
             await mod["cleaned"](log)
-        self.assertEqual("yield outside generator", str(caught.exception))
+        self.assertEqual("yield", caught.exception.operation)
+        self.assertEqual("continuation", caught.exception.boundary)
         self.assertEqual(["finally"], log)
 
 

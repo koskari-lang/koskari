@@ -18,10 +18,15 @@ once therefore takes a name no later `shift` in the slice uses, since each
 shot runs the slice against the same scope. Calling `K` packs its arguments the way
 `return` does: `(k)` resumes with `None`, `(k v)` with `v`, `(k a b)` with the
 tuple `(a, b)`, and a call with keywords, `(k a x: 1)`, with a `values`
-instance over all of them. The resumed slice is the body of `K`: a `return`
-in it is the value of the `(k ...)` call, a `raise` in it propagates from
-the `(k ...)` call site, and a `break` or `continue` in it reaches only a
-loop opened inside the slice.
+instance over all of them. The resumed slice is the body of `K`: a `raise`
+in it propagates from the `(k ...)` call site, and a `break` or `continue`
+in it reaches only a loop opened inside the slice. The slice ends where the
+`reset` ends, so the function the `reset` is written in has no boundary
+inside it: a `return` in that function's part of the slice raises
+`KoskariPromptUnreachable`, with `operation` `return` and `boundary`
+`continuation`. A function the slice calls returns as usual. A `yield` in
+that part of the slice raises the same error with `operation` `yield`: the
+slice has no generator of its own, wherever `K` is called from.
 
 `BODY` runs after the shift has aborted to its `reset`: the captured region
 is left first, as a `raise` would leave it, and `BODY` stands where the

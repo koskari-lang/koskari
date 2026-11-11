@@ -139,6 +139,30 @@ KosDynGen *kos_dyn_find_gen(KosContext *ctx) {
 }
 
 
+KosDynGen *kos_dyn_yield_gen(KosContext *ctx) {
+  KosDynNode *n = (KosDynNode *) KosContext_FRAME(ctx);
+
+  for (; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_IS_GEN(n))
+      return (KosDynGen *) n;
+
+    /* A landed continuation's region is yielding. A generator below
+       the DELIM is whichever one applied the continuation, not the one
+       the region was written in, which a capture cannot cross. */
+    if (KosDynNode_IS_DELIM(n)) {
+      kos_raise_prompt_unreachable(
+          "yield", "continuation",
+          "yield cannot leave a resumed %s: its generator is outside"
+          " the captured region");
+      return NULL;
+    }
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "yield outside generator");
+  return NULL;
+}
+
+
 /**
    Capture the live registers at the current dyn_top into regs.
 */
