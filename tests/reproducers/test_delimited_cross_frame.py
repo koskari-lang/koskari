@@ -16,7 +16,7 @@ Delimited capture where the shift is not in the reset's own code object.
 
 Chain order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so a
 cross-frame shift's owning frame sits ABOVE the prompt. Capture records
-RESUME_PC and RESUME_STACK against that frame (kos_shift_capture takes the
+RESUME_PC against that frame (kos_shift_capture takes the
 first frame walking down from the captured chain's top), so the in-place
 invoke has to resolve the same one. Resolving the frame at-or-below the
 prompt instead installs the callee's pc and stack into the caller's frame,

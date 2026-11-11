@@ -149,7 +149,7 @@ static int kos_delimited_invoke_inplace(
   }
 
   /* Resume frame: the FRAME owning the SHIFT, which is what capture
-     recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
+     recorded RESUME_PC against (kos_shift_capture takes
      the first frame walking down from the captured chain's top). Chain
      order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so when
      the shift sits in a callee that frame is ABOVE the prompt and a walk

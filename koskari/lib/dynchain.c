@@ -2365,7 +2365,6 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
 
 /**
    Allocate and initialize a continuation. Takes ownership of captured_chain.
-   resume_stack is stored as-is (caller must pass the stack to store; ownership transfers).
    token_ref is INCREF'd. Returns NULL on alloc failure (PyErr_NoMemory set);
    caller must free captured_chain on failure.
 */
@@ -2377,15 +2376,13 @@ static KosContinuation *cont_freelist = NULL;
 
 /**
    Allocate or reuse a KosContinuation struct and wire captured chain, resume
-   pc/stack, graft id, one-shot flag, token ref. Callers: kos_shift_capture,
+   pc, graft id, token ref. Callers: kos_shift_capture,
    kos_capture_cc, kos_continuation_clone.
 */
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
     KosOp *resume_pc,
-    KosSegment *resume_stack,
     uint32_t prompt_id,
-    int one_shot,
     PyObject *token_ref) {
 
   KosContinuation *k = cont_freelist;
@@ -2406,9 +2403,7 @@ static KosContinuation *kos_continuation_create(
 
   KosContinuation_CAPTURED_CHAIN(k) = captured_chain;
   KosContinuation_RESUME_PC(k) = resume_pc;
-  KosContinuation_RESUME_STACK(k) = resume_stack;
   KosContinuation_PROMPT_ID(k) = prompt_id;
-  KosContinuation_ONE_SHOT(k) = one_shot;
   KosContinuation_TOKEN_REF(k) = token_ref;
   if (KosContinuation_TOKEN_REF(k))
     Py_INCREF(KosContinuation_TOKEN_REF(k));
@@ -2460,34 +2455,8 @@ static inline KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
 
 
 /**
-   Operand stack for resume: frame stack or innermost stack owner on chain.
-*/
-static inline KosSegment *kos_chain_resume_stack(
-    KosDynNode *chain,
-    KosDynFrame *frame) {
-
-  /* The block that was current at the capture point: the innermost node
-     on the captured chain owning one. A PROMPT owns the delimited
-     region's block, so for a shift capture this is the region's operands
-     and nothing else. Preferring the frame's block instead would sweep in
-     operands belonging to an enclosing pending expression -- and would
-     also miss the region's own, leaving the resumed slice short. Frames
-     own blocks too, so the walk terminates there when no region node
-     above the frame owns one. */
-  KosDynNode *node = chain;
-
-  while (node && ! KosDynNode_STACK(node))
-    node = KosDynNode_PARENT(node);
-  if (node)
-    return KosDynNode_STACK(node);
-
-  return KosDynFrame_STACK(frame);
-}
-
-
-/**
    Clone segment_top..stop, detach template, wire KosContinuation. Caller
-   supplies prompt_id, one_shot, and no_frame_err text.
+   supplies prompt_id and no_frame_err text.
 
    baseline_src, when non-NULL, is cloned and appended at the template
    bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
@@ -2504,14 +2473,12 @@ static KosContinuation *kos_continuation_capture_segment(
     KosDynNode *stop,
     KosOp *resume_pc,
     uint32_t prompt_id,
-    int one_shot,
     KosDynFrame *baseline_src,
     PyObject *baseline_ns,
     const char *no_frame_err) {
 
   KosDynNode *captured_chain;
   KosDynFrame *resume_frame;
-  KosSegment *resume_stack;
   KosContinuation *k;
   PyObject *token;
 
@@ -2575,7 +2542,6 @@ static KosContinuation *kos_continuation_capture_segment(
     return NULL;
   }
 
-  resume_stack = kos_chain_resume_stack(captured_chain, resume_frame);
   token = (PyObject *) KosContext_EnsureToken(ctx);
   if (! token) {
     if (captured_chain)
@@ -2585,9 +2551,7 @@ static KosContinuation *kos_continuation_capture_segment(
   k = kos_continuation_create(
       captured_chain,
       resume_pc,
-      resume_stack,
       prompt_id,
-      one_shot,
       token);
   if (! k) {
     if (captured_chain)
@@ -2725,7 +2689,6 @@ int kos_shift_capture(
         stop,
         resume_pc,
         prompt_id,
-        1,
         baseline_src,
         baseline_ns,
         "PUSH_SHIFT: no frame in captured chain");
@@ -2853,7 +2816,6 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
         NULL,
         KosDynCC_RESUME_PC(cc),
         KOS_PROMPT_ID_UNDELIMITED,
-        0,
         NULL,
         NULL,
         "CAPTURE_CC: no frame in captured segment");
@@ -2896,11 +2858,6 @@ void kos_continuation_free(KosContinuation *k) {
 
   Py_XDECREF(KosContinuation_TOKEN_REF(k));
   KosContinuation_TOKEN_REF(k) = NULL;
-
-  /* resume_stack aliases a node-owned operand stack on captured_chain;
-     kos_dynchain_free releases node-owned blocks, so only the pointer
-     is cleared */
-  KosContinuation_RESUME_STACK(k) = NULL;
 
   /* Detach first, free second: freeing a node runs Python, and the
      continuation's traverse reads captured_chain, so a collection

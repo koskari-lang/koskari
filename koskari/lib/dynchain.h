@@ -756,20 +756,16 @@ typedef struct KosDynNode KosDynGen;
 
    The resume_pc is the instruction to resume at; the frame it
    resumes in is resolved from the chain at invoke time (the landed
-   segment's innermost FRAME), never stored. The resume_stack points at
-   the innermost node-owned operand stack on captured_chain; it is an
-   alias for that node-owned block, not separately released here.
+   segment's innermost FRAME), never stored.
 
-   For multi-shot continuations, the chain/stack are cloned on
-   each invocation. For one-shot, they are consumed directly.
+   A continuation is multi-shot: the chain and its stacks are cloned on
+   each invocation.
 */
 
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosOp *resume_pc;             /* the instruction to resume at */
-  KosSegment *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
-  uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
   uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
 
@@ -786,9 +782,7 @@ struct KosContinuation {
 
 #define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
-#define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
-#define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
 #define KosContinuation_LIVE_SLICE_CONSUMED(k) \
   (((KosContinuation *)(k))->live_slice_consumed)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
