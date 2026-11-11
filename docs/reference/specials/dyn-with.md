@@ -5,10 +5,11 @@
 
 Same syntax as `with`; optional `name` binds the enter result.
 
-**Use-case:** Multi-shot context manager that participates in continuation
-transfer plans (shift/reset, undelimited call/cc). On non-local transfer,
-enter/exit run as wind/unwind steps; re-entry creates a fresh extent
-instance.
+**Use-case:** Context manager that a continuation transfer runs (shift/reset,
+undelimited call/cc), as it runs a [`dyn-wind`](compile-dyn-wind.md): a
+transfer that leaves the body calls exit, and one that resumes a captured
+body calls enter again before the body continues, once per resumption. A
+plain [`with`](with.md) is local to its body and a transfer runs neither.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 The expression value is the body's value, or `None` when the exit swallows

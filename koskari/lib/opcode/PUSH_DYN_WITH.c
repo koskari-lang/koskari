@@ -14,9 +14,11 @@
 */
 
 /**
-   PUSH_DYN_WITH: arg = constant pool index (name or None). Multi-shot context
-   manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, push block,
-   push provisional KOS_DYN_WITH node (multi-shot, push = link only), then wind.
+   PUSH_DYN_WITH: arg = constant pool index (name or None). Context manager
+   a transfer runs. Stack before: [..., mgr]. Pop mgr, resolve enter/exit,
+   push block, push provisional KOS_DYN_WITH node (KOS_DYN_CAP_WINDS: a
+   transfer leaving runs exit, re-entry runs enter; push = link only),
+   then wind.
    Wind may suspend (async enter); otherwise result is bound to name.
 */
 
@@ -49,7 +51,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
       ctx, mgr, enter, exit, self_bind, name_obj, pop + 1,
-      KOS_DYN_WITH_SHOT_MULTI);
+      KOS_DYN_CAP_WINDS);
   if (! with_node) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);

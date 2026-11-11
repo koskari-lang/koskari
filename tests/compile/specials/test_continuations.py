@@ -228,7 +228,7 @@ class TestUndelimitedSeam(SpecialsTestCase):
         self.assertEqual(log, [7, 7, 7])
 
 
-    async def test_shared_single_shot_with_exits_once(self):
+    async def test_shared_with_exits_once(self):
         """
         a with both points sit inside runs __enter__ once and __exit__
         once, at the end

@@ -23,14 +23,14 @@ return). The continuation may be invoked from within the same eval context
 a different eval context triggers the segmented-transfer path.
 
 Invoking the continuation leaves every extent between the call site and the
-capture point: the `__exit__` of a [`with`](with.md) and the after thunk of
-a [`dyn-wind`](compile-dyn-wind.md) run, innermost first, before the
-continuation's body resumes. The `finally:` of a [`try`](compile-try.md) is
-local to the try and does not run on the transfer.
+capture point: the after thunk of a [`dyn-wind`](compile-dyn-wind.md) and
+the exit of a [`dyn-with`](dyn-with.md) run, innermost first, before the
+continuation's body resumes. The `finally:` of a [`try`](compile-try.md)
+and the exit of a plain [`with`](with.md) are local to their body and do
+not run on the transfer.
 
-**Errors:** A `with` or `dyn-wind` inside the captured region is captured
-with it, and its `__exit__` or after thunk runs on transfer as above. A
-capture taken from inside one of their calls while it runs, the body of
+**Errors:** A `with`, `dyn-with` or `dyn-wind` inside the captured region
+is captured with it. A capture taken from inside one of their calls while it runs, the body of
 `__enter__` or `__exit__` or a before or after thunk, is refused, as is a
 capture that would cross a generator: `KoskariPromptUnreachable`, with the
 `boundary` attribute naming what refused (`enter`, `exit`, `before`,

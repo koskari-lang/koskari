@@ -57,8 +57,8 @@
                      on pop
   KOS_DYN_CC       - Undelimited continuation block (call/cc)
   KOS_DYN_PARAM    - Parameter bindings (parameterize extent)
-  KOS_DYN_WITH     - Context manager (with / dyn-with); multi vs single-shot
-                     is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
+  KOS_DYN_WITH     - Context manager (with / dyn-with); a dyn-with carries
+                     KOS_DYN_CAP_WINDS, not a second kind
   KOS_DYN_SHIFT    - Shift handler bookmark (transparent; no segment,
                      frame, or namespace of its own)
   KOS_DYN_GEN      - Generator node; intercepts handle(RETURN/RAISE),
@@ -621,15 +621,11 @@ struct KosDynNode {
       uint8_t self_bind;
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_* */
-      uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
       /* __exit__ runs as a handler of the obligation's exception: saved
          is the handler-visible state that displaced, given back when
          __exit__ is done */
       uint8_t exc_saved;
-      /* KosRef shared across clones (owned); non-empty once the
-         single-shot __exit__ has run. NULL for multi-shot */
-      PyObject *exit_done;
-      PyObject *name;      /* binding name or NULL (owned) */
+      PyObject *name;     /* binding name or NULL (owned) */
       KosOp *resume_pc;    /* the instruction after the with body (pop + 1) */
       /* the exception __exit__ is handling, or what a walk stored while
          __exit__ runs */
@@ -1574,11 +1570,12 @@ int kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
 
 /**
    Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
-   enter. :c:member:`shot` is KOS_DYN_WITH_SHOT_MULTI or
-   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE. self_bind carries KOS_WITH_SELF_ENTER
-   and KOS_WITH_SELF_EXIT for the protocol methods that were resolved on
-   the type as plain functions and are called with mgr as their first
-   argument; the others are already bound or need no receiver.
+   enter. winds is KOS_DYN_CAP_WINDS for a dyn-with, which a transfer
+   runs, or 0 for a plain with, which is local to its body. self_bind
+   carries KOS_WITH_SELF_ENTER and KOS_WITH_SELF_EXIT for the protocol
+   methods that were resolved on the type as plain functions and are
+   called with mgr as their first argument; the others are already
+   bound or need no receiver.
 
    :return: new KosDynWith node, or NULL on error
 */
@@ -1590,12 +1587,14 @@ KosDynWith *kos_dyn_push_with_provisional(
     uint8_t self_bind,
     PyObject *name,
     KosOp *resume_pc,
-    uint8_t shot);
+    uint32_t winds);
 
 
 /**
    Clone a WITH node for continuation capture. Copies mgr, enter, exit,
-   name with new references and copies shot/caps from src.
+   name with new references and the caps from src. A dyn-with's clone is
+   not entered, for a transfer to enter; a plain with's clone keeps the
+   source's entered state, so the copy runs __exit__ when it exits.
 
    :return: cloned node, or NULL on error
 */
@@ -1617,7 +1616,10 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    1. A KOS_DYN_CAP_CONTROL_HOOK node is asked to leave
       (kos_dyn_extent_leave); any answer but NORMAL returns unchanged,
       with the node still on the chain -- the caller stores what it
-      carries and asks again later.
+      carries and asks again later. Under KOS_XFER_EVENT_TRANSFER a
+      node without KOS_DYN_CAP_WINDS is local and is not asked: a call
+      of its in flight is discharged (kos_dyn_extent_abort) and nothing
+      else of it runs.
    2. The synchronous per-kind teardown runs (PARAM restore,
       TRY/FINALLY exception-state restore).
    3. The node's obligation is detached.
@@ -2350,15 +2352,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 /** terminal: the extent has been left; every further leave is a no-op */
 #define KOS_WITH_PHASE_LEFT                3
 
-/** Multi-shot (dyn-with); participates in install wind */
-#define KOS_DYN_WITH_SHOT_MULTI 0u
-
-/** Single-shot; __exit__ not yet consumed for extent pairing */
-#define KOS_DYN_WITH_SHOT_SINGLE_ACTIVE 1u
-
-/** Single-shot; __exit__ already consumed; ignore further protocol */
-#define KOS_DYN_WITH_SHOT_SINGLE_DONE 2u
-
 /** enter is a plain function: call it with mgr as the first argument */
 #define KOS_WITH_SELF_ENTER 1u
 
@@ -2371,8 +2364,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.self_bind)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
-#define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
-#define KosDynWith_EXIT_DONE(n)    (((KosDynNode *)(n))->u.with.exit_done)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)

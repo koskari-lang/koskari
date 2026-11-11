@@ -1911,9 +1911,16 @@ static KosOpResult kos_dyn_unlink_top_take(
   }
 
   if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
-    KosOpResult r = kos_dyn_extent_leave(ctx, node, ev);
-    if (r.kind != KOS_RES_NORMAL)
-      return r;
+    if (ev == KOS_XFER_EVENT_TRANSFER
+        && ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
+      /* a transfer does not run a local extent: a call in flight is
+         discharged, and nothing else of it runs */
+      kos_dyn_extent_abort(node);
+    } else {
+      KosOpResult r = kos_dyn_extent_leave(ctx, node, ev);
+      if (r.kind != KOS_RES_NORMAL)
+        return r;
+    }
   } else {
     KosOpResult r = kos_dyn_uninstall_handler(ctx, node, ev);
     if (r.kind != KOS_RES_NORMAL)
@@ -2067,12 +2074,11 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
 
     case KOS_DYN_WITH:
       /* likewise always idle as a template; the live one matches while
-         its body runs: entered, no enter or exit in flight or awaited,
-         and a single-shot exit not yet run */
+         its body runs: entered, and no enter or exit in flight or
+         awaited */
       return KosDynWith_ENTERED(live)
           && KosDynWith_PHASE(live) == KOS_WITH_PHASE_IDLE
-          && KosDynWith_OB(live)->kind == KOS_OB_NONE
-          && ! kos_dyn_with_single_exit_done((KosDynWith *) live);
+          && KosDynWith_OB(live)->kind == KOS_OB_NONE;
 
     default:
       /* a loop region's enabled state is a capability, compared above */

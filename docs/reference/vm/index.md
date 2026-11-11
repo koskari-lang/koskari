@@ -100,8 +100,9 @@ exception is an ordinary raise, which a Koskari `try` can catch.
     which pushes its namespace on pop.
   - `KOS_DYN_CC` -- undelimited continuation block (`call/cc`).
   - `KOS_DYN_PARAM` -- parameter bindings for a parameterize extent.
-  - `KOS_DYN_WITH` -- context manager (`with` and `dyn-with`). Single-shot
-    versus multi-shot is a field on the node, not a second kind.
+  - `KOS_DYN_WITH` -- context manager (`with` and `dyn-with`). Whether a
+    continuation transfer runs it is a capability of the node, not a
+    second kind.
   - `KOS_DYN_SHIFT` -- shift handler bookmark. Owns the handler body's
     operand segment; no frame or namespace of its own.
   - `KOS_DYN_GEN` -- generator node. Intercepts yield, return, and raise,
@@ -631,10 +632,10 @@ The opcodes by family, each linking to its section.
 | CLEAR_FINALLY | NOARG | Disable the top FINALLY region on non-local exit; POP_FINALLY still runs at the target | [section 18](opcodes/kos-op-clear-finally.md) |
 | POP_TRY | NOARG | Promote the one value on the try segment, drop the segment, pop the region | [section 18](opcodes/kos-op-pop-try.md) |
 | POP_FINALLY | NOARG | As POP_TRY, for the finally segment | [section 18](opcodes/kos-op-pop-finally.md) |
-| PUSH_WITH | CONST | Pop the manager, call enter, bind the result, push a single-shot WITH node and a fresh segment | [section 18.1](opcodes/kos-op-push-with.md) |
+| PUSH_WITH | CONST | Pop the manager, call enter, bind the result, push a WITH node local to the body and a fresh segment | [section 18.1](opcodes/kos-op-push-with.md) |
 | POP_WITH | NOARG | Call exit, pop the owned segment and the node, push None | [section 18.1](opcodes/kos-op-pop-with.md) |
-| PUSH_DYN_WITH | CONST | As PUSH_WITH, with a multi-shot node that takes part in continuation transfer plans | [section 18.1](opcodes/kos-op-push-dyn-with.md) |
-| POP_DYN_WITH | NOARG | As POP_WITH, for the multi-shot node | [section 18.1](opcodes/kos-op-pop-dyn-with.md) |
+| PUSH_DYN_WITH | CONST | As PUSH_WITH, with a node that continuation transfers exit and enter again | [section 18.1](opcodes/kos-op-push-dyn-with.md) |
+| POP_DYN_WITH | NOARG | As POP_WITH, for the dyn-with node | [section 18.1](opcodes/kos-op-pop-dyn-with.md) |
 | OBJECT_COMPARE | CMPCOUNT | Chain-compare N stack values under the packed selector and push the result | [section 19](opcodes/kos-op-object-compare.md) |
 | OBJECT_COMPARE_VAR | EXTRA | The ternary bounds idiom with the middle operand resolved by name | [section 19](opcodes/kos-op-object-compare-var.md) |
 | OBJECT_COMPARE_FAST | EXTRA | The ternary bounds idiom with the middle operand from a fast slot | [section 19](opcodes/kos-op-object-compare-fast.md) |
@@ -3875,7 +3876,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand segment.
 - **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new segment; look up WITH extent at current PC, compute `resume_pc = ext->pop_pc + 1`; push `KOS_DYN_WITH` with `resume_pc` stored on the node. On enter failure, no node or block is installed; exception propagates.
-- **Pushes:** KOS_DYN_WITH (single-shot: exits once on unwind or transfer, never re-entered). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
+- **Pushes:** KOS_DYN_WITH, local to its body: exit runs on completion, an exception, or a return, break or continue out of the body; a continuation transfer runs neither exit nor enter, and each copy of the body a continuation resumes runs exit when that copy exits. Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
 - **Invariants:** Node owns one operand segment; stack restoration is structural (segment pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
 ### KOS_OP_POP_WITH
@@ -3884,12 +3885,12 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is the body's value, or `None` when exit swallowed an exception; exit return is used only for swallow logic and is never the value seen by RETURN.
 ### KOS_OP_PUSH_DYN_WITH
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
-- **Stack / behaviour:** Same as PUSH_WITH except that the node is marked multi-shot (`KOS_DYN_WITH_SHOT_MULTI`) and the DYN_WITH extent supplies the pcs. The node participates in continuation transfer plans (wind/unwind on non-local transfer).
-- **Pushes:** KOS_DYN_WITH, multi-shot.
+- **Stack / behaviour:** Same as PUSH_WITH except that the DYN_WITH extent supplies the pcs and the node is one a continuation transfer runs: a transfer leaving the body calls exit, and one resuming a captured body calls enter again.
+- **Pushes:** KOS_DYN_WITH, run by transfers.
 
 ### KOS_OP_POP_DYN_WITH
 - **Style**: NOARG.
-- **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops the multi-shot KOS_DYN_WITH.
+- **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops the dyn-with's KOS_DYN_WITH.
 
 ---
 ### KOS_OP_PUSH_COLLECT
@@ -4393,7 +4394,7 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_PUSH_SHIFT
 
 - **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `with` exit run; a `try` is dropped and its `finally` body does not run), a SHIFT marker is attached to the prompt, and the captured continuation is delivered to it at the shift block's first instruction. A shift hosted in a callee leaves that callee's frame with the region, and a copy of the frame is attached to the SHIFT for the shift block to run in. SHIFT owns the segment the shift body's operands go on; the region's pending operands are in the continuation.
+- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit), a SHIFT marker is attached to the prompt, and the captured continuation is delivered to it at the shift block's first instruction. A shift hosted in a callee leaves that callee's frame with the region, and a copy of the frame is attached to the SHIFT for the shift block to run in. SHIFT owns the segment the shift body's operands go on; the region's pending operands are in the continuation.
 - **Pushes:** KOS_DYN_SHIFT (bookmark for the shift body: owns its operand segment, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. The SHIFT's parent is the prompt the shift aborted to.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`.

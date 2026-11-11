@@ -20,9 +20,10 @@ raises, returns, breaks or continues, and a continuation transfer
 does not run it. A call/cc escape out of the try, in the same frame or
 across one, and a shift that aborts its region leave the finally body
 unrun. A slice re-entered through its continuation is a copy of the
-try, and that copy runs the finally body when it completes. A with on
-the escape path still runs its __exit__, and an escape issued from
-inside a running finally body abandons the rest of that body.
+try, and that copy runs the finally body when it completes. A plain
+with on the escape path is local too and does not run its __exit__,
+and an escape issued from inside a running finally body abandons the
+rest of that body.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -127,10 +128,10 @@ class TestFinallyUnderTransfer(unittest.IsolatedAsyncioTestCase):
             await mod["escape_across_frame"]([]))
 
 
-    async def test_escape_nested_runs_only_the_with_exit(self):
+    async def test_escape_nested_runs_no_local_cleanup(self):
         mod = await self.load()
         self.assertEqual(
-            ["enter c", "exit c", "escaped"],
+            ["enter c", "escaped"],
             await mod["escape_nested"]([]))
 
 
