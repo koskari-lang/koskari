@@ -15,10 +15,14 @@ bare symbol always expands, `break` can never name a variable.
 **Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
 The target is the innermost loop of the same function, through any
-[`reset`](compile-reset.md) or `shift` handler between the `break` and the
-loop. Inside a resumed delimited continuation the slice is the
-continuation's body: a `break` there reaches only a loop opened inside the
-slice, and with none it raises `RuntimeError("break outside loop")`.
+[`reset`](compile-reset.md) between the `break` and the loop. A
+[`shift`](compile-shift.md) handler runs after the shift has left the
+captured region, so it has only the loops written inside it: a `break`
+there with no loop of its own raises `RuntimeError("break outside loop")`,
+whatever loop surrounds the `shift` or the `reset`. Inside a resumed
+delimited continuation the slice is the continuation's body: a `break`
+there reaches only a loop opened inside the slice, and with none it raises
+the same error.
 
 **Examples:**
 

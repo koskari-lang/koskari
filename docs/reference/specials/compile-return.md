@@ -36,6 +36,12 @@ or `EVAL_NORMAL()`). When the frame has no parent or its parent is the generator
 node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
 delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
+Two places have no caller to return to, and a `return` there raises
+`KoskariPromptUnreachable`: a [`shift`](compile-shift.md) handler written in
+a function called from the captured region, and the part of a resumed
+delimited continuation that belongs to the function its `reset` is written
+in. See [`shift`](compile-shift.md).
+
 **Consuming multiple values:** index the returned tuple with `(item result 0)`,
 or destructure it with [`var`](compile-var.md) over a pattern or with
 [`let-values`](../macros/compile-let-values.md):

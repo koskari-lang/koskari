@@ -90,4 +90,13 @@ class TestSolveModule(unittest.TestCase):
         self.assertIsInstance(err, solve.NoActiveSearch)
         self.assertIn("solve", str(err))
 
+    def test_reset_in_the_thunk_does_not_delimit_the_search(self):
+        self.assertEqual(getattr(self.cases, "reset-in-thunk"), [101, 102])
+
+    def test_reset_alone_is_not_a_search(self):
+        import koskari.solve as solve
+
+        err = getattr(self.cases, "reset-without-search")
+        self.assertIsInstance(err, solve.NoActiveSearch)
+
 # The end.

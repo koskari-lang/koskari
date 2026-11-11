@@ -58,6 +58,12 @@ by suspending. A lazy, one-solution-at-a-time enumerator is a
 non-goal for this module: it would require yielding across choice
 points, and a `shift` cannot cross a generator boundary (see the Errors section).
 
+The search delimits with a tag of its own (see
+[`reset-at`](../specials/compile-reset-at.md)). A `reset` in the thunk
+being solved is therefore not a search delimiter: `amb` and `fail` reach
+past it to the search, and a `shift` in the thunk stops at the thunk's own
+`reset`, never at the search.
+
 ## Errors
 
 The module exports its own error vocabulary, rooted under the language's

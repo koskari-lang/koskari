@@ -57,11 +57,12 @@ class NoActiveSearch [SearchError]:
 (define-parameter amb-stop-marker None)
 
 
-; compile/reset and compile/shift delimit with the default prompt tag,
-; which a capture failure reports as None. A failure carrying it failed
-; against the search delimiter; any other tag belongs to a foreign
-; delimiter and is not ours to interpret.
-(var search-prompt-tag None)
+; The search delimits with a tag of its own, so a reset in the thunk
+; being solved is not a search delimiter: amb and fail reach past it to
+; the search. A capture failure carrying this tag failed against the
+; search delimiter; any other tag belongs to a foreign delimiter and is
+; not ours to interpret.
+(var search-prompt-tag (gensym "solve"))
 
 
 def amb [choices]:
@@ -75,7 +76,7 @@ def amb [choices]:
   """
 
   try:
-    shift k:
+    shift-at search-prompt-tag k:
       let [[out #[]]]:
         for-each [c choices]:
           when amb-stop-marker:
@@ -98,7 +99,7 @@ def fail []:
   """
 
   try:
-    shift k #()
+    shift-at search-prompt-tag k #()
   except [e KoskariPromptNotFound]:
     if (is? e.tag search-prompt-tag):
       raise (NoActiveSearch "fail requires an enclosing solve or solve-first")
@@ -121,7 +122,7 @@ def solve [thunk]:
   """
 
   parameterize [[amb-stop-marker None]]:
-    reset:
+    reset-at search-prompt-tag:
       #[(thunk)]
 
 
@@ -138,7 +139,7 @@ def solve-first [thunk]:
   parameterize [[amb-stop-marker found]]:
 
     ; the shifts are expecting a list wrapping the result.
-    reset:
+    reset-at search-prompt-tag:
       let [[solution (thunk)]]:
         found.append solution
         #[solution]

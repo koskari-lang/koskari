@@ -46,6 +46,14 @@ _BODY_PATTERNS = [
     MATCH(CALLEDBY("called_by"), BODY("body")),
 ]
 
+_TAG_BODY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("tag"), BODY("body")),
+]
+
+_TAG_K_BODY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("tag"), SYMBOL("k"), BODY("body")),
+]
+
 _VALUES_PATTERNS = [
     MATCH(CALLEDBY("called_by"), REST("rest")),
 ]
@@ -161,6 +169,50 @@ def special_shift(compiler, called_by, k, body):
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_SHIFT, 0)
+    fragment.declare_var(k_sym, position=k.position)
+    fragment.instruction(OpCode.VAR_STORE, k_sym)
+    helper_begin(fragment, body.datum)
+    fragment.instruction(OpCode.POP_SHIFT, 0)
+
+    return fragment
+
+
+@builtin("compile/reset-at")
+@special("compile/reset-at", patterns=_TAG_BODY_PATTERNS, unpack="kwargs")
+def special_reset_at(compiler, called_by, tag, body):
+    """
+    Compile (compile/reset-at TAG EXPR...). Evaluates TAG, establishes a
+    prompt carrying it, runs body, pops prompt. A compile/shift-at
+    seeking the same tag, by identity, captures up to this prompt. A
+    TAG of None is the default tag, the one compile/reset uses
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    fragment.merge(compiler.full_compile(tag.datum))
+    fragment.instruction(OpCode.PUSH_PROMPT, 1)
+    helper_begin(fragment, body.datum)
+    fragment.instruction(OpCode.POP_PROMPT, 0)
+
+    return fragment
+
+
+@builtin("compile/shift-at")
+@special("compile/shift-at", patterns=_TAG_K_BODY_PATTERNS, unpack="kwargs")
+def special_shift_at(compiler, called_by, tag, k, body):
+    """
+    Compile (compile/shift-at TAG K EXPR...). Evaluates TAG, captures the
+    continuation up to the nearest prompt carrying it, binds it to K,
+    runs handler body. K must be a symbol. Prompts of other tags between
+    are crossed and become part of the continuation
+    """
+
+    k_sym = k.datum
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    fragment.merge(compiler.full_compile(tag.datum))
+    fragment.instruction(OpCode.PUSH_SHIFT, 1)
     fragment.declare_var(k_sym, position=k.position)
     fragment.instruction(OpCode.VAR_STORE, k_sym)
     helper_begin(fragment, body.datum)

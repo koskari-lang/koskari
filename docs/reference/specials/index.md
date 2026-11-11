@@ -102,6 +102,7 @@ special, a macro, and a call is in
 | [`with`](with.md), [`dyn-with`](dyn-with.md) | Context managers, lexical and dynamic-extent |
 | [`dyn-wind`](compile-dyn-wind.md) | Before and after thunks around a body, rerun across continuation jumps |
 | [`reset`](compile-reset.md), [`shift`](compile-shift.md) | Delimited continuations |
+| [`reset-at`](compile-reset-at.md), [`shift-at`](compile-shift-at.md) | Delimited continuations with a delimiter chosen by tag |
 | [`call/cc`](compile-call-cc.md), [`let/cc`](compile-let-cc.md), [`capture/cc`](compile-capture-cc.md) | Undelimited continuations, from the Scheme form down to the raw capture |
 
 ## Modules

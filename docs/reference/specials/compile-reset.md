@@ -9,7 +9,9 @@
 including) this prompt.
 
 **Behaviour:** Emits `PUSH_PROMPT 0`, compiles the body with `helper_begin`,
-emits `POP_PROMPT 0`.
+emits `POP_PROMPT 0`. The delimiter carries the default tag, the one a plain
+`shift` seeks. [`reset-at`](compile-reset-at.md) establishes a delimiter
+with a tag of the caller's choosing.
 
 A `shift` that cannot reach a prompt raises `KoskariPromptNotFound` (no
 delimiter established) or `KoskariPromptUnreachable` (a delimiter exists but a

@@ -40,6 +40,12 @@ returns `EVAL_YIELD(val)`, `SUSPENSION_EVENT = YIELD` is set, and
 `koskari_eval` returns `KOS_RES_YIELD`. On resume, `revive_yield` pushes
 `send_val` onto the stack.
 
+A resumed delimited continuation has no generator of its own: a `yield`
+in the part of it that belongs to the function its `reset` is written in
+raises `KoskariPromptUnreachable`, wherever the continuation is called
+from. A [`shift`](compile-shift.md) handler in a generator yields as any
+other code in that generator does.
+
 A `StopIteration` or `StopAsyncIteration` that escapes a generator's
 body is not the generator's own end signal. As in Python (PEP 479, PEP
 525), it leaves the generator as `RuntimeError("generator raised

@@ -872,6 +872,114 @@ tags:
   - continuation
 notes: multi-shot continuation; k called twice with nesting; empty body outside hole yields 1
 ---
+id: special-shift-handler-own-loop-004
+feature: special/compile/shift
+source: |-
+  (reset (shift k (while True (break 9))))
+
+verify:
+  read: (reset (shift k (while True (break 9))))
+  expand: (reset (shift k (while True (break 9))))
+  eval: "9"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-break.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: a shift handler has the loops written inside it; the break leaves the handler's own while, and 9 is the handler's value and so the reset's
+---
+id: special-reset-at-default-tag-001
+feature: special/compile/reset-at
+source: |-
+  (reset-at None (+ 1 (shift k (call k 5))))
+
+verify:
+  read: (reset-at None (+ 1 (shift k (call k 5))))
+  expand: (reset-at None (+ 1 (shift k (call k 5))))
+  eval: "6"
+references:
+  - reference/specials/compile-reset-at.md
+  - reference/specials/compile-shift.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: None is the default tag, so reset-at None is a plain reset and a plain shift captures up to it
+---
+id: special-reset-at-plain-shift-passes-002
+feature: special/compile/reset-at
+source: |-
+  (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift k 7))))))
+
+verify:
+  read: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift k 7))))))
+  expand: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift k 7))))))
+  eval: "107"
+references:
+  - reference/specials/compile-reset-at.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: a plain shift seeks the default tag and stops at the plain reset; 7 replaces that reset only, and the tagged delimiter around it is untouched
+---
+id: special-shift-at-default-tag-001
+feature: special/compile/shift-at
+source: |-
+  (reset (+ 1 (shift-at None k (call k 5))))
+
+verify:
+  read: (reset (+ 1 (shift-at None k (call k 5))))
+  expand: (reset (+ 1 (shift-at None k (call k 5))))
+  eval: "6"
+references:
+  - reference/specials/compile-shift-at.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: None is the default tag, so shift-at None is a plain shift and captures up to a plain reset
+---
+id: special-shift-at-crosses-reset-002
+feature: special/compile/shift-at
+source: |-
+  (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift-at t k (call k 1)))))))
+
+verify:
+  read: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift-at t k (call k 1)))))))
+  expand: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift-at t k (call k 1)))))))
+  eval: "111"
+references:
+  - reference/specials/compile-shift-at.md
+  - reference/specials/compile-reset-at.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift-at captures up to the delimiter carrying its tag and crosses the plain reset on the way; the crossed reset is part of k, so (call k 1) is 100 + (10 + 1)
+---
+id: special-shift-at-crosses-reset-at-003
+feature: special/compile/shift-at
+source: |-
+  (let [[a (gensym "a")] [b (gensym "b")]] (reset-at a (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+
+verify:
+  read: (let [[a (gensym "a")] [b (gensym "b")]] (reset-at a (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+  expand: (let [[a (gensym "a")] [b (gensym "b")]] (reset-at a (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+  eval: "111"
+references:
+  - reference/specials/compile-shift-at.md
+  - reference/specials/compile-reset-at.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: two private tags from gensym; the shift-at seeking a passes the delimiter tagged b, which becomes part of k
+---
 id: special-dyn-with-no-binding-001
 feature: special/compile/dyn-with
 source: |-

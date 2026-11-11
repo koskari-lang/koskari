@@ -97,4 +97,18 @@ def catch-no-search [thunk]:
 (var outside-fail (catch-no-search (lambda [] (fail))))
 
 
+; A reset in the thunk being solved is not a search delimiter: amb
+; reaches past it to the search, and each choice runs the rest of the
+; thunk, the reset included.
+(var reset-in-thunk
+  (solve
+    (lambda []
+      (reset (+ 100 (amb (#list 1 2)))))))
+
+
+; A reset alone does not delimit a search.
+(var reset-without-search
+  (catch-no-search (lambda [] (reset (amb (#list 1 2))))))
+
+
 ;; The end.

@@ -141,3 +141,79 @@ tags:
   - namespace
   - invalid
 notes: "vars takes zero operands (the current namespace) or one (an object's __dict__); two is a compile error. corrective: (vars a)"
+---
+id: special-shift-handler-break-outer-loop-invalid-001
+feature: special/compile/shift
+source: |-
+  (while True (reset (shift k (break 9))))
+  
+verify:
+  read: (while True (reset (shift k (break 9))))
+  invalid: "a shift handler runs after the shift has left the captured region and stands at the reset, so it has only the loops written inside it. The break is in the handler and the while is around the reset, so it fails at runtime with RuntimeError: break outside loop. The same holds for continue. Put the loop inside the handler, as in (reset (shift k (while True (break 9)))), or break in the reset body outside the shift."
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-break.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "runtime failure, not a compile error; a break written directly in a reset body, outside any shift, does reach the loop around the reset. corrective: (reset (shift k (while True (break 9))))"
+---
+id: special-shift-handler-return-in-callee-invalid-002
+feature: special/compile/shift
+source: |-
+  (reset ((lambda [] (+ 1 (shift k (return 5))))))
+  
+verify:
+  read: (reset ((lambda [] (+ 1 (shift k (return 5))))))
+  invalid: "the shift is in a function called from the region the reset delimits. Its handler runs after the shift has left that region, and the function's caller left with it, so the return has nothing to return to and fails at runtime with KoskariPromptUnreachable (operation return, boundary shift). The handler's value already becomes the reset's value: write (shift k 5)."
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-return.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "runtime failure, not a compile error; a return in a handler whose reset is in the same function returns from that function as usual. corrective: (reset ((lambda [] (+ 1 (shift k 5)))))"
+---
+id: special-shift-resumed-return-invalid-003
+feature: special/compile/shift
+source: |-
+  ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+  
+verify:
+  read: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+  invalid: "(call k 5) resumes the captured region, which ends where the reset ends. The return is in the function the reset is written in, and that function's boundary is outside the reset, so the resumed region has no caller to return to: it fails at runtime with KoskariPromptUnreachable (operation return, boundary continuation). A function the resumed region calls returns as usual."
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-return.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "runtime failure, not a compile error; the error is raised at the return, where a try inside the region can catch it. corrective: ((lambda [] (reset (+ 1 (shift k (call k 5)) 99))))"
+---
+id: special-shift-resumed-yield-invalid-004
+feature: special/compile/shift
+source: |-
+  (list ((lambda [] (reset (+ (shift k (call k 1)) (yield 5))))))
+  
+verify:
+  read: (list ((lambda [] (reset (+ (shift k (call k 1)) (yield 5))))))
+  invalid: "(call k 1) resumes the captured region, and the yield after the shift runs in that resumed region, which has no generator of its own. It fails at runtime with KoskariPromptUnreachable (operation yield, boundary continuation), wherever k is called from. A yield in the shift handler itself, as in (shift k (yield (call k 1))), suspends the generator the reset is in."
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "runtime failure, not a compile error; yield before the shift, or in the handler, is unaffected. corrective: (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))"

@@ -814,6 +814,101 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         self.assertIsNone(caught.exception.tag)
 
 
+class TestTaggedResetShift(SpecialsTestCase):
+    """
+    reset-at and shift-at take an evaluated tag. A shift-at captures up
+    to the nearest reset-at carrying the same object, crossing resets
+    of other tags, which become part of the continuation. None is the
+    default tag, the one reset and shift use.
+    """
+
+    async def test_shift_at_finds_its_reset_at(self):
+        src_str = """
+        (reset-at tag (+ 1 (shift-at tag k (call k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, tag=object())
+        self.assertEqual(await expr(), 6)
+
+
+    async def test_shift_at_crosses_a_reset_of_another_tag(self):
+        """
+        k = (lambda [v] (reset-at a (+ 100 (reset-at b (+ 10 v))))), so
+        (k 1) is 111, and that is the value of the outer reset-at
+        """
+
+        src_str = """
+        (reset-at a
+          (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1))))))
+        """
+        expr, mod = self.compile_expr(src_str, a=object(), b=object())
+        self.assertEqual(await expr(), 111)
+
+
+    async def test_shift_at_crosses_a_plain_reset(self):
+        src_str = """
+        (reset-at a
+          (+ 100 (reset (+ 10 (shift-at a k (call k 1))))))
+        """
+        expr, mod = self.compile_expr(src_str, a=object())
+        self.assertEqual(await expr(), 111)
+
+
+    async def test_plain_shift_stops_at_the_plain_reset(self):
+        """
+        the shift seeks the default tag and is delimited by the inner
+        reset: its handler's value 7 replaces that reset only
+        """
+
+        src_str = """
+        (reset-at a
+          (+ 100 (reset (+ 10 (shift k 7)))))
+        """
+        expr, mod = self.compile_expr(src_str, a=object())
+        self.assertEqual(await expr(), 107)
+
+
+    async def test_none_is_the_default_tag(self):
+        src_str = """
+        (+ (reset-at None (+ 1 (shift k (call k 5))))
+           (reset (+ 1 (shift-at None k (call k 50)))))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(await expr(), 57)
+
+
+    async def test_tags_match_by_identity(self):
+        """
+        two equal lists are two tags: the shift-at finds no reset-at
+        and the failure carries the tag it sought
+        """
+
+        seek = [1]
+        src_str = """
+        (reset-at held (+ 1 (shift-at seek k (call k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, held=[1], seek=seek)
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await expr()
+        self.assertIs(caught.exception.tag, seek)
+        self.assertEqual(caught.exception.operation, "shift")
+
+
+    async def test_tag_expression_is_evaluated_once_per_form(self):
+        calls = []
+
+        def make(name):
+            calls.append(name)
+            return tags[name]
+
+        tags = {"a": object()}
+        src_str = """
+        (reset-at (make "a") (+ 1 (shift-at (make "a") k (call k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, make=make)
+        self.assertEqual(await expr(), 6)
+        self.assertEqual(calls, ["a", "a"])
+
+
 class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
     """
     A delimited return that meets an after thunk on its way to the
