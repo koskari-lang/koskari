@@ -15,11 +15,13 @@
 """
 tests.reproducers.test_shift_abort_cancelled
 
-A shift leaves its region before its handler runs, and a finally body
-or a dyn-wind after body on the way out runs during that leave. When
-that body raises, breaks, continues or returns, the abort is cancelled
-and the region carries on from where the escape lands, with the
-operands it had pending around the shift still in place.
+A shift leaves its region before its handler runs. A dyn-wind after
+body on the way out runs during that leave, and when it raises, the
+abort is cancelled and the region carries on where the raise is
+caught, with the operands it had pending around the shift still in
+place. A finally body is local to its try and does not run when a
+shift aborts the region, so a raise, break, continue or return written
+in it cancels nothing: the reset's value is the handler's.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -90,6 +92,16 @@ def wind_after_raises []:
     (log.append r)
     log
 
+def wind_raise_pending_one []:
+    reset:
+        (+ 1 (try (dyn-wind nil (shift k 0) (raise (ValueError "x")))
+                  ((e ValueError) 5)))
+
+def wind_raise_pending_two []:
+    reset:
+        (+ 10 (+ 20 (try (dyn-wind nil (shift k 0) (raise (ValueError "x")))
+                         ((e ValueError) 5))))
+
 def break_then_shift []:
     var r (reset (while True (try (shift k 0) [finally: (break 5)])))
     var s (reset (+ 100 (shift k (k 1))))
@@ -106,39 +118,39 @@ class TestShiftAbortCancelled(unittest.IsolatedAsyncioTestCase):
         return vars(module)
 
 
-    async def test_raise_in_finally_keeps_one_pending_operand(self):
+    async def test_finally_raise_does_not_run_one_pending(self):
         mod = await self.load()
-        self.assertEqual(6, await mod["raise_pending_one"]())
+        self.assertEqual(0, await mod["raise_pending_one"]())
 
 
-    async def test_raise_in_finally_with_nothing_pending(self):
+    async def test_finally_raise_does_not_run_nothing_pending(self):
         mod = await self.load()
-        self.assertEqual(5, await mod["raise_pending_none"]())
+        self.assertEqual(0, await mod["raise_pending_none"]())
 
 
-    async def test_raise_in_finally_keeps_two_pending_operands(self):
+    async def test_finally_raise_does_not_run_two_pending(self):
         mod = await self.load()
-        self.assertEqual(35, await mod["raise_pending_two"]())
+        self.assertEqual(0, await mod["raise_pending_two"]())
 
 
-    async def test_raise_in_a_callee_finally(self):
+    async def test_callee_finally_raise_does_not_run(self):
         mod = await self.load()
-        self.assertEqual(6, await mod["raise_in_callee"]())
+        self.assertEqual(0, await mod["raise_in_callee"]())
 
 
-    async def test_break_out_of_finally(self):
+    async def test_finally_break_does_not_run(self):
         mod = await self.load()
-        self.assertEqual(6, await mod["break_pending_one"]())
+        self.assertEqual(0, await mod["break_pending_one"]())
 
 
-    async def test_continue_out_of_finally(self):
+    async def test_finally_continue_does_not_run(self):
         mod = await self.load()
-        self.assertEqual(4, await mod["continue_pending_one"]())
+        self.assertEqual(0, await mod["continue_pending_one"]())
 
 
-    async def test_return_out_of_a_callee_finally(self):
+    async def test_callee_finally_return_does_not_run(self):
         mod = await self.load()
-        self.assertEqual(6, await mod["return_in_callee"]())
+        self.assertEqual(0, await mod["return_in_callee"]())
 
 
     async def test_raise_in_wind_after_body(self):
@@ -148,9 +160,19 @@ class TestShiftAbortCancelled(unittest.IsolatedAsyncioTestCase):
             await mod["wind_after_raises"]())
 
 
-    async def test_shift_after_a_break_escape(self):
+    async def test_wind_after_raise_keeps_one_pending_operand(self):
         mod = await self.load()
-        self.assertEqual([5, 101], await mod["break_then_shift"]())
+        self.assertEqual(6, await mod["wind_raise_pending_one"]())
+
+
+    async def test_wind_after_raise_keeps_two_pending_operands(self):
+        mod = await self.load()
+        self.assertEqual(35, await mod["wind_raise_pending_two"]())
+
+
+    async def test_shift_after_an_unrun_finally_break(self):
+        mod = await self.load()
+        self.assertEqual([0, 101], await mod["break_then_shift"]())
 
 
 # The end.

@@ -290,9 +290,7 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
 
 /**
    Make the goal wait on node: its thunk or awaitable is in flight, and the
-   driver does nothing until dyn_top is wait_top again. A FINALLY waits
-   with a NULL top: its body runs in the frame below it, so POP_FINALLY
-   resumes the goal in place of a return to wait_top.
+   driver does nothing until dyn_top is wait_top again.
 
    The node carries KOS_DYNF_GOAL_WAIT for as long as the wait lasts.
    The one event that voids a waiting goal is a later goal's LEAVING
@@ -301,15 +299,14 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
    out which outers are still live.
 
    No two goals wait on one node. A LEAVING waits on the node at
-   dyn_top whose leave fired its thunk, or on a FINALLY that took the
-   transfer; a later goal's LEAVING that reaches the same node has
-   already unlinked the thunk's frame above it, so the wind or with is
-   aborted without firing again, and the FINALLY was disabled when it
-   took the transfer, so it is unlinked: either way that goal unlinks
-   the node rather than waiting on it. An ENTERING waits on a node of
-   its own attached target, a fresh clone no other goal's ENTERING spans,
-   since each ENTERING spans only the nodes its own ATTACHING put above
-   its seam. The clear when the wait ends therefore drops no other
+   dyn_top whose leave fired its thunk; a later goal's LEAVING that
+   reaches the same node has already unlinked the thunk's frame above
+   it, so the wind or with is aborted without firing again and that
+   goal unlinks the node rather than waiting on it. An ENTERING waits
+   on a node of its own attached target, a fresh clone no other goal's
+   ENTERING spans, since each ENTERING spans only the nodes its own
+   ATTACHING put above its seam. The clear when the wait ends therefore
+   drops no other
    goal's mark. A mark left behind by a goal freed while it waited (a
    raise abandons every goal) only makes a later LEAVING look through
    the outers for a waiter that is not there.
@@ -378,17 +375,6 @@ int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node) {
 }
 
 
-void kos_xfer_goal_resume_after_finally(KosContext *ctx) {
-
-  KosXferGoal *goal = KosContext_GOAL(ctx);
-
-  if (! goal || ! goal->frontier
-      || ! KosDynNode_IS_FINALLY(goal->frontier))
-    return;
-  goal_end_wait(goal);
-}
-
-
 int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
   Py_VISIT(goal->payload);
@@ -449,16 +435,6 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
       }
       kos_dyn_finish_flattened_gen(ctx, (KosDynGen *) top);
       continue;
-    }
-    if (KosDynNode_IS_FINALLY(top)
-        && KosDynFinally_ENABLED((KosDynFinally *) top)) {
-      /* The finally body runs in this frame with the region still at
-         dyn_top, so no wait_top can mark its end: POP_FINALLY resumes
-         the goal once the region is gone, and the drive continues here. */
-      r = kos_dyn_finally_take_transfer(ctx, (KosDynFinally *) top);
-      if (r.kind == KOS_RES_REPROLOGUE)
-        goal_wait(goal, top, NULL);
-      return r;
     }
 
     /* an outer waits on this node: its id is read now, as the unlink

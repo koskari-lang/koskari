@@ -133,9 +133,9 @@ int kos_shift_abort(
     return -1;
 
   /* The region's operands are in the continuation, but they stay on
-     the prompt until the abort can no longer be cancelled: a finally
-     body that raises, breaks or returns on the way out leaves the
-     region running on them. ATTACHING drops them. */
+     the prompt until the abort can no longer be cancelled: a dyn-wind
+     after thunk or a with's __exit__ that raises on the way out leaves
+     the region running on them. ATTACHING drops them. */
   goal->drop_seam_operands = 1;
   kos_xfer_goal_push(ctx, goal);
   return 0;

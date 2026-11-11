@@ -29,12 +29,14 @@ that part of the slice raises the same error with `operation` `yield`: the
 slice has no generator of its own, wherever `K` is called from.
 
 `BODY` runs after the shift has aborted to its `reset`: the captured region
-is left first, as a `raise` would leave it, and `BODY` stands where the
-region stood. A `dyn-wind` around the `shift` runs its after thunk, a `with`
-exits and a `finally` body runs before `BODY` does. A `try` inside the
-region does not catch what `BODY` raises, and a `parameterize` inside the
-region is not in effect for it. Each call of `K` enters a copy of the
-region, so those extents are entered again per call:
+is left first, and `BODY` stands where the region stood. A `dyn-wind`
+around the `shift` runs its after thunk and a `with` exits before `BODY`
+does. A `finally` body inside the region is local to its `try` and does
+not run on the abort. A `try` inside the region does not catch what `BODY`
+raises, and a `parameterize` inside the region is not in effect for it.
+Each call of `K` enters a copy of the region, so the `dyn-wind` extents are
+entered again per call, and a copy of a `try` runs its `finally` body when
+that copy exits locally:
 `(reset (dyn-wind before (shift k (k 5)) after))` runs `before` and `after`
 twice, once around the abort and once around the call.
 

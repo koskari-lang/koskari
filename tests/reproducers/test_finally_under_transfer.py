@@ -15,14 +15,14 @@
 """
 tests.reproducers.test_finally_under_transfer
 
-A finally body runs on every exit from its try, a continuation
-transfer included: a call/cc escape out of the try, in the same frame
-or across one, and a shift handler that abandons the captured slice.
-It runs once per exit, so a slice re-entered through its continuation
-runs it again when that run leaves, the way a dyn-wind after thunk
-does. Nested regions leave inner first, a with on the same path runs
-its __exit__ in order with them, and an escape issued from inside a
-running finally body abandons the rest of that body.
+A finally body is local to its try: it runs when the try completes,
+raises, returns, breaks or continues, and a continuation transfer
+does not run it. A call/cc escape out of the try, in the same frame or
+across one, and a shift that aborts its region leave the finally body
+unrun. A slice re-entered through its continuation is a copy of the
+try, and that copy runs the finally body when it completes. A with on
+the escape path still runs its __exit__, and an escape issued from
+inside a running finally body abandons the rest of that body.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -117,34 +117,34 @@ class TestFinallyUnderTransfer(unittest.IsolatedAsyncioTestCase):
     async def test_escape_same_frame(self):
         mod = await self.load()
         self.assertEqual(
-            ["finally", "escaped"], await mod["escape_same_frame"]([]))
+            ["escaped"], await mod["escape_same_frame"]([]))
 
 
     async def test_escape_across_frame(self):
         mod = await self.load()
         self.assertEqual(
-            ["body", "finally", "escaped"],
+            ["body", "escaped"],
             await mod["escape_across_frame"]([]))
 
 
-    async def test_escape_nested_inner_first(self):
+    async def test_escape_nested_runs_only_the_with_exit(self):
         mod = await self.load()
         self.assertEqual(
-            ["enter c", "inner", "exit c", "outer", "escaped"],
+            ["enter c", "exit c", "escaped"],
             await mod["escape_nested"]([]))
 
 
-    async def test_shift_handler_abandoning_slice(self):
+    async def test_shift_abort_leaves_finally_unrun(self):
         mod = await self.load()
         self.assertEqual(
-            ["finally", "handler", 10],
+            ["handler", 10],
             await mod["shift_abandons_slice"]([]))
 
 
-    async def test_reentry_runs_finally_per_exit(self):
+    async def test_each_reentered_copy_runs_finally_on_completion(self):
         mod = await self.load()
         self.assertEqual(
-            ["finally", "first",
+            ["first",
              "finally", "second",
              "finally", "third"],
             await mod["reenter"]([]))

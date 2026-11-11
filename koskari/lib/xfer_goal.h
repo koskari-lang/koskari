@@ -191,13 +191,6 @@ int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node);
 
 
 /**
-   The FINALLY body the active goal waited on has run: clear the wait
-   ahead of that region leaving the chain, so the next drive continues
-   LEAVING from the new dyn_top. Caller: opcode/POP_FINALLY.c.
-*/
-void kos_xfer_goal_resume_after_finally(KosContext *ctx);
-
-/**
    1 when a goal is active and the next drive will act on it: it is not
    waiting, or the thunk it waits on has returned (dyn_top is back at
    wait_top). A waiting goal whose thunk is still running is dormant, and

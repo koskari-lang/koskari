@@ -23,10 +23,10 @@ return). The continuation may be invoked from within the same eval context
 a different eval context triggers the segmented-transfer path.
 
 Invoking the continuation leaves every extent between the call site and the
-capture point: the `finally:` of a [`try`](compile-try.md), the `__exit__`
-of a [`with`](with.md) and the after thunk of a
-[`dyn-wind`](compile-dyn-wind.md) all run, innermost first, before the
-continuation's body resumes.
+capture point: the `__exit__` of a [`with`](with.md) and the after thunk of
+a [`dyn-wind`](compile-dyn-wind.md) run, innermost first, before the
+continuation's body resumes. The `finally:` of a [`try`](compile-try.md) is
+local to the try and does not run on the transfer.
 
 **Errors:** A `with` or `dyn-wind` inside the captured region is captured
 with it, and its `__exit__` or after thunk runs on transfer as above. A
