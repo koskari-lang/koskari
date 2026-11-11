@@ -56,7 +56,10 @@ KosXferGoal *kos_xfer_goal_new(
   goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  goal->wait_top = NULL;
+  goal->pieces = NULL;
+  goal->piece_count = 0;
+  goal->piece_next = 0;
+  goal->piece_entered = 0;
   goal->payload = Py_XNewRef(payload);
   goal->continuation_ref = Py_XNewRef(continuation_ref);
   goal->resume_pc = resume_pc;
@@ -108,6 +111,10 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
     goal->restore = NULL;
     goal->restore_count = 0;
   }
+  /* the split points borrow nodes of the target or the chain */
+  PyMem_Free(goal->pieces);
+  goal->pieces = NULL;
+  goal->piece_count = 0;
   PyMem_Free(goal);
 }
 
@@ -289,8 +296,10 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
 
 
 /**
-   Make the goal wait on node: its thunk or awaitable is in flight, and the
-   driver does nothing until dyn_top is wait_top again.
+   Make the goal wait on node: its thunk or awaitable is in flight. The
+   thunk's frame installs directly above node -- LEAVING fires it with
+   node at dyn_top, and ATTACHING puts the node ENTERING runs at dyn_top
+   -- so the driver does nothing until dyn_top is node again.
 
    The node carries KOS_DYNF_GOAL_WAIT for as long as the wait lasts.
    The one event that voids a waiting goal is a later goal's LEAVING
@@ -304,18 +313,16 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
    it, so the wind or with is aborted without firing again and that
    goal unlinks the node rather than waiting on it. An ENTERING waits
    on a node of its own attached target, a fresh clone no other goal's
-   ENTERING spans, since each ENTERING spans only the nodes its own
-   ATTACHING put above its seam. The clear when the wait ends therefore
-   drops no other
-   goal's mark. A mark left behind by a goal freed while it waited (a
-   raise abandons every goal) only makes a later LEAVING look through
-   the outers for a waiter that is not there.
+   ENTERING runs, since each ENTERING runs only the nodes its own
+   ATTACHING put on the chain. The clear when the wait ends therefore
+   drops no other goal's mark. A mark left behind by a goal freed while
+   it waited (a raise abandons every goal) only makes a later LEAVING
+   look through the outers for a waiter that is not there.
 */
-static void goal_wait(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
+static void goal_wait(KosXferGoal *goal, KosDynNode *node) {
 
   goal->frontier = node;
   goal->frontier_id = kos_dynnode_id(node);
-  goal->wait_top = top;
   KosDynNode_FLAGS(node) |= KOS_DYNF_GOAL_WAIT;
 }
 
@@ -329,7 +336,6 @@ static void goal_end_wait(KosXferGoal *goal) {
   KosDynNode_FLAGS(goal->frontier) &= ~KOS_DYNF_GOAL_WAIT;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  goal->wait_top = NULL;
 }
 
 
@@ -351,7 +357,6 @@ static void goal_void_outers_on(
       continue;
     outer->frontier = NULL;
     outer->frontier_id = 0;
-    outer->wait_top = NULL;
     goal->voided_outer = 1;
   }
 }
@@ -363,7 +368,7 @@ int kos_xfer_goal_will_drive(KosContext *ctx) {
 
   if (! goal)
     return 0;
-  return ! goal->frontier || KosContext_DYN_TOP(ctx) == goal->wait_top;
+  return ! goal->frontier || KosContext_DYN_TOP(ctx) == goal->frontier;
 }
 
 
@@ -448,7 +453,7 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
       continue;
     }
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
-      goal_wait(goal, top, top);
+      goal_wait(goal, top);
     return r;
   }
   return EVAL_NORMAL();
@@ -456,49 +461,138 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
-   ATTACHING: splice the target onto the seam and install the resume pc.
-   Synchronous and infallible; runs once. An outer goal whose frontier
-   LEAVING unlinked is void: the node it waited on and everything above
-   it are gone, and the extent it was moving through no longer exists.
-   With a NULL seam that is every outer.
+   Record the target's split points in one walk from its top: each node
+   a transfer runs (KOS_DYN_CAP_WINDS) with the node resting on it,
+   stored outermost first, and the target's bottom in *out_bottom. Runs
+   at the first ATTACHING, before anything is spliced.
+
+   :return: 0, or -1 with PyErr set and nothing recorded
+*/
+static int goal_record_pieces(
+    KosXferGoal *goal,
+    KosDynNode **out_bottom) {
+
+  KosXferPiece *pieces = NULL;
+  size_t count = 0;
+  size_t cap = 0;
+  KosDynNode *prev = NULL;
+  KosDynNode *node;
+
+  /* the walk meets the innermost first */
+  for (node = goal->target; node; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
+      if (count == cap) {
+        size_t grow = cap ? cap * 2 : 4;
+        KosXferPiece *next = PyMem_Realloc(
+            pieces, grow * sizeof(KosXferPiece));
+
+        if (! next) {
+          PyMem_Free(pieces);
+          PyErr_NoMemory();
+          return -1;
+        }
+        pieces = next;
+        cap = grow;
+      }
+      pieces[count].cut = node;
+      pieces[count].rest = prev;
+      count++;
+    }
+    prev = node;
+  }
+
+  for (size_t i = 0; i < count / 2; i++) {
+    KosXferPiece swap = pieces[i];
+
+    pieces[i] = pieces[count - 1 - i];
+    pieces[count - 1 - i] = swap;
+  }
+  goal->pieces = pieces;
+  goal->piece_count = count;
+  *out_bottom = prev;
+  return 0;
+}
+
+
+/**
+   ATTACHING: splice the next piece of the target onto the chain. A
+   transfer re-enters the target outermost first, and each node it runs
+   (KOS_DYN_CAP_WINDS) runs its enter with only the nodes outside it on
+   the chain, as dynamic-wind runs a before thunk in the extent of the
+   dynamic-wind itself. So a piece is the rest of the target from its
+   bottom up to and including the next split point, or the whole rest
+   when no split point is left; what rests on the split point stays in
+   goal->target, and ENTERING runs the split point before the next
+   piece goes on. The first piece goes onto the seam, each later one
+   onto the split point the previous piece ended at, which is dyn_top.
+   The piece that uses the target up installs the resume pc.
+
+   Infallible but for recording the split points, which the first
+   ATTACHING does before anything is spliced, and the restore. An outer
+   goal whose frontier LEAVING unlinked is void: the node it waited on
+   and everything above it are gone, and the extent it was moving
+   through no longer exists. With a NULL seam that is every outer.
 */
 static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 
+  /* Only the first ATTACHING has split at nothing yet: a later one
+     follows a split, since without one the first used the target up. */
+  int first = goal->piece_next == 0;
+  KosDynNode *base = first ? goal->seam : KosContext_DYN_TOP(ctx);
   int had_target = goal->target != NULL;
+  KosDynNode *bottom = NULL;
+
+  if (first && goal->target && goal_record_pieces(goal, &bottom) < 0)
+    return EVAL_RAISE();
 
   /* dyn_top is the seam. For a shift's abort that is its prompt, and
      the region's operands on it went with the continuation: the leave
      is done, so nothing can resume the region on them now. */
-  if (goal->drop_seam_operands && KosDynNode_STACK(goal->seam))
+  if (first && goal->drop_seam_operands && KosDynNode_STACK(goal->seam))
     KosStack_Clear(&KosDynNode_STACK(goal->seam));
 
   if (goal->target) {
-    KosDynNode *bottom = goal->target;
+    KosDynNode *top = goal->target;
 
-    while (KosDynNode_PARENT(bottom))
-      bottom = KosDynNode_PARENT(bottom);
-    KosDynNode_PARENT(bottom) = goal->seam;
+    /* the rest of the target starts on the previous split point */
+    if (! first)
+      bottom = goal->pieces[goal->piece_next - 1].rest;
+
+    if (goal->piece_next < goal->piece_count) {
+      KosXferPiece *piece = &goal->pieces[goal->piece_next++];
+
+      top = piece->cut;
+      if (piece->rest)
+        KosDynNode_PARENT(piece->rest) = NULL;
+      else
+        goal->target = NULL;
+    } else {
+      goal->target = NULL;
+    }
+
+    KosDynNode_PARENT(bottom) = base;
     kos_dynnode_note_parent(bottom);
     /* The clone's frames carry capture-time depths; the invoke checked
        that they fit above the seam before the push. */
-    kos_dyn_renumber_frames(goal->target, goal->seam,
-        kos_dyn_frame_depth_at(goal->seam));
-    KosContext_DYN_TOP(ctx) = goal->target;
-    goal->target = NULL;
+    kos_dyn_renumber_frames(top, base, kos_dyn_frame_depth_at(base));
+    KosContext_DYN_TOP(ctx) = top;
     kos_dyn_resync_chain(ctx);
   }
 
   /* Below the seam the extents are the ones the capture ran in; only
      the operands they held come back. This runs after the splice and
      its resync: retargeting the live frame flushes the live pc into
-     the frame it leaves, which would overwrite a restore done first. */
-  if (goal->restore) {
+     the frame it leaves, which would overwrite a restore done first.
+     The records cover the seam's run, below the first piece. */
+  if (first && goal->restore) {
     if (goal_apply_restore(ctx, goal) < 0)
       return EVAL_RAISE();
     if (! had_target)
       kos_dyn_resync_chain(ctx);
   }
-  if (goal->resume_pc && KosContext_FRAME(ctx))
+  /* the resume pc is the copy's top frame's: set once the target is
+     used up */
+  if (! goal->target && goal->resume_pc && KosContext_FRAME(ctx))
     KosContext_SET_PC(ctx, goal->resume_pc);
 
   /* Retire every waiting outer whose frontier LEAVING unlinked. An
@@ -543,65 +637,29 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 }
 
 
-#define GOAL_SPAN_BUF 8
-
-
 /**
-   ENTERING: from the seam upward, enter each node a transfer runs
-   (KOS_DYN_CAP_WINDS: a wind, a dyn-with, a param extent). A node
-   already entered answers NORMAL, so a pass after a suspension
-   re-derives its place. A node without the cap, a plain with among
-   them, is not re-entered.
+   ENTERING: run the enter of the split point the last ATTACHING put at
+   dyn_top, if it ended at one: a wind, a dyn-with or a param extent
+   (KOS_DYN_CAP_WINDS). Its thunk or __enter__ frame installs directly
+   above it, and the goal waits on it. A node already entered answers
+   NORMAL, so the pass after the wait re-derives its place. A node
+   without the cap, a plain with among them, is not re-entered.
 */
 static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
-  KosDynNode *stack_buf[GOAL_SPAN_BUF];
-  KosDynNode **span = stack_buf;
-  size_t count = 0;
-  size_t cap = GOAL_SPAN_BUF;
   KosDynNode *node;
-  KosOpResult out = EVAL_NORMAL();
+  KosOpResult r;
 
-  for (node = KosContext_DYN_TOP(ctx); node && node != goal->seam;
-      node = KosDynNode_PARENT(node)) {
-    if (count == cap) {
-      KosDynNode **next = PyMem_Malloc(cap * 2 * sizeof(KosDynNode *));
-      if (! next) {
-        if (span != stack_buf)
-          PyMem_Free(span);
-        PyErr_NoMemory();
-        return EVAL_RAISE();
-      }
-      memcpy(next, span, count * sizeof(KosDynNode *));
-      if (span != stack_buf)
-        PyMem_Free(span);
-      span = next;
-      cap *= 2;
-    }
-    span[count++] = node;
-  }
+  if (goal->piece_entered == goal->piece_next)
+    return EVAL_NORMAL();
 
-  while (count > 0) {
-    KosDynNode *before;
-    KosOpResult r;
-
-    node = span[--count];
-    if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS))
-      continue;
-
-    before = KosContext_DYN_TOP(ctx);
-    r = kos_dyn_extent_enter(ctx, node);
-    if (r.kind == KOS_RES_NORMAL)
-      continue;
-    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
-      goal_wait(goal, node, before);
-    out = r;
-    break;
-  }
-
-  if (span != stack_buf)
-    PyMem_Free(span);
-  return out;
+  node = goal->pieces[goal->piece_entered].cut;
+  r = kos_dyn_extent_enter(ctx, node);
+  if (r.kind == KOS_RES_NORMAL)
+    goal->piece_entered++;
+  else if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
+    goal_wait(goal, node);
+  return r;
 }
 
 
@@ -667,11 +725,12 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
     KosOpResult r;
 
     if (goal->frontier) {
-      /* Waiting on a thunk. Its frame installs above wait_top, so any
-         boundary event while it runs finds dyn_top above wait_top; the
-         first one that finds dyn_top at wait_top is its return, or the
-         revive of its awaitable with the value on the block. */
-      if (KosContext_DYN_TOP(ctx) != goal->wait_top)
+      /* Waiting on a thunk. Its frame installs directly above the
+         frontier, so any boundary event while it runs finds dyn_top
+         above the frontier; the first one that finds dyn_top at the
+         frontier is its return, or the revive of its awaitable with
+         the value on the block. */
+      if (KosContext_DYN_TOP(ctx) != goal->frontier)
         return EVAL_NORMAL();
 #if KOS_EVAL_SAFETYNET
       if (! kos_dyn_reaches(ctx, goal->frontier)
@@ -703,6 +762,11 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
         r = goal_enter(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
           return r;
+        if (goal->target) {
+          /* the next piece goes on above the split point just entered */
+          goal->phase = KOS_GOAL_ATTACHING;
+          continue;
+        }
         goal->phase = KOS_GOAL_DELIVERING;
         /* fall through */
       case KOS_GOAL_DELIVERING:

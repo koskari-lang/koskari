@@ -39,7 +39,11 @@ enters a copy of the region, so the `dyn-wind` and `dyn-with` extents are
 entered again per call, and a copy of a `try` or a plain `with` runs its
 `finally` body or exit when that copy exits locally:
 `(reset (dyn-wind before (shift k (k 5)) after))` runs `before` and `after`
-twice, once around the abort and once around the call.
+twice, once around the abort and once around the call. A call of `K`
+enters each `dyn-wind` and `dyn-with` before anything inside it, outermost
+first; when a before thunk or enter raises, nothing inside it sees the
+exception, and it reaches the `(K ...)` call as the extents already
+entered unwind.
 
 `BODY` has only the loops written inside it. A `break` or `continue` there
 with no loop of its own raises `break outside loop` or `continue outside

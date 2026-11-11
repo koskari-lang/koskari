@@ -27,7 +27,11 @@ capture point: the after thunk of a [`dyn-wind`](compile-dyn-wind.md) and
 the exit of a [`dyn-with`](dyn-with.md) run, innermost first, before the
 continuation's body resumes. The `finally:` of a [`try`](compile-try.md)
 and the exit of a plain [`with`](with.md) are local to their body and do
-not run on the transfer.
+not run on the transfer. Extents the continuation re-enters are entered
+outermost first, each `dyn-wind` before thunk and `dyn-with` enter running
+before anything inside it; when one raises, nothing inside it sees the
+exception, and it reaches the call of the continuation as the extents
+already entered unwind.
 
 **Errors:** A `with`, `dyn-with` or `dyn-wind` inside the captured region
 is captured with it. A capture taken from inside one of their calls while it runs, the body of

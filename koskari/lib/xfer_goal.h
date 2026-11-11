@@ -24,16 +24,20 @@
    rather than a hazard.
 
    Four phases. LEAVING unlinks from dyn_top down to the seam. ATTACHING
-   splices the target segment onto the seam and installs the resume pc.
-   ENTERING runs the extent contract's enter for each node of the attached
-   segment, outermost first. DELIVERING pushes the payload, or sets the
-   pending throw, and retires the goal.
+   splices the target onto the chain a piece at a time: each piece ends
+   at the next node a transfer runs (KOS_DYN_CAP_WINDS), outermost
+   first, and ENTERING runs that node's enter before the next piece goes
+   on, so a before thunk or __enter__ runs with only the extents outside
+   it on the chain, as dynamic-wind runs one. The two alternate until
+   the target is used up, and the last piece installs the resume pc.
+   DELIVERING pushes the payload, or sets the pending throw, and
+   retires the goal.
 
    A leave or enter that hands control to a thunk frame or an awaitable
-   makes the goal wait: the driver records the node it is waiting on and
-   dyn_top as it was at the firing, and does nothing until dyn_top is
-   that again, which means the thunk's frame came and went. Everything
-   above belongs to the thunk.
+   makes the goal wait on that node: the thunk's frame installs directly
+   above it, and the driver does nothing until dyn_top is the node
+   again, which means the thunk's frame came and went. Everything above
+   belongs to the thunk.
 
    Goals nest: a continuation invoked from inside a thunk pushes an inner
    goal while the outer stays waiting. ATTACHING retires every outer
@@ -86,17 +90,38 @@ typedef struct KosXferRestore {
 } KosXferRestore;
 
 
+/**
+   A point where ATTACHING splits the target: a node a transfer runs
+   (KOS_DYN_CAP_WINDS), and the node resting on it in the target, or
+   NULL when it is the target's top. Both are borrowed: they belong to
+   the target until attached and to the chain after.
+*/
+typedef struct KosXferPiece {
+  KosDynNode *cut;
+  KosDynNode *rest;
+} KosXferPiece;
+
+
 struct KosXferGoal {
   KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
 
-  KosDynNode *target;          /* owned clone to attach, NULL once attached
-                                  or when there is nothing to attach */
+  /* owned clone still to attach, NULL once all of it is attached or
+     when there is nothing to attach */
+  KosDynNode *target;
   KosDynNode *seam;            /* borrowed: leave down to this node and
                                   attach to it; NULL means the root */
   uint32_t seam_id;
-  KosDynNode *frontier;        /* node whose thunk we wait on, or NULL */
+  /* the node whose thunk we wait on, or NULL; the thunk's frame sits
+     directly above it */
+  KosDynNode *frontier;
   uint32_t frontier_id;
-  KosDynNode *wait_top;        /* dyn_top as it was when frontier fired */
+
+  /* the target's split points, outermost first: recorded by the first
+     ATTACHING in one walk; owned array, or NULL when it holds none */
+  KosXferPiece *pieces;
+  size_t piece_count;
+  size_t piece_next;           /* the entry the next ATTACHING splits at */
+  size_t piece_entered;        /* entries whose node ENTERING has run */
 
   PyObject *payload;           /* owned: the value, or the exception */
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
@@ -136,8 +161,9 @@ KosXferGoal *kos_xfer_goal_new(
 
 
 /**
-   Release a goal's own resources: an unattached target, the payload, the
-   continuation reference, the restore records. Does not touch outer.
+   Release a goal's own resources: the target still unattached, the
+   payload, the continuation reference, the restore records, the split
+   points. Does not touch outer.
 */
 void kos_xfer_goal_free(KosXferGoal *goal);
 
@@ -193,8 +219,9 @@ int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node);
 /**
    1 when a goal is active and the next drive will act on it: it is not
    waiting, or the thunk it waits on has returned (dyn_top is back at
-   wait_top). A waiting goal whose thunk is still running is dormant, and
-   the code in that thunk owns the evaluator's staged deliveries.
+   the node it waits on). A waiting goal whose thunk is still running is
+   dormant, and the code in that thunk owns the evaluator's staged
+   deliveries.
 */
 int kos_xfer_goal_will_drive(KosContext *ctx);
 
