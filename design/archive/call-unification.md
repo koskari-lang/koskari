@@ -41,14 +41,14 @@ complementary); PGO ([pgo-build.md](pgo-build.md), complementary).
 | `KosCallable_Check` | type check per call | per callable |
 | `KosStackSteal_Tail` | memcpy args + Free | avoidable (non-tail) |
 | `do_frame_prep` / `wants_frame_fn` | indirect call per call | per type/instance |
-| frame push (freelist + inline retarget) | cheap (landed) | -- |
+| frame push (freelist + inline retarget) | cheap (implemented) | -- |
 | `KosCallable_Call` -> vinstall | indirect call | per type |
 | `KosNamespace_Copy(BASE_NS)` | freelist alloc + header + closure-Ref loop | -- |
 | `KosFormals_VectorApplyFast` | general formals machine | per function shape |
 | `kos_function_bind_self_if_local` | ~~`PySequence_Contains` per call~~ flag test (Phase 1) | **per function** |
 | `KosCode_YIELDS` branch | one bit test (ledger over-attributed it) | per code |
 | `SetFrameCodeAndNamespace` | refcount churn + retarget check | -- |
-| return path | cheap (landed: plain return + DISPATCH) | -- |
+| return path | cheap (implemented: plain return + DISPATCH) | -- |
 
 Non-vinstall callables (e.g. Expression) additionally pay
 `vcall_build_args_tuple` (+ kwds dict) per call through the
@@ -94,10 +94,10 @@ family. Commit nothing; keep numbers in the PR description or notes.
 
 ## Phase 1 -- Low-hanging fruit (no structural change) [COMPLETE]
 
-Each item was independently assessed; one landed as code, the rest
+Each item was independently assessed; one was implemented as code, the rest
 resolved as audit verdicts that reorder work into Phase 2/3.
 
-1. **`bind_self` at creation.** LANDED. `KosFunction.bind_self_state`
+1. **`bind_self` at creation.** IMPLEMENTED. `KosFunction.bind_self_state`
    (0 unresolved / 1 bind / 2 no-bind), computed lazily on first call
    -- safe because `name` is read-only externally and both internal
    assignments precede any call; the zero default makes constructors
@@ -118,7 +118,7 @@ resolved as audit verdicts that reorder work into Phase 2/3.
    installs push their result onto the caller's block** (generators --
    `wants_frame` is 0 for yielding code -- plus continuation invokes,
    demand, partial). With a borrowed window still occupying the
-   caller's stack tail, the install's result lands on top of the args
+   caller's stack tail, the install's result is pushed on top of the args
    and the post-call drop consumes the result. Steal avoids this by
    clearing the args first. Only the Phase 2 core, which sequences
    bind -> drop -> result-push per install class, can host the window
@@ -144,7 +144,7 @@ op_CALL_FAST:            /* inline: ~50-150 B */
   return kos_call_invoke(es, callable, argv, n, NULL, KOS_CALL_PLAIN);
 
 kos_call_invoke:         /* ONE noinline shared core */
-  [Phase 3 fast path lands here]
+  [Phase 3 fast path goes here]
   classify callable -> install (KosFunction / generator / Expression /
     instance-call inject / plain Python vectorcall / tail variants)
   bind ns -> drop argv window -> [then, per class] push frame + set
@@ -197,7 +197,7 @@ of duplication and dead branches removed).
 
 ### Phase 2 outcomes [COMPLETE]
 
-- `kos_call_invoke` landed (noinline, ~2.7 KB out of line) with the
+- `kos_call_invoke` was implemented (noinline, ~2.7 KB out of line) with the
   per-class window sequencing, plus `KOS_CALL_WINDOW_CALLABLE` (window
   includes the callable beneath argv) and `KOS_CALL_WINDOW_UNDER` (an
   on-stack receiver beneath argv, dropped with the window, reached only
@@ -261,7 +261,7 @@ of duplication and dead branches removed).
 
 - `KosFunction.simple_arity1` (arity PLUS ONE; 0 = not simple, so a
   zeroed construction is fail-safe) computed at construction by
-  `function_compute_simple_arity`.  Classification landed at **v1.5**,
+  `function_compute_simple_arity`.  Classification was implemented at **v1.5**,
   wider than planned v1: both positionally fillable runs count (pos AND
   kwd -- the vector apply fills kwd runs positionally at the shared
   slot index), and **defaults are permitted** because the fast path
@@ -397,7 +397,7 @@ target is a meaningful cut of the ~150 ns install cost.
 
 ## Phase 4 -- Per-site call cache (investigative, gated on Phase 3)
 
-A `KOS_CACHE_CALL` kind on the landed per-site cache framework: guard
+A `KOS_CACHE_CALL` kind on the implemented per-site cache framework: guard
 on callable identity, cache the classification verdict + arity. Honest
 framing: the callable deref must still happen (rebinding is legal), so
 a hit only skips the type check and flag loads -- which Phase 3 already
@@ -430,7 +430,7 @@ win** (same bar as the other cache-family TODOs). Version-independent
 - **No-frame result delivery** (Phase 1.4 finding): any install class
   that delivers onto the caller's block is ordering-sensitive with the
   borrowed window. Every new install class added to the core must
-  declare which side of the drop its result lands on; the review
+  declare which side of the drop its result goes on; the review
   checklist for Phase 2 conversions includes this per class.
 
 <!-- The end. -->

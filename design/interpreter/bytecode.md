@@ -38,8 +38,8 @@ struct KosOp {
 };
 ```
 
-`pc` makes every pointer to an instruction self-describing: a jump lands
-through `target` and reads the landing pc off it, and a handler's
+`pc` makes every pointer to an instruction self-describing: a jump arrives
+through `target` and reads the arrival pc off it, and a handler's
 straight-line step is `insn + 1`. Jump targets and `pc` are 16-bit, so a
 code object holds at most 65,535 instructions and finalize enforces it.
 `obj` and `slot` point out of the block; `target` and `row` point into

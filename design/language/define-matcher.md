@@ -94,8 +94,8 @@ unconditionally; a bound matcher name never silently shadows captures.
 
 How a formal *associates* with what it stands for is undecided. Plain
 source substitution makes every formal position-agnostic — `T` becomes a
-type extern only because it landed in `:: T` position, `tag` a literal
-only because it landed in `val:` position. That is maximally flexible and
+type extern only because it was placed in `:: T` position, `tag` a literal
+only because it was placed in `val:` position. That is maximally flexible and
 minimally declared. The alternatives worth weighing before committing:
 
 - **Declared formal kinds** — the formals list annotates intent
@@ -109,7 +109,7 @@ minimally declared. The alternatives worth weighing before committing:
   be routed as an extern resolved at match time? Same question for types:
   `(pair-of int)` currently implies extern `int`, but a template might
   want to *close over* a resolved value at definition or expansion time
-  instead. Where a template argument lands — const pool vs extern table —
+  instead. Where a template argument goes -- const pool vs extern table --
   changes drift behavior, closure capture, and what `request_var` must do.
 
 ### Others

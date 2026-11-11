@@ -4,7 +4,7 @@
 
 **Stages 1-4 implemented; two decisions remain.**
 
-- **Stage 1 (§3)** — failed-pop taxonomy landed: FATAL passthrough,
+- **Stage 1 (§3)** — failed-pop taxonomy implemented: FATAL passthrough,
   barrier refusals classed as machinery noise (restore + recovery), user
   teardown failures supersede with `__context__` chaining and the walk
   continues (discard-on-stuck guarantees progress).
@@ -219,7 +219,7 @@ red until fixed, never pinned to a defect.
 
 ---
 
-## Already landed (this branch)
+## Already implemented (this branch)
 
 Context for the reader; these are the localized fixes the design
 supersedes or absorbs:

@@ -86,7 +86,7 @@ raw", so `kos_ns_fast_deref` takes the reference branch and calls
 reference`).
 
 So the question is not "who cleared the binding" but **which node
-provides the namespace after the second invoke lands**. Capture shares
+provides the namespace after the second invoke is attached**. Capture shares
 namespaces rather than copying them (`kos_dynns_clone` increfs;
 `kos_dynframe_clone` uses `KosNamespace_Reveal`, also an incref), so
 the values are still alive somewhere; the live namespace register is

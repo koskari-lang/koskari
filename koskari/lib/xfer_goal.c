@@ -162,7 +162,7 @@ int kos_xfer_goal_capture_restore(
 
       r->pc = KosDynFrame_PC(tmpl);
       r->acting_pc = KosDynFrame_ACTING_PC(tmpl);
-      /* The template keeps its state for the next landing: the record
+      /* The template keeps its state for the next application: the record
          takes the kind's clone. The capture that built the template
          refused any kind without one; a template reaching here with
          one is refused the same way rather than called through. */
@@ -241,7 +241,7 @@ static int goal_apply_restore(KosContext *ctx, KosXferGoal *goal) {
       r->resume_state = NULL;
       /* The live registers are the authority for the current frame
          and are flushed back into it whenever the frame changes; a
-         restore of that frame must land in them too. */
+         restore of that frame must go into them too. */
       if ((KosDynFrame *) node == KosContext_FRAME(ctx)) {
         KosContext_SET_PC(ctx, r->pc);
         ctx->acting_pc = r->acting_pc;
@@ -257,7 +257,8 @@ void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal) {
   goal->outer = KosContext_GOAL(ctx);
   KosContext_GOAL(ctx) = goal;
   /* an outer whose LEAVING voided outers behind it and then waited has
-     not landed to retire them: this goal's landing retires them too */
+     not reached ATTACHING to retire them: this goal's ATTACHING retires
+     them too */
   if (goal->outer && goal->outer->voided_outer)
     goal->voided_outer = 1;
 }
@@ -295,7 +296,7 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
    The node carries KOS_DYNF_GOAL_WAIT for as long as the wait lasts.
    The one event that voids a waiting goal is a later goal's LEAVING
    unlinking this node; the mark lets that LEAVING see it as it happens
-   (goal_void_outers_on), so a landing never walks the chain to find
+   (goal_void_outers_on), so ATTACHING never walks the chain to find
    out which outers are still live.
 
    No two goals wait on one node. A LEAVING waits on the node at
@@ -305,8 +306,8 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
    aborted without firing again, and the FINALLY was disabled when it
    took the transfer, so it is unlinked: either way that goal unlinks
    the node rather than waiting on it. An ENTERING waits on a node of
-   its own landed target, a fresh clone no other goal's ENTERING spans,
-   since each ENTERING spans only the nodes its own landing put above
+   its own attached target, a fresh clone no other goal's ENTERING spans,
+   since each ENTERING spans only the nodes its own ATTACHING put above
    its seam. The clear when the wait ends therefore drops no other
    goal's mark. A mark left behind by a goal freed while it waited (a
    raise abandons every goal) only makes a later LEAVING look through
@@ -338,8 +339,8 @@ static void goal_end_wait(KosXferGoal *goal) {
    LEAVING unlinked node, which carried KOS_DYNF_GOAL_WAIT: every outer
    that waited on it (by address and id, read before the unlink freed
    it; the node is never dereferenced here) is void. Its frontier is
-   dropped, which is how the landing recognizes it, and the goal notes
-   that its landing has outers to retire. Proportional to the outers,
+   dropped, which is how ATTACHING recognizes it, and the goal notes
+   that its ATTACHING has outers to retire. Proportional to the outers,
    and only for a marked node.
 */
 static void goal_void_outers_on(
@@ -478,13 +479,13 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
-   LANDING: splice the target onto the seam and install the resume pc.
+   ATTACHING: splice the target onto the seam and install the resume pc.
    Synchronous and infallible; runs once. An outer goal whose frontier
    LEAVING unlinked is void: the node it waited on and everything above
    it are gone, and the extent it was moving through no longer exists.
    With a NULL seam that is every outer.
 */
-static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
+static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 
   int had_target = goal->target != NULL;
 
@@ -634,9 +635,9 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
-   DELIVERING: push the payload, stage it for the landing frame's
+   DELIVERING: push the payload, stage it for the receiving frame's
    resume, set it as a pending throw, or raise it at the boundary; then
-   retire the goal. A landing frame that carries a resume the goal
+   retire the goal. A receiving frame that carries a resume the goal
    installed, through a restore record or a spliced template, was
    waiting on a delivery when it was captured: the payload is that
    delivery, staged in the pending slot for the prologue pass that
@@ -672,7 +673,7 @@ static KosOpResult goal_deliver(
 #if KOS_EVAL_SAFETYNET
     if (KosContext_PENDING_VALUE(ctx)) {
       PyErr_SetString(PyExc_SystemError,
-          "transfer: landed on a frame with a delivery already staged");
+          "transfer: delivered to a frame with a delivery already staged");
       return EVAL_RAISE();
     }
 #endif
@@ -719,10 +720,10 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
         r = goal_leave(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
           return r;
-        goal->phase = KOS_GOAL_LANDING;
+        goal->phase = KOS_GOAL_ATTACHING;
         /* fall through */
-      case KOS_GOAL_LANDING:
-        r = goal_land(ctx, goal);
+      case KOS_GOAL_ATTACHING:
+        r = goal_attach(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
           return r;
         goal->phase = KOS_GOAL_ENTERING;

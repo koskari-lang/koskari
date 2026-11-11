@@ -428,13 +428,13 @@ NO_FALLTHROUGH = frozenset((
 CONTROL_NONE_OPS = frozenset((
     OpCode.RETURN, OpCode.BREAK, OpCode.CONTINUE, OpCode.YIELD))
 
-# the jump a short-circuit jump becomes when its label lands on a
-# conditional jump, keyed by (jump op, landing op). The value pushed on
+# the jump a short-circuit jump becomes when its label leads to a
+# conditional jump, keyed by (jump op, destination op). The value pushed on
 # the jumping path is known (falsy after JUMP_AND, truthy after
-# JUMP_OR), so the landing's outcome on it is fixed: True when the
-# landing would jump, and the rewrite takes the landing's target; False
-# when the landing would fall through, and the rewrite takes the
-# landing's fall-through label. The replacement pops the value either
+# JUMP_OR), so the destination's outcome on it is fixed: True when the
+# destination would jump, and the rewrite takes the destination's target; False
+# when the destination would fall through, and the rewrite takes the
+# destination's fall-through label. The replacement pops the value either
 # way.
 SHORTCUT_THREADS = {
     (OpCode.JUMP_AND, OpCode.JUMP_FALSE): (OpCode.JUMP_FALSE, True),
@@ -449,10 +449,10 @@ SHORTCUT_THREADS = {
 
 SHORTCUT_OPS = frozenset((OpCode.JUMP_AND, OpCode.JUMP_OR))
 
-# a landing OBJECT_NOT ahead of one of these jumps resolves as the
+# a destination OBJECT_NOT ahead of one of these jumps resolves as the
 # opposite jump: the value the short-circuit jump pushes is negated
-# before the landing tests it
-NOT_LANDINGS = {
+# before the destination tests it
+NOT_DESTINATIONS = {
     OpCode.JUMP_FALSE: OpCode.JUMP_TRUE,
     OpCode.JUMP_TRUE: OpCode.JUMP_FALSE,
 }
@@ -1551,24 +1551,24 @@ class ByteCodeProcessor:
 
     def thread_shortcut_jumps(self):
         """
-        Rewrite a JUMP_AND or JUMP_OR whose label lands on a
-        conditional jump into the jump that landing performs on the
+        Rewrite a JUMP_AND or JUMP_OR whose label leads to a
+        conditional jump into the jump that destination performs on the
         value the short-circuit jump pushes.
 
-        The landing is the first instruction after the label that is
-        not POSITION, NOOP or LABEL. A landing that is a JUMP_FALSE,
+        The destination is the first instruction after the label that is
+        not POSITION, NOOP or LABEL. A destination that is a JUMP_FALSE,
         JUMP_TRUE, JUMP_AND or JUMP_OR resolves through SHORTCUT_THREADS
         to the replacement op and whether the rewrite takes the
-        landing's target or its fall-through; the fall-through label is
-        the LABEL directly after the landing when one is there, and is
+        destination's target or its fall-through; the fall-through label is
+        the LABEL directly after the destination when one is there, and is
         otherwise inserted from the compiler's label generator. A
-        landing OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
+        destination OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
         as the opposite jump, the NOT staying for the fall-through
-        clause. Any other landing leaves the jump alone, as does a label
+        clause. Any other destination leaves the jump alone, as does a label
         with no LABEL.
 
         Sweeps repeat until none changes a jump, so a nested form
-        threads once its inner landing has been rewritten. A label a
+        threads once its inner destination has been rewritten. A label a
         rewrite dereferenced goes when nothing else refers to it; every
         other label stays. Runs before squish so the threaded jumps
         fuse with their feeders there.
@@ -1582,7 +1582,7 @@ class ByteCodeProcessor:
         orphaned = set()
         transparent = JOIN_TRANSPARENT | {OpCode.LABEL}
 
-        def landing(li):
+        def destination(li):
             li += 1
             while li < len(instr) and instr[li][0] in transparent:
                 li += 1
@@ -1601,15 +1601,15 @@ class ByteCodeProcessor:
                 li = labels.get(arg)
                 if li is None:
                     continue
-                ci = landing(li)
+                ci = destination(li)
                 if ci is None:
                     continue
                 lop, larg = instr[ci]
                 if lop == OpCode.OBJECT_NOT:
-                    ci = landing(ci)
-                    if ci is None or instr[ci][0] not in NOT_LANDINGS:
+                    ci = destination(ci)
+                    if ci is None or instr[ci][0] not in NOT_DESTINATIONS:
                         continue
-                    lop, larg = NOT_LANDINGS[instr[ci][0]], instr[ci][1]
+                    lop, larg = NOT_DESTINATIONS[instr[ci][0]], instr[ci][1]
                 thread = SHORTCUT_THREADS.get((op, lop))
                 if thread is None:
                     continue
@@ -1876,7 +1876,7 @@ class ByteCodeProcessor:
 
         compiler = self.fragment.compiler
 
-        # a short-circuit jump landing on a conditional jump becomes
+        # a short-circuit jump leading to a conditional jump becomes
         # that jump, so the clause's predicate and the branch sit
         # adjacent for the squish
         self.thread_shortcut_jumps()

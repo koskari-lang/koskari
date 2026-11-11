@@ -1431,7 +1431,7 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx);
 
 /**
    The signal that ends an in-eval delivery (a control-returned hook, a
-   plain return landing on its caller). The delivery
+   plain return reaching its caller). The delivery
    left a plain bytecode frame current with nothing staged, no error,
    and no goal active: DISPATCH, so the trampoline threads from ctx->pc
    without a prologue pass, and a handler that ran the delivery itself
@@ -1771,7 +1771,7 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   (void) insn;
 
   if (unlikely(! gen)) {
-    /* the region of a landed continuation yielding, which has no
+    /* the region of an applied continuation yielding, which has no
        generator of its own to suspend: an ordinary error at the
        yield, already set */
     Py_DECREF(val);
@@ -2729,7 +2729,7 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
 
-  /* a shift handler's frame copy and the frame of a landed
+  /* a shift handler's frame copy and the frame of an applied
      continuation return nowhere: the general path refuses them */
   parent = KosDynNode_PARENT(child);
   if (! parent
@@ -2939,7 +2939,7 @@ static KosOpResult eval_event_return_at_frame(
      for-each region, native frame, etc.) -- pop the callee frame and
      let eval_parent_return_deliver handle the context transition and
      any control-return hooks. A provider's grafted invoke returning
-     under a stepping region lands here: the loop frame's step resume
+     under a stepping region arrives here: the loop frame's step resume
      takes the value as the element. */
   if (parent) {
     if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
@@ -2973,11 +2973,11 @@ static inline KosOpResult eval_event_return(
      a called function: the abort left that function's caller with the
      region.
 
-     The frame of a landed continuation, the one sitting on its DELIM:
+     The frame of an applied continuation, the one sitting on its DELIM:
      it is a copy of the frame the reset was in, and that function's
      boundary lies outside the reset, so outside the continuation.
-     Nothing else is ever a frame directly on a DELIM: the copy lands
-     as the application pushes it, and a thunk the landing runs sits
+     Nothing else is ever a frame directly on a DELIM: the copy is attached
+     as the application pushes it, and a thunk its entering runs sits
      above the copy. */
   {
     KosDynFrame *frame = KosContext_FRAME(ctx);
@@ -3033,7 +3033,7 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob) {
 
   case KOS_PENDING_RETURN_DELIM:
     if (delim && kos_dyn_reaches(ctx, (KosDynNode *) delim)) {
-      /* The route lands val at the invoke site inside the evaluator;
+      /* The route delivers val at the invoke site inside the evaluator;
          its NORMAL is a re-entry there, as eval_event_return_unwind maps it,
          never a boundary result. */
       KosOpResult rr = kos_eval_walk_outcome(
@@ -3161,7 +3161,7 @@ static KosOpResult eval_step_drain_goal(KosContext *ctx) {
    invoke when the live frame has a resume kind set. The pending slot
    is the live transit; a code-less step frame's own stack carries a
    delivery only as storage (a drive's exit moved the slot there, or a
-   landing site that still pushes). An empty slot and stack is a cold
+   delivery site that still pushes). An empty slot and stack is a cold
    start: a consumer set the resume directly to defer its first step
    to this trampoline, and the resume is entered with NULL and no
    exception set. A failed delivery arrives the same way, NULL with
@@ -3533,7 +3533,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
 
     /* A transfer replaces the control path a staged delivery was
        waiting on: the frame it was staged for may be gone once the
-       goal lands, and the goal's own delivery is the one the landing
+       goal attaches its target, and the goal's own delivery is the one that
        frame expects. Drop the stale slot ahead of a drive so it can
        neither shadow that delivery nor reach a resume it was never
        meant for. Only ahead of a drive: while the goal waits on a

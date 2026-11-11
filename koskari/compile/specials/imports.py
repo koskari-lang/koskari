@@ -372,7 +372,7 @@ def special_import_from(compiler, called_by, module, members):
                 f" {target!r}",
                 elem, position=pos)
         # a member names an attribute of the module, a label read by its
-        # bare spelling, and the binding it lands in, which keeps the
+        # bare spelling, and the binding it goes into, which keeps the
         # template's marks so the import binds apart from the use site
         attrs.append(str(target.base))
         binds.append(binding_atom(

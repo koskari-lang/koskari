@@ -30,7 +30,7 @@ class TestMemwatch [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    def test-report-lands-in-the-run-history [self]:
+    def test-report-goes-into-the-run-history [self]:
         var js (self.jobset-with-store)
         var job (CronJob "*/5 * * * *")
         (job.configure)

@@ -36,7 +36,7 @@ Phases: WIND `IDLE -> PRE_BEGIN -> POST_BEGIN -> PRE_AFTER -> POST_AFTER`;
 WITH `IDLE -> PENDING_ENTER_AWAIT? -> (body) -> PENDING_EXIT_AWAIT? ->
 LEFT`. A single-shot `with` records `exit_done` in a `KosRef` shared with its
 clones, so `__exit__` runs once across every instance; a multi-shot
-`dyn-with` (shot `KOS_DYN_WITH_SHOT_MULTI`) re-enters on every landing.
+`dyn-with` (shot `KOS_DYN_WITH_SHOT_MULTI`) re-enters on every attachment.
 
 Thunks and `__enter__`/`__exit__` bodies are ordinary frames in the same
 `koskari_eval` loop. When one returns into the node (a frame return that
@@ -60,7 +60,7 @@ Every node leaves through **`kos_dyn_unlink_top(es, ev, allow_barrier)`**:
 
 | Kind | Enter | Synchronous teardown at unlink |
 |---|---|---|
-| PARAM | `kos_dyn_param_wind`: bind the cells (also re-bound when a goal lands the extent) | `kos_dyn_param_unwind`: restore what they displaced |
+| PARAM | `kos_dyn_param_wind`: bind the cells (also re-bound when a goal attaches the extent) | `kos_dyn_param_unwind`: restore what they displaced |
 | WIND | before thunk (contract) | after thunk if entered (contract), then free |
 | WITH | `__enter__` (contract) | `__exit__` (contract), then free |
 | NS | owns the let namespace (set at push) | drop the node; the live namespace follows the chain top |
@@ -115,7 +115,7 @@ raise. The GC traverses the slot through the node.
    stores the value.
 3. **Transfer goals** (`xfer_goal.c`): LEAVING unlinks with
    `KOS_XFER_EVENT_TRANSFER` down to the seam; ENTERING asks
-   `kos_dyn_extent_enter` of each landed `CONTROL_HOOK` node outermost
+   `kos_dyn_extent_enter` of each attached `CONTROL_HOOK` node outermost
    first. After a leave or enter that answers REPROLOGUE or AWAIT the goal
    waits on that node. See [EVALUATOR.md §6](../EVALUATOR.md).
 

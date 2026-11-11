@@ -14,7 +14,7 @@ registered suffix, not just `[`, attaches in a slot). Tests in
 ## Summary
 
 A bracket suffix written bare in an f-string interpolation slot does not
-become a subscript. The `[...]` is read as a *separate form* and lands in the
+become a subscript. The `[...]` is read as a *separate form* and goes into the
 slot's second position, which is the format-spec slot, so `f"{foo[0]}"`
 compiles to the equivalent of `format(foo, [0])`. The same suffix inside any
 enclosing parenthesized form reads correctly.

@@ -425,11 +425,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(result, 207)
 
 
-    async def test_call_cc_from_a_landed_copy_returns_below_its_delim(self):
+    async def test_call_cc_from_an_attached_copy_returns_below_its_delim(self):
         """
-        A full continuation captured inside a landed delimited copy holds
+        A full continuation captured inside an attached delimited copy holds
         that copy's return bookmark. Applied after the copy has returned,
-        it lands the copy again, and the copy's value is delivered once
+        it attaches the copy again, and the copy's value is delivered once
         more to the frame the bookmark sits on, at the first invoke
         site: 1 + 10 the first time, 1 + 100 the second
         """
@@ -437,7 +437,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         calls = []
 
         def fewer(seq, n):
-            # a wrong landing would re-run the application without end
+            # a wrong return would re-run the application without end
             calls.append(list(seq))
             if len(calls) > 4:
                 raise AssertionError(f"re-entered without end: {calls}")
@@ -559,7 +559,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
     async def test_dyn_wind_thunk_count_multishot_in_shift(self):
         """
         Multi-shot in-shift invoke: the abort to the reset leaves the
-        dyn-wind once, and each invoke lands its own copy of the captured
+        dyn-wind once, and each invoke attaches its own copy of the captured
         region and gets one before/after pair: three pairs in all, and
         add(3, 4) = 7 flows out of the reset.
         """
@@ -913,7 +913,7 @@ class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
     """
     A delimited return that meets an after thunk on its way to the
     invoke site waits on the wind and finishes once the thunk returns,
-    landing the value at the invoke site inside the evaluator; it must
+    delivering the value at the invoke site inside the evaluator; it must
     never surface at the boundary as a bare result. Each shift aborts
     to its reset and leaves the dyn-wind on the way: the first leaves
     the original, the second leaves the copy the invoke entered, so the

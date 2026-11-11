@@ -17,7 +17,7 @@ tests.reproducers.test_region_targets_after_seal
 Region pushes executed during module load resolve their targets before
 the module is sealed, which makes the arena chunks holding the code
 read-only. The same sites, and a generator suspended inside a for-each
-across the seal, must still land on the right instruction afterwards.
+across the seal, must still arrive at the right instruction afterwards.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -87,7 +87,7 @@ class TestRegionTargetsAfterSeal(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 
-    async def test_sites_run_at_load_still_land_after_the_seal(self):
+    async def test_sites_run_at_load_still_arrive_after_the_seal(self):
         mod = await self.load()
         self.assertEqual(mod["at_load"], [8, 6, "out", 6])
         for _ in range(20):

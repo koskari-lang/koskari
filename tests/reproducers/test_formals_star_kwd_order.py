@@ -97,7 +97,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
     async def test_define_pre_star_default_left_to_default_binds_empty_star(self):
         """
-        [a b: 1 *: rest] called short: rest is () and lands in its own
+        [a b: 1 *: rest] called short: rest is () and goes into its own
         slot; it used to be stored at the argument count, b's slot
         """
         src = """
@@ -175,7 +175,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
     async def test_define_starstar_collects_extra_keywords(self):
         """
-        Extra call keywords land in the ** binding after kw-only names are taken.
+        Extra call keywords go to the ** binding after kw-only names are taken.
         """
 
         src = """

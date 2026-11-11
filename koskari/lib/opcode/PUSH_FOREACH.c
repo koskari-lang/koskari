@@ -32,7 +32,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     RESULT_RAISE();
   }
 
-  /* break lands after the POP_FOREACH that closes the extent */
+  /* break continues after the POP_FOREACH that closes the extent */
   if (kos_site_extent_close(ctx, insn, KOS_EXT_FOREACH, "PUSH_FOREACH",
                             &pop) < 0) {
     Py_DECREF(iterable);

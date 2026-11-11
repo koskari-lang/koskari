@@ -1,6 +1,6 @@
 # Uniform iter / next: one access layer over both iteration protocols
 
-**Status**: complete. All three pieces landed: the uniform opcode layer
+**Status**: complete. All three pieces are implemented: the uniform opcode layer
 and compiler specials, the operand-fused VAR/FAST variants, and the
 koskari-defined runtime `iter`/`next` builtins (define-global in
 bootstrap `_iter.ki`, bodies riding the specials; `next` distinguishes

@@ -5,10 +5,10 @@
 Exploratory design.
 
 **Settled: the import seam.** The `use` special and its `IMPORT_USE`
-opcode landed with their contract stated as "obtain the bindings a
+opcode were implemented with their contract stated as "obtain the bindings a
 feature names, and store them". Today the obtain step is the default
 facet probe -- the stem itself, `compile/{stem}`, `layout/{stem}`.
-When bundles land, a module that declares an installer under a
+When bundles are implemented, a module that declares an installer under a
 reserved name replaces that step: the opcode invokes the installer
 upon the module, and the installer returns a name-to-value mapping
 stored exactly as probe hits are. Bundles therefore need no new

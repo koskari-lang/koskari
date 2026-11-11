@@ -842,7 +842,7 @@ static int test_capture_restore_clones_and_clears_unapplied(void) {
 
 
 /* Applying a record clears the resume the live frame held and hands
-   the clone to the frame, so the goal no longer owns it. The landing
+   the clone to the frame, so the goal no longer owns it. ATTACHING
    frame then carries the record's resume, so the delivery stages the
    payload for that resume and touches no frame stack. */
 static int test_capture_restore_apply_hands_over_the_clone(void) {
@@ -874,7 +874,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
                      goal, (KosDynNode *) live, (KosDynNode *) tmpl),
                  0, "the record is captured");
 
-  /* the live frame carries a resume of its own the landing displaces */
+  /* the live frame carries a resume of its own the transfer displaces */
   KosDynFrame_RESUME_KIND(live) = &resume_recording_kind;
   KosDynFrame_RESUME_STATE(live) = &prior;
 
@@ -1001,7 +1001,7 @@ static int test_free_unnames_resume_before_clear(void) {
 }
 
 
-/* A landing that applies a restore record clears the resume the live
+/* A transfer that applies a restore record clears the resume the live
    frame held while the context still names that frame; the clear runs
    with the frame's resume fields already NULL. */
 static int test_capture_restore_apply_unnames_prior_before_clear(void) {
@@ -1033,7 +1033,7 @@ static int test_capture_restore_apply_unnames_prior_before_clear(void) {
                      goal, (KosDynNode *) live, (KosDynNode *) tmpl),
                  0, "the record is captured");
 
-  /* the live frame carries a resume of its own the landing displaces */
+  /* the live frame carries a resume of its own the transfer displaces */
   observing_reset(live);
   KosDynFrame_RESUME_KIND(live) = &resume_observing_kind;
   KosDynFrame_RESUME_STATE(live) = &prior;
@@ -1211,7 +1211,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
   TEST_ASSERT_NOT_NULL(neg5, "create -5");
 
   /* a plain Python callable's result comes back in hand; resume == NULL
-     relays that RETURN untouched, and nothing lands on the stack */
+     relays that RETURN untouched, and nothing is pushed on the stack */
   KosOpResult r = KosContext_Call(
       ctx, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
 
@@ -1226,7 +1226,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
   Py_DECREF(r.val);
   TEST_ASSERT(! KosDynFrame_STACK(frame)
               || KosSegment_LEN(KosDynFrame_STACK(frame)) == 0,
-              "nothing landed on the caller's stack");
+              "nothing was pushed on the caller's stack");
 
   KosContext_EvalExit(ctx);
   Py_DECREF(ctx);

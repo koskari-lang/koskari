@@ -174,7 +174,7 @@ static int test_paramref_deref_no_domain_no_default_raises(void) {
 }
 
 
-/* === Test: ParamRef store with no domain lands in the thread default === */
+/* === Test: ParamRef store with no domain goes into the thread default === */
 
 
 static int test_paramref_store_no_domain_thread_default(void) {

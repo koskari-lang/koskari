@@ -2,7 +2,7 @@
 ;; spec: the POSTed JSON is validated and coerced against them and bound
 ;; as named args; unknown keys, missing required keys, and uncoercible
 ;; values are a 400. An untyped handler takes the raw payload as before.
-;; The coerced kwargs land in trigger.json, so retrigger replays them.
+;; The coerced kwargs go into trigger.json, so retrigger replays them.
 
 import-from .harness SchedulerAsyncTestCase
 import-from kosrunner HttpServer

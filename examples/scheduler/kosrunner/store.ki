@@ -204,7 +204,7 @@ class _RunLogHandler [logging.Handler]:
 def install-run-logging []:
     """
     Attach the capture handler to the `kosrunner` logger once, so every
-    variety's log output during a run lands in that run's output.log.
+    variety's log output during a run goes into that run's output.log.
     """
 
     unless _log-installed[0]:
@@ -513,7 +513,7 @@ class RunStore []:
 
     def prune [self]:
         ;; retention (keep_runs / keep_days) is not wired yet; the method
-        ;; exists so callers can start invoking it once the policy lands.
+        ;; exists so callers can start invoking it once the policy is implemented.
         None
 
 

@@ -29,7 +29,7 @@ reduction the handler runs with the region already removed:
 ```
 
 Applying k inside the handler therefore meets a live copy of the same
-region, and landing a clone there runs the region's winds twice, nested.
+region, and attaching a clone there runs the region's winds twice, nested.
 Path A (xfer_plan.c:kos_delimited_invoke_inplace) avoids that by
 resuming the live region in place, which needs the INPLACE delim, the
 stashed span, the handler snapshot, the saved pc and resume fields, the
@@ -68,7 +68,7 @@ This is racket/control's `shift-at`: `call-with-composable-continuation`
 to get k, then an abort that keeps the prompt and runs the body there.
 
 **Application.** Applying k with v pushes a return bookmark (a DELIM)
-at the application site and lands a fresh copy of the template on it:
+at the application site and attaches a fresh copy of the template on it:
 the copy of the prompt is the re-delimiting `<.>` of `\x. <E[x]>`.
 Execution resumes at the shift's resume point with v. When the copied
 region finishes, its value is delivered at the application site. Each
@@ -90,9 +90,9 @@ application makes its own copy, so k is multi-shot.
 - Extents outside the prompt are not part of k. A PARAM, WIND or TRY in
   the reset's own frame but outside the reset is not captured (today it
   is, as padding; see section 3).
-- A raise in a landed copy propagates through the DELIM to the
+- A raise in an installed copy propagates through the DELIM to the
   application site. A `return`, `break`, `continue` or `yield` in a
-  landed copy does not cross the DELIM (Transfers, below).
+  installed copy does not cross the DELIM (Transfers, below).
 
 The handler body runs outside the region's extents. Exceptions it
 raises are not caught by a TRY inside the region; parameters bound
@@ -105,7 +105,7 @@ meaning at a continuation boundary.
 
 | Transfer | Where | Result |
 |---|---|---|
-| `return` | the frame sitting directly on a DELIM (a landed copy's bottom frame) | error |
+| `return` | the frame sitting directly on a DELIM (an installed copy's bottom frame) | error |
 | `return` | a callee handler's frame copy on a SHIFT | error |
 | `return` | a handler in the reset's own function; a callee frame inside a copy | ordinary return |
 | `break`, `continue` | the loop search stops at a SHIFT and at a DELIM | "outside loop" unless the loop is inside the handler or inside the copy |
@@ -113,7 +113,7 @@ meaning at a continuation boundary.
 | `yield` | a handler in the reset's own generator; a generator defined in the handler | suspends that generator |
 | `raise` | anywhere | propagates from the prompt, or through the DELIM |
 
-- `return`. A landed copy's bottom frame is a copy of the prompt's
+- `return`. An installed copy's bottom frame is a copy of the prompt's
   owning frame. Its function boundary is outside the prompt, so outside
   k. A callee handler's frame copy has a caller that was in the region
   and has been left. The handler's frame copy records the fact on
@@ -121,8 +121,8 @@ meaning at a continuation boundary.
   parent being a SHIFT does not identify it: every function the handler
   calls sits directly on the SHIFT too, and returns to the handler as
   usual. The copy's bottom frame is recognised by its parent being a
-  DELIM, and there the parent test is sound: the copy lands as the
-  application pushes the DELIM, and a thunk the landing runs sits above
+  DELIM, and there the parent test is sound: the copy is attached as the
+  application pushes the DELIM, and a thunk the attachment runs sits above
   the copy, so nothing else is ever a frame directly on a DELIM.
 - `break` and `continue`. The compiler does not resolve a loop; BREAK
   and CONTINUE take the nearest enabled LOOP or FOREACH at run time
@@ -134,7 +134,7 @@ meaning at a continuation boundary.
   abort left.
 - `yield`. A capture across a generator boundary is refused, so a
   handler always runs in its own generator's activation and yields as a
-  `begin` at the reset would. A landed copy is different: its `yield`
+  `begin` at the reset would. An installed copy is different: its `yield`
   would suspend whichever generator is nearest below the application
   site, or none. The generator search stops at the DELIM.
 
@@ -182,11 +182,11 @@ shared across shots, as Scheme locations are; pending operands are not.
 **call/cc.** Captures from the CC block to the root of the context
 (dynchain.c:kos_capture_cc). Application rebuilds the node stack: leave
 the live chain down to the lowest common ancestor with the template,
-put the captured operands back on the shared nodes, land a copy of the
+put the captured operands back on the shared nodes, attach a copy of the
 rest, enter it (xfer_plan.c:kos_chain_common_ancestor, xfer_goal.c).
 This is the Scheme dynamic-wind algorithm, with "same winder" read as
-"same id and same phase" because landed nodes are copies. A PROMPT in a
-call/cc template lands as a live reset again. This path is unchanged
+"same id and same phase" because attached nodes are copies. A PROMPT in a
+call/cc template is attached as a live reset again. This path is unchanged
 except for the deletions in section 6.
 
 **From Python.** call/cc keeps the upward KoskariContinuationApply
@@ -200,7 +200,7 @@ none.
 There are no prompt instance ids. A prompt is found by tag, nearest
 first, walking parents from dyn_top. That suffices because a shift's
 handler runs directly on its prompt (POP_SHIFT's prompt is the SHIFT's
-parent by construction), an application lands on top of the chain (a
+parent by construction), an application is attached on top of the chain (a
 shift inside the copy meets the copy's prompt first), and no node is
 ever moved under a live copy of itself. DPJS and delimcc work this way:
 `withSubCont p` takes the segment up to the nearest mark for p, and two
@@ -211,18 +211,18 @@ found at delivery and never stored. The DELIM keeps RETURN_PC, a value
 that cannot go stale across a clone.
 
 **Ids on copies.** `kos_dyn_clone_segment` gains a flag. Delimited
-captures and delimited landings clone with id 0, so every node of a
-landed copy is a new instance, minted on first read by kos_dynnode_id.
-call/cc captures and landings keep the source id, because three readers
-need a landed call/cc copy to count as the same extent as its source:
+captures and delimited applications clone with id 0, so every node of a
+installed copy is a new instance, minted on first read by kos_dynnode_id.
+call/cc captures and applications keep the source id, because three readers
+need an installed call/cc copy to count as the same extent as its source:
 kos_chain_common_ancestor (the seam), kos_xfer_goal_capture_restore
 (the template must mirror the chain below the seam), and
-test_landed_clone_counts_as_shared, which asserts Scheme's rule that
+test_attached_clone_counts_as_shared, which asserts Scheme's rule that
 re-entering through the same continuation does not re-run shared winds.
 
 The node id stays. Its remaining readers are the call/cc seam and
 restore records above; the ABA checks on borrowed pointers in goals
-(xfer_goal.c: seam_id, frontier_id in goal_leave and goal_land); the
+(xfer_goal.c: seam_id, frontier_id in goal_leave and goal_attach); the
 traceback's per-frame record (eval.c:dynchain_record_has_frame); and
 snapshots (dynchain.c:dynnode_to_dict_generic, tests/lib/test_domain.py).
 
@@ -233,7 +233,7 @@ snapshots (dynchain.c:dynnode_to_dict_generic, tests/lib/test_domain.py).
 | PROMPT `prompt_id` (uint32) | tag number | becomes `tag` (PyObject *, owned; NULL is the default tag) |
 | PROMPT `pop_pc` | POP_PROMPT of the region | keep |
 | PROMPT block | region operands | keep; the shift's abort empties it (those operands are in the template) |
-| KOS_DYNF_INVOCATION | marks prompts with no POP_PROMPT | delete; "landed" is structural: the prompt's parent is a FRAME whose parent is a DELIM |
+| KOS_DYNF_INVOCATION | marks prompts with no POP_PROMPT | delete; "applied" is structural: the prompt's parent is a FRAME whose parent is a DELIM |
 | kos_dynprompt_new_invocation | in-place re-delimiter | delete |
 | SHIFT `prompt_node_id` | instance it captured against | delete; the prompt is the SHIFT's parent |
 | SHIFT block | handler operands | keep |
@@ -243,7 +243,7 @@ snapshots (dynchain.c:dynnode_to_dict_generic, tests/lib/test_domain.py).
 | DELIM RETURN_NODE | always the delim itself (xfer_plan.c:199, 427) | delete |
 | DELIM RETURN_PC | application pc | keep |
 | DELIM SAVED_PC, SAVED_ACTING_PC, SAVED_RESUME_* | Path A displacement | delete |
-| Heritage padding below the prompt | captured, entered on landing | delete; template bottom is one frame copy |
+| Heritage padding below the prompt | captured, entered on application | delete; template bottom is one frame copy |
 | Baseline frame (invocation-bounded captures only) | compressed region bottom | generalize to every delimited capture |
 | KosContinuation `prompt_id` | tag, or UNDELIMITED | replace with a `delimited` bit |
 | KosContinuation `one_shot`, `resume_stack` | written, never read | delete |
@@ -267,12 +267,12 @@ at PUSH_SHIFT:     F[..] <- P(d)[1]
 template:          F'(ns@P, pc) <- P'(d)[1]          resume: after POP_SHIFT
 after the abort:   F[..] <- P(d)[] <- S[k]           handler runs in F
 (k 5):             F <- P(d) <- S[k] <- D(pc) <- F'' <- P''(d)[1 5]
-P'' POP_PROMPT:    P''.parent F'' is a frame on D: landed; 6 goes to the first
+P'' POP_PROMPT:    P''.parent F'' is a frame on D: applied; 6 goes to the first
                    block below D (S), F.pc = D.pc
-POP_SHIFT:         P is S's parent, not landed: leave to F, push 6 at pop_pc+1
+POP_SHIFT:         P is S's parent, not applied: leave to F, push 6 at pop_pc+1
 ```
 
-**(b) the same with `(+ (k 5) (k 10))`.** The second application lands
+**(b) the same with `(+ (k 5) (k 10))`.** The second application attaches
 an unrelated copy; the first is gone.
 
 ```
@@ -289,7 +289,7 @@ template:          F'(ns@P(A)) <- P'(A)[100] <- P'(B)[10]
 after the abort:   F <- P(A)[] <- S[k]               P(B) was left
 (k 1):             F <- P(A) <- S <- D <- F'' <- P''(A)[100] <- P''(B)[10 1]
 P''(B) POP_PROMPT: parent is P''(A), not a frame: plain pop, 11 onto P''(A)
-P''(A) POP_PROMPT: parent F'' on D: landed; 111 to S
+P''(A) POP_PROMPT: parent F'' on D: applied; 111 to S
 POP_SHIFT:         111 is the value of reset-at A
 ```
 
@@ -304,13 +304,13 @@ at CAPTURE_CC:     R .. F[1000] <- P(d)[1] <- CC
 template (ids kept): R' .. F'[1000] <- P'(d)[1]     resume: after POP_CC
 at (saved 10):     R .. F[..]                       P is gone
 seam (LCA):        F, if still live and in the same phase
-landing:           restore F's block from F' ([1000]), splice P'(d)[1] on F
+attaching:         restore F's block from F' ([1000]), splice P'(d)[1] on F
 P' POP_PROMPT:     parent F is not on a DELIM: plain pop; F continues past
                    the reset with 1000 + 11
 ```
 
-No DELIM is involved. A call/cc captured inside a delimited landing
-captures that landing's DELIM; landing it again re-creates a DELIM whose
+No DELIM is involved. A call/cc captured inside a delimited application
+captures that application's DELIM; applying it again re-creates a DELIM whose
 return frame is derived from where it now sits, which removes the bug
 class behind kos_dyn_remap_delim_frames.
 
@@ -355,7 +355,7 @@ if (FRAME(ctx) is above p) {                      /* shift ran in a callee */
 goal = kos_xfer_goal_new(target, p, wrapper(k), insn + 1, NULL, 0);
 ```
 
-LEAVING unlinks everything above p; LANDING empties p's block, splices
+LEAVING unlinks everything above p; ATTACHING empties p's block, splices
 the target on p and sets the pc; DELIVERING pushes k on the SHIFT's
 block, or on h's. A handler written in a callee runs in a copy of the
 callee's frame on the SHIFT, because the callee's own activation was
@@ -367,7 +367,7 @@ part of the region and has been left.
 top = DYN_TOP(ctx);
 s = IS_SHIFT(top) ? top : (IS_FRAME(top) && IS_SHIFT(top->parent)) ? top->parent : NULL;
 result = pop();  p = s->parent;
-if (kos_prompt_is_landed(p))                      /* p->parent frame on a DELIM */
+if (kos_prompt_is_applied(p))                      /* p->parent frame on a DELIM */
   return kos_eval_route_delim_return(ctx, p->parent->parent, result);
 goal = kos_xfer_goal_new(NULL, p->parent, result, POP_PC(p) + 1, NULL, 0);
 ```
@@ -375,7 +375,7 @@ goal = kos_xfer_goal_new(NULL, p->parent, result, POP_PC(p) + 1, NULL, 0);
 A `return` in h raises: h is marked as a handler frame (Transfer
 checks, below).
 
-**POP_PROMPT:** top is the prompt. If kos_prompt_is_landed, route to the
+**POP_PROMPT:** top is the prompt. If kos_prompt_is_applied, route to the
 DELIM; otherwise pop as today. The walk past INVOCATION prompts goes.
 
 **Application** (kos_invoke_continuation, delimited branch):
@@ -390,7 +390,7 @@ kos_xfer_goal_push(ctx, kos_xfer_goal_new(target, d, v, k->resume_pc, ref, 0));
 The undelimited branch is unchanged minus the INPLACE return-frame loop
 (xfer_plan.c:378-410).
 
-**Return from a landed segment** (kos_eval_route_delim_return and
+**Return from an attached segment** (kos_eval_route_delim_return and
 kos_dyn_finish_delimited_pop_return, simplified): unwind to the DELIM;
 push the value on the first stack owner below it; set the first FRAME
 below it to RETURN_PC; pop the DELIM. The INPLACE branch goes.
@@ -404,7 +404,7 @@ and the restitch hook in the raise walk is deleted).
 **Transfer checks.**
 
 - `return`: a handler frame copy (KOS_FRAME_SHIFT_HANDLER) raises, and
-  in step 8 so does a landed copy's bottom frame. The check runs before
+  in step 8 so does an installed copy's bottom frame. The check runs before
   the unwind walk, so the error is raised at the `return` and a TRY in
   the region or the handler can catch it. It sits at the head of
   eval_event_return, and the two region-return arms of
@@ -470,7 +470,7 @@ and the restitch hook in the raise walk is deleted).
 | DELIM, SHIFT, prompt, continuation fields, macros, KOS_DYNF_INVOCATION | dynchain.h | 60 |
 
 About 900 lines out, about 250 in (tag objects, abort goal,
-landed check, the transfer checks, surface forms).
+applied check, the transfer checks, surface forms).
 
 Tests that exercise only deleted machinery, or assert behavior this
 changes (ruled with the premise, section 8):
@@ -560,17 +560,17 @@ Each step should leave the suite green with the ruled expectations.
    handler.
 6. Delete instance identity: the falsification pass, SHIFT
    `prompt_node_id`, KOS_DYNF_INVOCATION, invocation prompts; POP_PROMPT
-   uses the landed check. No behavior change. New test: hand-built
-   bytecode with two tags where a shift fires inside a copy landed from a
+   uses the applied check. No behavior change. New test: hand-built
+   bytecode with two tags where a shift fires inside a copy attached from a
    handler (the shape that today fails with "captured prompt instance
    not on chain").
 7. DELIM reduced to RETURN_PC: delete mode, chain, frame, node, saved
    fields, kos_dyn_remap_delim_frames; delimited clones get id 0. No
    behavior change. Delete the two native DELIM tests (ruled). New
-   native test: a call/cc captured inside a delimited landing, applied
-   after that landing returned, delivers to the frame below the
+   native test: a call/cc captured inside a delimited application, applied
+   after that application returned, delivers to the frame below the
    re-created DELIM.
-8. Landed-copy transfer checks: a `return` in a frame on a DELIM raises,
+8. Installed-copy transfer checks: a `return` in a frame on a DELIM raises,
    and the return walk loses its DELIM stop; the generator search stops
    at a DELIM. New tests: a `return` in a copy's bottom frame raises and
    a TRY in the region catches it; a `return` in a callee frame inside
@@ -610,14 +610,14 @@ the shift and entered again by the copy:
   grew its machinery around.
 - Frozen E: lift E off the chain intact at the shift, as a generator
   yield freezes its span, run the handler on the prompt, and let the
-  first `(k v)` land the original E on the DELIM instead of a copy.
+  first `(k v)` install the original E on the DELIM instead of a copy.
   No wasted pass and no yo-yo, at the price of two sources behind one
-  k and a fresh-or-thawed bit at landing, the distinction a generator
-  resume already makes against a continuation landing.
+  k and a fresh-or-thawed bit at attachment, the distinction a generator
+  resume already makes against a continuation application.
 
 Every Scheme with shift/reset is abort-first and pays the pass. The
 ruling takes the same model, with the pass, for one source and one
-landing.
+attachment.
 
 **Consequences of the premise, not separate choices:**
 
@@ -640,7 +640,7 @@ landing.
 **A transfer across a SHIFT or a DELIM is an error.** Ruled
 2026-11-10; the rules are in section 1, Transfers. A `return` in a
 callee handler, a `break` or `continue` in a handler whose loop is not
-inside the handler, and a `return` or `yield` in a landed copy's bottom
+inside the handler, and a `return` or `yield` in an installed copy's bottom
 frame all name a target that is not theirs to reach.
 
 Set aside: giving each a second meaning (the `return` completes the

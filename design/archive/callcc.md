@@ -74,7 +74,7 @@ state does not permit invocation. Attempting to invoke an unusable continuation
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment (the template) */
   uint32_t resume_pc;           /* pc to resume at; the frame is resolved
-                                   from the landed chain at invoke time */
+                                   from the installed chain at invoke time */
   KosSegment *resume_stack;     /* aliases a node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag (KOS_PROMPT_ID_UNDELIMITED for call/cc) */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -88,7 +88,7 @@ struct KosContinuation {
 };
 ```
 
-Both delimited and undelimited continuations use this structure. Undelimited capture (`kos_capture_cc`) sets `prompt_id` to `KOS_PROMPT_ID_UNDELIMITED` and stores the owning context's token in `token_ref`; the template is never landed itself, each invoke clones it.
+Both delimited and undelimited continuations use this structure. Undelimited capture (`kos_capture_cc`) sets `prompt_id` to `KOS_PROMPT_ID_UNDELIMITED` and stores the owning context's token in `token_ref`; the template is never attached itself, each invoke clones it.
 
 ### KosPyContinuation Python Type
 
@@ -173,7 +173,7 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
    resumes over the region's own operands and the live prompt keeps its
    own for the handler's return; the frame's segment is never touched.
    Only the first invoke runs in place; re-invokes fall through to the
-   landing path (multi-shot). When the shift sits in a callee of the
+   attaching path (multi-shot). When the shift sits in a callee of the
    reset, the slice runs in the handler's own frame and frees it on
    return, so the invoke clones that frame and makes the copy the
    bottom of the stashed span: the handler resumes in the copy, and a
@@ -203,7 +203,7 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
    above the ancestor's counterpart anew, so multi-shot invokes never share
    nodes; `kos_chain_detach_template` severs the clone's bottom from the
    template. When the slice reaches `POP_PROMPT` (delimited), the return
-   walk hands the delim back and the value lands at the invoke site.
+   walk hands the delim back and the value is delivered at the invoke site.
 
 4. **Push a goal** (`kos_xfer_goal_new` + `kos_xfer_goal_push`) with the clone
    as target and the value as payload; answer
@@ -225,21 +225,21 @@ signal on its own boundary and invokes for real.
 
 ### Transfer goal
 
-Landing a continuation is a **`KosXferGoal`** (`xfer_goal.h`): a record of
+Applying a continuation is a **`KosXferGoal`** (`xfer_goal.h`): a record of
 where control is going, never what to do. `kos_xfer_goal_drive` re-derives
 its next step from the live chain on every pass.
 
 ```c
 typedef enum KosXferGoalPhase {
   KOS_GOAL_LEAVING,     /* unlink dyn_top down to the seam */
-  KOS_GOAL_LANDING,     /* splice the target on the seam, set the resume pc */
-  KOS_GOAL_ENTERING,    /* enter each landed node, outermost first */
+  KOS_GOAL_ATTACHING,   /* splice the target on the seam, set the resume pc */
+  KOS_GOAL_ENTERING,    /* enter each attached node, outermost first */
   KOS_GOAL_DELIVERING,  /* push the payload or set the throw slots; retire */
 } KosXferGoalPhase;
 
 struct KosXferGoal {
   KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
-  KosDynNode *target;          /* owned clone to land; NULL once landed */
+  KosDynNode *target;          /* owned clone to attach; NULL once attached */
   KosDynNode *seam;            /* borrowed; NULL means the root */
   uint32_t seam_id;
   KosDynNode *frontier;        /* node whose thunk we wait on, or NULL */
@@ -254,15 +254,15 @@ struct KosXferGoal {
 };
 ```
 
-**Delimited landing** (Path B):
+**Delimited application** (Path B):
 1. LEAVING: nothing leaves; the seam (the fresh DELIM) is already dyn_top.
-2. LANDING: splice the cloned slice onto the DELIM; renumber its frames.
+2. ATTACHING: splice the cloned slice onto the DELIM; renumber its frames.
 3. ENTERING: `before` thunks of the slice's WIND nodes, outermost first;
    PARAM extents re-bind; multi-shot withs re-enter.
-4. DELIVERING: push the value, stage it for the landed frame's resume when the restore put one back, or raise it into the landed frame.
+4. DELIVERING: push the value, stage it for the attached frame's resume when the restore put one back, or raise it into the attached frame.
 5. `POP_PROMPT` in the slice returns through the DELIM to the invoke site.
 
-**Undelimited landing** (call/cc):
+**Undelimited application** (call/cc):
 1. LEAVING: unlink from dyn_top down to the seam through
    `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER`: `after` thunks
    and `__exit__`s above the seam run, innermost first; obligations the
@@ -280,13 +280,13 @@ struct KosXferGoal {
    WIND or WITH outside its body, a loop in its else clause, a for-each
    with a step in flight -- is not the state the continuation describes,
    so the match stops below it, the transfer leaves it, and the
-   template's copy of it lands fresh with the enter replay that implies
+   template's copy of it is attached fresh with the enter replay that implies
    (a `before` thunk runs again on re-entry, as dynamic-wind requires).
-2. LANDING: restore the captured operand stacks of the shared nodes from the
+2. ATTACHING: restore the captured operand stacks of the shared nodes from the
    seam down to its frame (and that frame's registers), then splice the
    clone onto the seam. When the seam is NULL (the chains share no node)
    the clone becomes the whole chain and every outer goal is freed.
-3. ENTERING and DELIVERING as above, over the landed nodes only.
+3. ENTERING and DELIVERING as above, over the attached nodes only.
 
 A wind, parameterize, or with that encloses both the capture point and the
 invoke point is at or below the ancestor, so it neither leaves nor
@@ -306,7 +306,7 @@ came and went. Everything above `wait_top` belongs to the thunk:
    invoke returns its reset's value to the thunk, which then returns.
 3. The thunk's return settles the node (`kos_dyn_settle_top`); dyn_top is
    `wait_top` again and the drive resumes the outer goal where it left off.
-4. An inner landing whose LEAVING unlinked the node the outer was waiting on frees the outer goal along with that extent.
+4. An inner application whose LEAVING unlinked the node the outer was waiting on frees the outer goal along with that extent.
 
 A step that raises enters `process_raise`, which frees the whole goal stack
 (`kos_xfer_goal_abandon_all`) and raises through the chain as the driver

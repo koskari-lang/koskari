@@ -23,7 +23,7 @@ prefix-only, so the short name is the use and the prefixed spelling
 denotes the object. An interim `IMPORT_FROM` probe that retried an
 unprefixed member as `compile/{attr}` was tried and reverted -- it bound
 the transformer under the consumer's bare name, wrong under this
-design. Until the family form lands, a transformer is imported by its
+design. Until the family form is implemented, a transformer is imported by its
 explicit binding name, `(import-from mod compile/NAME)`, which composes
 correctly with local definitions and `extend-syntax`. The family form
 will be a **separate opcode or a mode switch on `IMPORT_FROM`**, not new
@@ -204,7 +204,7 @@ The compiler emits the family opcode at module level and plain
 
 - The consumer surface for family import. The working name has been
   `require` (Elixir's analogue for making compile-time facets available),
-  with `use` reserved for the bundle install hook. The two may land
+  with `use` reserved for the bundle install hook. The two may be implemented
   together, and `use` may subsume `require` entirely -- bundles as the
   one model, leaving only `import` (Python parity) and `use`.
 - Whether `match/` becomes an active prefix for `syntax-match`, `match/case`,

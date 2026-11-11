@@ -271,10 +271,10 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 42)
 
 
-    async def test_python_store_inside_a_callout_block_lands_in_the_block(self):
+    async def test_python_store_inside_a_callout_block_goes_to_the_block(self):
         """
         A Python callback run from koskari opens a Domain block and
-        stores through ParamRef: the store lands in the block's root,
+        stores through ParamRef: the store goes into the block's root,
         a koskari read made inside the block sees it, and the thread
         default never does
         """
@@ -325,10 +325,10 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "from-host")
 
 
-    async def test_domain_koskari_store_lands_in_root_scope(self):
+    async def test_domain_koskari_store_goes_into_root_scope(self):
         """
         A store made inside koskari with no enclosing parameterize extent
-        lands in the Domain's root scope, so Python reads it after the
+        goes into the Domain's root scope, so Python reads it after the
         return without any pre-define.
         """
 
@@ -460,10 +460,10 @@ class TestThreadDefaultDomain(unittest.TestCase):
                       Domain.current_domain().param_scopes()["root"])
 
 
-    def test_koskari_store_lands_in_thread_default(self):
+    def test_koskari_store_goes_into_thread_default(self):
         """
         A store made from inside a boundary call with no with Domain()
-        open lands in the thread default's root scope, so Python reads
+        open goes into the thread default's root scope, so Python reads
         it after the call returns
         """
 

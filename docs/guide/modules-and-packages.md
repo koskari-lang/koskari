@@ -195,7 +195,7 @@ Two ways to keep two-language layouts unambiguous:
 
 ## Getting a directory onto the import path
 
-Import resolution searches `sys.path`. The usual ways a directory lands there:
+Import resolution searches `sys.path`. The usual ways a directory gets there:
 
 - Running a script. `python path/to/app.py` prepends the script's own
   directory to `sys.path[0]`, so files next to `app.py` import by bare name.

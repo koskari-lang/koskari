@@ -1,7 +1,7 @@
 # Corpus generation task
 
 You are generating conformance corpus entries for the Koskari language — a Lisp
-dialect implemented in Python over a custom C VM. Entries land in
+dialect implemented in Python over a custom C VM. Entries go in
 `docs/corpus/records/` and downstream feed a HuggingFace dataset that trains
 agents to write idiomatic Koskari.
 

@@ -2163,7 +2163,7 @@ PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count) {
    Advance the cycle-detection cursor two links, under the same stop
    conditions as the walk it shadows. Reaching an exit retires the
    cursor: the walk itself arrives there and ends on its own terms. A
-   cursor that instead lands on the walk's own position means the
+   cursor that instead reaches the walk's own position means the
    spine loops somewhere other than head.
 
    :param cursor: the fast cursor, retired in place at an exit

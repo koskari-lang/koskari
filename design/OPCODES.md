@@ -667,7 +667,7 @@ When adding or changing an opcode:
 | POP_SHIFT | NOARG | Deliver the shift block's value as the value of its prompt | [§20](#kos_op_pop_shift) |
 | POP_PROMPT | NOARG | Pop prompt; the prompt of an applied continuation delivers to its DELIM | [§20](#kos_op_pop_prompt) |
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [§21](#kos_op_push_cc) |
-| POP_CC | NOARG | Pop the CC block; also the landing site when a captured continuation is invoked | [§21](#kos_op_pop_cc) |
+| POP_CC | NOARG | Pop the CC block; also the arrival point when a captured continuation is invoked | [§21](#kos_op_pop_cc) |
 | CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [§21](#kos_op_capture_cc) |
 | PUSH_WIND | COUNT | Pop the before (and after) thunks, push the wind extent, run before | [§22](#kos_op_push_wind) |
 | POP_WIND | NOARG | Pop the body result and the wind node, run the after thunk, deliver the result | [§22](#kos_op_pop_wind) |
@@ -1030,7 +1030,7 @@ bottom to top matches push order).
 ### KOS_OP_AWAIT
 
 - **Style**: COUNT (stack element count).
-- **Arg**: `1` — pop TOS (awaitable), dispatch; may return `EVAL_AWAIT(val)` or push the resolved value; on resume from a Python awaitable, result is pushed onto the operand stack. An awaitable whose type carries the await suite is taken on an await frame pushed above the current one, the handler hopping into the suite's kind with the owned awaitable; the frame's return lands the value where the push would have. `0` — bare cooperative suspend: no stack pop or push; returns `EVAL_AWAIT(Py_None)` (no `py_await_iter`); `revive_await` does not push the resume value onto the operand stack (e.g. next instruction may be `CONST None` for `(compile/await)`).
+- **Arg**: `1` — pop TOS (awaitable), dispatch; may return `EVAL_AWAIT(val)` or push the resolved value; on resume from a Python awaitable, result is pushed onto the operand stack. An awaitable whose type carries the await suite is taken on an await frame pushed above the current one, the handler hopping into the suite's kind with the owned awaitable; the frame's return delivers the value where the push would have. `0` — bare cooperative suspend: no stack pop or push; returns `EVAL_AWAIT(Py_None)` (no `py_await_iter`); `revive_await` does not push the resume value onto the operand stack (e.g. next instruction may be `CONST None` for `(compile/await)`).
 
 **Example:** Await a coroutine; TOS is the awaitable. On resume, result is pushed.
 
@@ -4403,7 +4403,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
-- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. The node's shot is `KOS_DYN_WITH_SHOT_MULTI`: a transfer goal leaves through it and re-enters it when it lands the extent (a landing re-enters a **`KOS_DYN_CAP_CONTROL_HOOK`** node unless it is a single-shot WITH).
+- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. The node's shot is `KOS_DYN_WITH_SHOT_MULTI`: a transfer goal leaves through it and re-enters it when it attaches the extent (an attachment re-enters a **`KOS_DYN_CAP_CONTROL_HOOK`** node unless it is a single-shot WITH).
 - **Pushes:** KOS_DYN_DYN_WITH.
 
 ### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
@@ -5064,7 +5064,7 @@ continuation. The shift aborts to its prompt before its handler runs. Every
 call of k installs a fresh copy of the captured chain on a DELIM at the call site.
 The copy's delimiting prompt is recognised by its place: its parent is the
 copy's frame and that frame's parent is the DELIM
-(`kos_prompt_landed_delim`). It pairs with no POP_PROMPT as a reset of its
+(`kos_prompt_applied_delim`). It pairs with no POP_PROMPT as a reset of its
 own; its completion goes to the call site through the DELIM.
 
 ### KOS_OP_PUSH_PROMPT
@@ -5109,7 +5109,7 @@ own; its completion goes to the call site through the DELIM.
 ### KOS_OP_POP_SHIFT
 
 - **Style**: NOARG.
-- **Stack**: Pops TOS as result. The SHIFT is `dyn_top`, or the parent of `dyn_top` when the handler ran in a frame copy; the delimiter is the SHIFT's parent. Live reset: pushes a transfer goal with no target whose seam is the prompt's parent; LEAVING unlinks through the SHIFT and the PROMPT (crossing the barrier), DELIVERING pushes the result onto the outer frame's stack, and execution resumes at the pop_pc the prompt recorded at push, + 1. Prompt of an applied continuation (`kos_prompt_landed_delim`): the result is the value of that call of k and is delivered at the call site through the DELIM.
+- **Stack**: Pops TOS as result. The SHIFT is `dyn_top`, or the parent of `dyn_top` when the handler ran in a frame copy; the delimiter is the SHIFT's parent. Live reset: pushes a transfer goal with no target whose seam is the prompt's parent; LEAVING unlinks through the SHIFT and the PROMPT (crossing the barrier), DELIVERING pushes the result onto the outer frame's stack, and execution resumes at the pop_pc the prompt recorded at push, + 1. Prompt of an applied continuation (`kos_prompt_applied_delim`): the result is the value of that call of k and is delivered at the call site through the DELIM.
 - **Invariants**: Must be inside a PUSH_SHIFT extent. The prompt carries the resume pc; no extent lookup happens at pop time.
 - **Compiler form:** No argument.
 
@@ -5124,7 +5124,7 @@ own; its completion goes to the call site through the DELIM.
 ### KOS_OP_POP_PROMPT
 
 - **Style**: NOARG.
-- **Stack**: Normal case: pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Applied-continuation case: the prompt at `dyn_top` is the delimiter of an installed copy (`kos_prompt_landed_delim`: its parent is a frame whose parent is a **`KOS_DYN_DELIM`**); it pops TOS as result, unwinds to the DELIM (`kos_eval_route_delim_return`), pushes the result on the first operand block below the DELIM, sets the pc of the first frame below it to the DELIM's return pc, pops the DELIM, and resumes there.
+- **Stack**: Normal case: pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Applied-continuation case: the prompt at `dyn_top` is the delimiter of an installed copy (`kos_prompt_applied_delim`: its parent is a frame whose parent is a **`KOS_DYN_DELIM`**); it pops TOS as result, unwinds to the DELIM (`kos_eval_route_delim_return`), pushes the result on the first operand block below the DELIM, sets the pc of the first frame below it to the DELIM's return pc, pops the DELIM, and resumes there.
 - **Invariants**: Top of chain must be the prompt when POP_PROMPT executes. Exactly one value is consumed from the PROMPT's segment and one is delivered below. A DELIM records only its return pc; its return frame is the first FRAME below it (`kos_dyndelim_return_frame`).
 - **Application model**: A call of a delimited continuation pushes a DELIM at the call site and a transfer goal installs a fresh clone of the captured chain on it. The clone's nodes have fresh ids.
 - **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the raise walk drops the segment and unlinks the PROMPT in the same unlink that crosses the barrier (`kos_dyn_unlink_top` with the barrier allowed), then continues unwinding. No POP_PROMPT opcode executes in this path.
@@ -5167,7 +5167,7 @@ PUSH_CC resume target).
 | 1     | CAPTURE_CC | 0   | 0          | stack before: [...]; after: [..., continuation] |
 | 2     | CONST      | 0   | 0 (42)     | stack: [..., continuation, 42] |
 | 3     | CALL       | 1   | 1          | invoke continuation with one arg → jump to POP_CC (4) with [..., 42] |
-| 4     | POP_CC     | 0   | 0          | invoke lands here with value on stack; pop CC; next pc = 5 (resume) |
+| 4     | POP_CC     | 0   | 0          | invoke arrives here with value on stack; pop CC; next pc = 5 (resume) |
 | 5     | RETURN     | 1   | 1          | yield TOS (42) |
 
 ---
@@ -5288,7 +5288,7 @@ The extent contract and the single unlink site are described in [interpreter/ext
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | RETURN | 1   | 1        | normal exit |
-| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc lands here |
+| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc reaches here |
 
 
 ---

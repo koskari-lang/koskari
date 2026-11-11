@@ -29,7 +29,7 @@ From the loop in `koskari_eval` (`koskari/lib/eval.c`, the `prologue`,
    an outside driver, AWAIT on an unsettled awaitable, FATAL. Control
    leaves the evaluator.
 2. **Raise.** `process_raise` walks to the handler, then answers
-   REPROLOGUE so the loop lands on the handler pc.
+   REPROLOGUE so the loop arrives at the handler pc.
 3. **The prologue protocol.** `kos_prologue_reenter`: staged delivery,
    pending exception, goal drain, resume delivery, in that order, each
    re-entered through `KOS_REENTER_AGAIN`, with the breaker poll ahead
@@ -43,7 +43,7 @@ region and resume return shapes thread straight on.
 
 ## The changes
 
-Each lands green on its own. The order that held: 1, then 3 and 5,
+Each is completed green on its own. The order that held: 1, then 3 and 5,
 then 2 and 4 together. The prologue can only be a tail target once no
 raw result needs the trampoline's post-processing, since a tail-entered
 chain has no one to post-process it, and that is what 3 and 5 provide.
@@ -173,7 +173,7 @@ typedef struct KosResumeKind {
   KosThreadFn fn;                   /* the resume itself */
   void (*clear)(void *state);       /* teardown with no delivery coming;
                                        NULL: the state is borrowed */
-  void *(*clone)(void *state);      /* capture and multi-shot landing;
+  void *(*clone)(void *state);      /* capture and multi-shot application;
                                        NULL: refuse by name */
 } KosResumeKind;
 ```
@@ -186,7 +186,7 @@ The lifecycle sites are one rule each: free, park and tail reset go
 through `kos_dynframe_clear_resume`, which calls `clear` when the kind
 has one and then nulls the pair; clone calls `clone` and copies the
 kind, or refuses by `kind->name`; the transfer restore record takes
-`clone` of the template's state, so a multi-shot landing never moves a
+`clone` of the template's state, so a multi-shot application never moves a
 state out of its template, and applying it clears the live frame's
 resume first. Clean completion stays the owner's business: the node or
 provider clears its own fields when the step finishes, and `clear` runs

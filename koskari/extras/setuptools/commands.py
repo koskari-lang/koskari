@@ -151,7 +151,7 @@ class KoskariInstallScripts(install_scripts_module.install_scripts):
         else:
             self.outfiles = []
         # Wheel builds set no_ep and return before _install_ep_scripts, but
-        # koskari stubs must still land in .data/scripts/ -- write them first.
+        # koskari stubs must still go into .data/scripts/ -- write them first.
         self._install_koskari_scripts()
         if self.no_ep:
             return

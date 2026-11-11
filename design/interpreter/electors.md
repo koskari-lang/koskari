@@ -162,7 +162,7 @@ and the pointer stays.
 
 Both are chosen at the moment a decision is made and consumed at the moment
 control arrives. A resume is chosen when an operation is requested and
-consumed when its value lands. An elector is chosen when an operand's shape
+consumed when its value is delivered. An elector is chosen when an operand's shape
 or an extent's kind is learned and consumed when the site or node next runs.
 They share one prototype, so they compose freely under the musttail rules:
 
@@ -409,7 +409,7 @@ from node state. Under §8.2 a delivery already has a route that does not
 touch the instruction stream: the frame's `resume_kind` / `resume_state`
 pair. A node-style resume set that pair to a phase kind and the node
 as its state; the state is now the delegate. The opcode then runs once per node, and every later delivery
-lands on the phase function, which reads its node, does the phase's work,
+arrives at the phase function, which reads its node, does the phase's work,
 and either sets the next phase's resume or threads on past the opcode.
 
 A step resume's state (map, filter) is owned by the step object and

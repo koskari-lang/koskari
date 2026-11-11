@@ -42,7 +42,7 @@ KosDynDelim *kos_dyndelim_new(KosDynNode *parent, KosOp *pc) {
 
 
 /**
-   Clone DELIM payload: the return pc. A clone landed with a captured
+   Clone DELIM payload: the return pc. A clone attached with a captured
    segment returns into the frame it then sits on.
 */
 static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {

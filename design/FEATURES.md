@@ -61,7 +61,7 @@ stored into the enclosing function's locals as the pattern walks.
   kind is decided by head symbol or marker, never by bracket type.
 - **Guards**: `when:` / `unless:` on an arm; subject survives a failed guard
   and falls to the next arm.
-- **Semantics**: first arm wins; bindings land in the enclosing scope and
+- **Semantics**: first arm wins; bindings go into the enclosing scope and
   persist after the form (Python-consistent); no match + no `else:` → `None`;
   strings/bytes are atoms to sequence patterns. On 3.9 the class test
   synthesizes `__match_args__` for dataclasses and namedtuples. A predicate

@@ -843,7 +843,7 @@ extern PyTypeObject KosModuleNamespaceType;
    never read; the module's bindings live in the core's binds dict.
    The core sits at the same offset as on the other kinds.
 
-   Raw writes land in the scratch and stay there: exec's __builtins__
+   Raw writes go into the scratch and stay there: exec's __builtins__
    insertion, STORE_GLOBAL from a global statement in exec'd code, and
    popitem. Mirrored dunders (mdl_ns_mirror) are written there on
    purpose. A purge is planned and not yet implemented: every relayed

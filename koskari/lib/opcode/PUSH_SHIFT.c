@@ -21,7 +21,7 @@
    from POP_SHIFT+1 to POP_PROMPT (via extent) when the prompt lies in
    acceptable chain heritage (kos_shift_capture locates it and offers
    handle(SHIFT) en route in one walk), then abort to that prompt: a
-   transfer leaves everything above it, lands a SHIFT node on it, and
+   transfer leaves everything above it, attaches a SHIFT node to it, and
    delivers k there at the shift block's first instruction (push_pc +
    1). The handler runs with the region gone.
 */

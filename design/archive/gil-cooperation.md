@@ -22,7 +22,7 @@ The sections below describe a **counter + timer** policy with **Domain** as
 storage for cooperation state and **domain TLS** for zero-argument
 `maybe_cooperate()` / `ensure_gil()` at dynchain, stack, and transfer-plan call
 sites. This generalization is **not** implemented; only eval-loop polling above
-is landed.
+is implemented.
 
 ---
 

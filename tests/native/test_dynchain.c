@@ -307,7 +307,7 @@ static int test_chain_clone_segment(void) {
 
 static int test_chain_clone_segment_fresh_ids(void) {
     /*
-      A delimited continuation's template, and each copy landed from
+      A delimited continuation's template, and each copy attached from
       it, clone with fresh ids: every clone is a new instance, told
       from its source and from every other copy.
     */

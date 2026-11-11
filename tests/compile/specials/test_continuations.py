@@ -36,7 +36,7 @@ pytestmark = pytest.mark.phase_specials
 class TestDelimitedTransferNested(SpecialsTestCase):
     """
     A delimited invoke from inside a wind thunk that another delimited
-    invoke is entering lands a second slice above the first; the inner
+    invoke is entering attaches a second slice above the first; the inner
     invoke returns its reset's value to the thunk, and the outer invoke
     then finishes entering and runs its own slice.
     """
@@ -76,7 +76,7 @@ class TestDelimitedTransferNested(SpecialsTestCase):
     async def test_unbounded_nested_invoke_raises_recursion_error(self):
         """
         every re-entry of the cloned before-thunk invokes k again, so
-        each pass lands another slice above the last. Each landing adds
+        each pass attaches another slice above the last. Each attachment adds
         frames, so the frame depth limit refuses an invoke once the
         chain is as deep as the limit and RecursionError raises
         at that invoke site instead of the chain growing without bound
@@ -171,10 +171,10 @@ class TestUndelimitedSeam(SpecialsTestCase):
         self.assertEqual(log, ["b1", "b2", "a2", "a1"])
 
 
-    async def test_landed_clone_counts_as_shared(self):
+    async def test_attached_clone_counts_as_shared(self):
         """
-        an invoke from outside a left dyn-wind lands and enters it; a
-        second invoke from inside that landed body finds it shared and
+        an invoke from outside a left dyn-wind attaches and enters it; a
+        second invoke from inside that attached body finds it shared and
         runs no thunk
         """
 
@@ -265,7 +265,7 @@ class TestUndelimitedSeam(SpecialsTestCase):
     async def test_shared_frame_operands_come_back(self):
         """
         the operands pending in the shared frame at capture, 10 here,
-        are what the delivered value lands on, whatever the frame held
+        are what the delivered value is pushed on, whatever the frame held
         at the invoke
         """
 
@@ -296,7 +296,7 @@ class TestNestedUndelimitedVoidsOuter(SpecialsTestCase):
     async def test_after_thunk_invoke_voids_the_waiting_outer(self):
         """
         the body invokes k; leaving runs the after thunk, which invokes
-        k again; the second landing wins and the first never delivers.
+        k again; the second application wins and the first never delivers.
         The call to bump after the transfer allocates a frame where the
         unlinked wind stood and awaits in it, which is where a surviving
         outer would wrongly resume

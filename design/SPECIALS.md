@@ -1394,8 +1394,8 @@ Same syntax as `with`; optional `name` binds the enter result.
 
 **Use-case:** Multi-shot context manager that participates in continuation
 transfer (shift/reset, undelimited call/cc). On non-local transfer, exit
-runs as the goal leaves and enter runs again when a goal lands the extent;
-each landing is a fresh extent instance.
+runs as the goal leaves and enter runs again when a goal attaches the extent;
+each attachment is a fresh extent instance.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 Expression value is always `None`. See
@@ -3337,7 +3337,7 @@ echo hi
 ````
 
 ````scheme
-;; Opener-line keyword pairs land in options:
+;; Opener-line keyword pairs go into options:
 ```bash env: prod retries: 3
 deploy --now
 ```

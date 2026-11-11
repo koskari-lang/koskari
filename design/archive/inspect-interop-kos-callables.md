@@ -121,7 +121,7 @@ Many frameworks combine signatures with **`__annotations__`** and call **`typing
 - **`__annotations__`** as an empty **`dict`**, or
 - A dict with keys only where the compiler eventually supplies types, using **`Parameter.empty`** in the `Signature` for parameters without annotations.
 
-**Open design:** Where compile-time type metadata will live long-term (e.g. attached to `KosCode`, module namespace, or a side table) should be decided when annotation support lands; this document only requires that **`__annotations__`** and **`__signature__` stay consistent** once both exist.
+**Open design:** Where compile-time type metadata will live long-term (e.g. attached to `KosCode`, module namespace, or a side table) should be decided when annotation support is implemented; this document only requires that **`__annotations__`** and **`__signature__` stay consistent** once both exist.
 
 ### Priority B — `__wrapped__` and decorator chains
 

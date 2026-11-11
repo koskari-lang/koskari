@@ -171,7 +171,7 @@
 
 **Ordering during continuation transfer**:
 1. Leaving: AFTER hooks from the current top down to the seam the two chains share (inner-to-outer)
-2. Landing: splice the target segment onto the seam
+2. Attaching: splice the target segment onto the seam
 3. Entering: BEFORE hooks from the seam up to the target top (outer-to-inner)
 
 **Example**:

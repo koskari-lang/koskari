@@ -213,7 +213,7 @@ The comment there names it a flattening gap and points at
 **D11. Composable continuations invoked from a code-less resume frame.**
 Fixed in the working tree; the transform case predates this work. When
 a `shift` continuation's resumed slice completes, `POP_PROMPT`
-(`opcode/POP_PROMPT.c:67`) lands the value at the recorded invoke site
+(`opcode/POP_PROMPT.c:67`) delivers the value at the recorded invoke site
 through `kos_eval_route_delim_return` (`eval.c:~1488`). Two faults:
 
 - The in-place restitch (`kos_dyn_inplace_restitch`, `dynchain.c`)
@@ -596,7 +596,7 @@ tail position.
   stays dead), `matcher/datum.c:485`, `object.c:163`,
   `callable.c:295/319`, `demand.c:830/862`. Borrowed tuple and dict; NULL
   args and NULL kwargs both occur.
-- Resolves D4 and D6. The `demand_call` contract changes land here.
+- Resolves D4 and D6. The `demand_call` contract changes are implemented here.
 
 ### 5. Tests
 

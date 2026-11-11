@@ -90,9 +90,9 @@ convenience at the call site that happens to also read as an acceptable formal.
 A by-ref formal with no floor is a **required positional**; one with a floor is
 an **optional keyword** (the floor is its default), exactly as for any formal.
 The recognized shapes resolve to the same marking. Note the two terse families
-read differently: `&foo` (no colon) becomes `(compile/ref foo)` and lands in the
+read differently: `&foo` (no colon) becomes `(compile/ref foo)` and goes into the
 positional run, while `&foo:` (the keyword form) reads as a keyword *named*
-`&foo` and lands in the keyword run — so the parser handles each in its own
+`&foo` and goes into the keyword run -- so the parser handles each in its own
 place:
 
 ```

@@ -1446,7 +1446,7 @@ tags:
   - function
   - macro
   - def
-notes: the return type lands in the function's __annotations__
+notes: the return type is stored in the function's __annotations__
 ---
 id: function-def-decorated-006
 feature: layout/decorate

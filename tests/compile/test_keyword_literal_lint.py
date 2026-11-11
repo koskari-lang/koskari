@@ -38,7 +38,7 @@ class TestKeywordLiteralLint(unittest.TestCase):
 
     def compile_src(self, src, keyword_literals):
         # a fully loaded module: the macro layer has to be present, or
-        # forms like (if ...) compile as plain calls and the keyword lands
+        # forms like (if ...) compile as plain calls and the keyword ends up
         # in a keyword-argument slot rather than in value position
         import koskari.builtins as builtins
 

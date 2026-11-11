@@ -44,7 +44,7 @@ them like CALL.
 ```
 
 Same as `with`, but the dynamic extent is multi-shot and re-enters when a
-transfer goal lands it.
+transfer goal attaches it.
 
 
 ## Bytecode / opcodes
@@ -251,7 +251,7 @@ value (`None` after a swallow).
 Same as PUSH_WITH, except:
 
 - Pushes the `KOS_DYN_WITH` node with shot `KOS_DYN_WITH_SHOT_MULTI`.
-- A transfer goal re-enters the node when it lands the extent: a landing re-enters a `KOS_DYN_CAP_CONTROL_HOOK` node unless it is a single-shot WITH.
+- A transfer goal re-enters the node when it attaches the extent: an attachment re-enters a `KOS_DYN_CAP_CONTROL_HOOK` node unless it is a single-shot WITH.
 
 
 ### POP_DYN_WITH
@@ -275,7 +275,7 @@ A continuation transfer (delimited or undelimited) that LEAVES through an
 active `KOS_DYN_WITH` node is not refused. The goal unlinks the node with
 `KOS_XFER_EVENT_TRANSFER`, which runs `exit` in the no-exception form, as
 an exception unwind would, and the instance is finished. A transfer that
-LANDS a segment containing a single-shot `with` does not run `enter`
+ATTACHES a segment containing a single-shot `with` does not run `enter`
 again: ENTERING skips the node, and its exit-done mark is shared across
 clones, so no instance runs `exit` twice.
 
@@ -283,7 +283,7 @@ Single-shot means one `enter` and one `exit` per extent instance, not a
 barrier. WITH nodes are cloneable and may be captured in a chain segment
 ([dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md)
 §9.7); each clone is a separate node that shares the original's exit-done
-mark and is never entered: a landing skips it, and leaving it runs no
+mark and is never entered: an attachment skips it, and leaving it runs no
 `exit`. A body re-entered through a continuation runs without the manager
 entered again; the original instance's own leave runs `exit` if it has not
 run yet.
@@ -292,9 +292,9 @@ run yet.
 
 A `dyn-with` node answers the extent contract like a wind: when a goal
 LEAVES through it, `kos_dyn_extent_leave` runs `exit` (the no-exception
-form; a transfer is not a raise); when a goal LANDS a segment containing
+form; a transfer is not a raise); when a goal ATTACHES a segment containing
 it, ENTERING runs `enter` and re-binds `name` if present. A single-shot
-`with` in a landed segment is skipped by ENTERING: its `exit_done` ref is
+`with` in an attached segment is skipped by ENTERING: its `exit_done` ref is
 shared across clones, so no instance runs `__exit__` twice.
 
 **Suspension:** `enter` / `exit` may suspend (auto-await). The leave or
@@ -370,7 +370,7 @@ for other extent kinds; no special case for dyn-with.
 
 - Stack restoration for with bodies is structural (block push/pop), never
   arithmetic marking.
-- `with` is single-shot: each dynamic extent instance is entered and exited at most once. A transfer leaving through an active WITH instance runs its exit and finishes it; a landed segment does not re-enter one; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
+- `with` is single-shot: each dynamic extent instance is entered and exited at most once. A transfer leaving through an active WITH instance runs its exit and finishes it; an attached segment does not re-enter one; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
 - `dyn-with` is multi-shot and must wind/unwind on non-local transfer.
 - Expression value is the body's value, or `None` when exit swallowed an
   exception.

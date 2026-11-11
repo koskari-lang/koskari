@@ -9,7 +9,7 @@ storage; an entry reports its outcome and the calling resume ends in
 threading into an installed callee; a bytecode child's return into a
 resume-carrying parent is a tail call from `op_RETURN`. Of the
 transport respec below, the declared-destination field and node-hosted
-resumes did not land: the resume stays on the frame, and the
+resumes were not implemented: the resume stays on the frame, and the
 destination is read from it. The operational description is
 [../EVALUATOR.md](../EVALUATOR.md) §8. The text below is the design as
 it evolved, kept for its reasoning.
@@ -101,7 +101,7 @@ current code" below).
 
 Decided 2026-08-29: that routing is mandated, not optional. Opcodes
 use these entries so every delivery crosses the one delivery point --
-uniform delivery is how the ambient-await broadening lands
+uniform delivery is how the ambient-await broadening is implemented
 ([ambient-await-handoffs.md](ambient-await-handoffs.md)). The settle
 at the delivery point is part of the interface contract, so an opcode
 joining the entries adopts the broad await rule with it; the original
@@ -239,7 +239,7 @@ through becomes the pending pair, and the settle broadens to every
 delivery, elements included
 ([ambient-await-handoffs.md](ambient-await-handoffs.md)).
 
-Landed, though not at the staging point this section originally
+Implemented, though not at the staging point this section originally
 named. Staging happens in several places -- both entries, and any
 consumer deferring its own first step -- but every staged delivery
 converges on one function before a resume runs, so that is where the
@@ -268,7 +268,7 @@ demolition took the typed wake with them.
 ## Transport respec (normative)
 
 Decided 2026-08-29, superseding the storage, trampoline, and
-eager-await sections above where they conflict. Review of the landed
+eager-await sections above where they conflict. Review of the implemented
 state found the transport routing deliveries by inference -- stack
 depth, PyErr state, `CODE`/`RESUME_FN` conjunctions -- and paying a
 stack round-trip plus a full prologue pass per delivery, with both
@@ -377,7 +377,7 @@ for the node kind.
 
 ### Sequencing
 
-The respec lands before any opcode migrates onto the entries: an
+The respec is implemented before any opcode migrates onto the entries: an
 element delivered through the interface must cost what its raw push
 costs today, which needs the register pair and the slim bounce in
 place first. Order: transport rework, then the opcode roster
@@ -418,7 +418,7 @@ clonable: the slot copies with the frame, every materialization
 carries the resume, and the trampoline's destructive clear is correct
 per materialization -- the live copy spends its own, the snapshot
 keeps its own, and a continuation reinstated N times fires the resume
-N times with no once-only bookkeeping. Landing it requires the owned
+N times with no once-only bookkeeping. Implementing it requires the owned
 channel above for per-copy state, and these rules, which hold now and
 then:
 
@@ -438,7 +438,7 @@ then:
 
 ## Adoption in current code
 
-- map and filter: **landed as described.** The `nf_phase` enums and
+- map and filter: **implemented as described.** The `nf_phase` enums and
   the wake-dispatch switches became resume functions; filter's
   FETCH/INVOKE/VERDICT progression is carried by which resume is set,
   so the phase field disappeared rather than being translated. Both
@@ -583,7 +583,7 @@ deliberately unused here.
 
 ## Migration order
 
-Landed:
+Implemented:
 
 1. Plumbing, inert: resume slot, setting API, trampoline invocation in
    the prologue and the raise-walk offer. Nothing set; zero behavior
@@ -620,15 +620,15 @@ Remaining:
 
 8. The transport respec (normative section above): declared
    destinations, the register pending pair, node-hosted resumes, the
-   slim bounce. Lands before any opcode migrates onto the entries.
+   slim bounce. Implemented before any opcode migrates onto the entries.
 9. The opcode roster onto the entries
    ([ambient-await-handoffs.md](ambient-await-handoffs.md)), then
    bytecode's builtin resume and opcode unification -- the boundary
    with the musttail work.
 
-Each phase lands green through the full gate set (suite, native,
+Each phase is completed green through the full gate set (suite, native,
 ASAN, valgrind, benchmarks) and stays under the review size cap so it
-is reviewed as it lands. gdb is diagnostic, never a gate.
+is reviewed as it is completed. gdb is diagnostic, never a gate.
 
 ## Open questions
 

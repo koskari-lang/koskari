@@ -138,7 +138,7 @@ stay standard; only the stored callables differ.
 
 ## 6. Bootstrap integration
 
-On landing, **replace immediately**:
+On implementation, **replace immediately**:
 
 ```python
 _ty('property', property)   # before
@@ -221,7 +221,7 @@ Reuse patterns from **`tests/lib/test_demand_sync.py`** (**`TestDemandDescriptor
 | Auto-wrap on bare class methods | Use **`Demand`** / **`define-demanding`** or future descriptor types |
 | **`KosStaticMethod` / `KosClassMethod`** | Separate items; see [kospartial.md](kospartial.md) §7 |
 | Compiler elision of **`Demand`** | Optional future **`define-demanding`** / property peephole; not required for v1 |
-| User docs in **`docs/`** | Add **`compile/property`** or macro note when bootstrap swap lands |
+| User docs in **`docs/`** | Add **`compile/property`** or macro note when bootstrap swap is implemented |
 
 ---
 

@@ -23,9 +23,9 @@
    every pass, so a chain that moved under a suspension is its input
    rather than a hazard.
 
-   Four phases. LEAVING unlinks from dyn_top down to the seam. LANDING
+   Four phases. LEAVING unlinks from dyn_top down to the seam. ATTACHING
    splices the target segment onto the seam and installs the resume pc.
-   ENTERING runs the extent contract's enter for each node of the landed
+   ENTERING runs the extent contract's enter for each node of the attached
    segment, outermost first. DELIVERING pushes the payload, or sets the
    pending throw, and retires the goal.
 
@@ -36,11 +36,11 @@
    above belongs to the thunk.
 
    Goals nest: a continuation invoked from inside a thunk pushes an inner
-   goal while the outer stays waiting. A landing retires every outer
+   goal while the outer stays waiting. ATTACHING retires every outer
    goal whose frontier the inner's LEAVING unlinked, since the extent it
    was moving through is gone; with a NULL seam that is every outer. The
    wait marks its frontier node, so LEAVING voids the outer as it
-   unlinks that node, and a landing whose LEAVING voided none touches no
+   unlinks that node, and an ATTACHING whose LEAVING voided none touches no
    outer. A raise frees the whole stack; the chain a walk left behind is
    a chain to raise through.
 
@@ -60,7 +60,7 @@
 
 typedef enum KosXferGoalPhase {
   KOS_GOAL_LEAVING = 0,
-  KOS_GOAL_LANDING,
+  KOS_GOAL_ATTACHING,
   KOS_GOAL_ENTERING,
   KOS_GOAL_DELIVERING,
 } KosXferGoalPhase;
@@ -68,7 +68,7 @@ typedef enum KosXferGoalPhase {
 
 /**
    A node from the seam down to the seam's frame whose captured operand
-   segment (and, for the frame, registers) LANDING puts back. The node
+   segment (and, for the frame, registers) ATTACHING puts back. The node
    itself keeps its identity and extent state: it is the same extent at
    the capture point and the invoke point, only the operands it held
    differ.
@@ -89,10 +89,10 @@ typedef struct KosXferRestore {
 struct KosXferGoal {
   KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
 
-  KosDynNode *target;          /* owned clone to land, NULL until landed
-                                  or when there is nothing to land */
+  KosDynNode *target;          /* owned clone to attach, NULL once attached
+                                  or when there is nothing to attach */
   KosDynNode *seam;            /* borrowed: leave down to this node and
-                                  land on it; NULL means the root */
+                                  attach to it; NULL means the root */
   uint32_t seam_id;
   KosDynNode *frontier;        /* node whose thunk we wait on, or NULL */
   uint32_t frontier_id;
@@ -106,7 +106,7 @@ struct KosXferGoal {
 
   uint8_t phase;               /* KosXferGoalPhase */
   uint8_t is_cc_unwind;        /* delivery is a boundary raise of payload */
-  /* LEAVING unlinked an outer's frontier; LANDING retires the voided
+  /* LEAVING unlinked an outer's frontier; ATTACHING retires the voided
      outers */
   uint8_t voided_outer;
 };
@@ -133,13 +133,13 @@ KosXferGoal *kos_xfer_goal_new(
 
 
 /**
-   Release a goal's own resources: an unlanded target, the payload, the
+   Release a goal's own resources: an unattached target, the payload, the
    continuation reference, the restore records. Does not touch outer.
 */
 void kos_xfer_goal_free(KosXferGoal *goal);
 
 /**
-   Record what LANDING puts back below the seam: for each node from the
+   Record what ATTACHING puts back below the seam: for each node from the
    live seam down to and including the nearest frame, paired in step
    with its template counterpart from tmpl_seam down, a copy of the
    counterpart's operand segment and, for the frame, its registers.

@@ -1874,8 +1874,8 @@ KosOpResult KosContext_PushOrAwait(KosContext *ctx, PyObject *val);
    installed as a call frame on the running chain; any other awaitable
    is eagerly stepped to its result, or suspends. NORMAL with *out the
    settled value (new reference), REPROLOGUE with a callee installed
-   whose return lands the value on the current frame's stack, AWAIT
-   with the yielded value (the revive lands the settled value there
+   whose return pushes the value on the current frame's stack, AWAIT
+   with the yielded value (the revive pushes the settled value there
    too), or RAISE. val is consumed.
 */
 KosOpResult KosContext_Settle(KosContext *ctx, PyObject *val, PyObject **out);

@@ -663,7 +663,7 @@ The opcodes by family, each linking to its section.
 | POP_PROMPT | NOARG | Pop prompt | [section 20](opcodes/kos-op-pop-prompt.md) |
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [section 21](opcodes/kos-op-push-cc.md) |
 | CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [section 21](opcodes/kos-op-capture-cc.md) |
-| POP_CC | NOARG | Pop the CC block; also the landing site when a captured continuation is invoked | [section 21](opcodes/kos-op-pop-cc.md) |
+| POP_CC | NOARG | Pop the CC block; also the arrival point when a captured continuation is invoked | [section 21](opcodes/kos-op-pop-cc.md) |
 | PUSH_WIND | COUNT | Pop the before (and after) thunks, push the wind extent, run before | [section 22](opcodes/kos-op-push-wind.md) |
 | POP_WIND | NOARG | Pop the body result and the wind node, run the after thunk, deliver the result | [section 22](opcodes/kos-op-pop-wind.md) |
 | PUSH_PARAM | CONST | Pop N values, bind them to the pooled names, enter the parameterize extent | [section 23](opcodes/kos-op-push-param.md) |
@@ -4393,7 +4393,7 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_PUSH_SHIFT
 
 - **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left, as a raise would leave it (a dyn-wind after thunk, a `with` exit and a `finally` body run; a `try` is dropped), a SHIFT marker lands on the prompt, and the captured continuation is delivered to it at the shift block's first instruction. A shift hosted in a callee leaves that callee's frame with the region, and a copy of the frame lands on the SHIFT for the shift block to run in. SHIFT owns the segment the shift body's operands go on; the region's pending operands are in the continuation.
+- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left, as a raise would leave it (a dyn-wind after thunk, a `with` exit and a `finally` body run; a `try` is dropped), a SHIFT marker is attached to the prompt, and the captured continuation is delivered to it at the shift block's first instruction. A shift hosted in a callee leaves that callee's frame with the region, and a copy of the frame is attached to the SHIFT for the shift block to run in. SHIFT owns the segment the shift body's operands go on; the region's pending operands are in the continuation.
 - **Pushes:** KOS_DYN_SHIFT (bookmark for the shift body: owns its operand segment, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. The SHIFT's parent is the prompt the shift aborted to.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`.
@@ -4403,15 +4403,15 @@ between POP_SHIFT and POP_PROMPT.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0        | capture k; abort to the prompt; land SHIFT marker; enter shift block with k on stack |
+| 2     | PUSH_SHIFT| 0   | 0        | capture k; abort to the prompt; attach SHIFT marker; enter shift block with k on stack |
 
 ---
 
 ### KOS_OP_POP_SHIFT
 
 - **Style**: NOARG.
-- **Stack**: Pops TOS as result. The delimiter is the SHIFT's parent, the prompt the shift aborted to. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For the prompt of a landed continuation (its parent is the copy's frame, sitting on a DELIM; no POP_PROMPT pairs with it as its own reset): the result is the value of that k-invocation, delivered at the invoke site through that DELIM.
-- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). The segment owned by the PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
+- **Stack**: Pops TOS as result. The delimiter is the SHIFT's parent, the prompt the shift aborted to. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For the prompt of an applied continuation (its parent is the copy's frame, sitting on a DELIM; no POP_PROMPT pairs with it as its own reset): the result is the value of that k-invocation, delivered at the invoke site through that DELIM.
+- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). The segment owned by the PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value is pushed on the frame's stack below the former block boundary.
 - **Compiler form:** No argument.
 
 **Example:** Shift handler returns value without invoking k.
@@ -4425,7 +4425,7 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_POP_PROMPT
 
 - **Style**: NOARG.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the prompt at the top of the chain is the delimiter of a landed continuation, recognised by its parent being a frame that sits on a **`KOS_DYN_DELIM`** bookmark; it pops TOS as result, unwinds to the delim, delivers the result at the invoke site per the delim's return metadata, and resumes there.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the prompt at the top of the chain is the delimiter of an applied continuation, recognised by its parent being a frame that sits on a **`KOS_DYN_DELIM`** bookmark; it pops TOS as result, unwinds to the delim, delivers the result at the invoke site per the delim's return metadata, and resumes there.
 - **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's segment and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
 - **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the unwind drops the segment and unlinks the PROMPT, then continues. No POP_PROMPT opcode executes in this path.
@@ -4468,7 +4468,7 @@ PUSH_CC resume target).
 | 1     | CAPTURE_CC | 0   | 0          | stack before: [...]; after: [..., continuation] |
 | 2     | CONST      | 0   | 0 (42)     | stack: [..., continuation, 42] |
 | 3     | CALL       | 1   | 1          | invoke continuation with one arg -> jump to POP_CC (4) with [..., 42] |
-| 4     | POP_CC     | 0   | 0          | invoke lands here with value on stack; pop CC; next pc = 5 (resume) |
+| 4     | POP_CC     | 0   | 0          | invoke arrives here with value on stack; pop CC; next pc = 5 (resume) |
 | 5     | RETURN     | 1   | 1          | yield TOS (42) |
 
 ---
@@ -4588,7 +4588,7 @@ and [compile/dyn-wind](../specials/compile-dyn-wind.md).
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | RETURN | 1   | 1        | normal exit |
-| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc lands here |
+| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc reaches here |
 
 ## Per-opcode pages
 

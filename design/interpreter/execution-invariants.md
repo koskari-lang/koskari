@@ -242,7 +242,7 @@ the boundary constraint.
 * Walking the chain provides complete dynamic extent information.
 * All mutations to the chain go through `kos_dyn_push`, the single unlink
   site `kos_dyn_unlink_top` (behind the `kos_dyn_pop_*` entry points and the
-  unwind walks), or a transfer goal's landing. No direct chain manipulation
+  unwind walks), or a transfer goal's attachment. No direct chain manipulation
   is permitted.
 
 **Node types**:
@@ -264,7 +264,7 @@ the boundary constraint.
 * `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH)
 * `KOS_DYN_CAP_LOOP_REGION` — a LOOP or FOREACH region still running its body, the target of break and continue; CLEAR_LOOP and CLEAR_FOREACH take it away
 * `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT); the raise walk crosses it in one unlink with the barrier allowed
-* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort) and carries an obligation slot: WIND, WITH. A transfer landing re-enters such a node unless it is a single-shot WITH; PARAM re-winds by kind
+* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort) and carries an obligation slot: WIND, WITH. A transfer attachment re-enters such a node unless it is a single-shot WITH; PARAM re-winds by kind
 * `KOS_DYN_CAP_INTERCEPTS_RAISE` — the raise walk offers handle(RAISE): TRY, FINALLY, GEN, INPLACE DELIM
 * `KOS_DYN_CAP_OWNS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
 
@@ -312,8 +312,8 @@ continuation capture and avoids special hook machinery.
   chain that moved while the goal was waiting is its input, never a hazard.
 * A goal waiting on a node (its thunk or `__exit__` is running, or it awaits)
   acts again only when `dyn_top` is where it was when the node fired.
-* Landing is total: splice, resume pc, and the freeing of outer goals on an
-  undelimited landing happen in one synchronous step.
+* Attaching is total: splice, resume pc, and the freeing of outer goals on an
+  undelimited attachment happen in one synchronous step.
 * A failed step frees every goal and raises through the chain as it stands.
 
 ---

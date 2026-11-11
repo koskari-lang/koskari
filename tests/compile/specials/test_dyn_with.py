@@ -485,7 +485,7 @@ class TestDynWithTransferFailures(SpecialsTestCase):
 class TestReenteredWithBindsItsOwnScope(SpecialsTestCase):
     """
     When a transfer re-enters a dyn-with, __enter__ runs while the
-    landed frame above the with is current. The result must bind into
+    attached frame above the with is current. The result must bind into
     the with's own scope, the namespace the with was pushed in, not the
     namespace that happens to be live at dyn_top.
     """

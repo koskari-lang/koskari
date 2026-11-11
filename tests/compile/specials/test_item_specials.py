@@ -157,7 +157,7 @@ class TestSetItemShapes(SpecialsTestCase):
             ops = [body.oparg(i)[0] for i in range(body.length())]
             self.assertIn(row, ops, src)
 
-    async def test_stores_land(self):
+    async def test_stores_apply(self):
         lst = [1, 2, 3]
         src_str = """
         (let [[i 2]]
@@ -329,7 +329,7 @@ class TestItemShapes(SpecialsTestCase):
             self.assertEqual([10, 20], old, src)
 
 
-    async def test_accesses_land(self):
+    async def test_accesses_apply(self):
         src_str = """
         (let [[lst (#list 10 20 30)] [d (#dict (#tuple "k" 1))] [i 1]]
           (define [f o] (#tuple (item o i) (item lst (+ i 1))))

@@ -55,11 +55,11 @@ own path is unavailable. The failing shape above is a defect, just not
 one this note addresses.
 
 What it exposes: post-unwind invocation stitches the captured segment
-onto the current chain so resumption lands where it belongs. That stitch
+onto the current chain so resumption arrives where it belongs. That stitch
 is reachable while the capturing top-level form is still on the driver.
 Once that form completes, the driver has returned and re-entered, the
 stitch path is no longer available, and the invoke degrades into the
-upwards-only escape -- which is undelimited machinery and cannot land
+upwards-only escape -- which is undelimited machinery and cannot arrive
 back at the invoke site. Frame depth is irrelevant: invoking from inside
 a function, or inside a fresh `reset`, fails identically. The boundary
 is the eval-loop entry, not the frame.

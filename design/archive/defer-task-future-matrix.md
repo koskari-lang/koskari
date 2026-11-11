@@ -17,7 +17,7 @@ hid the entire Task API. `examples/scheduler/kosrunner/kafka.ki` called
 `(self._task.cancel)` on that handle, which raised `AttributeError` --
 the stop path was designed against `Task` and got a `defer`.
 
-The rule this document lands on: **defer is a one-hop, single-shot capture;
+The rule this document arrives at: **defer is a one-hop, single-shot capture;
 anything that needs a lifetime gets a real Task or Future.**
 
 ## The artifacts

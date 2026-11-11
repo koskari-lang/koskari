@@ -20,7 +20,7 @@ Companion docs:
 - [dispatch-sizing.md](dispatch-sizing.md) (YIELD_FROM size history)
 - [../EVALUATOR.md](../EVALUATOR.md)
 - [cps-consumer-api.md](cps-consumer-api.md) (the NEXT/ITER_NEXT
-  resume machinery this proposal's stepping unification lands on; see §10)
+  resume machinery this proposal's stepping unification is built on; see §10)
 - [../interpreter/stencil-compilation.md](../interpreter/stencil-compilation.md) (why shrinking YIELD_FROM
   matters beyond this opcode)
 
@@ -75,7 +75,7 @@ machinery (already decomposed into shared helpers, 2026-07-18) becomes
 eval/dynchain-owned delegate stepping, shared with NEXT / ITER_NEXT.
 
 
-## 3. Prerequisites (already landed)
+## 3. Prerequisites (already implemented)
 
 - **Generic boundary dispatcher** (`dynchain/dyn_boundary.c`): routing
   keys on `KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY` only.  A GEN carrying
@@ -221,7 +221,7 @@ Cons / costs:
    the reconstruction cascade, the extent-inert guard (§5).  Requires
    everything in §6.
 
-Each stage lands independently green against the existing yield-from
+Each stage is completed independently green against the existing yield-from
 suites (`tests/lib/opcode/test_yield_from.py`,
 `tests/reproducers/test_yield_from_koskari_gen.py`, native eval tests).
 Benchmark with the `yieldfrom` churn case plus a new nested-depth
@@ -245,7 +245,7 @@ The per-delegate-kind stepping this proposal unifies onto NEXT / ITER_NEXT
 machinery is the same stepping [cps-consumer-api.md](cps-consumer-api.md)
 formalizes as `KosEvalState_NextResume`: DELIVERED/EXHAUSTED/CONTINUES/ERROR
 handled once, at the entry, instead of once per delegate kind inside
-YIELD_FROM. Landing this proposal on top of that entry rather than the
+YIELD_FROM. Implementing this proposal on top of that entry rather than the
 current hand-rolled phase machine is what makes §7's "YIELD_FROM shrinks to
 normalize/install + reconstruction target" literal, not aspirational.
 

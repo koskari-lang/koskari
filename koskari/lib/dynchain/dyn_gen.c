@@ -146,7 +146,7 @@ KosDynGen *kos_dyn_yield_gen(KosContext *ctx) {
     if (KosDynNode_IS_GEN(n))
       return (KosDynGen *) n;
 
-    /* A landed continuation's region is yielding. A generator below
+    /* An applied continuation's region is yielding. A generator below
        the DELIM is whichever one applied the continuation, not the one
        the region was written in, which a capture cannot cross. */
     if (KosDynNode_IS_DELIM(n)) {
@@ -312,7 +312,7 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   /* frozen.top always equals the active head here: kos_dyn_gen_freeze
      writes active and the frozen snapshot together and nothing else
      sets active non-NULL. The compare is kept so a future freeze path
-     that records one without the other lands on the rebuild instead of
+     that records one without the other takes the rebuild instead of
      stale registers; the same holds for host.top at the freeze. */
   if (state->frozen.top == active && state->frozen.frame) {
     /* The registers the freeze recorded for this very head: apply

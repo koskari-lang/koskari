@@ -642,13 +642,13 @@ static KOS_NOINLINE void kos_iter_step_misplaced(const KosOp *insn) {
    through the frame, and an in-hand end through the prologue with
    StopIteration pending. The two-argument form's default stays on
    the operand stack under the halt and is the result at the end. A
-   resume cleared without a delivery, as a transfer landing on the
+   resume cleared without a delivery, as a transfer arriving at the
    frame clears it, finishes the step. */
 
 
 /**
    The kind's clear: a resume cleared without its delivery, as a
-   transfer landing on the frame clears it, abandons the step in
+   transfer arriving at the frame clears it, abandons the step in
    flight. The provider is finished as not exhausted so it can be
    stepped again, and the iterator released.
 */

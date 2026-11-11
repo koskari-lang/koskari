@@ -207,7 +207,7 @@ The **convention** — evaluation still follows it either way — is:
 
 Because such data positions are consumed by their specials and never reach
 `compile_pair`, they are immune for free. The payoff comes when a bracketed
-fragment accidentally lands in call position — e.g. a typo `ler` for `let`:
+fragment accidentally ends up in call position -- e.g. a typo `ler` for `let`:
 
 ```
 (ler [[a 1]] (+ a 100))

@@ -276,7 +276,7 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
    when there is one, and mark the node entered and idle. The name binds
    in the node's own namespace, the one the with was pushed in: on a
    plain push that is the live namespace too, but a transfer re-enters
-   the node with the landed frame above it current, and the binding
+   the node with the attached frame above it current, and the binding
    belongs to the with's scope, not to whatever frame sits at dyn_top.
 */
 static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
@@ -386,7 +386,7 @@ static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
             ctx, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0, NULL, NULL)
       : KosContext_Call(ctx, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
 
-  /* A value in hand lands on the block, or is awaited there; settled,
+  /* A value in hand is pushed on the block, or is awaited there; settled,
      the entry completes now. */
   if (kr.kind == KOS_RES_RETURN) {
     kr = KosContext_PushOrAwait(ctx, kr.val);
@@ -429,7 +429,7 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   if (! KosDynWith_ENTERED(node)) {
-    /* never entered: no __exit__. A grafted clone lands this way, and
+    /* never entered: no __exit__. A grafted clone arrives this way, and
        the exit-done cell it shares with the live twin records only an
        __exit__ that ran, so the cell and the shot field stay as they
        are; the live twin's own leave still fires its __exit__. */

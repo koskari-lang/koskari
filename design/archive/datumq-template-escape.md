@@ -24,7 +24,7 @@ As built, against the text below:
   inner reader's operand read sees the unquote a backtick installs.
 - The lexer highlights `-'` with the quote class.
 - The `-` predicate stays until
-  [reader-macro-triggers.md](../reader-macro-triggers.md) lands.
+  [reader-macro-triggers.md](../reader-macro-triggers.md) is implemented.
 
 ## Problem
 

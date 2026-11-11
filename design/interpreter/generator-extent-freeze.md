@@ -78,7 +78,7 @@ rebuilding them:
   every step of every generator whose span holds such a node.
 - **Opt-in.** A node declares that it wants the walk (a capability,
   much as `KOS_DYN_CAP_NEEDS_INSTALL_WIND` once marked the nodes a
-  transfer goal re-enters; a landing now re-enters every
+  transfer goal re-enters; an attachment now re-enters every
   `KOS_DYN_CAP_CONTROL_HOOK` node but a single-shot WITH, and PARAM by
   kind), and only spans holding one pay for it.
   PARAM is then the first such node and the freeze/install hooks
@@ -108,7 +108,7 @@ needs its own walker is the first thing to find out.
   pending operation with a resume, on a path that today never
   suspends.
 - Errors. An after-thunk raising at a yield, or a before-thunk at a
-  resume, has no obvious frame to land in; the transfer goals answer
+  resume, has no obvious frame to arrive in; the transfer goals answer
   this for shift and reset and the answer may carry over.
 - Interaction with `yield-from`: the span of a relay holds the inner
   generator's span, so the walk crosses a GEN node.

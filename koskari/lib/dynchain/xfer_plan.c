@@ -16,7 +16,7 @@
 
 /**
   Included by dynchain.c. Continuation invocation: the transfer that
-  lands a copy of a captured chain on the call site.
+  attaches a copy of a captured chain at the call site.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -27,7 +27,7 @@
 
 /**
    Invoke k with value. Pushes a transfer goal: for a delimited k the
-   caller stays on the chain and a fresh clone of the template lands on
+   caller stays on the chain and a fresh clone of the template is attached to
    a DELIM bookmark, every time; for an undelimited k the chain is
    replaced. Callers: callable invoke, apply paths.
 */
@@ -43,14 +43,14 @@ int kos_invoke_continuation(
   }
 
   /* Delimited k(value): the caller stays on the chain and the segment
-     lands on a DELIM bookmark that routes the slice's completion back
+     is attached to a DELIM bookmark that routes the slice's completion back
      to this invoke site. Undelimited: the whole chain is replaced. */
   int is_delimited = KosContinuation_DELIMITED(k);
 
   /* Undelimited: the seam is the lowest common ancestor of the live
      chain and the template, matched by node id and by phase, so
      nothing at or below it leaves or re-enters, and only the template
-     above its counterpart lands; a live node that has moved on since
+     above its counterpart is attached; a live node that has moved on since
      the capture sits above the seam and is left and re-entered. */
   KosDynNode *seam = NULL;
   KosDynNode *tmpl_stop = NULL;
@@ -58,7 +58,7 @@ int kos_invoke_continuation(
     kos_chain_common_ancestor(
         ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop);
 
-  /* The landed frames sit above the invoker's frame (delimited) or
+  /* The attached frames sit above the invoker's frame (delimited) or
      above the seam's frame (undelimited); refuse here, before anything
      moves, so RecursionError raises at the invoke site. */
   {
@@ -74,9 +74,9 @@ int kos_invoke_continuation(
       return -1;
   }
 
-  /* The landed segment is a fresh clone of the captured template, so
+  /* The attached segment is a fresh clone of the captured template, so
      each invoke instantiates the template anew (multi-shot, e.g.
-     (sum (k 0) (k 1))); the template itself is never landed. A
+     (sum (k 0) (k 1))); the template itself is never attached. A
      delimited copy's nodes are new instances; an undelimited one's
      keep the ids the seam and the restore records match by. */
   KosDynNode *target = kos_dyn_clone_segment(
@@ -88,7 +88,7 @@ int kos_invoke_continuation(
     return -1;
   }
   /* kos_dyn_clone_segment leaves the clone's bottom parented at
-     tmpl_stop; sever it so goal_land's walk to the bottom stops at the
+     tmpl_stop; sever it so goal_attach's walk to the bottom stops at the
      clone and re-parents it to the seam, rather than following into the
      template and moving the template's own root onto the live chain. */
   if (target && tmpl_stop)
@@ -137,7 +137,7 @@ int kos_invoke_continuation(
    The lowest common ancestor of the live chain and a template: the
    top of the run of node pairs, matched by id and by phase, that
    reaches both roots. NULL on both sides when the roots differ.
-   Clones keep their source's id, so a landed clone of this template
+   Clones keep their source's id, so an attached clone of this template
    counts as the same extent. The two tops are brought to one depth
    and walked to the roots together: a mismatch clears the pair in
    hand, a match records one when none is in hand, so what remains is

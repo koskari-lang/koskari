@@ -102,7 +102,7 @@ generator) take a `[var seq]` binding like `for-each`. A body that is
 a single `when` or `unless` form collects inside the conditional, so
 skipped elements leave no `None` gaps; `dict-each` takes the filter as
 a `when:`/`unless:` clause before `key:`/`value:`. The filter does not
-compose: a nested `when` is an ordinary expression whose `None` lands
+compose: a nested `when` is an ordinary expression whose `None` goes
 in the result, so write one composite condition.
 
 ```koskari

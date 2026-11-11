@@ -50,14 +50,14 @@ references, and it moves constants, not jumps.
 
 ## 2. The rewrite
 
-A short-circuit jump whose label lands on a conditional jump is
-replaced by the conditional jump the landing would perform on the value
+A short-circuit jump whose label reaches a conditional jump is
+replaced by the conditional jump the target would perform on the value
 the short-circuit op pushes. The value is known on the jumping path:
-falsy after `JUMP_AND`, truthy after `JUMP_OR`. The landing row pops
+falsy after `JUMP_AND`, truthy after `JUMP_OR`. The target row pops
 exactly that value, so the rewritten row pops it instead and the stack
 depth is unchanged on every path.
 
-| row | landing | rewrite |
+| row | target | rewrite |
 |---|---|---|
 | `JUMP_AND L` | `JUMP_FALSE T` | `JUMP_FALSE T` |
 | `JUMP_AND L` | `JUMP_TRUE T` | `JUMP_FALSE F` |
@@ -68,15 +68,15 @@ depth is unchanged on every path.
 | `JUMP_OR L` | `JUMP_OR T` | `JUMP_OR T` |
 | `JUMP_OR L` | `JUMP_AND T` | `JUMP_TRUE F` |
 
-`F` is the label of the row after the landing jump: the landing's
+`F` is the label of the row after the target jump: the target's
 fall-through. When no label is there one is inserted from the
 compiler's label generator. The rewritten row is never a plain `JUMP`:
 the short-circuit op pops its value on both of its paths, so the
 replacement must pop too, and `JUMP_FALSE`/`JUMP_TRUE` to the
 fall-through do that with a test whose outcome is fixed.
 
-The landing is the first row after `LABEL L` that is not `POSITION` or
-`NOOP`. A landing that is anything else leaves the row alone: a value
+The target is the first row after `LABEL L` that is not `POSITION` or
+`NOOP`. A target that is anything else leaves the row alone: a value
 consumer (`(f (and a b))`), a `POP`, a `RETURN`, a `LABEL` of another
 join, or an `OBJECT_NOT` (see section 5).
 
@@ -84,7 +84,7 @@ The pass repeats until a sweep changes no row. Each rewrite either
 removes a `JUMP_AND`/`JUMP_OR` row or retargets one to a label further
 along the chain, so the sweep count is bounded by the number of such
 rows plus the chain lengths. A nested form threads once its inner
-landing has been rewritten.
+target has been rewritten.
 
 A label the pass leaves with no referrer is dropped. References are
 read the way `elide_join_constants` reads them: a LABEL-style arg, or
@@ -113,7 +113,7 @@ L3:
 ```
 
 `(if (or (< a b) (< c d)) T E)`. The first clause's `JUMP_OR L1`
-lands on `JUMP_FALSE L2`, so it becomes `JUMP_TRUE L4` with `L4`
+arrives at `JUMP_FALSE L2`, so it becomes `JUMP_TRUE L4` with `L4`
 inserted after that jump. Only the last clause fuses: nothing fuses a
 compare with `JUMP_TRUE` (section 5.1). Four dispatches on the
 first-true path, from eight:
@@ -139,7 +139,7 @@ L2: JUMP_FALSE  L3
 ```
 
 Sweep one rewrites `JUMP_AND L2` to `JUMP_FALSE L3` and drops `L2`.
-Sweep two finds `JUMP_OR L1` landing on that `JUMP_FALSE L3` and
+Sweep two finds `JUMP_OR L1` arriving at that `JUMP_FALSE L3` and
 rewrites it to `JUMP_TRUE L4`, inserting `L4`, and drops `L1`:
 
 ```
@@ -162,7 +162,7 @@ loop_exit`; the first clause threads to it and fuses to
 ## 4. Non-goals
 
 The wider cleanup stays out: threading a
-jump that lands on a plain `JUMP`, sweeping unreachable rows, sinking a
+jump that arrives at a plain `JUMP`, sweeping unreachable rows, sinking a
 join's `POP`, inverting a branch that hops a `JUMP`. Only
 `JUMP_AND`/`JUMP_OR` rows are rewritten, only labels they orphan are
 dropped, and no row moves.
@@ -220,22 +220,22 @@ with VAR twins) would read the slot, test it, and push it only on the
 jumping path. The handler does what `JUMP_OR` does today minus the
 pop; the fall-through path touches no refcount.
 
-### 5.4 The `not` landing
+### 5.4 The `not` target
 
 `(if (not (and a b)) ...)` compiles the form, then `OBJECT_NOT`, then
-`JUMP_FALSE`. The landing is `OBJECT_NOT`, so the pass leaves it. The
+`JUMP_FALSE`. The target is `OBJECT_NOT`, so the pass leaves it. The
 squish rule later turns `OBJECT_NOT JUMP_FALSE` into `JUMP_TRUE`, but
-squish runs after the pass. Resolving the landing through `OBJECT_NOT`
-(a `JUMP_FALSE` behind a `NOT` is a `JUMP_TRUE` landing, and the
-reverse) is a one-row extension of the landing search.
+squish runs after the pass. Resolving the target through `OBJECT_NOT`
+(a `JUMP_FALSE` behind a `NOT` is a `JUMP_TRUE` target, and the
+reverse) is a one-row extension of the target search.
 
 ## 6. Tests and validation
 
 `tests/compile/test_thread_shortcut_jumps.py`, compile phase, driving
 the pass alone through `ByteCodeProcessor` as the join-constant tests
-do: the eight landings of section 2, the nested chain, the orphaned
+do: the eight targets of section 2, the nested chain, the orphaned
 label dropped and a still-referenced label kept, the fall-through label
-inserted only when none is there, and a landing that is a value
+inserted only when none is there, and a target that is a value
 consumer left alone. One end-to-end compile of the `and` example
 asserting two `CHECK_COMPARE_FAST` rows and no `JUMP_AND` is the red
 reproducer. The eval-level behaviour of `and`/`or` in test position is

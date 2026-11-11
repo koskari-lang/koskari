@@ -53,7 +53,7 @@ instead of copying the value, so `set!` inside the function writes back
 to the caller. It has its own page,
 [References and storage indirection](references-and-storage-indirection.md).
 
-Annotations attach with `::` and land in `__annotations__` as real
+Annotations attach with `::` and are stored in `__annotations__` as real
 objects; see [Types and annotations](types-and-annotations.md).
 
 ## Results

@@ -116,7 +116,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
       continue;
     }
 
-    /* the element, or the source's exhaustion, lands in
+    /* the element, or the source's exhaustion, goes to
        zip_longest_resume_deliver, which files it and hops back here */
     {
       KosOpResult r = KosContext_NextResumeBound(

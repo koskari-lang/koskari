@@ -250,7 +250,7 @@ the binding site, behind a formals representation that does not move.
 
 `copy` is **shallow**, matching `copy.copy`. `[opts copy: #{"a": #[]}]` gives
 each application its own dict over one shared inner list. This is the same
-footgun `copy.copy` has, but it lands inside a feature whose stated purpose is
+footgun `copy.copy` has, but it sits inside a feature whose stated purpose is
 fixing an aliasing trap, so it needs to be documented prominently or given a
 deep variant.
 
@@ -327,7 +327,7 @@ Three call shapes, all correct:
 ```koskari
 (_stage_read case source)          ; sink elided; private fresh list, discarded
 (_stage_read case source &mine)    ; aliases the caller's list
-(_stage_read case source &fresh)   ; unbound cell; the floor lands in the caller
+(_stage_read case source &fresh)   ; unbound cell; the floor goes into the caller
 ```
 
 Against today's build the same function needs a `when (None? warnings) (set!

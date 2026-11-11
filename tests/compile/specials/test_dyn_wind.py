@@ -292,7 +292,7 @@ class TestDynWindContinuations(SpecialsTestCase):
     async def test_after_thunk_fires_on_continuation_caused_unwind(self):
         """
         When a continuation captured outside a dyn-wind is invoked from
-        inside the body, the after-thunk runs before the continuation lands.
+        inside the body, the after-thunk runs before the continuation attaches.
         """
 
         log = []
@@ -318,7 +318,7 @@ class TestDynWindContinuations(SpecialsTestCase):
         """
         Invoking a second continuation from a dyn-wind after-thunk that an
         outer transfer is running supersedes that transfer: the inner
-        continuation lands, the chain it replaced included the outer
+        continuation is attached, the chain it replaced included the outer
         transfer's target, and the outer never delivers its value. The
         program's value is the inner continuation's.
         """

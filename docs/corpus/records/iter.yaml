@@ -1411,7 +1411,7 @@ tags:
   - surprising
   - pitfall
   - iterate
-notes: "filters do NOT compose: only the outermost whole-body when is the filter; the nested when is an ordinary expression whose None lands in the list when its condition fails. corrective: one composite check -- (list-each [x seq] (when (and a b) body))."
+notes: "filters do NOT compose: only the outermost whole-body when is the filter; the nested when is an ordinary expression whose None goes into the list when its condition fails. corrective: one composite check -- (list-each [x seq] (when (and a b) body))."
 ---
 id: iter-list-each-multiform-no-injection-002
 feature: macro/compile/list-each

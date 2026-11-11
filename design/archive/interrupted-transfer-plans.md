@@ -2,7 +2,7 @@
 
 **Status:** Implemented (archived 2026-06-22). Nested continuation interrupt (§5),
 failed-transfer abandonment (§4), delimited nested-interrupt forbid (§6.6), and
-PUSH_SHIFT heritage capture are **landed**. Canonical summary:
+PUSH_SHIFT heritage capture are **implemented**. Canonical summary:
 [EVALUATOR.md](../EVALUATOR.md) §6. **Open follow-up:** async nested await
 during transfer with non-empty `plan_stack` — see [TODO.md](../TODO.md)
 (Continuations / transfer plans) and §6.7 below.
@@ -35,7 +35,7 @@ continuation + dyn-wind integration.
 |-----------------|------|
 | See what is implemented | §2 Implementation status |
 | Understand the in-place migration model (why failed transfers dispatch on the manifested chain) | §3 Architectural decision |
-| Review failed/exception transfer behavior (landed) | §4 Failed transfer abandonment (done) |
+| Review failed/exception transfer behavior (implemented) | §4 Failed transfer abandonment (done) |
 | Understand nested continuation interrupt | §5 Nested continuation interrupt (done) |
 | Reference data structures and runtime flow | §6 Runtime reference |
 | Implement delimited nested-interrupt forbid | §6.6 — **done** |
@@ -68,7 +68,7 @@ dynamic chain to its `original_target`.
 **Undelimited (`let/cc`) plans** use `kos_build_direct_install_plan` (INSTALL +
 wind + INJECT). **Delimited (`reset`/`shift`) PUSH plans** are **not** replanned
 correctly today; §6.6 **forbids** nested invoke with an explicit `RuntimeError`
-instead of silent wrong topology (**landed**).
+instead of silent wrong topology (**implemented**).
 
 ### 1.2 Failed transfer (exception during plan) — **DONE**
 
@@ -160,7 +160,7 @@ caller chain preserved, `KOS_DYN_DELIM` return metadata). Replanning with
 `direct_install` can produce **unknown/wrong chain topology**. Until a correct
 PUSH replan exists, **fail closed** with `RuntimeError` (§6.6).
 
-### 2.7 Files touched (landed work)
+### 2.7 Files touched (implemented work)
 
 | File | Role |
 |------|------|
@@ -222,7 +222,7 @@ separate `koskari_eval` invocations.
 
 Two failure shapes:
 
-| Shape | How it happens | Behavior (landed) |
+| Shape | How it happens | Behavior (implemented) |
 |-------|----------------|-------------------|
 | **Sync call failure** | `CallNoArgs` returns `-1` before thunk bytecode runs | `plan_res < 0` → abandon + `try_local` (or `KOS_EV_RAISE` if unhandled) |
 | **Thunk bytecode raises** | Plan suspended (`KOS_XFER_SUSPENDED_AWAIT`); opcode loop runs thunk; `PyErr` in post_opcode | prologue `eval_phase_pending_exception` → `process_raise` abandons plan → `try_local` |
@@ -235,7 +235,7 @@ and `run_transfer_plan_to_completion` rather than one event-driven handler. See
 
 ## 4. Failed transfer abandonment (done)
 
-This section documents the **landed** behavior. For the original bootstrap plan,
+This section documents the **implemented** behavior. For the original bootstrap plan,
 see git history on `interrupted_transfer`.
 
 ### 4.1 Goal (one sentence)
@@ -288,7 +288,7 @@ if allocated), not only `plan_res < 0`.
 
 ### 4.4 Call site B — exception during suspended transfer (thunk in opcode loop)
 
-**Landed in two places:**
+**Implemented in two places:**
 
 1. **`process_raise`** (`eval.c`): abandons plan nest when active, **except** when
    PyErr is **`KoskariContinuationApply`** (nested interrupt / foreign apply arms a
@@ -303,7 +303,7 @@ if allocated), not only `plan_res < 0`.
 
 ### 4.5 Caller plumbing — continue eval on handler applied
 
-**Landed.** Callers distinguish return `1` (handler applied) from `-1` (unhandled):
+**Implemented.** Callers distinguish return `1` (handler applied) from `-1` (unhandled):
 
 | Caller | File | On return `1` |
 |--------|------|---------------|
@@ -312,7 +312,7 @@ if allocated), not only `plan_res < 0`.
 
 ### 4.6 `try_local` when `dyn_top == frame_top`
 
-**Landed (Option A).** `kos_dyn_try_local_raise_body` calls
+**Implemented (Option A).** `kos_dyn_try_local_raise_body` calls
 **`try_local_extent_on_current_frame`** when `dyn_top == frame_top` and PyErr is
 set, using the bytecode extent table before the dyn-chain walk. Required for
 before-thunk raises during transfer wind (`TestDynWindTransferFailures`).
@@ -354,7 +354,7 @@ before-thunk; SQL setup raises. **Expected after implementation:**
 1. Transfer nest abandoned.
 2. `try/except` in `do-foo` catches (on the manifested installed segment).
 3. Handler runs `(print e)`; eval continues from handler — **not** a successful
-   continuation landing with `4 5 6`.
+   continuation application with `4 5 6`.
 4. Undelimited invoke site does not expect a return either way.
 
 ---
@@ -595,7 +595,7 @@ tox -qe py -- tests/compile/specials/test_call_cc.py tests/lib/opcode/test_conti
 tox -qe py -- tests/reproducers/test_reset_shift_nested.py -q
 ```
 
-### 7.2 Failed transfer tests (landed)
+### 7.2 Failed transfer tests (implemented)
 
 | Test class / method | Purpose |
 |---------------------|---------|

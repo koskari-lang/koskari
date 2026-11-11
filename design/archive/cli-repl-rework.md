@@ -231,7 +231,7 @@ with `(await (prompter prompt default: indent))` inside a Koskari
 `try/except [EOFError] / [KeyboardInterrupt]`. The only thread offload left is
 the blocking `input()` fallback, which has no async form.
 
-This depended on two things landing first:
+This depended on two things being implemented first:
 - `prompt_async` avoids the nested `asyncio.run` that `session.prompt()` runs
   (that collision was why an earlier draft pushed the prompt onto
   `run_in_executor`).

@@ -73,7 +73,7 @@ image: koskari runtime + mcp deps + /srv/data/*.parquet + Lambda adapter
 
 Two things change in the codebase (data backend + launch mode) and two things
 are added around it (Lambda-ready image + AWS/CI wiring). They are independent
-and can land in that order.
+and can be implemented in that order.
 
 ---
 
@@ -173,7 +173,7 @@ distinct mode, not a preset of `--serve`; passing both is an argument error.
 
 FastMCP's default streamable-HTTP transport keeps per-client session state in
 process memory, keyed by `Mcp-Session-Id`. Under Lambda, consecutive requests
-from one client can land on different execution environments, so session state
+from one client can reach different execution environments, so session state
 must not live in the process. Lambda mode therefore serves **stateless**, with
 plain JSON responses rather than an SSE stream, before serving:
 
@@ -370,7 +370,7 @@ The stated intent is more than one MCP server over time. Make the AWS side
 
 ---
 
-## Part 6 — Landing page and browser terminal
+## Part 6 — Front page and browser terminal
 
 `corpus.koskari.org` is a bare protocol endpoint: a browser that follows the
 URL from a client configuration gets a 404, and nothing states what the
@@ -426,9 +426,9 @@ bearing rather than theoretical.
 
 ## Rollout order
 
-1. Land Part 1 (baked in-memory backend) behind the existing stdio and
+1. Implement Part 1 (baked in-memory backend) behind the existing stdio and
    `--serve` modes; the local container UX is unchanged, just offline.
-2. Land Part 2 (`--lambda`) and Part 3 (Lambda image +
+2. Implement Part 2 (`--lambda`) and Part 3 (Lambda image +
    Containerfile), verified locally.
 3. Do the one-time AWS bring-up (Part 4) by hand to understand the moving
    parts, endpoint live at `corpus.koskari.org`.

@@ -357,7 +357,7 @@ silent change of meaning.
 4. **`vars`.** The zero-arity pattern, `koskari-vars`, and the repr.
 5. **Decorators for the remaining definers.** `define-demanding` and
    `define-coroutine` retire in favour of `@demand` and a coroutine
-   decorator over `def`. `syntax` lands, with the overlay arm for
+   decorator over `def`. `syntax` is implemented, with the overlay arm for
    function bodies.
 6. **`define` reshaped.** The `compile/define` and
    `compile/define-global` specials take the Scheme patterns, a pair

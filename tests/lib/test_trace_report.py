@@ -290,7 +290,7 @@ class TestTraceReport(unittest.TestCase):
     def test_trampoline_counts_signal_services_when_enabled(self):
         """
         The trampoline slot counts every signal service entry, the
-        thread form of the old landing points: here the eval entry
+        thread form of the old service points: here the eval entry
         and three raise walks, whatever else the run polled
         """
 

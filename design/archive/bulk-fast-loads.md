@@ -131,7 +131,7 @@ generic EXTRA lowering applies: each KOSTYLE_VAR slot resolves through
 any name in the row lacks a fast slot (not in the pool, or beyond
 `FAST_SLOT_MAX`), the whole row stays VAR-form. No splitting a VAR4
 back into pieces to salvage three lowerable names: mixed-eligibility
-rows are rare, and they land on the cold VAR handler where their cost
+rows are rare, and they reach the cold VAR handler where their cost
 is irrelevant.
 
 ### dis
@@ -165,7 +165,7 @@ mixed-eligibility row staying VAR). ABI note: adds four opcodes --
 ordinal renumbering downstream of the insertion point, `.kio`
 regeneration, Python OpCode mirror; same migration class as every
 opcode-set change, and worth co-scheduling with compare-unification's
-renumbering so the ABI churn lands once.
+renumbering so the ABI churn happens once.
 *Gate*: full suite; method/call-heavy churn pairs (method, list_each)
 and any call-dense benchmark should move; verify via opgrams that FAST
 runs >= 2 vanish from the corpus (the packer's own success metric is

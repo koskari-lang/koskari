@@ -140,7 +140,7 @@ the whole form is resolved again from the top.
                    ; (+ 2 3) is 5, compiled as the arithmetic special
 ```
 
-An expansion that lands on a symbol makes the rebuilt form a fresh
+An expansion that arrives at a symbol makes the rebuilt form a fresh
 syntax use with the tail as its arguments. Scheme expands an
 application's operator as an expression and never re-examines it as
 syntax; in Koskari a macro can compute the syntax at the head of a form.

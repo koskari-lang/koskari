@@ -114,7 +114,7 @@ Rationale (from design discussion):
 - Avoid activate/pop sync hooks between frame marker and context mirror.
 - Suspend checks are rare (freeze boundaries); O(depth) walk is acceptable.
 - If we later need a dedicated `KOS_DYN_DEMAND` dyn node **and** a fast context
-  flag, introduce **both together** when the dyn node lands.
+  flag, introduce **both together** when the dyn node is implemented.
 
 ### 3.3 No `KOS_DYN_DEMAND` dyn node (phase 1)
 

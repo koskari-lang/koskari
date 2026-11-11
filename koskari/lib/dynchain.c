@@ -1605,7 +1605,7 @@ static void kos_dyn_resync_after_pop(
      extent genuinely has no namespace anywhere -- a native frame at the
      root of an adapter host whose slot was NULL. Recompute by walk; applying ns_new there would
      republish the dying frame's namespace, which the pop is about to
-     release. A model violation in the frame or block facts lands NULL
+     release. A model violation in the frame or block facts puts NULL
      here and fails fast nearby; build with -DKOS_EVAL_SAFETYNET=1 to
      diagnose by walk instead. */
   (void) ft;
@@ -1645,7 +1645,7 @@ static void kos_dyn_resync_after_pop(
    Restamp the unstamped top region of the chain after a splice.
    Spliced spans arrive with NULL unwind caches: clones are born
    clear, detaches clear, and direct links never stamp. Chain
-   mutations are top-regional (installs, restitches, and thaws land at
+   mutations are top-regional (installs, restitches, and thaws happen at
    or near dyn_top), so unstamped nodes form a contiguous prefix;
    measure it, then stamp it rootward-first in chunks -- segment
    backs, frame back links, and ns fills -- so the pop-side caches are
@@ -2029,7 +2029,7 @@ static KosOpResult kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
    its handler, a FINALLY handling a raise, a WIND inside a thunk, a
    loop whose else clause has started, a for-each with a step in flight
    (the iteration cap), or a WITH past its body is not the state the
-   continuation describes, so an invoke leaves it and lands the
+   continuation describes, so an invoke leaves it and attaches the
    template's copy instead. Kinds with no phase match on identity.
    Callers: kos_chain_common_ancestor.
 */
@@ -2053,7 +2053,7 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
 
     case KOS_DYN_WIND:
       /* a template WIND is always idle (its clone resets the phase, to
-         be entered by the landing's replay); the live one matches only
+         be entered by the ENTERING replay); the live one matches only
          while its body runs */
       return KosDynWind_ENTERED(live)
           && KosDynWind_PHASE(live) == KOS_WIND_PHASE_POST_BEGIN;
@@ -2408,8 +2408,8 @@ static inline KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
    that clone's namespace with the one live at the capture bound. It
    is the compressed region bottom of a shift's capture: the frame
    executing the region's own code lies below the prompt and is not
-   part of the region, but a landed copy needs its code, namespace and
-   mid-region pc, so a callee returning within the copy lands in it and
+   part of the region, but an attached copy needs its code, namespace and
+   mid-region pc, so a callee returning within the copy returns into it and
    runs the remaining region bytecode to POP_PROMPT.
 */
 static KosContinuation *kos_continuation_capture_segment(
@@ -2429,7 +2429,7 @@ static KosContinuation *kos_continuation_capture_segment(
   PyObject *token;
 
   /* a delimited template's nodes are new instances, and so is each
-     copy landed from it; call/cc clones keep their source's id */
+     copy attached from it; call/cc clones keep their source's id */
   captured_chain = kos_dyn_clone_segment(segment_top, stop, delimited);
   if (! captured_chain && segment_top != stop) {
     /* a clone that refused names the boundary; the construct and the
@@ -2546,10 +2546,10 @@ int kos_shift_capture(
   /* Bound the invoke template at the prompt: clone from dyn_top down
    * through the PROMPT, and set it on one copy of the first FRAME below
    * the prompt. That frame executes the region, so its copy gives the
-   * landed region its code and mid-region pc. Nothing between that
+   * attached region its code and mid-region pc. Nothing between that
    * frame and the prompt is region content: a WIND, PARAM, TRY or LOOP
-   * around the reset is outside it, and for the prompt of a landed
-   * continuation so is the DELIM it landed on. Caller frames further
+   * around the reset is outside it, and for the prompt of an applied
+   * continuation so is the DELIM it is attached to. Caller frames further
    * down resolve from the invoke-time environment.
    *
    * The frame's own namespace is not the one the region runs in.
@@ -2629,9 +2629,9 @@ int kos_shift_capture(
     }
 
     /* The template's prompts need no marking. Its delimiter sits on
-       the frame copy, which an application lands on a DELIM, and that
+       the frame copy, which an application attaches to a DELIM, and that
        shape is what POP_PROMPT and POP_SHIFT read
-       (kos_prompt_landed_delim). A prompt above the delimiter is region
+       (kos_prompt_applied_delim). A prompt above the delimiter is region
        content, a reset of another tag the shift crossed, and pops as a
        reset. */
     *out_k = k;

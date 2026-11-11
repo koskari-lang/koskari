@@ -36,7 +36,7 @@ the awaiter, uncounted against the frame limit, with the awaitable's
 await kind (its type's await suite) as the resume. The kind continues
 the awaitable's chain under it, a fresh coroutine's frame swapped in,
 a parked chain spliced beneath it, a step requested on it, and the
-frame's return lands the awaited value where the awaiter's push would
+frame's return delivers the awaited value where the awaiter's push would
 have. Reference: FLATTENING.md.
 
 ## boundary
@@ -66,7 +66,7 @@ at four points, the places that close a cycle: `CONTINUE`, a frame
 install in the call core, a resume hop, and the prologue re-entry. On
 a trip `CONTINUE` returns `EVAL_NORMAL`, the call core returns
 `EVAL_REPROLOGUE`, and a resume hop stages through `DISPATCH`; each
-lands in the trampoline's poll, which yields the GIL if requested,
+arrives at the trampoline's poll, which yields the GIL if requested,
 runs `Py_MakePendingCalls`, and re-enters where the point left off.
 With the breaker down the point threads straight on. Reference:
 EVALUATOR.md §1.6.
@@ -165,9 +165,9 @@ assume a yielded generator is still on any chain.
 
 ## graft
 
-Older transfer-plan vocabulary for landing: splicing a cloned chain
-segment onto another chain. Say "land" and "seam": a goal lands its
-target on the seam, the DELIM a delimited invoke pushed or the root for
+Older transfer-plan vocabulary for attaching: splicing a cloned chain
+segment onto another chain. Say "attach" and "seam": a goal attaches its
+target to the seam, the DELIM a delimited invoke pushed or the root for
 an undelimited one. Reference: EVALUATOR.md §6.
 
 ## host (host context)
@@ -282,7 +282,7 @@ or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 ## seam
 
-The node a transfer goal leaves down to and lands on: the DELIM a
+The node a transfer goal leaves down to and attaches its target to: the DELIM a
 delimited invoke pushed (nothing below the invoker leaves), the prompt's
 parent for POP_SHIFT, the root GEN for a foreign cc-unwind, an
 undelimited invoke's lowest common ancestor with the template (matched
@@ -294,7 +294,7 @@ and the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
 The record a continuation invoke pushes and the evaluator's prologue
 drives to move execution between chains: where control is going (seam,
 target clone, payload, resume pc), never what to do. The driver
-re-derives LEAVING, LANDING, ENTERING, and DELIVERING from the live
+re-derives LEAVING, ATTACHING, ENTERING, and DELIVERING from the live
 chain on every pass. Replaced the transfer plan's precomputed step list.
 Reference: EVALUATOR.md §6.
 

@@ -556,7 +556,7 @@ registry defaults in a follow-up.
    `(setq __pragma__ (.rebuild __pragma__ …))`; `rebuild` validates against the
    registry and announces at eval time.
 6. **Defer** — `.kio` pragma serialization, ~~the package pragma loader
-   integration~~ (landed; see [pragma-package.md](archive/pragma-package.md)),
+   integration~~ (implemented; see [pragma-package.md](archive/pragma-package.md)),
    CLI/REPL sources, profiles, and the reproducibility lint.
 
 ---

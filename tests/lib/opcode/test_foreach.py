@@ -91,7 +91,7 @@ class TestForeachOpcodes(CevalTest):
     async def test_foreach_continue_steps_iterator(self):
         """
         CONTINUE with the FOREACH region on top returns to the step,
-        which lands on the else target at exhaustion
+        which arrives at the else target at exhaustion
         """
 
         code, ns = build_expr([
@@ -566,7 +566,7 @@ def opcodes_of(fn):
 
 class TestIterNextStoreFromSource(unittest.IsolatedAsyncioTestCase):
     """
-    A for-each binding compiles to the fused step, and the element lands
+    A for-each binding compiles to the fused step, and the element goes
     in the slot on every delivery path: a sync iterator, a Koskari
     generator, a Python async iterator, a continuation resumed inside
     the loop, and a module-level loop with no fast slot

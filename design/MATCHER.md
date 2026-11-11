@@ -595,7 +595,7 @@ The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 | Externs | Every name the pattern resolves is requested through `request_var` and read from the enclosing scope, so closure capture works and a store into a user type is seen. A predicate or extractor is a `CALL` from the same frame and flattens; one that awaits does so in place. |
 | Core types | `int`, `str`, `list`, `tuple`, `pair`, `symbol` and `keyword` are not externs: a test against one is a `MATCH_CORE` instruction carrying the type's ordinal, with no reference read, so a binding of the name in any scope never reaches a pattern. `CALLEDBY`, `SYMBOL`, `KEYWORD`, `PAIR`, `BINDINGS` and `FORMALS` rest on these, which is what lets a module bind `symbol` without breaking the macros it defines. |
 
-Behavioural contracts: bindings land in the **enclosing scope** and persist
+Behavioural contracts: bindings go into the **enclosing scope** and persist
 after the form (Python-consistent; arms are not isolated scopes); first arm
 wins; no match + no `else:` → `None`; strings/bytes are atoms to sequence
 patterns.

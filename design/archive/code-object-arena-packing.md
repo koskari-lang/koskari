@@ -196,7 +196,7 @@ Semantics:
   dropped together).
 * **`max-bytes` is a soft secondary cap.** When set, the packer starts a new
   arena once the current one's payload would exceed the cap. It is a soft target:
-  a single code object larger than `max-bytes` still lands in its own singleton
+  a single code object larger than `max-bytes` still goes into its own singleton
   arena rather than failing to place. Both caps may be set; either one triggering
   starts a new segment.
 * **When to bound.** Smaller arenas help only when partial survival is expected

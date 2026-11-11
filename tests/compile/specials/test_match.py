@@ -1044,7 +1044,7 @@ class TestMatchCollection(SpecialsTestCase):
 
 class TestMatchTemporaries(SpecialsTestCase):
     """
-    The captures and the body's own definitions of an arm land in the
+    The captures and the body's own definitions of an arm go into the
     enclosing scope, whatever temporaries the arm's walk declares
     """
 

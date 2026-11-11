@@ -276,7 +276,7 @@ KOSKARI_BUILD_INPUTS := setup.py setup.cfg $(KOSKARI_NATIVE_SRC)
 # Rebuild decision is content-based, not mtime-based. The recipe runs on every
 # invocation (FORCE prereq) but reinstalls only when a hash of the build inputs
 # differs from the stored hash; otherwise it exits immediately. This survives a
-# git pull (or a tox rebuild) that lands sources with mtimes older than the
+# git pull (or a tox rebuild) that leaves sources with mtimes older than the
 # venv, which defeats Make's normal timestamp comparison.
 .venv/.koskari-built: FORCE | .venv
 	@$(call checkfor,uv)
@@ -402,7 +402,7 @@ build-mcp-container: build-container build-mcp  ## Build koskari:local then the 
 run-mcp:  ## Run MCP server on stdio (manual smoke test; use -i, no -t)
 	@$(CONTAINER_ENGINE) run -i --rm $(MCP_IMAGE):local
 
-run-mcp-web: ## Serve the landing page and /mcp over HTTP at localhost:8080
+run-mcp-web: ## Serve the index page and /mcp over HTTP at localhost:8080
 	@echo "Serving http://localhost:8080/ -- ctrl-c to stop"
 	@$(CONTAINER_ENGINE) run --rm --network host $(MCP_IMAGE):local \
 	  mcp_server.ki -- --serve --host 127.0.0.1 --port 8080

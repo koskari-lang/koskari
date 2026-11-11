@@ -32,7 +32,7 @@ typedef struct {
   PyObject *root_refs;  /* PyDict: name -> cell (KosRef); the root scope
                             of this computation. Never copied: contexts
                             reach it by resolution, and a store made
-                            outside any parameterize extent lands here */
+                            outside any parameterize extent goes here */
 } KosDomain;
 
 
@@ -85,7 +85,7 @@ PyObject *kos_param_lookup_ambient(PyObject *key);
 /**
    Resolve the cell bound to name (key) in the root scope, creating an
    empty cell on miss. This is where a store with no enclosing
-   parameterize extent lands.
+   parameterize extent goes.
 
    The ambient variant discovers the domain the same way as
    kos_param_lookup_ambient, minting the thread default domain when it

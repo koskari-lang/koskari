@@ -18,7 +18,7 @@
    then deliver the result as the region's value.  The handler runs on
    the SHIFT node, or in the frame copy on it when the shift ran in a
    called function, and the SHIFT's parent is the prompt it aborted to.
-   The prompt of a landed continuation delivers through its DELIM at
+   The prompt of an applied continuation delivers through its DELIM at
    the invoke site, a live reset resumes past its POP_PROMPT (the
    pop_pc the prompt recorded at push).
 */
@@ -28,7 +28,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   PyObject *result;
   KosOp *prompt_pop;
   KosDynPrompt *prompt = NULL;
-  KosDynDelim *landed;
+  KosDynDelim *applied;
   KosXferGoal *goal;
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
@@ -52,7 +52,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
     RESULT_RAISE();
   }
 
-  /* The shift aborted to its prompt and its SHIFT node landed on it,
+  /* The shift aborted to its prompt and its SHIFT node was attached to it,
      so the delimiter is the SHIFT's parent. */
   if (KosDynNode_PARENT(top) && KosDynNode_IS_PROMPT(KosDynNode_PARENT(top)))
     prompt = (KosDynPrompt *) KosDynNode_PARENT(top);
@@ -63,17 +63,17 @@ KOS_OP_HANDLER(POP_SHIFT) {
     RESULT_RAISE();
   }
 
-  /* The prompt of a landed continuation: no POP_PROMPT instruction
+  /* The prompt of an applied continuation: no POP_PROMPT instruction
      pairs with it as its own reset. The handler value IS the value of
      that k-invocation; deliver it at the invoke site through the DELIM
-     the copy landed on (unwinds this SHIFT, the prompt and the copy's
+     the copy is attached to (unwinds this SHIFT, the prompt and the copy's
      frame on the way). */
-  landed = kos_prompt_landed_delim((KosDynNode *) prompt);
-  if (landed) {
-    SAYF("[POP_SHIFT] landed prompt %u: delivering to delim %p",
+  applied = kos_prompt_applied_delim((KosDynNode *) prompt);
+  if (applied) {
+    SAYF("[POP_SHIFT] applied continuation prompt %u: delivering to delim %p",
          (unsigned) kos_dynnode_id((KosDynNode *) prompt),
-         (void *) landed);
-    RESULT_RELAY(ctx, kos_eval_route_delim_return(ctx, landed, result));
+         (void *) applied);
+    RESULT_RELAY(ctx, kos_eval_route_delim_return(ctx, applied, result));
   }
 
   /* Live reset: the prompt recorded its region's closing pc when

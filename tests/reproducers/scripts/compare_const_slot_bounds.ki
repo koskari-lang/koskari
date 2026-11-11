@@ -3,7 +3,7 @@
 ;; slot the opcode schema statically tags FASTVAR. The CMPSRC source
 ;; bits reclassify that slot to CONST, but the native FAST-slot bounds
 ;; check ignored the bits and range-checked the const index as if it
-;; were a fast slot -- so when the constant landed at a pool index past
+;; were a fast slot -- so when the constant sat at a pool index past
 ;; the function's fast-slot count the code failed to build with a bogus
 ;; "FAST index N out of bounds".
 ;;

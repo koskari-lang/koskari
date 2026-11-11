@@ -1,6 +1,6 @@
 # Dynamic Node Unified API: Design and Migration Specification
 
-**Status:** Archived. Partial migration landed in `dynchain.c` / `dynchain.h` (capability
+**Status:** Archived. Partial migration was implemented in `dynchain.c` / `dynchain.h` (capability
 bits, per-kind nodes, parts of transfer plans). The vtable-based `KosDynTypeOps`
 design and “push/pop as sole entry points” were not adopted; dispatch remains
 `switch` on `KosDynKind`. For current chain ideology see
@@ -135,7 +135,7 @@ Each type binds handlers and caps. This table is authoritative.
 **Notes:**
 
 - **WIND before:** Run by the opcode/compiler *before* calling push. The generic push does not run it. The install slot for WIND is NULL.
-- **WITH vs DYN_WITH:** Both can be cloned. Single-shot for WITH is enforced by push/pop: enter runs once at push, exit runs once at pop. DYN_WITH additionally runs enter during transfer install when landing a cloned segment.
+- **WITH vs DYN_WITH:** Both can be cloned. Single-shot for WITH is enforced by push/pop: enter runs once at push, exit runs once at pop. DYN_WITH additionally runs enter during transfer install when attaching a cloned segment.
 - **PROMPT and stack blocks:** PROMPT owns the COW stack block for the delimited continuation extent. `install` pushes a new stack block; `pop` and `unwind_on_exception` drop it. SHIFT is a simple marker with no stack block of its own.
 - **PROMPT barrier and exception unwinding:** BARRIER means generic `kos_dyn_pop` refuses to pop it. During exception unwinding, `try_local_exception_handler` checks `HANDLES_EXCEPTIONS` and calls `unwind_on_exception`, which drops the stack block and unlinks the PROMPT, then returns 0 to continue unwinding past it. Transfer plans handle PROMPT explicitly (store return continuation, truncate, etc.).
 - **SHIFT:** Marker node only; no handlers needed. Created by PUSH_SHIFT, popped as part of POP_SHIFT's transfer plan (TRUNCATE_AND_INJECT step).

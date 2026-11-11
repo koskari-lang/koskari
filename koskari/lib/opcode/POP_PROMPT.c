@@ -15,8 +15,8 @@
 
 /**
    POP_PROMPT: arg unused. The region is done and its prompt is at
-   dyn_top. The prompt of a landed continuation delivers the region's
-   value to the invoke site through the DELIM the copy landed on; a
+   dyn_top. The prompt of an applied continuation delivers the region's
+   value to the invoke site through the DELIM the copy is attached to; a
    reset running its own region pops its prompt from the dynamic chain.
 */
 
@@ -24,14 +24,15 @@ KOS_OP_HANDLER(POP_PROMPT) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  /* A landed prompt has no reset of its own to complete: the copy's
-     value is the value of the application, and goes to the DELIM. */
+  /* The prompt of an applied continuation has no reset of its own to
+     complete: the copy's value is the value of the application, and
+     goes to the DELIM. */
   KosDynDelim *ret_delim = NULL;
   {
     KosDynNode *node = KosContext_DYN_TOP(ctx);
 
     if (node && KosDynNode_IS_PROMPT(node))
-      ret_delim = kos_prompt_landed_delim(node);
+      ret_delim = kos_prompt_applied_delim(node);
   }
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
@@ -53,7 +54,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
     if (kos_dyndelim_return_frame(ret_delim) != NULL) {
       KosOpResult routed = kos_eval_route_delim_return(ctx, ret_delim, val);
 #if KOS_EVAL_SAFETYNET
-      /* NORMAL threads the next instruction of the landed frame; a
+      /* NORMAL threads the next instruction of the return frame; a
          code-less invoke site must be delivered through the prologue
          (REPROLOGUE) instead. */
       if (unlikely(routed.kind == KOS_RES_NORMAL

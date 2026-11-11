@@ -119,7 +119,7 @@ walk keeps on the operand stack or **peeks** the element on top of the
 stack. A pull instruction
 consumes from the cursor and leaves nothing on the stack. A peek
 instruction never pops. A miss never pops. A failure edge therefore
-lands with the stack the clause entered with, and `DUP` does not occur
+arrives with the stack the clause entered with, and `DUP` does not occur
 in a lowered pattern: the runtime clause works on the subject in place
 (the keep flag of `MATCH_CASE` with no flag), and a `ONEOF` over one
 element pulls once, has each branch peek, and pops at the join or on

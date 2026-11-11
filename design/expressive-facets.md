@@ -618,7 +618,7 @@ to time windows without collisions, or fitting workers to shards under a
 capacity bound, is `amb` plus `require`. A `solve:` block in a jobset DSL is not
 a toy.
 
-If it lands, the natural follow-on is a relational sublanguage -- a miniKanren
+If it is implemented, the natural follow-on is a relational sublanguage -- a miniKanren
 or Datalog `fence:` block -- since fences already exist as the mechanism for
 embedding a foreign notation. That would give the DSL story a second flagship
 next to the scheduler, in a completely different domain.

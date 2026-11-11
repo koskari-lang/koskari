@@ -267,7 +267,7 @@ class Job []:
         store, capture its log output, invoke the callback with `args` and
         `kwargs` (the named-args channel typed webhook inputs bind
         through), and record the outcome (with the on-error hook on
-        failure). Both channels land in trigger.json, so re-trigger is
+        failure). Both channels go into trigger.json, so re-trigger is
         just a `run` with `cause: "manual"` and the stored args/kwargs.
         Every variety funnels its trigger through here.
 

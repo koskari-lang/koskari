@@ -611,7 +611,7 @@ function_get_name_dunder(PyObject *self, void *closure) {
 
 
 /*
-  __name__ and __qualname__ writes land in metadata override slots, never
+  __name__ and __qualname__ writes go into metadata override slots, never
   in `name`, so the semantic name stays fixed after construction while
   wraps-style renames remain visible to introspection.
 */

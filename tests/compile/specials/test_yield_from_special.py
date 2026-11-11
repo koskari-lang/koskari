@@ -214,7 +214,7 @@ class TestYieldFromPlainAsyncIterator(SpecialsTestCase):
         fn = await expr()
         self.assertEqual(["one", "two"], await _collect_async_pairs(fn()))
 
-    async def test_throw_lands_at_the_delegating_generator(self):
+    async def test_throw_arrives_at_the_delegating_generator(self):
         """
         athrow into the delegating generator raises the thrown exception
         out of it, since a plain async iterator has no athrow

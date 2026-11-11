@@ -215,7 +215,7 @@ must still be done here.
 ## MVP scope
 
 1. **Stencil extraction tool.** Compile the musttail handler set (the
-   threaded form that landed with
+   threaded form that was implemented with
    [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md);
    this design has no meaning against handlers that return to a loop
    rather than tail-calling a successor) as individual translation

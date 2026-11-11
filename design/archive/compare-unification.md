@@ -1,7 +1,7 @@
 # Comparison Unification: CHECK_COMPARE, OBJECT_COMPARE, and Fused Source Variants
 
 **Status: COMPLETE and MERGED (2026-07-17, PR #103, branch
-`check_cmp`). All three phases landed; trace-confirmed results and the
+`check_cmp`). All three phases were implemented; trace-confirmed results and the
 one forward lever (`CHECK_COMPARE_CONST`) are in the Trace results
 section at the end. Original per-phase status preserved below.**
 
@@ -376,7 +376,7 @@ data-dependent selects shared across all sites.
 ### dis augmentation (all three kinds)
 
 dis renders from the OpStyle metadata tables, so the additions are
-mechanical but should land with Phase 1/2, not after:
+mechanical but should be implemented with Phase 1/2, not after:
 
 - **CMP** slot: selector name (`LT`, `IS_INSTANCE`), from the Compare
   IntEnum.

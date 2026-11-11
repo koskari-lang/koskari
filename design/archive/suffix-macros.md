@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented (archived 2026-07-28).** The registry and driver landed
+**Implemented (archived 2026-07-28).** The registry and driver were implemented
 first with index brackets rewritten onto them, then dotted attributes,
 then string segments. Canonical surface notes live in
 [PRAGMA.md](../PRAGMA.md) and [SYNTAX.md](../SYNTAX.md).
@@ -286,7 +286,7 @@ the atom's position, so the conversion function needs no access to the
 stream. Two other call sites -- dict-key re-reading and f-string
 expression atoms -- sit outside that wrapper, and a malformed dot reached
 through either would surface as a bare `ValueError` with no position.
-Worth covering when the widening lands.
+Worth covering when the widening is implemented.
 
 ### Compiler impact: none
 
@@ -510,7 +510,7 @@ has the pointer.
 
 ## Implementation order
 
-All three landed as separate commits, each green on the full suite:
+All three were implemented as separate commits, each green on the full suite:
 
 1. Suffix macro registry, driver, and termination guard, with
    `_apply_index_brackets` rewritten onto it. No behavior change. This step

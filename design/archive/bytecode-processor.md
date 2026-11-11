@@ -128,7 +128,7 @@ forward run-accumulation -- it is not lookback-shaped.
   following instructions keep their attribution; Code construction
   canonicalizes position order beyond that.
 - **LABEL is an absolute lookback boundary.**  A label is a merge
-  point: something lands there in a manner whose prior state cannot be
+  point: something arrives there in a manner whose prior state cannot be
   predicted. No backward-looking rule, including any future
   const-tracking or stack-shape analysis, reasons through a LABEL.
   Reasoning about the join of all predecessors is dataflow analysis --
@@ -209,7 +209,7 @@ the processor-specific mechanics as built:
   param(eterize), collect. Discardable (allowed): namespace and
   loop/foreach extents, safely dropped by frame handoff.
 - The rewrite touches the call row only. The JUMP and the shared
-  RETURN stay: other predecessors may land on that label with non-tail
+  RETURN stay: other predecessors may arrive at that label with non-tail
   values. Rows unreachable on the lowered path are harmless (or food
   for the dead-region sweep).
 - Yield-ness gates the whole pass up front: scan for YIELD /
@@ -239,11 +239,11 @@ composed `KOS_CALL_TAIL` with every flag combination the CALL family
 uses, and `KosEvalState_CallArgs` already took the tail flag, so each
 handler is its CALL twin with the tail bit set. The VAR tier
 dispatches cold; TAIL_CALL_FAST and TAIL_CALL_FAST_ATTR stay hot like
-their twins. Landing the twins surfaced and fixed an owned-reference
+their twins. Implementing the twins surfaced and fixed an owned-reference
 leak of the receiver in CALL_FAST_ATTR_STAR.
 
 Tail-call promotion changes observable behavior (backtrace shape,
-frame identity). The planned two-step landing collapsed once the twins
+frame identity). The planned two-step implementation collapsed once the twins
 made fused promotion free; the behavior change is bounded instead by
 the mode gate -- expression streams never promote, so module top-level
 and REPL emission is unchanged, and the new frame handoffs appear only
@@ -256,7 +256,7 @@ extent tracker's safetynet verification remains open (see
 
 ## Simplifications delivered and available
 
-`compile/format` is the landed worked example: it folds the
+`compile/format` is the implemented worked example: it folds the
 all-constant case (keeping the compile-time diagnostic and the
 quoted-symbol coercion) and otherwise emits naively; the pass ladder
 owns everything below. The same pattern is available to any special
@@ -287,7 +287,7 @@ The dict-dispatch-beats-elif claim did not materialize at this scale,
 and neither did any cost from the matcher, candidate lists, or
 replacement splices. The registry stands on sight-readability, not
 speed. The re-measure trigger -- a pass growing the walk -- fired when
-TCO landed; measured 2026-08-19 with the full promotion pass live
+TCO implemented; measured 2026-08-19 with the full promotion pass live
 (yield scan, label index, extent stack, clear-route chasing on every
 function stream): steady ~0.235s, min 0.232 -- parity with both
 earlier baselines. The walk still costs nothing measurable.
@@ -304,7 +304,7 @@ earlier baselines. The walk still costs nothing measurable.
    CONST None / POSITION / RETURN normalization).
 3. **Pattern registries** -- both passes converted to form-declaring
    rules over one driver with the replacement-return protocol and
-   retry ladder; the format demotion landed with `special_format`'s
+   retry ladder; the format demotion was implemented with `special_format`'s
    simplification; the fusion pass renamed `fuse_feeders`. Emission
    verified unchanged throughout, except where the change was the
    point.

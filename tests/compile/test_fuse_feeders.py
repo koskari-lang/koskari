@@ -1100,7 +1100,7 @@ class TestFuseScopeNext(unittest.TestCase):
     """
     A MATCH_SCOPE followed by a MATCH_NEXT on the cursor the mark was
     made at fuses to MATCH_SCOPE_NEXT; a NEXT on another cursor, or one
-    a jump lands on, is left
+    a jump targets, is left
     """
 
     def test_same_cursor_fuses(self):

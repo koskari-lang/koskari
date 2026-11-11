@@ -122,7 +122,7 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_CATCH                    (1u << 0)
 
 /* a LOOP or FOREACH region still running its body: the region a break
-   or continue lands on. CLEAR_LOOP and CLEAR_FOREACH take it away when
+   or continue targets. CLEAR_LOOP and CLEAR_FOREACH take it away when
    the else clause starts, so a break or continue written there belongs
    to the enclosing loop. The one record of the region's enabled state. */
 #define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
@@ -389,7 +389,7 @@ typedef enum KosHandleResult {
    KosThreadFn. clear runs at a teardown with no delivery coming (a
    frame freed or cached with the resume still set); NULL means the
    state is borrowed and its owner cleans up. clone runs at a
-   continuation capture and at a multi-shot landing; NULL means the
+   continuation capture and at each application of one; NULL means the
    capture refuses by name. throw_kind is the kind that takes a throw
    into this halt, with the exception object as its value and the same
    state: a throw ingress sets it on the frame in place of this kind
@@ -472,7 +472,7 @@ void *kos_resume_clone_object(void *state);
 
 
 /* The record a LOOP and a FOREACH region share: the instructions
-   break and continue land on, and the body's last continue value. Jump
+   break and continue jump to, and the body's last continue value. Jump
    targets held by a node are records of the frame's code, which the
    frame keeps alive; code never relocates, so they stay valid for the
    life of the node and of any clone. */
@@ -509,7 +509,7 @@ struct KosDynNode {
       /* Frame nesting depth on this context's chain: the enclosing
          frame's depth + 1, the root frame at 1. Set at install and
          renumbered whenever a segment carrying frames is spliced in
-         (continuation landing, generator install), so the frame
+         (continuation application, generator install), so the frame
          depth test against the frame depth limit at install is one
          load and one compare. The limit defaults to 10000 and is
          settable up to KOS_FRAME_DEPTH_MAX, the width of this field. */
@@ -556,11 +556,11 @@ struct KosDynNode {
       KosOp *pop_pc;
     } prompt;
     struct {
-      /* Where the return lands in the invoking frame; NULL for a
+      /* Where the return continues in the invoking frame; NULL for a
          code-less frame, whose resume takes the delivery. The frame is
          not recorded: it is the first FRAME below the node, found at
          delivery (kos_dyndelim_return_frame), so a clone of the node
-         landed elsewhere returns into the frame it now sits on. A pc
+         attached elsewhere returns into the frame it now sits on. A pc
          cannot go stale across a clone; a frame pointer can. */
       KosOp *pc;
     } delim;
@@ -731,7 +731,7 @@ typedef struct KosDynNode KosDynGen;
    (delimited), or from above the CC block down to root (undelimited).
 
    The resume_pc is the instruction to resume at; the frame it
-   resumes in is resolved from the chain at invoke time (the landed
+   resumes in is resolved from the chain at invoke time (the attached
    segment's innermost FRAME), never stored.
 
    A continuation is multi-shot: the chain and its stacks are cloned on
@@ -820,7 +820,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
    delimited continuation leaves at its call site.
 
    :param parent: parent node in dynamic chain
-   :param pc: the instruction the return lands on, or NULL
+   :param pc: the instruction the return continues at, or NULL
 
    :return: new DELIM node, or NULL on error
 */
@@ -945,9 +945,9 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
    :param top: top of segment to clone
    :param stop: stop at this node (not cloned), or NULL to clone all
    :param fresh_ids: non-zero for a delimited continuation's template
-      and for each copy landed from it: every clone is a new instance,
+      and for each copy attached from it: every clone is a new instance,
       its id minted on first read. Zero for call/cc, whose clones keep
-      their source's id so a landed clone counts as the same extent as
+      their source's id so an attached clone counts as the same extent as
       the node it was captured from
 
    :return: cloned chain top, or NULL on error
@@ -1326,7 +1326,7 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
    Push a DELIM node via kos_dyn_push.
 
    :param ctx: execution context
-   :param pc: the instruction the return lands on, or NULL
+   :param pc: the instruction the return continues at, or NULL
 
    :return: new DELIM node, or NULL on error
 */
@@ -1349,7 +1349,7 @@ int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
    The return frame is the first FRAME below the DELIM.
 
    :param ctx: execution context
-   :param delim: the DELIM the landed continuation returns through
+   :param delim: the DELIM the applied continuation returns through
    :param value: return value (consumes a reference on success or failure)
 
    :return: 0 on success, -1 if ctx, value or delim is invalid or no
@@ -1384,11 +1384,11 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
 /**
    Abort a shift to its prompt and start its handler there. Everything
-   above prompt is left, as a raise would leave it; a SHIFT node lands
-   on the prompt carrying the namespace live at the shift, and k is
+   above prompt is left, as a raise would leave it; a SHIFT node is attached
+   to the prompt carrying the namespace live at the shift, and k is
    delivered to it at body_pc. When the shift ran in a frame above the
    prompt, that frame was part of the region and is left with it, so a
-   copy of it (same code, the live namespace, no operands) lands on the
+   copy of it (same code, the live namespace, no operands) is attached to the
    SHIFT for the handler to run in. The region's operands on the prompt
    are dropped: the continuation holds its own copy.
 
@@ -1470,7 +1470,7 @@ KosDynGen *kos_dyn_find_gen(KosContext *ctx);
    walking outward from the frame, without crossing a DELIM. NULL with
    an exception set when there is none to suspend: a
    KoskariPromptUnreachable when a DELIM ended the search (the region
-   of a landed continuation is yielding, and no generator is inside
+   of an applied continuation is yielding, and no generator is inside
    it), a RuntimeError when the chain ran out. Callers:
    kos_yield_deliver and the trampoline's YIELD arm, which then freeze
    the node through kos_dyn_gen_freeze.
@@ -1672,7 +1672,7 @@ typedef enum KosPendingReturnKind {
    kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
    FINALLY consumes the return, taking val onto its block and branching
    to its handler, and the walk answers EVAL_REPROLOGUE. It meets no
-   DELIM: the frame of a landed continuation that sits on one is
+   DELIM: the frame of an applied continuation that sits on one is
    refused its return before the walk starts, and every other frame
    above a DELIM has its own caller above it too. EVAL_NORMAL leaves val
    the caller's. A suspension stores val on the in-flight node as a RETURN
@@ -2248,17 +2248,17 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
 
 /**
   The DELIM a prompt delivers through when it is the delimiter of a
-  landed continuation, or NULL for a reset running its own region. A
+  applied continuation, or NULL for a reset running its own region. A
   continuation's template is its region down through the delimiting
-  prompt, set on one frame copy, and an application lands it on a DELIM
+  prompt, set on one frame copy, and an application attaches it to a DELIM
   at the call site: so the prompt's parent is a frame whose parent is a
   DELIM. No POP_PROMPT instruction pairs with such a prompt as its own
   reset; the region's value goes to the application through the DELIM.
   The shape is the whole test: a reset's own prompt is pushed onto a
   node of its frame's extent, never onto a frame sitting on a DELIM,
-  since the code of a landed copy runs above that copy's prompt.
+  since the code of an attached copy runs above that copy's prompt.
 */
-static inline KosDynDelim *kos_prompt_landed_delim(KosDynNode *prompt) {
+static inline KosDynDelim *kos_prompt_applied_delim(KosDynNode *prompt) {
   KosDynNode *frame = KosDynNode_PARENT(prompt);
   KosDynNode *delim;
 

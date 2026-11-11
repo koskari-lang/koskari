@@ -1,9 +1,9 @@
 # Dynchain Refactor Notes
 
-**Status:** Mostly landed; remaining items are deliberate or low priority
+**Status:** Mostly implemented; remaining items are deliberate or low priority
 **Related:** dynchain-flatten-proposal.md (archive), generic-dynnode-protocol.md, koskari/lib/dynchain.c, koskari/lib/eval.c
 
-These notes tracked violations of the design goal: move all chain behavior from the evaluator loop into generic interface functions that switch/case dispatch to type-specific handlers. The 2026-07 evaluator/dynchain cleanup passes resolved nearly all of them; this file now records what landed and what was deliberately kept.
+These notes tracked violations of the design goal: move all chain behavior from the evaluator loop into generic interface functions that switch/case dispatch to type-specific handlers. The 2026-07 evaluator/dynchain cleanup passes resolved nearly all of them; this file now records what was implemented and what was deliberately kept.
 
 ---
 

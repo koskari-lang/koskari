@@ -159,7 +159,7 @@ and `VAR_OBJECT_INPLACE` are the only in-place opcodes; 26 -> 2.
 - Adding/removing opcodes shifts enum values and requires `tox -qe handlers`
   to regenerate `handlers.incl`. Bootstrap recompiles, so no stale bytecode.
 
-## Reducing migration -- landed (step 1, green; commit pending)
+## Reducing migration -- implemented (step 1, green; commit pending)
 
 The actual `OBJECT_<op>` family was more heterogeneous than the first-pass
 notes said. Real breakdown (13 operators) and how each is preserved inside the
@@ -211,7 +211,7 @@ Native `tests/native/test_eval.c` uses `KosOpCount_MAKE(KOS_OPERAND_ADD, 2)`.
 Verification: full suite **4581 passed, 10 skipped**; flake8 OK; churn answers
 match (py==ki); ASan **293 passed, 0 failed**; dispatch fn 71,057 -> 68,634 B.
 
-## Stack in-place migration -- landed (step 2, green; commit pending)
+## Stack in-place migration -- implemented (step 2, green; commit pending)
 
 `OBJECT_INPLACE_<op>` (13 opcodes, used by `special_inplace_item` /
 `special_inplace_attr`, reducing over `count` values) collapsed into one

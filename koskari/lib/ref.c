@@ -1501,7 +1501,7 @@ static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
   PyObject *cell;
 
   /* an existing binding is written in place, wherever it lives; with no
-     binding the value lands in the root scope */
+     binding the value goes into the root scope */
   cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
   if (cell) {
     Py_INCREF(value);

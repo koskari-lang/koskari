@@ -65,7 +65,7 @@ divert from every guide chapter that has a concepts counterpart.
 
 Numbered chapters are uniformly TL;DR-sized (~200–340 words). The exception is
 `guide/references-and-storage-indirection.md` at **1544 words** (5–7× any
-chapter) — an unnumbered deep-dive that landed in the guide, with **no concepts
+chapter) -- an unnumbered deep-dive that was placed in the guide, with **no concepts
 page of its own**. The A2 model is literally inverted here: the authoritative
 depth lives in the guide.
 

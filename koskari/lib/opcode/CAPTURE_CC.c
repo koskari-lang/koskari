@@ -19,7 +19,7 @@
    With arg 1 the callee on TOS is taken off the stack for the capture
    and put back under the continuation, for the CALL 1 that applies it:
    it is the call/cc form's own operand, not part of the continuation,
-   and a resume that found it still on the captured stack would land
+   and a resume that found it still on the captured stack would push
    its value on top of it. let/cc, which binds the continuation to a
    name, emits arg 0.
 */

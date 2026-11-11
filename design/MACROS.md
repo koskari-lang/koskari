@@ -60,7 +60,7 @@ implemented in `Compiler` (`compile_symbol`, `compile_pair`, `lower_head`):
   depth, and only a head whose innermost head names a syntax is attempted
   at all. An expansion yielding *source* succeeds — each enclosing level is
   reconstructed around it (positions filled) and the whole form re-enters
-  compilation from the top, so an expansion landing on a symbol becomes a
+  compilation from the top, so an expansion arriving at a symbol becomes a
   fresh syntax use with the tail as its arguments. A non-syntax head, or an
   expansion that compiles to bytecode, fails the attempt and the raw head
   flows to `compile/call` untouched — preserving the `(attr …)` head
@@ -690,7 +690,7 @@ arguments work. **`(slice)`** → **`(call build-slice)`**; **`(slice ARGS …)`
 **`(setq __pragma__ (.rebuild __pragma__ TUPLE …))`** — rebuilding the immutable
 **`ModulePragma`** and rebinding **`__pragma__`**, which announces the change to
 the subscribed reader and compiler (forward-only, module-scoped). Because each
-`VALUE` lands in a `values` call it is evaluated, so a literal symbol must be
+`VALUE` is placed in a `values` call it is evaluated, so a literal symbol must be
 quoted (**`'error`**) while booleans/numbers/strings are bare.
 **`(pragma NS/KEY)`** expands to **`(item __pragma__ "NS/KEY")`**; **`(pragma)`**
 expands to **`__pragma__`**. See [PRAGMA.md](PRAGMA.md) for the available

@@ -5,7 +5,7 @@ followed by the per-context recursion limit, the common-ancestor seam for
 undelimited invokes, and the review fixes recorded in the branch history.
 The permanent description is [EVALUATOR.md](../EVALUATOR.md) §6 and
 [interpreter/extent-wind-unwind.md](../interpreter/extent-wind-unwind.md);
-this is the design record as it stood when the work landed.
+this is the design record as it stood when the work was completed.
 Line numbers are against that branch.
 
 Transfer plans move control from the current dynamic chain to a target chain
@@ -51,7 +51,7 @@ tail-calls through ordinary opcodes, so only a boundary event
 - **`KosDynCCRaise`** and `dyn_cc_raise.c`: the sentinel existed only so an
   action array could end in a raise. A goal has a `DELIVERING` phase (§3.8).
 - **`kos_continuation_clone` on the invoke path** and the plan's
-  `resume_stack` deep copy: the landed segment is itself a fresh clone of the
+  `resume_stack` deep copy: the attached segment is itself a fresh clone of the
   template carrying the capture-time operands (`kos_dyn_clone_copy_segment`),
   so both copies replace identical content.
 
@@ -76,7 +76,7 @@ struct KosXferGoal {
   PyObject    *continuation_ref;
   uint32_t     resume_pc;      /* UINT32_MAX = unset */
 
-  uint8_t      phase;          /* LEAVING | LANDING | ENTERING | DELIVERING */
+  uint8_t      phase;          /* LEAVING | ATTACHING | ENTERING | DELIVERING */
   uint8_t      is_throw;
   uint8_t      is_cc_unwind;
 };
@@ -85,9 +85,9 @@ struct KosXferGoal {
 Fixed size. No action array, no index, no cache, no union.
 
 Borrowed pointers are `seam`, `frontier`, `park_top`. Each is either owned by
-this goal's own landing, or sits below everything the goal will unlink, so
+this goal's own attachment, or sits below everything the goal will unlink, so
 it stays valid for the goal's lifetime; the two events that could free one
-(a raise, an undelimited landing) free the goal first (§3.10). The ids are
+(a raise, an undelimited application) free the goal first (§3.10). The ids are
 assertions on resume, never lookups: node ids are not unique on a chain
 (clones copy them, `dynchain.h:309`).
 
@@ -102,7 +102,7 @@ it.
 
 ```
 LEAVING     while dyn_top != seam:  unlink_top(ev = LEAVING)
-LANDING     splice target onto the seam; set resume_pc on the landed frame
+ATTACHING   splice target onto the seam; set resume_pc on the attached frame
 ENTERING    from the seam upward: enter(node) for each CONTROL_HOOK node
 DELIVERING  push payload, or arm the throw (3.8)
 ```
@@ -120,11 +120,11 @@ Rules:
    has `dyn_top` at or above its frame, and the first event with `dyn_top ==
    park_top` is its return. For an AWAIT with no frame it holds at revive.
    For `LEAVING`, `park_top == frontier`; for `ENTERING`, `park_top` is the
-   landed top and `frontier` a node inside the segment.
-3. **`LANDING` is total.** Splice and pc install: no allocation, no
+   attached top and `frontier` a node inside the segment.
+3. **`ATTACHING` is total.** Splice and pc install: no allocation, no
    suspension. The clone happens at construction, so a clone failure raises
-   with the chain untouched. `LANDING` runs once; the phase byte records it.
-   `LANDING` also restores the captured operands of the shared nodes from
+   with the chain untouched. `ATTACHING` runs once; the phase byte records it.
+   `ATTACHING` also restores the captured operands of the shared nodes from
    the seam down to its frame and retires every `outer` goal whose
    frontier `LEAVING` unlinked, all of them when the seam is NULL (§3.10).
 4. **`LEAVING` and `ENTERING` are re-derived.** A node that has left is off
@@ -387,7 +387,7 @@ never cloned, so it is unique.
 `KosContext_INJECT_*` for a throw. Always a push: a template carries no live
 resume (`kos_dynframe_clone` refuses step resumes by name; the only node
 resume is yield-from, `dyn_yield_from.c:333`, which needs a GEN, which
-capture refuses). Assert `RESUME_FN == NULL` on the landed frame.
+capture refuses). Assert `RESUME_FN == NULL` on the attached frame.
 
 cc-unwind: `DELIVERING` with `is_cc_unwind` does
 `kos_eval_prepare_boundary_raise` and returns RAISE, bypassing
@@ -420,7 +420,7 @@ holds, which for a delimited inner is after the inner's slice has routed back
 through the inner DELIM and the thunk returned. A delimited goal is finished
 at `DELIVERING`; the slice's completion is the DELIM bookmark's business.
 
-An inner `LANDING` frees every outer whose frontier its `LEAVING`
+An inner `ATTACHING` frees every outer whose frontier its `LEAVING`
 unlinked (pointer reach and id, as the seam check): the node the outer
 waited on and everything above it are gone, so the extent it was moving
 through no longer exists. An undelimited inner whose seam is the common
@@ -447,7 +447,7 @@ Deleted: the replan block (`eval_chain.c:270-350`),
 | Obligations | **REPLACE** | §3.6 |
 | Goal representation | **REPLACE** | §3.1 |
 | Goal construction | **REPLACE** | §3.7. Delete six builders, `KosXferPlanOptions`, `kos_build_xfer_plan`, the count/fill helpers, the LCA layer, `KosDynCCRaise` |
-| Goal driver | **REPLACE** | §3.2. Delete `kos_run_transfer_step`, the six `xfer_step_*`, `xfer_step_land_segment`, `xfer_remap_extent_nodes`, `kos_dyn_run_install_wind_span` |
+| Goal driver | **REPLACE** | §3.2. Delete `kos_run_transfer_step`, the six `xfer_step_*`, `xfer_step_attach_segment`, `xfer_remap_extent_nodes`, `kos_dyn_run_install_wind_span` |
 | Goal nesting | **CHANGE** | §3.10 |
 | Delivery | **CHANGE** | §3.8 |
 | The walks | **CHANGE** | `kos_dyn_unwind_to_node` / `_to_frame` / `_return` / `_to_loop` return `KosOpResult`, pop through §3.5, park per §3.6. `kos_dyn_unwind_raise` changes least: pops through §3.5, its `saved_exc_*` block becomes an obligation write, its GEN arms are the ones §3.9 reuses |
@@ -476,7 +476,7 @@ include of `dynchain.c`, since the in-place path uses its statics.
    step 4: an extent step's AWAIT payload rides in `step_awaitable` to the
    drain, which hands it to the driver through `eval_event_await`; the
    entry phase routes an AWAIT-suspended plan through the await revive, so
-   the settled value lands on the block for the step's `settle`. The
+   the settled value is pushed on the block for the step's `settle`. The
    walks consume what they carry on every answer but NORMAL, and a leave
    that raises during a return walk now reaches `process_raise` where it
    was EVAL_FATAL.

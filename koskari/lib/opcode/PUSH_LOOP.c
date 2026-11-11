@@ -24,7 +24,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   KOS_SYNC_PC(ctx, insn);
   KosOp *pop;
 
-  /* break lands after the POP_LOOP that closes the extent */
+  /* break continues after the POP_LOOP that closes the extent */
   if (kos_site_extent_close(ctx, insn, KOS_EXT_LOOP, "PUSH_LOOP", &pop) < 0)
     RESULT_RAISE();
 

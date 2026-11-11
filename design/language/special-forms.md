@@ -46,7 +46,7 @@ Special forms are compile-time constructs that have no runtime representation. T
   - Syntax: `(with [name? expr] body ...)`; optional binding of enter result
   - The expression value is the body's value, or `None` when exit swallows an exception (see [interpreter/with-dyn-with.md](../interpreter/with-dyn-with.md))
   - Sync and async managers supported (VM auto-awaits enter/exit when they return awaitables)
-  - A transfer leaving through an active `with` runs its exit and finishes the instance; a landed segment does not re-enter it
+  - A transfer leaving through an active `with` runs its exit and finishes the instance; an attached segment does not re-enter it
   - Implemented via compile/with; see [SPECIALS.md](../SPECIALS.md) §with. Opcode tests: `tests/lib/opcode/test_with.py`; special-form tests: `tests/compile/specials/test_with.py` (both cover sync and async)
 - **`dyn-with`**: Multi-shot context manager; participates in continuation transfer (wind/unwind)
   - Same syntax as `with`; the value is the body's, or `None` after a swallowed exception

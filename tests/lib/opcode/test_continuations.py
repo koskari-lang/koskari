@@ -238,10 +238,10 @@ class TestDelimitedContinuations(CevalTest):
         self.assertEqual(result, 16)
 
 
-    async def test_shift_inside_a_copy_landed_from_a_handler(self):
+    async def test_shift_inside_a_copy_attached_from_a_handler(self):
         """
         A shift tagged A crosses a default-tag prompt, and its handler
-        invokes k. In the copy that lands, a second shift seeks the
+        invokes k. In the copy that is attached, a second shift seeks the
         default tag: it stops at the copy's inner prompt, which is region
         content and pops as a reset, while the copy's tag A prompt
         delivers to the invoke site. (+ 10 5), then (+ 15 100) from the

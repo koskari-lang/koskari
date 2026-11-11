@@ -296,7 +296,7 @@ flowchart TD
     frame_check -->|non-NULL| loop_next["continue to dispatch"]
 ```
 
-A goal records where control is going and never what to do: the goal step re-derives its next action from the live chain on every pass (§6). A leave or enter that hands control to a thunk frame or an awaitable leaves the goal waiting on that node with `dyn_top` as it was; the goal step does nothing until `dyn_top` is that node again, which means the thunk's frame came and went. Goals nest: a continuation called from inside a thunk pushes an inner goal while the outer keeps waiting, and the goal step retires into the outer when the inner delivers. A goal's LANDING frees each outer goal whose waited-on node its LEAVING unlinked, and every outer goal when its seam is NULL.
+A goal records where control is going and never what to do: the goal step re-derives its next action from the live chain on every pass (§6). A leave or enter that hands control to a thunk frame or an awaitable leaves the goal waiting on that node with `dyn_top` as it was; the goal step does nothing until `dyn_top` is that node again, which means the thunk's frame came and went. Goals nest: a continuation called from inside a thunk pushes an inner goal while the outer keeps waiting, and the goal step retires into the outer when the inner delivers. A goal's ATTACHING frees each outer goal whose waited-on node its LEAVING unlinked, and every outer goal when its seam is NULL.
 
 **Failed transfer:** a step that raises enters **`process_raise`** (the unified RAISE ingress), which frees the whole goal stack (`kos_xfer_goal_abandon_all`) and runs **`kos_dyn_unwind_raise`** on the chain as the goal step left it; there is no rollback to the invoke site. `EVAL_REPROLOGUE` continues when a handler applies, `EVAL_AWAIT` when the unwind suspended (tagged for the caller of `koskari_eval`), `EVAL_RAISE` / `EVAL_FATAL` otherwise. The walk answers `EVAL_RESUME(NULL)` when the live frame has a resume set, at entry and after every pop that reveals one, which is how a failed delivery reaches its consumer (§8.2). The one non-ingress carve-out is a foreign cc-unwind's boundary raise, which `kos_xfer_goal_drive` reports through `out_boundary` and the drain returns as it stands (§4.1).
 
@@ -1065,10 +1065,10 @@ input.
 ```mermaid
 flowchart LR
     LEAVING["LEAVING<br/>unlink dyn_top down to the seam"]
-    LANDING["LANDING<br/>attach target on the seam, set resume pc"]
+    ATTACHING["ATTACHING<br/>attach target on the seam, set resume pc"]
     ENTERING["ENTERING<br/>enter each attached node, outermost first"]
     DELIVERING["DELIVERING<br/>push payload; retire"]
-    LEAVING --> LANDING --> ENTERING --> DELIVERING
+    LEAVING --> ATTACHING --> ENTERING --> DELIVERING
 ```
 
 | Field | Role |
@@ -1077,15 +1077,15 @@ flowchart LR
 | `seam` (+ `seam_id`) | borrowed node on the live chain: leave down to it and attach onto it. NULL means the root. Per caller: §6.2 |
 | `frontier` (+ id), `wait_top` | the node whose thunk the goal waits on, and `dyn_top` when it fired |
 | `payload`, `is_cc_unwind` | what delivery does: push (or stage in the pending slot when the frame delivered to carries a resume), or a boundary raise of a foreign continuation signal |
-| `resume_pc`, `continuation_ref` | `KosOp *` installed at LANDING (NULL when unset); keeps the Python wrapper alive |
-| `restore`, `restore_count` | the captured operand stacks of the shared nodes, put back at LANDING (§6.4) |
+| `resume_pc`, `continuation_ref` | `KosOp *` installed at ATTACHING (NULL when unset); keeps the Python wrapper alive |
+| `restore`, `restore_count` | the captured operand stacks of the shared nodes, put back at ATTACHING (§6.4) |
 | `outer`, `voided_outer` | the waiting enclosing goal; set when LEAVING unlinked a node an outer goal waits on |
 
 ### 6.2 Goal step rules
 
 1. **Wait.** A leave or enter answering REPROLOGUE or AWAIT leaves the goal waiting on that node with `wait_top = dyn_top`; the goal step returns and the thunk runs as an ordinary frame.
 2. **Resume.** The goal step acts again only when `dyn_top == wait_top`: the thunk's frame came and went. Everything above `wait_top` belongs to the thunk, including any nested goal it pushes.
-3. **LANDING is total.** Attaching the target, setting the resume pc, and freeing every outer goal whose frontier LEAVING unlinked (all of them when the seam is NULL) happen in one synchronous step; the attached frames are renumbered for the frame depth limit (§7.7).
+3. **ATTACHING is total.** Attaching the target, setting the resume pc, and freeing every outer goal whose frontier LEAVING unlinked (all of them when the seam is NULL) happen in one synchronous step; the attached frames are renumbered for the frame depth limit (§7.7).
 4. **Re-derive.** LEAVING and ENTERING re-walk from the live chain each pass; a node already entered answers NORMAL, and a node another goal is waiting on is skipped.
 5. **Raise frees the stack.** A step failure enters `process_raise`, which abandons every goal; the chain a walk left behind is a chain to raise through.
 
@@ -1118,17 +1118,17 @@ The **extent contract** for WIND and WITH is total and re-entrant: `enter` / `le
 
 **Shift capture** (`kos_shift_capture(ctx, tag, resume_pc, &k, &prompt)`). One walk from `dyn_top` offers `handle(SHIFT)` to each node and stops at the nearest PROMPT carrying the tag. A PROMPT of another tag is crossed and is captured as region content; a GEN denies with `KoskariPromptUnreachable`; no prompt raises through `kos_raise_prompt_not_found`. The captured chain is a clone of the nodes from `dyn_top` through the prompt, set on one copy of the first FRAME below the prompt. That copy carries the namespace live at the prompt and no operands; it supplies the region's code and pc. Nodes between that frame and the prompt (a WIND, PARAM, TRY or LOOP around the reset, or the DELIM under an applied continuation's prompt) are not captured. Captured nodes are cloned with node id 0, so they are new instances.
 
-**Abort** (`kos_shift_abort(ctx, prompt, k, body_pc)`). `PUSH_SHIFT` then pushes a transfer goal whose seam is the prompt. LEAVING unlinks every node above the prompt with TRANSFER: a WIND after thunk, a WITH exit and a FINALLY body run, and a TRY is dropped. LANDING attaches a new `KOS_DYN_SHIFT` to the prompt, DELIVERING pushes `k`, and the shift block runs from `body_pc`. The SHIFT owns the shift block's operand segment and carries the namespace live at the shift. When a frame lay between `dyn_top` and the prompt (the shift ran in a function called inside the reset), a copy of that frame with `KOS_FRAME_SHIFT_HANDLER` set, no operands and the same namespace is attached above the SHIFT and the shift block runs in it. The prompt's operands are cleared; the continuation holds the region's. The shift block therefore runs outside the region's extents: a `dyn-wind`, `with`, `try` or `parameterize` opened between the reset and the shift is not in effect for it.
+**Abort** (`kos_shift_abort(ctx, prompt, k, body_pc)`). `PUSH_SHIFT` then pushes a transfer goal whose seam is the prompt. LEAVING unlinks every node above the prompt with TRANSFER: a WIND after thunk, a WITH exit and a FINALLY body run, and a TRY is dropped. ATTACHING attaches a new `KOS_DYN_SHIFT` to the prompt, DELIVERING pushes `k`, and the shift block runs from `body_pc`. The SHIFT owns the shift block's operand segment and carries the namespace live at the shift. When a frame lay between `dyn_top` and the prompt (the shift ran in a function called inside the reset), a copy of that frame with `KOS_FRAME_SHIFT_HANDLER` set, no operands and the same namespace is attached above the SHIFT and the shift block runs in it. The prompt's operands are cleared; the continuation holds the region's. The shift block therefore runs outside the region's extents: a `dyn-wind`, `with`, `try` or `parameterize` opened between the reset and the shift is not in effect for it.
 
 **POP_SHIFT.** The SHIFT is `dyn_top`, or the parent of `dyn_top` when the shift block ran in a frame copy; its parent is the prompt. Under a live reset the handler pushes a goal with no target whose seam is the prompt's parent and whose resume pc is the instruction after the reset's `POP_PROMPT`: the SHIFT and the prompt leave, and the shift block's value is the value of the reset. Under an applied continuation's prompt the value goes to the DELIM (below).
 
-**Application of a delimited continuation** (`kos_invoke_continuation`). Every call does the same thing; no call reuses the live chain. It checks the frame depth limit against the captured chain's frame count, clones the captured chain (node id 0 again, so each application is a new set of extent instances), pushes a `KOS_DYN_DELIM` at the call site recording the caller's pc, and pushes a goal with the DELIM as seam and the clone as target. Nothing leaves. LANDING attaches the clone to the DELIM, ENTERING enters each attached node outermost first (WIND before thunks, WITH `__enter__`), and DELIVERING pushes the argument where the shift expression's value was expected.
+**Application of a delimited continuation** (`kos_invoke_continuation`). Every call does the same thing; no call reuses the live chain. It checks the frame depth limit against the captured chain's frame count, clones the captured chain (node id 0 again, so each application is a new set of extent instances), pushes a `KOS_DYN_DELIM` at the call site recording the caller's pc, and pushes a goal with the DELIM as seam and the clone as target. Nothing leaves. ATTACHING attaches the clone to the DELIM, ENTERING enters each attached node outermost first (WIND before thunks, WITH `__enter__`), and DELIVERING pushes the argument where the shift expression's value was expected.
 
-**Return through the DELIM.** A DELIM holds one field, `pc` (`KosDynDelim_RETURN_PC`); the frame it returns into is the first FRAME below it (`kos_dyndelim_return_frame`), derived and never stored. A prompt belongs to an applied continuation when its parent is a FRAME whose parent is a DELIM (`kos_prompt_landed_delim`); no flag marks it. `POP_PROMPT` on such a prompt, and `POP_SHIFT` under one, call `kos_eval_route_delim_return(ctx, delim, val)`: `kos_dyn_unwind_to_node` unlinks down to the DELIM with event SHIFT (a leave that installs a thunk or suspends stores the value on that node as a `KOS_OB_RETURN` obligation and re-enters the route when the node settles), then `kos_dyn_finish_delimited_pop_return` pushes the value on the first operand block below the DELIM, sets the return frame's pc to the DELIM's `pc`, and pops the DELIM. The answer is NORMAL, or REPROLOGUE when the return frame is code-less. No goal is involved. A DELIM with no frame below it (the continuation was called from Python) returns the value from `koskari_eval` through `RESULT_RETURN`.
+**Return through the DELIM.** A DELIM holds one field, `pc` (`KosDynDelim_RETURN_PC`); the frame it returns into is the first FRAME below it (`kos_dyndelim_return_frame`), derived and never stored. A prompt belongs to an applied continuation when its parent is a FRAME whose parent is a DELIM (`kos_prompt_applied_delim`); no flag marks it. `POP_PROMPT` on such a prompt, and `POP_SHIFT` under one, call `kos_eval_route_delim_return(ctx, delim, val)`: `kos_dyn_unwind_to_node` unlinks down to the DELIM with event SHIFT (a leave that installs a thunk or suspends stores the value on that node as a `KOS_OB_RETURN` obligation and re-enters the route when the node settles), then `kos_dyn_finish_delimited_pop_return` pushes the value on the first operand block below the DELIM, sets the return frame's pc to the DELIM's `pc`, and pops the DELIM. The answer is NORMAL, or REPROLOGUE when the return frame is code-less. No goal is involved. A DELIM with no frame below it (the continuation was called from Python) returns the value from `koskari_eval` through `RESULT_RETURN`.
 
 **call/cc capture** (`kos_capture_cc`). The captured chain is a clone of the whole chain from the CC node's parent to the root. The clones keep their source node ids.
 
-**Application of an undelimited continuation.** `kos_chain_common_ancestor` finds the lowest common ancestor of the live chain and the captured chain by node id and phase (clones keep their source's id, so an attached clone of this captured chain counts as the same extent). The ancestor is the seam; `kos_dyn_clone_segment` clones only the captured chain above the ancestor's counterpart, then `kos_chain_detach_template` severs the clone's bottom from the captured chain. LEAVING runs the after thunks and `__exit__`s above the seam, LANDING restores the captured operand stacks of the shared nodes from the seam down to its frame (`kos_xfer_goal_capture_restore` records them at the call, `goal_apply_restore` puts them back), and ENTERING runs the before thunks above the seam. The chains share no node only when the capture context is gone; then the seam is NULL and the whole chain is replaced.
+**Application of an undelimited continuation.** `kos_chain_common_ancestor` finds the lowest common ancestor of the live chain and the captured chain by node id and phase (clones keep their source's id, so an attached clone of this captured chain counts as the same extent). The ancestor is the seam; `kos_dyn_clone_segment` clones only the captured chain above the ancestor's counterpart, then `kos_chain_detach_template` severs the clone's bottom from the captured chain. LEAVING runs the after thunks and `__exit__`s above the seam, ATTACHING restores the captured operand stacks of the shared nodes from the seam down to its frame (`kos_xfer_goal_capture_restore` records them at the call, `goal_apply_restore` puts them back), and ENTERING runs the before thunks above the seam. The chains share no node only when the capture context is gone; then the seam is NULL and the whole chain is replaced.
 
 **Continuation signal.** A `KoskariContinuationApply` reaching `process_raise` goes to `handle_continuation_apply`, which compares the signal's target token with the context's: on a match it calls `kos_invoke_continuation`; otherwise it pushes a cc-unwind goal that leaves the chain and re-raises the signal at the boundary.
 
@@ -1441,7 +1441,7 @@ generator installs (a resume that would not fit raises at the request, as
 Python's `next()` does, with the generator left suspended),
 `kos_dyn_span_attach`, and the coroutine and stepper attachments (`coro.c`,
 `iterate.c`). An await frame is pushed without the check
-(`kos_await_frame_install`). A goal's LANDING and a generator install
+(`kos_await_frame_install`). A goal's ATTACHING and a generator install
 renumber the attached frames (`kos_dyn_renumber_frames`).
 
 ---
@@ -1720,7 +1720,7 @@ carry recyclable durable contexts.
 2. `PyErr_Occurred()` at the next prologue (or after the opcode). `process_raise` runs.
 3. `handle_continuation_apply` sees its own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation(ctx, ...)`.
 4. `kos_invoke_continuation` checks the frame depth limit, clones the captured chain, pushes the DELIM seam (delimited) or finds the common ancestor (undelimited), and pushes a goal (§6.4). `handle_continuation_apply` answers `EVAL_REPROLOGUE()`.
-5. The prologue's `eval_step_drain_goal` processes it: LEAVING unlinks down to the seam (after thunks and `__exit__`s run as frames, the goal waiting on each until it returns; a delimited call's seam is the DELIM at `dyn_top`, so nothing leaves), LANDING attaches the clone and sets the resume pc, ENTERING runs before thunks outermost first, DELIVERING pushes the value, or stages it in the pending slot when the frame delivered to carries a resume the restore put back (the frame was waiting on a delivery when it was captured, and the value is that delivery).
+5. The prologue's `eval_step_drain_goal` processes it: LEAVING unlinks down to the seam (after thunks and `__exit__`s run as frames, the goal waiting on each until it returns; a delimited call's seam is the DELIM at `dyn_top`, so nothing leaves), ATTACHING attaches the clone and sets the resume pc, ENTERING runs before thunks outermost first, DELIVERING pushes the value, or stages it in the pending slot when the frame delivered to carries a resume the restore put back (the frame was waiting on a delivery when it was captured, and the value is that delivery).
 6. Execution resumes at the captured pc with the value on the stack.
 
 ### 9.3.1 Scenario: reset, shift, and two calls of k
@@ -1729,8 +1729,8 @@ Source shape: `(+ 1 (reset (* 2 (shift k (+ (k 3) (k 4))))))`.
 
 1. `PUSH_PROMPT 0` pushes a PROMPT with the default tag. The reset body pushes `2`.
 2. `PUSH_SHIFT 0`: `kos_shift_capture` finds the prompt and clones the chain from `dyn_top` through the prompt onto a copy of the running frame; `kos_shift_abort` pushes a goal with the prompt as seam. The handler ends in REPROLOGUE.
-3. The goal step: nothing lies above the prompt, so LEAVING is empty; LANDING attaches a SHIFT to the prompt; DELIVERING pushes `k`. The shift block runs with `dyn_top` = SHIFT.
-4. `(k 3)`: `kos_invoke_continuation` pushes a DELIM on the SHIFT recording the caller's pc, and a goal attaches a fresh clone above it and pushes `3`. The clone runs `(* 2 3)` and reaches `POP_PROMPT`. `kos_prompt_landed_delim` finds the DELIM; `kos_eval_route_delim_return` unlinks the clone, pushes `6` on the SHIFT's operand segment, sets the frame's pc to the DELIM's `pc`, and pops the DELIM.
+3. The goal step: nothing lies above the prompt, so LEAVING is empty; ATTACHING attaches a SHIFT to the prompt; DELIVERING pushes `k`. The shift block runs with `dyn_top` = SHIFT.
+4. `(k 3)`: `kos_invoke_continuation` pushes a DELIM on the SHIFT recording the caller's pc, and a goal attaches a fresh clone above it and pushes `3`. The clone runs `(* 2 3)` and reaches `POP_PROMPT`. `kos_prompt_applied_delim` finds the DELIM; `kos_eval_route_delim_return` unlinks the clone, pushes `6` on the SHIFT's operand segment, sets the frame's pc to the DELIM's `pc`, and pops the DELIM.
 5. `(k 4)` does the same with a second clone and delivers `8`.
 6. The shift block computes `14` and reaches `POP_SHIFT`. The prompt's parent is not a frame on a DELIM, so this is a live reset: a goal with no target and the prompt's parent as seam unlinks the SHIFT and the PROMPT and delivers `14` at the instruction after `POP_PROMPT`.
 7. The outer `+` produces `15`.
@@ -1741,7 +1741,7 @@ Source shape: `(+ 1 (reset (* 2 (shift k (+ (k 3) (k 4))))))`.
 2. The thunk calls a second continuation. `kos_invoke_continuation` pushes an inner goal; the outer keeps waiting with `wait_top` recorded.
 3. The inner goal proceeds to delivery on the chain above `wait_top`; a delimited inner call returns its region's value to the thunk, which then returns.
 4. The thunk's return settles the wind (`kos_dyn_settle_top`); `dyn_top` is `wait_top` again, and the goal step resumes the outer goal where it left off.
-5. Had the inner LEAVING unlinked the wind the outer was waiting on (an undelimited inner whose common ancestor lies below it), LANDING would have freed the outer goal along with the extent it was moving through.
+5. Had the inner LEAVING unlinked the wind the outer was waiting on (an undelimited inner whose common ancestor lies below it), ATTACHING would have freed the outer goal along with the extent it was moving through.
 
 Tests: `TestDelimitedTransferNested` in `tests/compile/specials/test_continuations.py` and `TestDynWindContinuations` in `tests/compile/specials/test_dyn_wind.py`.
 
@@ -2027,7 +2027,7 @@ struct KosContinuation {
 #### KosXferGoal -- Continuation Transfer State
 
 A goal is a small heap record (`xfer_goal.h`, §6.1) owned by the context
-(`ctx->goal`). It owns its target until LANDING attaches it,
+(`ctx->goal`). It owns its target until ATTACHING attaches it,
 its payload, and its continuation reference; `outer` links the
 waiting enclosing goal. `kos_xfer_goal_traverse` reports those to the GC
 through the context.
@@ -2046,7 +2046,7 @@ struct KosXferGoal {
   KosOp *resume_pc;            /* NULL when unset */
   KosXferRestore *restore;     /* owned array, or NULL */
   size_t restore_count;
-  uint8_t phase;               /* LEAVING, LANDING, ENTERING, DELIVERING */
+  uint8_t phase;               /* LEAVING, ATTACHING, ENTERING, DELIVERING */
   uint8_t is_cc_unwind;
   uint8_t voided_outer;        /* LEAVING unlinked an outer's frontier */
 };
@@ -2068,7 +2068,7 @@ layout compiles to a single `dynchain.o`; the public C API is
 retires into. Per phase: `goal_leave` unlinks `dyn_top` through
 `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER` until the seam is
 `dyn_top` (a root GEN as seam stops there; a missing seam is a `SystemError`);
-`goal_land` restores the captured operand stacks of the live nodes from the
+`goal_attach` restores the captured operand stacks of the live nodes from the
 seam down to its frame (and that frame's registers), attaches the target to
 the seam, renumbers the attached frames, installs the resume pc, and frees
 each outer whose frontier LEAVING unlinked (every outer when the seam is
@@ -2446,7 +2446,7 @@ On continuation transfer from the current chain to a target segment:
 1. **LEAVING**: unlink from `dyn_top` down to the seam, innermost first.
    Each WIND with `entered = 1` runs its `after` thunk; each WITH runs
    `__exit__`; PARAM extents restore.
-2. **LANDING**: attach the target segment to the seam.
+2. **ATTACHING**: attach the target segment to the seam.
 3. **ENTERING**: enter the attached nodes outermost first. Each WIND runs its
    `before` thunk and is marked `entered = 1` when it returns; PARAM extents
    re-bind; multi-shot withs re-enter, single-shot withs do not.
@@ -2463,7 +2463,7 @@ The seam per transfer:
   prompt leave.
 - **Call of an undelimited continuation**: the lowest common ancestor, so
   a wind, parameterize, or with that encloses both the capture point and
-  the call point neither leaves nor re-enters. LANDING restores the
+  the call point neither leaves nor re-enters. ATTACHING restores the
   captured operands of the shared nodes down to the ancestor's frame.
 
 A `dyn-wind` inside a reset whose body shifts and whose shift block

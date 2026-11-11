@@ -18,7 +18,7 @@ A read of an unbound name with no default raises `NameError`.
 A value lives in the enclosing `parameterize` extent first, then in the
 root scope. `parameterize` binds in the running context's own table, so
 concurrent tasks never see each other's bindings. A store with no
-`parameterize` in the way lands in the root scope, shared by every call
+`parameterize` in the way goes into the root scope, shared by every call
 on the thread: the channel for host pre-defines and for values set once
 at startup. A `defer` awaited directly runs under the extents applied at
 the await. A task created from it reads the bindings live at its

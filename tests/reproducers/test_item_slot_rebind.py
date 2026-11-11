@@ -102,7 +102,7 @@ class TestItemSlotRebind(unittest.IsolatedAsyncioTestCase):
         self.assertIn(OpCode.FAST_ITEM_FAST_STORE_FAST, opcodes_of(mod.store))
         first = mod.first
         for i in range(3):
-            # the store lands in the container the row fetched, and the
+            # the store goes into the container the row fetched, and the
             # slot then holds the fresh one the hash bound
             after = await mod.store(i)
             self.assertEqual(after, {})

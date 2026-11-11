@@ -28,7 +28,7 @@ The `@` layout prefix lowers decorator lines to
 ([parser.py:3354](../../koskari/reader/parser.py:3354)). `compile/decorate`
 hoists the name out of a `define` / `define-global` / `define-class` subject,
 rewriting it to `function` / `class` and re-entering itself; its terminal arm
-then routed through `function-compose`, landing `@d1` `@d2` over
+then routed through `function-compose`, placing `@d1` `@d2` over
 `define foo [x] ...` at:
 
 ```koskari
@@ -278,7 +278,7 @@ delivered wrapper answers for the function it wraps -- `__name__`,
 merge, and the `__wrapped__` chain.
 
 That works because koskari `Function` identity attributes are writable
-([func.c](../../koskari/lib/func.c), landed with this branch). Name and
+([func.c](../../koskari/lib/func.c), implemented with this branch). Name and
 qualname writes go to metadata override fields, never to the function's
 semantic name: self-binding keys off the semantic name at call time and it
 must stay fixed after construction, while `repr` follows the override and

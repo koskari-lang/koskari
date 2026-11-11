@@ -140,7 +140,7 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
         await self.check('shape_nested_resets', 6)
 
     async def test_reentrant_inner_abandon(self):
-        """inner shift abandons inside invoked k; value lands at the invoke"""
+        """inner shift abandons inside invoked k; value delivered at the invoke"""
         await self.check('shape_reentrant_inner_abandon', 200)
 
     async def test_reentrant_k_of_k(self):
