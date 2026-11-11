@@ -547,11 +547,11 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
-   ENTERING: from the seam upward, enter each node that wants it. A
-   node already entered answers NORMAL, so a pass after a suspension
-   re-derives its place. Single-shot with nodes are never re-entered by
-   a transfer; multi-shot ones (dyn-with) and winds are, and a param
-   extent is re-bound.
+   ENTERING: from the seam upward, enter each node a transfer runs
+   (KOS_DYN_CAP_WINDS: a wind, a dyn-with, a param extent). A node
+   already entered answers NORMAL, so a pass after a suspension
+   re-derives its place. A node without the cap, a plain with among
+   them, is not re-entered.
 */
 static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
@@ -586,19 +586,7 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
     KosOpResult r;
 
     node = span[--count];
-    if (KosDynNode_IS_PARAM(node)) {
-      if (KosDynParam_SAVED(node))
-        continue;
-      if (kos_dyn_param_wind(ctx, (KosDynParam *) node) < 0) {
-        out = EVAL_RAISE();
-        break;
-      }
-      continue;
-    }
-    if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK))
-      continue;
-    if (KosDynNode_IS_WITH(node)
-        && KosDynWith_SHOT(node) != KOS_DYN_WITH_SHOT_MULTI)
+    if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS))
       continue;
 
     before = KosContext_DYN_TOP(ctx);

@@ -48,8 +48,12 @@ static KosDynWith *kos_dyn_with_allocate(
     return NULL;
 
   {
-    kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
-                     KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK);
+    /* a dyn-with is the multi-shot one: a transfer runs it */
+    uint32_t caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK;
+
+    if (shot == KOS_DYN_WITH_SHOT_MULTI)
+      caps |= KOS_DYN_CAP_WINDS;
+    kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent, caps);
   }
 
   kos_dynnode_use_inline_segment((KosDynNode *) node);

@@ -127,6 +127,11 @@ typedef enum KosDynFlags {
    to the enclosing loop. The one record of the region's enabled state. */
 #define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
 
+/* a transfer runs this node: its leave on the way out, its enter on
+   re-entry. Carried by WIND, PARAM, and a WITH pushed by dyn-with; the
+   kind's own enter and leave do the work (kos_dyn_extent_enter) */
+#define KOS_DYN_CAP_WINDS                    (1u << 4)
+
 /* the node reacts when control returns into it from a frame it owns:
    the extent contract has work for it (WITH, WIND), and it carries an
    obligation slot (KosObligation), what it owes when it is unlinked --
@@ -1722,7 +1727,10 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
 /**
   The extent contract for KOS_DYN_CAP_CONTROL_HOOK nodes (WIND, WITH).
   Total and re-entrant: asking again is always legal, the node never
-  unlinks itself, and the node never reads the transfer state.
+  unlinks itself, and the node never reads the transfer state. enter
+  also serves a PARAM, which a transfer re-enters as it does a WIND
+  (KOS_DYN_CAP_WINDS): it binds synchronously, answering EVAL_NORMAL
+  (also when already bound) or EVAL_RAISE.
 
   enter / leave answer EVAL_NORMAL when the obligation is discharged,
   EVAL_REPROLOGUE when a thunk or __enter__/__exit__ frame was

@@ -928,6 +928,13 @@ KosOpResult kos_dyn_extent_enter(KosContext *ctx, KosDynNode *node) {
       return kos_dyn_with_enter(ctx, (KosDynWith *) node);
     case KOS_DYN_WIND:
       return kos_dyn_wind_enter(ctx, (KosDynWind *) node);
+    case KOS_DYN_PARAM:
+      /* already bound: a pass after a suspension re-derives its place */
+      if (KosDynParam_SAVED(node))
+        return EVAL_NORMAL();
+      if (kos_dyn_param_wind(ctx, (KosDynParam *) node) < 0)
+        return EVAL_RAISE();
+      return EVAL_NORMAL();
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_extent_enter: node kind %u has no enter",
