@@ -2608,33 +2608,28 @@ int kos_shift_capture(
   if (! prompt)
     return kos_raise_prompt_not_found(prompt_id);
 
-  /* Bound the invoke template at the prompt's owning FRAME: clone from
-   * dyn_top down through heritage nodes (WIND, PARAM, ...), the PROMPT,
-   * and the nearest FRAME at-or-below it. Caller frames further down
-   * resolve from the invoke-time environment instead of being replayed.
+  /* Bound the invoke template at the prompt: clone from dyn_top down
+   * through the PROMPT, and set it on one copy of the first FRAME below
+   * the prompt. That frame executes the region, so its copy gives the
+   * landed region its code and mid-region pc. Nothing between that
+   * frame and the prompt is region content: a WIND, PARAM, TRY or LOOP
+   * around the reset is outside it, and for an INVOCATION prompt (one a
+   * k-invocation created) so are the pairing DELIM and the original
+   * prompt. Caller frames further down resolve from the invoke-time
+   * environment.
    *
-   * An INVOCATION prompt has no owning frame of its own: it was created
-   * by a k-invocation (graft instantiation or in-place invoke) and the
-   * nodes below it -- the pairing DELIM, the original prompt, the outer
-   * chain -- are not region content and must not be captured. Bound the
-   * template at the prompt itself and synthesize the baseline frame from
-   * the first frame below it: that frame executes the slice, so it
-   * provides code, and its stack holds the region's pending operands
-   * whenever the prompt does not own a block.
-   *
-   * Its namespace, however, is not the one the region runs in. Bounding
-   * at the prompt drops every NS node between the prompt and that frame
-   * -- the enclosing let/collector scopes -- so the frame's own
-   * namespace would leave the resumed region indexing FAST slots it
+   * The frame's own namespace is not the one the region runs in.
+   * Bounding at the prompt drops every NS node between the prompt and
+   * that frame -- the enclosing let/collector scopes -- so the frame's
+   * own namespace would leave the resumed region indexing FAST slots it
    * does not have. Carry the innermost namespace live at the prompt
    * instead. */
-  KosDynNode *stop;
+  KosDynNode *stop = KosDynNode_PARENT((KosDynNode *) prompt);
   KosDynFrame *baseline_src = NULL;
   PyObject *baseline_ns = NULL;
-  if (KosDynNode_FLAGS((KosDynNode *) prompt) & KOS_DYNF_INVOCATION) {
-    KosDynNode *below = KosDynNode_PARENT((KosDynNode *) prompt);
+  {
+    KosDynNode *below = stop;
 
-    stop = below;
     while (below && ! KosDynNode_NS(below) && ! KosDynNode_IS_FRAME(below))
       below = KosDynNode_PARENT(below);
     baseline_ns = below ? KosDynNode_NS(below) : NULL;
@@ -2643,20 +2638,10 @@ int kos_shift_capture(
       below = KosDynNode_PARENT(below);
     if (! below) {
       PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_SHIFT: no frame below invocation prompt");
+                      "PUSH_SHIFT: no frame below prompt");
       return -1;
     }
     baseline_src = (KosDynFrame *) below;
-  } else {
-    KosDynNode *owning = (KosDynNode *) prompt;
-    while (owning && ! KosDynNode_IS_FRAME(owning))
-      owning = KosDynNode_PARENT(owning);
-    if (! owning) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_SHIFT: no owning frame below prompt");
-      return -1;
-    }
-    stop = KosDynNode_PARENT(owning);
   }
   #if KOS_XFER_TRACE
   {
@@ -2695,6 +2680,18 @@ int kos_shift_capture(
 
     if (! k)
       return -1;
+
+    /* A prompt that owns a block holds the region's operands, and the
+       frame copy's block holds the ones pending outside the reset:
+       not region content, so the copy does not keep them. */
+    if (KosDynNode_STACK((KosDynNode *) prompt)) {
+      KosDynNode *base = KosContinuation_CAPTURED_CHAIN(k);
+
+      while (KosDynNode_PARENT(base))
+        base = KosDynNode_PARENT(base);
+      if (KosDynNode_STACK(base))
+        KosStack_Clear(&KosDynNode_STACK(base));
+    }
 
     {
       uint32_t live_id = kos_dynnode_id((KosDynNode *) prompt);

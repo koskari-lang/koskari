@@ -212,8 +212,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
         k, stores it in stolen, invokes k(10). Continuation resumes: add(10)
         = 10 + amt = 10 + 100 = 110.
 
-        Second seq branch: parameterize amt=200, invoke stolen(9). Continuation
-        resumes and transfers back to original param scope: add(9) = 9 + 100 = 109.
+        Second seq branch: parameterize amt=200, invoke stolen(9). The
+        parameterize around the reset is outside the continuation, so the
+        resumed region reads the application site's amt: add(9) = 9 + 200
+        = 209.
         """
 
         def seq(*args):
@@ -242,7 +244,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertIs(vars(mod).resolve("seq"), seq)
 
         result = await expr()
-        self.assertEqual(result, (None, 101, 110, 109, 102))
+        self.assertEqual(result, (None, 101, 110, 209, 102))
 
 
     async def test_dyn_wind_around_shift_captures_in_place(self):
@@ -400,8 +402,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
         A parameterize established in a caller frame outside the reset's
         owning frame is not captured by the bounded template: remote invoke
         resolves it from the invoke-time dynamic environment (here amt=200,
-        so 7 + 200 = 207). Params between the prompt and its owning frame
-        remain captured (test_delimited_param_outside_reset_not_captured).
+        so 7 + 200 = 207). A param between the prompt and its owning frame
+        is outside the reset too
+        (test_delimited_param_outside_reset_not_captured).
         """
 
         def add(a):
@@ -421,6 +424,75 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, add=add)
         result = await expr()
         self.assertEqual(result, 207)
+
+
+    async def test_wind_outside_reset_same_frame_not_reentered(self):
+        """
+        A dyn-wind around the reset, in the reset's own frame, is outside
+        the continuation: a later application runs neither thunk again
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (let [[captured nil]]
+          (begin
+            (dyn-wind
+              (rec "before")
+              (setq captured (reset (+ 1 (shift k k))))
+              (rec "after"))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 6)
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_try_outside_reset_same_frame_not_reentered(self):
+        """
+        A try around the reset, in the reset's own frame, is outside the
+        continuation: a raise in a later application reaches the
+        application site, not that try's handler
+        """
+
+        def boom():
+            raise ValueError("boom")
+
+        src_str = """
+        (let [[captured nil]]
+          (begin
+            (try
+              (setq captured (reset (begin (shift k k) (boom))))
+              ((e ValueError) "handled"))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, ValueError=ValueError)
+        with self.assertRaises(ValueError):
+            await expr()
+
+
+    async def test_let_around_reset_read_by_remote_application(self):
+        """
+        A let around the reset, in the reset's own frame, binds names the
+        region reads after it resumes: a later application still sees them
+        """
+
+        src_str = """
+        (let [[captured nil]]
+          (begin
+            (let [[x 7]]
+              (setq captured (reset (+ (shift k k) x))))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, 12)
 
 
     async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
