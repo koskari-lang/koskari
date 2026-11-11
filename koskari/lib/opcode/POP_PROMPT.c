@@ -14,39 +14,24 @@
 */
 
 /**
-   POP_PROMPT: arg unused. If returning to an invoker (delimited push model),
-   unwind to call site, push value, resume; else pop the top prompt from the
-   dynamic chain.
+   POP_PROMPT: arg unused. The region is done and its prompt is at
+   dyn_top. The prompt of a landed continuation delivers the region's
+   value to the invoke site through the DELIM the copy landed on; a
+   reset running its own region pops its prompt from the dynamic chain.
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  /* Return bookmark: PUSH-graft (POP_PROMPT) or in-place (INPLACE)
-   * delimited invoke. Invocation prompts (created by a k-invocation)
-   * have no POP_PROMPT instruction of their own -- their completion
-   * routes through the paired delim below, so the walk passes them. A
-   * non-invocation PROMPT ends the walk: that is a live reset whose own
-   * POP_PROMPT this is, and any delim beyond it belongs to an outer
-   * invocation, not to this region. */
+  /* A landed prompt has no reset of its own to complete: the copy's
+     value is the value of the application, and goes to the DELIM. */
   KosDynDelim *ret_delim = NULL;
   {
-    KosDynNode *node;
-    for (node = KosContext_DYN_TOP(ctx); node;
-         node = KosDynNode_PARENT(node)) {
-      if (KosDynNode_IS_PROMPT(node)
-          && ! (KosDynNode_FLAGS(node) & KOS_DYNF_INVOCATION))
-        break;
-      if (! KosDynNode_IS_DELIM(node))
-        continue;
-      uint8_t mode = KosDynDelim_MODE((KosDynDelim *) node);
-      if (mode == KOS_DYN_DELIM_MODE_POP_PROMPT
-          || mode == KOS_DYN_DELIM_MODE_INPLACE) {
-        ret_delim = (KosDynDelim *) node;
-        break;
-      }
-    }
+    KosDynNode *node = KosContext_DYN_TOP(ctx);
+
+    if (node && KosDynNode_IS_PROMPT(node))
+      ret_delim = kos_prompt_landed_delim(node);
   }
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",

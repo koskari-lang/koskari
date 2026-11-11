@@ -18,9 +18,9 @@
    then deliver the result as the region's value.  The handler runs on
    the SHIFT node, or in the frame copy on it when the shift ran in a
    called function, and the SHIFT's parent is the prompt it aborted to.
-   An invocation prompt delivers through its paired DELIM at the invoke
-   site, a live reset resumes past its POP_PROMPT (the pop_pc the
-   prompt recorded at push).
+   The prompt of a landed continuation delivers through its DELIM at
+   the invoke site, a live reset resumes past its POP_PROMPT (the
+   pop_pc the prompt recorded at push).
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
@@ -28,6 +28,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   PyObject *result;
   KosOp *prompt_pop;
   KosDynPrompt *prompt = NULL;
+  KosDynDelim *landed;
   KosXferGoal *goal;
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
@@ -62,36 +63,17 @@ KOS_OP_HANDLER(POP_SHIFT) {
     RESULT_RAISE();
   }
 
-  /* Invocation prompt: created by a k-invocation, so no POP_PROMPT
-     instruction anywhere pairs with it. The handler value IS the value
-     of that k-invocation; deliver it at the invoke site through the
-     paired DELIM bookmark below the prompt (unwinds this SHIFT, the
-     region remnants, and the invocation prompt on the way). */
-  if (KosDynNode_FLAGS((KosDynNode *) prompt) & KOS_DYNF_INVOCATION) {
-    KosDynDelim *pair = NULL;
-    KosDynNode *node = KosDynNode_PARENT((KosDynNode *) prompt);
-
-    while (node && ! KosDynNode_IS_PROMPT(node)) {
-      if (KosDynNode_IS_DELIM(node)) {
-        uint8_t mode = KosDynDelim_MODE((KosDynDelim *) node);
-        if (mode == KOS_DYN_DELIM_MODE_POP_PROMPT
-            || mode == KOS_DYN_DELIM_MODE_INPLACE) {
-          pair = (KosDynDelim *) node;
-          break;
-        }
-      }
-      node = KosDynNode_PARENT(node);
-    }
-    if (! pair) {
-      Py_DECREF(result);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "POP_SHIFT: invocation prompt has no paired delim");
-      RESULT_RAISE();
-    }
-    SAYF("[POP_SHIFT] invocation prompt %u: delivering to paired delim %p",
+  /* The prompt of a landed continuation: no POP_PROMPT instruction
+     pairs with it as its own reset. The handler value IS the value of
+     that k-invocation; deliver it at the invoke site through the DELIM
+     the copy landed on (unwinds this SHIFT, the prompt and the copy's
+     frame on the way). */
+  landed = kos_prompt_landed_delim((KosDynNode *) prompt);
+  if (landed) {
+    SAYF("[POP_SHIFT] landed prompt %u: delivering to delim %p",
          (unsigned) kos_dynnode_id((KosDynNode *) prompt),
-         (void *) pair);
-    RESULT_RELAY(ctx, kos_eval_route_delim_return(ctx, pair, result));
+         (void *) landed);
+    RESULT_RELAY(ctx, kos_eval_route_delim_return(ctx, landed, result));
   }
 
   /* Live reset: the prompt recorded its region's closing pc when

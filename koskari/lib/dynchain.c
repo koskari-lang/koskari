@@ -2458,12 +2458,12 @@ static inline KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
 
    baseline_src, when non-NULL, is cloned and appended at the template
    bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
-   that clone's namespace with the one live at the capture bound. It is the compressed region bottom for
-   a capture bounded at an invocation prompt: the frame executing the
-   region's own code lies below the capture point and must not be
-   captured in place, but the graft needs its code, namespace, and
-   mid-region pc so a return falling through the invocation prompt lands
-   in the copy and runs the remaining region bytecode to POP_PROMPT.
+   that clone's namespace with the one live at the capture bound. It
+   is the compressed region bottom of a shift's capture: the frame
+   executing the region's own code lies below the prompt and is not
+   part of the region, but a landed copy needs its code, namespace and
+   mid-region pc, so a callee returning within the copy lands in it and
+   runs the remaining region bytecode to POP_PROMPT.
 */
 static KosContinuation *kos_continuation_capture_segment(
     KosContext *ctx,
@@ -2612,10 +2612,9 @@ int kos_shift_capture(
    * the prompt. That frame executes the region, so its copy gives the
    * landed region its code and mid-region pc. Nothing between that
    * frame and the prompt is region content: a WIND, PARAM, TRY or LOOP
-   * around the reset is outside it, and for an INVOCATION prompt (one a
-   * k-invocation created) so are the pairing DELIM and the original
-   * prompt. Caller frames further down resolve from the invoke-time
-   * environment.
+   * around the reset is outside it, and for the prompt of a landed
+   * continuation so is the DELIM it landed on. Caller frames further
+   * down resolve from the invoke-time environment.
    *
    * The frame's own namespace is not the one the region runs in.
    * Bounding at the prompt drops every NS node between the prompt and
@@ -2693,47 +2692,12 @@ int kos_shift_capture(
         KosStack_Clear(&KosDynNode_STACK(base));
     }
 
-    {
-      uint32_t live_id = kos_dynnode_id((KosDynNode *) prompt);
-      KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
-      KosDynNode *walk;
-      int below_delim = 0;
-
-      while (pclone
-             && ! (KosDynNode_IS_PROMPT(pclone)
-                   && kos_dynnode_id(pclone) == live_id))
-        pclone = KosDynNode_PARENT(pclone);
-
-      /* Falsify every template prompt's identity, once, here. Invokes
-       * clone the template verbatim (node_id and flags preserved), so
-       * each graft of this k lands as an instance distinct from the
-       * live original and from other ks' grafts, with no per-invoke
-       * renumbering. Grafts of the same k share these ids; that is safe
-       * because grafts land at dyn_top and capture bounds at the
-       * nearest prompt, so a same-id instance can never sit between a
-       * SHIFT and its true delimiter. Beyond the delimiting prompt, the
-       * walk to the owning frame can pass heritage prompts (a reset
-       * inside an outer shift's handler) whose clones ride below as
-       * never-executed padding; their originals stay live, so they must
-       * be falsified too or the landed copy shadows the real one.
-       *
-       * The INVOCATION flag goes on the delimiter and the padding below
-       * it only. A prompt above the delimiter is region content, a
-       * reset of another tag the shift crossed: its own POP_PROMPT runs
-       * in the graft and must pop it as a reset, not walk past it to
-       * the graft's DELIM. */
-      for (walk = KosContinuation_CAPTURED_CHAIN(k); walk;
-           walk = KosDynNode_PARENT(walk)) {
-        if (! KosDynNode_IS_PROMPT(walk))
-          continue;
-        KosDynNode_NODE_ID(walk) = kos_dynnode_mint_id();
-        if (walk == pclone)
-          below_delim = 1;
-        if (below_delim)
-          KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
-      }
-    }
-
+    /* The template's prompts need no marking. Its delimiter sits on
+       the frame copy, which an application lands on a DELIM, and that
+       shape is what POP_PROMPT and POP_SHIFT read
+       (kos_prompt_landed_delim). A prompt above the delimiter is region
+       content, a reset of another tag the shift crossed, and pops as a
+       reset. */
     *out_k = k;
     *out_prompt = prompt;
   }

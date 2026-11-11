@@ -238,6 +238,44 @@ class TestDelimitedContinuations(CevalTest):
         self.assertEqual(result, 16)
 
 
+    async def test_shift_inside_a_copy_landed_from_a_handler(self):
+        """
+        A shift tagged A crosses a default-tag prompt, and its handler
+        invokes k. In the copy that lands, a second shift seeks the
+        default tag: it stops at the copy's inner prompt, which is region
+        content and pops as a reset, while the copy's tag A prompt
+        delivers to the invoke site. (+ 10 5), then (+ 15 100) from the
+        second handler, then (+ 1 115): 116
+        """
+
+        code = [
+            ["VAR", "tag_a"],
+            ["PUSH_PROMPT", 1],
+            ["CONST", 1],
+            ["PUSH_PROMPT", 0],
+            ["CONST", 10],
+            ["VAR", "tag_a"],
+            ["PUSH_SHIFT", 1],
+            ["CONST", 5],
+            ["CALL", 1],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["PUSH_SHIFT", 0],
+            ["CONST", 100],
+            ["CALL", 1],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag_a": object()})
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 116)
+
+
     async def test_prompt_tags_match_by_identity(self):
         """
         Two tags that compare equal are different tags: a shift seeking

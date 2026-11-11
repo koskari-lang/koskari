@@ -542,7 +542,6 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
       "push the invoke's delim");
   invocation = kos_dyn_push_prompt(ctx, Py_True, NULL);
   TEST_ASSERT_NOT_NULL(invocation, "push the invocation prompt");
-  KosDynNode_FLAGS((KosDynNode *) invocation) |= KOS_DYNF_INVOCATION;
   TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, NULL, FAKE_INSN(2)),
                        "push a default-tag prompt");
   TEST_ASSERT_NOT_NULL(

@@ -103,16 +103,11 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
                          the wait ends, never copied to a clone. A
                          goal's LEAVING that unlinks a node carrying it
                          voids the waiting goal (see xfer_goal.c)
-  KOS_DYNF_INVOCATION  - PROMPT: instance created by a k-invocation
-                         (graft instantiation or in-place invoke);
-                         no POP_PROMPT instruction pairs with it, so
-                         delivery routes through the paired DELIM
 */
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,
   KOS_DYNF_GOAL_WAIT   = 0x02,
-  KOS_DYNF_INVOCATION  = 0x08,
 } KosDynFlags;
 
 
@@ -557,8 +552,7 @@ struct KosDynNode {
       /* the POP_PROMPT closing this prompt's region, resolved from the
          PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
          pop_pc + 1; stored resolved because by the time a shift body
-         runs, no live acting pc still points into the extent. NULL on
-         an invocation prompt, which has no region of its own. */
+         runs, no live acting pc still points into the extent. */
       KosOp *pop_pc;
     } prompt;
     struct {
@@ -2290,6 +2284,31 @@ static inline void kos_dynframe_note_parent(KosDynFrame *frame) {
 static inline void kos_dynnode_note_parent(KosDynNode *node) {
   if (KosDynNode_IS_FRAME(node))
     kos_dynframe_note_parent((KosDynFrame *) node);
+}
+
+
+/**
+  The DELIM a prompt delivers through when it is the delimiter of a
+  landed continuation, or NULL for a reset running its own region. A
+  continuation's template is its region down through the delimiting
+  prompt, set on one frame copy, and an application lands it on a DELIM
+  at the call site: so the prompt's parent is a frame whose parent is a
+  DELIM. No POP_PROMPT instruction pairs with such a prompt as its own
+  reset; the region's value goes to the application through the DELIM.
+  The shape is the whole test: a reset's own prompt is pushed onto a
+  node of its frame's extent, never onto a frame sitting on a DELIM,
+  since the code of a landed copy runs above that copy's prompt.
+*/
+static inline KosDynDelim *kos_prompt_landed_delim(KosDynNode *prompt) {
+  KosDynNode *frame = KosDynNode_PARENT(prompt);
+  KosDynNode *delim;
+
+  if (! frame || ! KosDynNode_IS_FRAME(frame))
+    return NULL;
+  delim = KosDynNode_PARENT(frame);
+  if (! delim || ! KosDynNode_IS_DELIM(delim))
+    return NULL;
+  return (KosDynDelim *) delim;
 }
 
 /* A resume is set when the kind is non-NULL; the name is a read-only
