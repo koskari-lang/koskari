@@ -250,8 +250,7 @@ KosOpResult kos_dyn_unwind_return(
     /* Stopping node: a live delimited-invoke bookmark.  The return has
        reached the delimiting reset; leave the DELIM at dyn_top and let the
        caller route val to the k-invocation site.  val is NOT consumed. */
-    if (KosDynNode_IS_DELIM(top)
-        && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL) {
+    if (KosDynNode_IS_DELIM(top)) {
       if (KOS_XFER_TRACE)
         SAYF("[xfer] unwind_return: stopped at DELIM bookmark node=%p",
              (void *) top);
@@ -326,10 +325,7 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
   while (node) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
-    if (KosDynNode_IS_SHIFT(node))
-      return NULL;
-    if (KosDynNode_IS_DELIM(node)
-        && KosDynDelim_RETURN_FRAME((KosDynDelim *) node) != NULL)
+    if (KosDynNode_IS_SHIFT(node) || KosDynNode_IS_DELIM(node))
       return NULL;
     node = KosDynNode_PARENT(node);
   }
@@ -607,21 +603,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
     /* Cap fast check: nodes that intercept RAISE are dispatched to the
        handle phase; everything else goes straight to unwind/pop. */
     if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)) {
-
-    /* In-place delimited return bookmark: the slice raised. Restitch the
-       invoke span and continue the raise from the invoke site. */
-    if (KosDynNode_IS_DELIM(top)) {
-      PyObject *typ = NULL, *val = NULL, *tb = NULL;
-      PyErr_Fetch(&typ, &val, &tb);
-      if (kos_dyn_inplace_restitch(ctx, (KosDynDelim *) top) < 0) {
-        Py_XDECREF(typ);
-        Py_XDECREF(val);
-        Py_XDECREF(tb);
-        return EVAL_FATAL();
-      }
-      PyErr_Restore(typ, val, tb);
-      continue;
-    }
 
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */

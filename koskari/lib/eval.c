@@ -1331,9 +1331,9 @@ static KosOpResult kos_eval_walk_outcome(KosContext *ctx, KosOpResult r) {
 
 
 /**
-   Route a return value to a live delimited-invoke bookmark: a DELIM
-   carrying RETURN_FRAME + RETURN_PC (POP_PROMPT-mode push-graft or
-   INPLACE-mode in-place invoke).  Shared by the POP_PROMPT opcode (the
+   Route a return value to a delimited-invoke bookmark: a DELIM, whose
+   return frame is the first frame below it.  Shared by the POP_PROMPT
+   opcode (the
    reset body completed normally) and the RETURN unwind walk (a return
    crossed the delimiting reset); both deliver val to the k-invocation
    site.  val is a new reference, consumed on every path.
@@ -1348,14 +1348,14 @@ static KosOpResult kos_eval_route_delim_return(
     KosDynDelim *ret_delim,
     PyObject *val) {
 
-  SAYF("[eval] route_delim_return: unwinding to return frame=%p node=%p",
-       (void *) KosDynDelim_RETURN_FRAME(ret_delim),
-       (void *) KosDynDelim_RETURN_NODE(ret_delim));
+  SAYF("[eval] route_delim_return: unwinding to delim=%p return frame=%p",
+       (void *) ret_delim,
+       (void *) kos_dyndelim_return_frame(ret_delim));
 
   {
     KosOpResult wr;
     KosDynNode *pending = NULL;
-    wr = kos_dyn_unwind_to_node(ctx, KosDynDelim_RETURN_NODE(ret_delim),
+    wr = kos_dyn_unwind_to_node(ctx, (KosDynNode *) ret_delim,
                                 KOS_XFER_EVENT_SHIFT, &pending);
     if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
       /* a leave went into a thunk or onto an awaitable; val is stored on
@@ -1380,14 +1380,10 @@ static KosOpResult kos_eval_route_delim_return(
                  KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL");
 
-  if (KosDynDelim_MODE(ret_delim) == KOS_DYN_DELIM_MODE_INPLACE) {
-    if (kos_dyn_finish_inplace_pop_return(ctx, ret_delim, val) < 0)
-      return EVAL_RAISE();
-  } else if (kos_dyn_finish_delimited_pop_return(ctx, ret_delim, val) < 0) {
+  if (kos_dyn_finish_delimited_pop_return(ctx, ret_delim, val) < 0)
     return EVAL_RAISE();
-  }
 
-  /* Both finishes leave val on the invoking frame's stack. A code-less
+  /* The finish leaves val on the invoking frame's stack. A code-less
      invoker (a resume frame that called the continuation) has no pc to
      continue at: the prologue delivers the value on its stack to the
      resume set on it, the way a callee's return reaches it. */

@@ -556,29 +556,13 @@ struct KosDynNode {
       KosOp *pop_pc;
     } prompt;
     struct {
-      uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
-      KosDynNode *chain;  /* owned when mode == INPLACE */
-      /* where the return lands in frame; NULL with no frame, and for a
-         code-less frame, whose resume takes the delivery. frame alone
-         says whether there is a return site */
+      /* Where the return lands in the invoking frame; NULL for a
+         code-less frame, whose resume takes the delivery. The frame is
+         not recorded: it is the first FRAME below the node, found at
+         delivery (kos_dyndelim_return_frame), so a clone of the node
+         landed elsewhere returns into the frame it now sits on. A pc
+         cannot go stale across a clone; a frame pointer can. */
       KosOp *pc;
-      /* The frame control lands in when the invoke comes back from
-         the slice: the invoking frame, borrowed. For an INPLACE invoke
-         it is the frame below the prompt, a frame of the stashed span
-         (a helper the handler called), or the handler snapshot the
-         invoke placed at the span's bottom when the handler's own
-         frame is the invoker and dies with the slice. */
-      KosDynNode *frame;
-      KosDynNode *node;
-      /* INPLACE only: the invoke-site pc and acting pc, restored at
-         restitch (slice execution overwrites both) */
-      KosOp *saved_pc;
-      KosOp *saved_acting_pc;
-      /* the borrowed resume frame's own resume, displaced with its pcs
-         while the slice runs in that frame and restored at the
-         restitch; NULL kind when the frame carried none */
-      const KosResumeKind *saved_resume_kind;
-      void *saved_resume_state;
     } delim;
     struct {
       KosOp *resume_pc;  /* the instruction after POP_CC */
@@ -832,24 +816,15 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
 
 
 /**
-   Allocate a new DELIM marker node for delimited return bookkeeping.
+   Allocate a new DELIM node: the return bookmark an application of a
+   delimited continuation leaves at its call site.
 
    :param parent: parent node in dynamic chain
-   :param mode: KOS_DYN_DELIM_MODE_*
-   :param chain: optional owned chain payload for INPLACE mode
    :param pc: the instruction the return lands on, or NULL
-   :param frame: resume frame payload
-   :param node: resume node payload
 
    :return: new DELIM node, or NULL on error
 */
-KosDynDelim *kos_dyndelim_new(
-   KosDynNode *parent,
-   uint8_t mode,
-   KosDynNode *chain,
-   KosOp *pc,
-   KosDynFrame *frame,
-   KosDynNode *node);
+KosDynDelim *kos_dyndelim_new(KosDynNode *parent, KosOp *pc);
 
 
 /**
@@ -969,12 +944,18 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
 
    :param top: top of segment to clone
    :param stop: stop at this node (not cloned), or NULL to clone all
+   :param fresh_ids: non-zero for a delimited continuation's template
+      and for each copy landed from it: every clone is a new instance,
+      its id minted on first read. Zero for call/cc, whose clones keep
+      their source's id so a landed clone counts as the same extent as
+      the node it was captured from
 
    :return: cloned chain top, or NULL on error
 */
 KosDynNode *kos_dyn_clone_segment(
    KosDynNode *top,
-   KosDynNode *stop);
+   KosDynNode *stop,
+   int fresh_ids);
 
 
 /* === Unified dynamic chain API === */
@@ -1344,15 +1325,12 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
 /**
    Push a DELIM node via kos_dyn_push.
 
+   :param ctx: execution context
+   :param pc: the instruction the return lands on, or NULL
+
    :return: new DELIM node, or NULL on error
 */
-KosDynDelim *kos_dyn_push_delim(
-   KosContext *ctx,
-   uint8_t mode,
-   KosDynNode *chain,
-   KosOp *pc,
-   KosDynFrame *frame,
-   KosDynNode *node);
+KosDynDelim *kos_dyn_push_delim(KosContext *ctx, KosOp *pc);
 
 
 /**
@@ -1366,52 +1344,21 @@ int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
 
 /**
    Complete a delimited POP_PROMPT return after the unwind walk succeeds
-   (non-async). Pushes value onto the delimited return frame's stack, sets
-   PC and frame_top, clears invocation and delimited-return fields.
+   (non-async). Pushes value onto the first operand block below the
+   DELIM, sets the return frame's pc to the DELIM's, and pops the DELIM.
+   The return frame is the first FRAME below the DELIM.
 
    :param ctx: execution context
+   :param delim: the DELIM the landed continuation returns through
    :param value: return value (consumes a reference on success or failure)
 
-   :return: 0 on success, -1 if ctx, value or delimited_return_frame is
-      invalid (sets PyExc_RuntimeError)
+   :return: 0 on success, -1 if ctx, value or delim is invalid or no
+      frame lies below the DELIM (sets PyExc_RuntimeError)
 */
 int kos_dyn_finish_delimited_pop_return(
    KosContext *ctx,
    KosDynDelim *delim,
    PyObject *value);
-
-
-/**
-   Complete an in-place (Path A) delimited POP_PROMPT return. Restores the
-   resume frame's displaced stack/pc from the INPLACE delim, re-links the
-   stashed invoke span above the prompt (which stays on the chain for the
-   shift body's POP_SHIFT), frees the delim, and pushes value at the
-   restored invoke site. Expects the delim at dyn_top.
-
-   :param ctx: context
-   :param delim: INPLACE DELIM node at dyn_top
-   :param value: return value (consumes a reference on success or failure)
-
-   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
-*/
-int kos_dyn_finish_inplace_pop_return(
-   KosContext *ctx,
-   KosDynDelim *delim,
-   PyObject *value);
-
-
-/**
-   Restitch an in-place (Path A) delimited invoke at its INPLACE delim
-   without delivering a value: restore the pc and resume of the frame
-   below the prompt, re-link the stashed invoke span above the prompt
-   and renumber its frames, free the delim, and restore invoke-site live
-   registers. Used by the POP_PROMPT
-   value return and by exception propagation out of the slice. Expects
-   the delim at dyn_top.
-
-   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
-*/
-int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim);
 
 
 /**
@@ -2319,29 +2266,21 @@ static inline KosDynDelim *kos_prompt_landed_delim(KosDynNode *prompt) {
 #define KosDynPrompt_TAG(p)              (((KosDynNode *)(p))->u.prompt.tag)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
 
-#define KOS_DYN_DELIM_MODE_NONE       0u
-
-/* 1u retired: K_RETURN (pre-walk delim scan in the RETURN opcode).  The
-   return walk now stops naturally at any DELIM with a live bookmark. */
-#define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
-
-/* In-place (Path A) delimited return: chain stashes the detached invoke
-   span; saved_pc/saved_acting_pc hold the invoke-site pcs. */
-#define KOS_DYN_DELIM_MODE_INPLACE    3u
-
-#define KosDynDelim_MODE(d)        (((KosDynNode *)(d))->u.delim.mode)
-#define KosDynDelim_RETURN_CHAIN(d) (((KosDynNode *)(d))->u.delim.chain)
 #define KosDynDelim_RETURN_PC(d)   (((KosDynNode *)(d))->u.delim.pc)
-#define KosDynDelim_RETURN_FRAME_NODE(d) (((KosDynNode *)(d))->u.delim.frame)
-#define KosDynDelim_RETURN_FRAME(d) ((KosDynFrame *) (KosDynDelim_RETURN_FRAME_NODE(d)))
-#define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
-#define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
-#define KosDynDelim_SAVED_ACTING_PC(d) \
-  (((KosDynNode *)(d))->u.delim.saved_acting_pc)
-#define KosDynDelim_SAVED_RESUME_KIND(d) \
-  (((KosDynNode *)(d))->u.delim.saved_resume_kind)
-#define KosDynDelim_SAVED_RESUME_STATE(d) \
-  (((KosDynNode *)(d))->u.delim.saved_resume_state)
+
+
+/**
+  The frame a DELIM's continuation returns into: the first FRAME below
+  the node, the frame that made the application. Derived, never stored,
+  so it is right wherever the node or a clone of it sits.
+*/
+static inline KosDynFrame *kos_dyndelim_return_frame(KosDynDelim *delim) {
+  KosDynNode *node = KosDynNode_PARENT((KosDynNode *) delim);
+
+  while (node && ! KosDynNode_IS_FRAME(node))
+    node = KosDynNode_PARENT(node);
+  return (KosDynFrame *) node;
+}
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

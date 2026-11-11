@@ -425,6 +425,40 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(result, 207)
 
 
+    async def test_call_cc_from_a_landed_copy_returns_below_its_delim(self):
+        """
+        A full continuation captured inside a landed delimited copy holds
+        that copy's return bookmark. Applied after the copy has returned,
+        it lands the copy again, and the copy's value is delivered once
+        more to the frame the bookmark sits on, at the first invoke
+        site: 1 + 10 the first time, 1 + 100 the second
+        """
+
+        calls = []
+
+        def fewer(seq, n):
+            # a wrong landing would re-run the application without end
+            calls.append(list(seq))
+            if len(calls) > 4:
+                raise AssertionError(f"re-entered without end: {calls}")
+            return len(seq) < n
+
+        src_str = """
+        (let [[captured nil] [saved nil] [seen #[]]]
+          (begin
+            (setq captured
+              (reset
+                (+ 1 (begin (shift k k)
+                            (let/cc c (setq saved c) 10)))))
+            (seen.append (call captured 0))
+            (cond ((fewer seen 2) (call saved 100)) (else: nil))
+            seen))
+        """
+        expr, mod = self.compile_expr(src_str, fewer=fewer)
+        result = await expr()
+        self.assertEqual(result, [11, 101])
+
+
     async def test_wind_outside_reset_same_frame_not_reentered(self):
         """
         A dyn-wind around the reset, in the reset's own frame, is outside

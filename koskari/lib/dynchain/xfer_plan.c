@@ -76,9 +76,11 @@ int kos_invoke_continuation(
 
   /* The landed segment is a fresh clone of the captured template, so
      each invoke instantiates the template anew (multi-shot, e.g.
-     (sum (k 0) (k 1))); the template itself is never landed. */
+     (sum (k 0) (k 1))); the template itself is never landed. A
+     delimited copy's nodes are new instances; an undelimited one's
+     keep the ids the seam and the restore records match by. */
   KosDynNode *target = kos_dyn_clone_segment(
-      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop);
+      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop, is_delimited);
   if (! target && KosContinuation_CAPTURED_CHAIN(k) != tmpl_stop) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
@@ -92,48 +94,9 @@ int kos_invoke_continuation(
   if (target && tmpl_stop)
     kos_chain_detach_template(target, tmpl_stop);
 
-  /* An INPLACE delim in the landed segment whose return frame is in
-     neither its own stashed span nor the segment resumes into the live
-     frame of that id, shared at or below the seam. */
-  for (KosDynNode *node = target; node; node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_DELIM(node)
-        || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
-        || kos_dyndelim_return_frame_in_span((KosDynDelim *) node))
-      continue;
-    KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
-    if (! want)
-      continue;
-    int inside = 0;
-    for (KosDynNode *cand = target; cand; cand = KosDynNode_PARENT(cand)) {
-      if (cand == want) {
-        inside = 1;
-        break;
-      }
-    }
-    if (inside)
-      continue;
-    KosDynNode *live = seam;
-    while (live && ! (KosDynNode_IS_FRAME(live)
-                      && kos_dynnode_id(live) == kos_dynnode_id(want)))
-      live = KosDynNode_PARENT(live);
-    if (! live) {
-      kos_dynchain_free(target, NULL);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "continuation: the frame a resumed shift handler"
-                      " returns into is no longer live");
-      return -1;
-    }
-    KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) = live;
-  }
-
   if (is_delimited) {
     KosDynDelim *ret_delim = kos_dyn_push_delim(
-        ctx,
-        KOS_DYN_DELIM_MODE_POP_PROMPT,
-        NULL,
-        KosContext_FRAME(ctx) ? KosContext_PC(ctx) : NULL,
-        KosContext_FRAME(ctx),
-        NULL);
+        ctx, KosContext_FRAME(ctx) ? KosContext_PC(ctx) : NULL);
     if (! ret_delim) {
       kos_dynchain_free(target, NULL);
       if (! PyErr_Occurred())
@@ -141,7 +104,6 @@ int kos_invoke_continuation(
                         "failed to push delimited return marker");
       return -1;
     }
-    KosDynDelim_RETURN_NODE(ret_delim) = (KosDynNode *) ret_delim;
     seam = (KosDynNode *) ret_delim;
     if (KOS_XFER_TRACE)
       SAYF("[xfer] invoke: push DELIM dyn_top=%p frame_top=%p",

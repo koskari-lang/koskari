@@ -543,28 +543,6 @@ static void kos_dyn_debug_check_walk(
 
 
 /**
-   Clear every unwind cache -- segment back links and frame back
-   links -- on nodes in [from, stop), walking parent links. Call when
-   a span of nodes is re-spliced into the live chain at a place other
-   than where it was stamped: the caches were recorded against the
-   chain shape at install time. A frozen GEN span is the exception:
-   its interior links name nodes of the same span, which travel with
-   it, so the freeze keeps them and kos_dyn_gen_install rewrites only
-   the bottom frame's two, the ones that name the consumer.
-   Over-clearing is always safe -- a NULL cache falls back to the
-   chain walk.
-*/
-static void kos_dyn_clear_unwind_caches(KosDynNode *from, KosDynNode *stop) {
-  for (KosDynNode *n = from; n && n != stop; n = KosDynNode_PARENT(n)) {
-    if (KosDynNode_STACK(n))
-      KosSegment_BACK(KosDynNode_STACK(n)) = NULL;
-    if (KosDynNode_IS_FRAME(n))
-      KosDynFrame_BACK_FRAME(n) = NULL;
-  }
-}
-
-
-/**
    Region kinds own an operand segment; transfer bookmarks (cc,
    cc_raise, delim, shift, gen) stay transparent.
    The compiler emits bookmark pushes mid-expression -- PUSH_CC inside
@@ -1266,43 +1244,10 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop) {
    the clone's innermost parent set to stop. Used for continuation capture and
    INSTALL/PUSH segments. On failure, frees partial clone.
 */
-/**
-   An INPLACE delim inside a cloned segment (an undelimited capture
-   taken inside a slice an in-place invoke resumed) borrows the frame
-   its handler resumes in. When that frame's clone is in the same
-   segment, the delim clone takes the clone, so the template refers to
-   itself and not into the live chain; a frame outside the segment is
-   left for the caller to resolve against the live chain by id (the
-   landing does). A frame of the delim's own stashed span was remapped
-   by the delim's clone and needs nothing here.
-*/
-static void kos_dyn_remap_delim_frames(KosDynNode *chain, KosDynNode *stop) {
-
-  for (KosDynNode *node = chain; node && node != stop;
-       node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_DELIM(node)
-        || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
-        || kos_dyndelim_return_frame_in_span((KosDynDelim *) node))
-      continue;
-
-    KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
-    if (! want)
-      continue;
-    for (KosDynNode *cand = chain; cand && cand != stop;
-         cand = KosDynNode_PARENT(cand)) {
-      if (KosDynNode_IS_FRAME(cand)
-          && kos_dynnode_id(cand) == kos_dynnode_id(want)) {
-        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) = cand;
-        break;
-      }
-    }
-  }
-}
-
-
 KosDynNode *kos_dyn_clone_segment(
     KosDynNode *top,
-    KosDynNode *stop) {
+    KosDynNode *stop,
+    int fresh_ids) {
 
   SAYF("[xfer] clone_segment enter top=%p stop=%p", (void *) top, (void *) stop);
   if (! top || top == stop)
@@ -1325,6 +1270,9 @@ KosDynNode *kos_dyn_clone_segment(
       kos_dynchain_free(cloned_top, NULL);
       return NULL;
     }
+    /* a new instance: the clone base took the source's id */
+    if (fresh_ids)
+      KosDynNode_NODE_ID(cloned) = 0;
     if (cloned_prev) {
       cloned_prev->parent = cloned;
       kos_dynnode_note_parent(cloned_prev);
@@ -1342,7 +1290,6 @@ KosDynNode *kos_dyn_clone_segment(
     kos_dynnode_note_parent(cloned_prev);
   }
 
-  kos_dyn_remap_delim_frames(cloned_top, stop);
   return cloned_top;
 }
 
@@ -2481,7 +2428,9 @@ static KosContinuation *kos_continuation_capture_segment(
   KosContinuation *k;
   PyObject *token;
 
-  captured_chain = kos_dyn_clone_segment(segment_top, stop);
+  /* a delimited template's nodes are new instances, and so is each
+     copy landed from it; call/cc clones keep their source's id */
+  captured_chain = kos_dyn_clone_segment(segment_top, stop, delimited);
   if (! captured_chain && segment_top != stop) {
     /* a clone that refused names the boundary; the construct and the
        prompt are known here */
@@ -2498,6 +2447,8 @@ static KosContinuation *kos_continuation_capture_segment(
         kos_dynchain_free(captured_chain, NULL);
       return NULL;
     }
+    /* a new instance, as the rest of a delimited template is */
+    KosDynNode_NODE_ID(base) = 0;
     /* The clone carries the frame's own namespace; the region runs in
        the one live at the prompt (enclosing let/collector scopes that
        the capture bound excluded). */
@@ -2514,21 +2465,6 @@ static KosContinuation *kos_continuation_capture_segment(
       kos_dynnode_note_parent(bottom);
     } else {
       captured_chain = (KosDynNode *) base;
-    }
-
-    /* A delim of the segment returning into the frame below the bound
-       names baseline_src, which the segment's own remap could not
-       find. base is that frame's clone; point the delim at it, so the
-       template refers only to its own nodes and never into the live
-       chain. */
-    for (KosDynNode *node = captured_chain;
-         node && node != (KosDynNode *) base;
-         node = KosDynNode_PARENT(node)) {
-      if (KosDynNode_IS_DELIM(node)
-          && KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node)
-             == (KosDynNode *) baseline_src)
-        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) =
-            (KosDynNode *) base;
     }
   }
 
@@ -3026,8 +2962,9 @@ int kos_continuation_traverse(
 
 
 /**
-   After POP_PROMPT on delimited invoke return path: push value on saved frame,
-   restore PC, and remove the DELIM marker node.
+   After POP_PROMPT on delimited invoke return path: push value on the
+   first operand block below the DELIM, set the pc of the first frame
+   below it, and remove the DELIM marker node.
 */
 int kos_dyn_finish_delimited_pop_return(
     KosContext *ctx,
@@ -3053,11 +2990,11 @@ int kos_dyn_finish_delimited_pop_return(
     Py_DECREF(value);
     return -1;
   }
-  ret_frame = KosDynDelim_RETURN_FRAME(delim);
+  ret_frame = kos_dyndelim_return_frame(delim);
   if (! ret_frame) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_finish_delimited_pop_return: "
-                    "delimited_return_frame is NULL");
+                    "no frame below the delim");
     Py_DECREF(value);
     return -1;
   }
@@ -3094,141 +3031,6 @@ int kos_dyn_finish_delimited_pop_return(
     kos_dyn_resync_chain(ctx);
   }
   return 0;
-}
-
-
-/**
-   Restitch an in-place (Path A) delimited invoke at its INPLACE delim:
-   restore the region frame's displaced pc and resume, re-link the
-   stashed invoke span above the prompt (which stays on the chain for
-   the shift body's POP_SHIFT), free the delim, and restore the
-   invoke-site live registers. Shared by value return (POP_PROMPT) and
-   exception propagation out of the slice. Expects the delim at dyn_top.
-*/
-int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim) {
-
-  KosDynNode *prompt;
-  KosDynNode *span;
-  KosDynFrame *ret_frame;
-  KosDynFrame *region_frame;
-  KosOp *ret_pc;
-
-  if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)
-      || KosDynDelim_MODE(delim) != KOS_DYN_DELIM_MODE_INPLACE) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_inplace_restitch: not an INPLACE delim");
-    return -1;
-  }
-  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) delim) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_inplace_restitch: delim not at dyn_top");
-    return -1;
-  }
-
-  prompt = KosDynNode_PARENT((KosDynNode *) delim);
-  span = KosDynDelim_RETURN_CHAIN(delim);
-  ret_frame = KosDynDelim_RETURN_FRAME(delim);
-  ret_pc = KosDynDelim_RETURN_PC(delim);
-  if (! prompt || ! KosDynNode_IS_PROMPT(prompt) || ! span || ! ret_frame) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_inplace_restitch: "
-                    "inconsistent INPLACE delim state");
-    return -1;
-  }
-
-  /* Region frame whose state was displaced: nearest FRAME at-or-below
-   * the prompt, the same walk the invoke made. */
-  {
-    KosDynNode *node = prompt;
-    while (node && ! KosDynNode_IS_FRAME(node))
-      node = KosDynNode_PARENT(node);
-    if (! node) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_inplace_restitch: no frame below prompt");
-      return -1;
-    }
-    region_frame = (KosDynFrame *) node;
-  }
-
-  /* Restore the pc the region frame had at the invoke, and the resume
-     it carried into it. The frame's operand segment was never
-     displaced: the slice ran over the invocation prompt's copy of the
-     region's operands, which went with that node. */
-  KosDynFrame_PC(region_frame) = KosDynDelim_SAVED_PC(delim);
-  KosDynFrame_RESUME_KIND(region_frame) = KosDynDelim_SAVED_RESUME_KIND(delim);
-  KosDynFrame_RESUME_STATE(region_frame) = KosDynDelim_SAVED_RESUME_STATE(delim);
-  KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
-  KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
-
-  /* POP_PROMPT runs in the region frame, so the live registers still
-     hold the spent slice's pc: load the restored state into them, or
-     the resync below flushes the slice's pc back over it. The reload
-     after the resync covers only an invoker that is this same frame; a
-     code-less invoker (a resume frame that called the continuation)
-     returns into this one later, at the restored pc. */
-  if (KosContext_FRAME(ctx) == region_frame)
-    kos_dyn_resync_load_regs(ctx, region_frame);
-
-  /* Re-link the stashed invoke span above the prompt; the prompt stays
-   * on the chain for the shift body's POP_SHIFT. The span's bottom is
-   * the SHIFT, or the handler snapshot the invoke placed under it when
-   * the handler's own frame died with the slice: either way it hangs
-   * straight off the prompt. The span's frames take their depths from
-   * the prompt's: a snapshot taken above other frames in the region now
-   * stands directly above the prompt. */
-  {
-    KosDynNode *bottom = span;
-
-    while (KosDynNode_PARENT(bottom))
-      bottom = KosDynNode_PARENT(bottom);
-    KosDynNode_PARENT(bottom) = prompt;
-    kos_dynnode_note_parent(bottom);
-    KosDynDelim_RETURN_CHAIN(delim) = NULL;
-    kos_dyn_renumber_frames(span, prompt, kos_dyn_frame_depth_at(prompt));
-
-    /* The re-linked span's unwind-cache back links predate the stash;
-       clear them and let the walk answer. */
-    kos_dyn_clear_unwind_caches(span, prompt);
-  }
-
-  KosDynFrame_PC(ret_frame) = ret_pc;
-  KosDynFrame_ACTING_PC(ret_frame) = KosDynDelim_SAVED_ACTING_PC(delim);
-  kos_dyn_commit_dyn_top(ctx, span);
-
-  KosDynNode_PARENT((KosDynNode *) delim) = NULL;
-  kos_dyndelim_free(delim);
-
-  kos_dyn_resync_chain(ctx);
-  /* rebuild leaves live PCs alone when the frame is unchanged; load the
-   * invoke-site return pc explicitly. */
-  if (KosContext_FRAME(ctx) == ret_frame)
-    kos_dyn_resync_load_regs(ctx, ret_frame);
-
-  return 0;
-}
-
-
-/**
-   Complete an in-place (Path A) delimited POP_PROMPT return. See dynchain.h.
-*/
-int kos_dyn_finish_inplace_pop_return(
-    KosContext *ctx,
-    KosDynDelim *delim,
-    PyObject *value) {
-
-  if (! value) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_inplace_pop_return: value is NULL");
-    return -1;
-  }
-
-  if (kos_dyn_inplace_restitch(ctx, delim) < 0) {
-    Py_DECREF(value);
-    return -1;
-  }
-
-  /* StackPUSH consumes the value reference, on failure as well. */
-  return KosContext_StackPUSH(ctx, value);
 }
 
 
