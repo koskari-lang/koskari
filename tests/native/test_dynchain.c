@@ -355,6 +355,8 @@ static int test_dyndelim_return_frame_is_the_frame_below(void) {
     KosDynNode *clone;
 
     TEST_ASSERT_NOT_NULL(ns, "create ns");
+    /* each frame takes a reference to the namespace */
+    Py_INCREF(ns);
     here = kos_dynframe_new(NULL, NULL, ns);
     there = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(here, "create a frame");
@@ -381,7 +383,6 @@ static int test_dyndelim_return_frame_is_the_frame_below(void) {
     kos_dyndelim_free((KosDynDelim *) clone);
     kos_dynchain_free((KosDynNode *) delim, NULL);
     kos_dynframe_free(there);
-    Py_DECREF(ns);
 
     return 0;
 }
