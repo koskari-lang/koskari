@@ -24,7 +24,9 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 
 import pytest
 
-from koskari.lib import Code, FormalsSpec, NamespaceSpec
+from koskari.exceptions import KoskariPromptNotFound
+from koskari.lib import (
+    Code, FormalsSpec, NamespaceSpec, default_prompt_tag)
 from tests import make_callable
 from tests.lib.opcode import CevalTest, _op, build_code, build_expr
 
@@ -174,8 +176,8 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_tagged_shift_passes_inner_prompt_graft(self):
         """
-        A shift with tag 1 inside a prompt with tag 0 inside a prompt
-        with tag 1: the handler's value k is delivered at the outer
+        A shift tagged A inside a default-tag prompt inside a prompt
+        tagged A: the handler's value k is delivered at the outer
         prompt, and invoking k from there re-enters the region through
         the inner prompt, whose own POP_PROMPT pops it as a reset.
         (+ 1 5) then (+ 6 10): 16. Delivery at the inner prompt would
@@ -183,10 +185,12 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         code = [
-            ["PUSH_PROMPT", 1],
+            ["VAR", "tag_a"],
+            ["PUSH_PROMPT", None],
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
-            ["PUSH_SHIFT", 1],
+            ["VAR", "tag_a"],
+            ["PUSH_SHIFT", None],
             ["POP_SHIFT", 0],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
@@ -197,7 +201,7 @@ class TestDelimitedContinuations(CevalTest):
             ["CALL", 1],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code)
+        code_obj, ns = build_expr(code, values={"tag_a": object()})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 16)
@@ -213,10 +217,12 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         code = [
-            ["PUSH_PROMPT", 1],
+            ["VAR", "tag_a"],
+            ["PUSH_PROMPT", None],
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
-            ["PUSH_SHIFT", 1],
+            ["VAR", "tag_a"],
+            ["PUSH_SHIFT", None],
             ["CONST", 5],
             ["CALL", 1],
             ["POP_SHIFT", 0],
@@ -227,10 +233,82 @@ class TestDelimitedContinuations(CevalTest):
             ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code)
+        code_obj, ns = build_expr(code, values={"tag_a": object()})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 16)
+
+
+    async def test_prompt_tags_match_by_identity(self):
+        """
+        Two tags that compare equal are different tags: a shift seeking
+        one does not stop at a prompt carrying the other, and the
+        failure names the tag it sought
+        """
+
+        tag_a = [1]
+        tag_b = [1]
+        code = [
+            ["VAR", "tag_a"],
+            ["PUSH_PROMPT", None],
+            ["VAR", "tag_b"],
+            ["PUSH_SHIFT", None],
+            ["POP_SHIFT", 0],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(
+            code, values={"tag_a": tag_a, "tag_b": tag_b})
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await expr()
+        self.assertIs(caught.exception.tag, tag_b)
+
+
+    async def test_stack_tag_is_not_a_captured_operand(self):
+        """
+        A tag an instruction takes from the stack is gone before the
+        prompt is pushed or the continuation captured: the region's one
+        pending operand is the 1, so (k 5) is 6. The default tag given
+        as an object reaches the prompt the constant 0 made
+        """
+
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["CONST", 1],
+            ["VAR", "tag"],
+            ["PUSH_SHIFT", None],
+            ["CONST", 5],
+            ["CALL", 1],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag": default_prompt_tag})
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 6)
+
+
+    async def test_prompt_tag_constant_other_than_0_or_none_refused(self):
+        """
+        A prompt instruction's constant selects the default tag (0) or
+        the stack (None); a tag is never a pool value
+        """
+
+        code = [
+            ["PUSH_PROMPT", 1],
+            ["CONST", 1],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(RuntimeError) as caught:
+            await expr()
+        self.assertEqual("prompt tag constant must be 0 or None",
+                         str(caught.exception))
 
 
 class TestUndelimitedContinuations(CevalTest):

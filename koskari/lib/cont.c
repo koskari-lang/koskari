@@ -184,7 +184,7 @@ static KosOpResult call_call_continuation(
   }
 
   /* Undelimited: check liveness before apply or raise. */
-  if (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED) {
+  if (! KosContinuation_DELIMITED(k)) {
     PyObject *token_ref = KosContinuation_TOKEN_REF(k);
     int target_dead = 0;
     if (! token_ref) {

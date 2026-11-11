@@ -398,20 +398,33 @@ static int kos_load_capture_excs(void) {
 }
 
 
+/* === The default prompt tag === */
+
+
+/* The tag a prompt instruction's constant 0 names: a gensym made at
+   module init, so no source spelling reaches it. */
+static PyObject *default_prompt_tag = NULL;
+
+
+PyObject *kos_default_prompt_tag(void) {
+  return default_prompt_tag;
+}
+
+
 /**
    Raise KoskariPromptNotFound for a capture walk that exhausted the
-   chain without meeting a prompt matching prompt_id.
+   chain without meeting a prompt tagged tag.
 */
-static int kos_raise_prompt_not_found(uint32_t prompt_id) {
+static int kos_raise_prompt_not_found(PyObject *tag) {
   PyObject *exc;
 
   if (kos_load_capture_excs())
     return -1;
 
   exc = PyObject_CallFunction(
-      exc_prompt_not_found, "sIs",
+      exc_prompt_not_found, "sOs",
       "shift has no enclosing reset",
-      (unsigned int) prompt_id, "shift");
+      tag, "shift");
   if (! exc)
     return -1;
   PyErr_SetObject(exc_prompt_not_found, exc);
@@ -425,7 +438,7 @@ static int kos_raise_prompt_not_found(uint32_t prompt_id) {
    node that denied handle(SHIFT), or one whose clone refused because
    its call is in flight. fmt takes the boundary word once. The refuse
    site does not know which prompt the walk was seeking, and a clone
-   site does not know which construct is capturing, so prompt_id is
+   site does not know which construct is capturing, so the tag is
    left None and operation may be NULL for None; kos_capture_note
    fills them in when the capture owner regains control.
 */
@@ -464,12 +477,12 @@ static void kos_raise_prompt_unreachable(
 
 
 /**
-   Note the seeking prompt id and the capturing construct on an
-   in-flight KoskariPromptUnreachable: the prompt id when the capture
-   is delimited, the operation when the refuse site left it None. Any
-   other in-flight exception is left untouched.
+   Note the sought prompt tag and the capturing construct on an
+   in-flight KoskariPromptUnreachable: the tag when the capture is
+   delimited (tag is NULL for call/cc), the operation when the refuse
+   site left it None. Any other in-flight exception is left untouched.
 */
-static void kos_capture_note(uint32_t prompt_id, const char *operation) {
+static void kos_capture_note(PyObject *tag, const char *operation) {
   PyObject *typ;
   PyObject *val;
   PyObject *tb;
@@ -481,15 +494,8 @@ static void kos_capture_note(uint32_t prompt_id, const char *operation) {
   PyErr_Fetch(&typ, &val, &tb);
   PyErr_NormalizeException(&typ, &val, &tb);
 
-  if (prompt_id != KOS_PROMPT_ID_UNDELIMITED) {
-    PyObject *pid = PyLong_FromUnsignedLong(prompt_id);
-
-    if (pid) {
-      if (PyObject_SetAttrString(val, "prompt_id", pid))
-        PyErr_Clear();
-      Py_DECREF(pid);
-    }
-  }
+  if (tag && PyObject_SetAttrString(val, "tag", tag))
+    PyErr_Clear();
 
   {
     PyObject *have = PyObject_GetAttrString(val, "operation");
@@ -2376,13 +2382,13 @@ static KosContinuation *cont_freelist = NULL;
 
 /**
    Allocate or reuse a KosContinuation struct and wire captured chain, resume
-   pc, graft id, token ref. Callers: kos_shift_capture,
+   pc, delimited bit, token ref. Callers: kos_shift_capture,
    kos_capture_cc, kos_continuation_clone.
 */
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
     KosOp *resume_pc,
-    uint32_t prompt_id,
+    int delimited,
     PyObject *token_ref) {
 
   KosContinuation *k = cont_freelist;
@@ -2403,7 +2409,7 @@ static KosContinuation *kos_continuation_create(
 
   KosContinuation_CAPTURED_CHAIN(k) = captured_chain;
   KosContinuation_RESUME_PC(k) = resume_pc;
-  KosContinuation_PROMPT_ID(k) = prompt_id;
+  KosContinuation_DELIMITED(k) = delimited ? 1 : 0;
   KosContinuation_TOKEN_REF(k) = token_ref;
   if (KosContinuation_TOKEN_REF(k))
     Py_INCREF(KosContinuation_TOKEN_REF(k));
@@ -2456,7 +2462,8 @@ static inline KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
 
 /**
    Clone segment_top..stop, detach template, wire KosContinuation. Caller
-   supplies prompt_id and no_frame_err text.
+   supplies the sought prompt tag (NULL for call/cc, which makes the
+   continuation undelimited) and no_frame_err text.
 
    baseline_src, when non-NULL, is cloned and appended at the template
    bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
@@ -2472,7 +2479,7 @@ static KosContinuation *kos_continuation_capture_segment(
     KosDynNode *segment_top,
     KosDynNode *stop,
     KosOp *resume_pc,
-    uint32_t prompt_id,
+    PyObject *tag,
     KosDynFrame *baseline_src,
     PyObject *baseline_ns,
     const char *no_frame_err) {
@@ -2486,8 +2493,7 @@ static KosContinuation *kos_continuation_capture_segment(
   if (! captured_chain && segment_top != stop) {
     /* a clone that refused names the boundary; the construct and the
        prompt are known here */
-    kos_capture_note(prompt_id, prompt_id == KOS_PROMPT_ID_UNDELIMITED
-                     ? "call/cc" : "shift");
+    kos_capture_note(tag, tag ? "shift" : "call/cc");
     return NULL;
   }
   if (captured_chain)
@@ -2551,7 +2557,7 @@ static KosContinuation *kos_continuation_capture_segment(
   k = kos_continuation_create(
       captured_chain,
       resume_pc,
-      prompt_id,
+      tag != NULL,
       token);
   if (! k) {
     if (captured_chain)
@@ -2569,7 +2575,7 @@ static KosContinuation *kos_continuation_capture_segment(
 */
 int kos_shift_capture(
     KosContext *ctx,
-    uint32_t prompt_id,
+    PyObject *tag,
     KosOp *resume_pc,
     KosContinuation **out_k) {
 
@@ -2588,7 +2594,7 @@ int kos_shift_capture(
       KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_SHIFT);
 
       if (hr == KOS_HANDLE_ERROR) {
-        kos_capture_note(prompt_id, "shift");
+        kos_capture_note(tag, "shift");
         return -1;
       }
       if (hr == KOS_HANDLE_CONSUMED) {
@@ -2597,7 +2603,7 @@ int kos_shift_capture(
                           "handle(SHIFT) consumed before reaching prompt");
           return -1;
         }
-        if (KosDynPrompt_ID((KosDynPrompt *) node) == prompt_id) {
+        if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag) {
           prompt = (KosDynPrompt *) node;
           break;
         }
@@ -2606,7 +2612,7 @@ int kos_shift_capture(
     }
   }
   if (! prompt)
-    return kos_raise_prompt_not_found(prompt_id);
+    return kos_raise_prompt_not_found(tag);
 
   /* Bound the invoke template at the prompt: clone from dyn_top down
    * through the PROMPT, and set it on one copy of the first FRAME below
@@ -2673,7 +2679,7 @@ int kos_shift_capture(
         KosContext_DYN_TOP(ctx),
         stop,
         resume_pc,
-        prompt_id,
+        tag,
         baseline_src,
         baseline_ns,
         "PUSH_SHIFT: no frame in captured chain");
@@ -2812,7 +2818,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
         segment_top,
         NULL,
         KosDynCC_RESUME_PC(cc),
-        KOS_PROMPT_ID_UNDELIMITED,
+        NULL,
         NULL,
         NULL,
         "CAPTURE_CC: no frame in captured segment");
@@ -3313,27 +3319,47 @@ int kos_dyn_finish_inplace_pop_return(
 
 
 /**
-   Module init: param sentinel singleton for parameterize unset markers.
+   Module init: param sentinel singleton for parameterize unset markers,
+   and the default prompt tag, which the module also exports as
+   default_prompt_tag.
 */
 int koskari_dynchain_init(PyObject *mod) {
-  (void) mod;
+  PyObject *name;
 
   Py_CLEAR(_param_sentinel_unset);
   _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
   if (! _param_sentinel_unset)
     return -1;
+
+  Py_CLEAR(default_prompt_tag);
+  name = PyUnicode_FromString("default-prompt-tag");
+  if (! name)
+    return -1;
+  default_prompt_tag = KosGensym_FromString(name, NULL);
+  Py_DECREF(name);
+  if (! default_prompt_tag)
+    return -1;
+
+  /* PyModule_AddObject steals on success only */
+  Py_INCREF(default_prompt_tag);
+  if (PyModule_AddObject(mod, "default_prompt_tag",
+                         default_prompt_tag) < 0) {
+    Py_DECREF(default_prompt_tag);
+    return -1;
+  }
   return 0;
 }
 
 
 /**
-   Interpreter shutdown: clear the param sentinel and drain the dyn_node
-   and continuation freelists.
+   Interpreter shutdown: clear the param sentinel and the default
+   prompt tag, and drain the dyn_node and continuation freelists.
 */
 int koskari_dynchain_clear(PyObject *mod) {
   (void) mod;
 
   Py_CLEAR(_param_sentinel_unset);
+  Py_CLEAR(default_prompt_tag);
 
   while (dyn_freelist) {
     KosDynNode *next = KosDynNode_PARENT(dyn_freelist);

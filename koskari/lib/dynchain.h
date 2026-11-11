@@ -550,7 +550,9 @@ struct KosDynNode {
       struct KosDynNode *back_frame;
     } frame;
     struct {
-      uint32_t prompt_id;
+      /* the tag a shift finds this prompt by, compared by identity;
+         owned */
+      PyObject *tag;
       /* the POP_PROMPT closing this prompt's region, resolved from the
          PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
          pop_pc + 1; stored resolved because by the time a shift body
@@ -765,7 +767,7 @@ typedef struct KosDynNode KosDynGen;
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosOp *resume_pc;             /* the instruction to resume at */
-  uint32_t prompt_id;           /* target prompt tag */
+  uint8_t delimited;            /* 1 = shift capture, 0 = call/cc */
   uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
 
@@ -782,7 +784,7 @@ struct KosContinuation {
 
 #define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
-#define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
+#define KosContinuation_DELIMITED(k)       (((KosContinuation *)(k))->delimited)
 #define KosContinuation_LIVE_SLICE_CONSUMED(k) \
   (((KosContinuation *)(k))->live_slice_consumed)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
@@ -843,11 +845,20 @@ void kos_dynframe_free(KosDynFrame *frame);
    Allocate a new prompt node.
 
    :param parent: parent node in dynamic chain
-   :param prompt_id: tag for matching (0 = default)
+   :param tag: the prompt's tag, matched by identity; a reference is
+      taken
 
    :return: new prompt node, or NULL on error
 */
-KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id);
+KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag);
+
+
+/**
+   The tag reset and shift use when none is given: the one a prompt
+   instruction's constant 0 names. Borrowed; lives from module init to
+   module clear.
+*/
+PyObject *kos_default_prompt_tag(void);
 
 
 /**
@@ -1342,7 +1353,8 @@ int kos_dyn_pop_frame(KosContext *ctx);
    Push a prompt delimiter onto the dynamic chain.
 
    :param ctx: execution context
-   :param prompt_id: tag for matching (0 = default)
+   :param tag: the prompt's tag, matched by identity; a reference is
+      taken
    :param pop: the POP_PROMPT closing the region (from the PROMPT
       extent at the push site); POP_SHIFT resumes at pop + 1
 
@@ -1350,7 +1362,7 @@ int kos_dyn_pop_frame(KosContext *ctx);
 */
 KosDynPrompt *kos_dyn_push_prompt(
     KosContext *ctx,
-    uint32_t prompt_id,
+    PyObject *tag,
     KosOp *pop);
 
 
@@ -1998,20 +2010,17 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx);
   and creates a KosContinuation.
 
   :param ctx: context
-  :param prompt_id: target prompt tag
+  :param tag: the tag of the prompt to capture up to, nearest first,
+     matched by identity; borrowed
   :param out_k: output for captured continuation
 
   :return: 0 on success, -1 on error
 */
 int kos_shift_capture(
    KosContext *ctx,
-   uint32_t prompt_id,
+   PyObject *tag,
    KosOp *resume_pc,
    KosContinuation **out_k);
-
-
-/** Sentinel prompt_id for undelimited (call/cc) continuations. */
-#define KOS_PROMPT_ID_UNDELIMITED ((uint32_t)-1)
 
 
 /**
@@ -2284,7 +2293,7 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
 #define KosDynFrame_RESUME_NAME(f)                                        \
   (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->name : NULL)
 
-#define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
+#define KosDynPrompt_TAG(p)              (((KosDynNode *)(p))->u.prompt.tag)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u

@@ -86,13 +86,19 @@ static int test_dynframe_clone(void) {
 
 static int test_dynprompt_new_free(void) {
     /* Test prompt allocation and freeing */
-    KosDynPrompt *prompt = kos_dynprompt_new(NULL, 123);
+    PyObject *tag = PyLong_FromLong(300123);
+    TEST_ASSERT_NOT_NULL(tag, "create tag");
+
+    KosDynPrompt *prompt = kos_dynprompt_new(NULL, tag);
     TEST_ASSERT_NOT_NULL(prompt, "create prompt");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(prompt), KOS_DYN_PROMPT, "prompt kind is PROMPT");
-    TEST_ASSERT_EQ(KosDynPrompt_ID(prompt), 123, "prompt id is set");
+    TEST_ASSERT_SAME(KosDynPrompt_TAG(prompt), tag, "prompt tag is set");
+    TEST_ASSERT_EQ(Py_REFCNT(tag), 2, "the prompt owns a tag reference");
 
     kos_dynprompt_free(prompt);
+    TEST_ASSERT_EQ(Py_REFCNT(tag), 1, "the free releases the tag");
+    Py_DECREF(tag);
 
     return 0;
 }
@@ -243,9 +249,9 @@ static int test_dynforeach_new_free(void) {
 
 static int test_chain_free(void) {
     /* Test freeing a chain of nodes */
-    KosDynPrompt *p1 = kos_dynprompt_new(NULL, 1);
-    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, 2);
-    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, 3);
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, Py_None);
+    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
+    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, Py_False);
 
     TEST_ASSERT_NOT_NULL(p1, "create prompt 1");
     TEST_ASSERT_NOT_NULL(p2, "create prompt 2");
@@ -260,9 +266,9 @@ static int test_chain_free(void) {
 
 static int test_chain_clone_segment(void) {
     /* Test cloning a chain segment */
-    KosDynPrompt *p1 = kos_dynprompt_new(NULL, 1);
-    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, 2);
-    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, 3);
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, Py_None);
+    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
+    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, Py_False);
 
     TEST_ASSERT_NOT_NULL(p1, "create prompt 1");
     TEST_ASSERT_NOT_NULL(p2, "create prompt 2");
@@ -275,12 +281,13 @@ static int test_chain_clone_segment(void) {
 
     /* Verify clone structure */
     TEST_ASSERT_EQ(KosDynNode_KIND(cloned), KOS_DYN_PROMPT, "cloned top is prompt");
-    TEST_ASSERT_EQ(KosDynPrompt_ID(cloned), 3, "cloned has p3 id");
+    TEST_ASSERT_SAME(KosDynPrompt_TAG(cloned), Py_False,
+                     "cloned has p3 tag");
 
     KosDynNode *cloned_parent = KosDynNode_PARENT(cloned);
     TEST_ASSERT_NOT_NULL(cloned_parent, "cloned has parent");
-    TEST_ASSERT_EQ(KosDynPrompt_ID(cloned_parent), 2,
-                   "cloned parent has p2 id");
+    TEST_ASSERT_SAME(KosDynPrompt_TAG(cloned_parent), Py_True,
+                     "cloned parent has p2 tag");
 
     /* The bottom of the clone should point to p1 (the stop node) */
     TEST_ASSERT_SAME(KosDynNode_PARENT(cloned_parent), p1, "clone bottom points to stop");
@@ -525,18 +532,18 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
   KosContext_EvalEnter(ctx, NULL);
 
-  /* frame <- invoke's delim <- invocation prompt (tag 1) <- prompt
-     (tag 0) <- in-place delim <- graft return delim; the last two
+  /* frame <- invoke's delim <- invocation prompt (tag True) <- prompt
+     (tag None) <- in-place delim <- graft return delim; the last two
      return into frame */
   TEST_ASSERT_NOT_NULL(
       kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT, NULL,
                          FAKE_INSN(1), frame, NULL),
       "push the invoke's delim");
-  invocation = kos_dyn_push_prompt(ctx, 1, NULL);
+  invocation = kos_dyn_push_prompt(ctx, Py_True, NULL);
   TEST_ASSERT_NOT_NULL(invocation, "push the invocation prompt");
   KosDynNode_FLAGS((KosDynNode *) invocation) |= KOS_DYNF_INVOCATION;
-  TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, 0, FAKE_INSN(2)),
-                       "push a tag 0 prompt");
+  TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, Py_None, FAKE_INSN(2)),
+                       "push a second prompt of another tag");
   TEST_ASSERT_NOT_NULL(
       kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_INPLACE, NULL,
                          FAKE_INSN(1), frame, NULL),
@@ -546,7 +553,7 @@ static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
                          FAKE_INSN(1), frame, NULL),
       "push a graft return delim returning into frame");
 
-  TEST_ASSERT_EQ(kos_shift_capture(ctx, 1, FAKE_INSN(0), &k), 0,
+  TEST_ASSERT_EQ(kos_shift_capture(ctx, Py_True, FAKE_INSN(0), &k), 0,
                  "the shift binds at the invocation prompt");
   TEST_ASSERT_NOT_NULL(k, "a continuation is captured");
 

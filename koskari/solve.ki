@@ -30,6 +30,7 @@ continuation multiplies the search.
 
 
 import-from koskari.exceptions KoskariContinuationError KoskariPromptNotFound
+import-from koskari.lib default_prompt_tag
 
 
 (declare-exports SearchError NoActiveSearch
@@ -57,10 +58,11 @@ class NoActiveSearch [SearchError]:
 (define-parameter amb-stop-marker None)
 
 
-; compile/reset and compile/shift delimit with prompt tag 0. A capture
-; failure carrying this id failed against the search delimiter; any
-; other id belongs to a foreign delimiter and is not ours to interpret.
-(var search-prompt-tag 0)
+; compile/reset and compile/shift delimit with the default prompt tag.
+; A capture failure carrying this tag failed against the search
+; delimiter; any other tag belongs to a foreign delimiter and is not
+; ours to interpret.
+(var search-prompt-tag default_prompt_tag)
 
 
 def amb [choices]:
@@ -83,7 +85,7 @@ def amb [choices]:
         out
 
   except [e KoskariPromptNotFound]:
-    if (== e.prompt_id search-prompt-tag):
+    if (is? e.tag search-prompt-tag):
       raise (NoActiveSearch "amb requires an enclosing solve or solve-first")
     else:
       raise
@@ -99,7 +101,7 @@ def fail []:
   try:
     shift k #()
   except [e KoskariPromptNotFound]:
-    if (== e.prompt_id search-prompt-tag):
+    if (is? e.tag search-prompt-tag):
       raise (NoActiveSearch "fail requires an enclosing solve or solve-first")
     else:
       raise

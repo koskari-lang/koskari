@@ -32,7 +32,7 @@
    the region's operands without needing to know where they start.
    Callers: kos_dyn_push_prompt.
 */
-KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
+KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
 
   KosDynPrompt *prompt = kos_dynnode_alloc();
   if (! prompt)
@@ -40,7 +40,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER);
-  KosDynPrompt_ID(prompt) = prompt_id;
+  KosDynPrompt_TAG(prompt) = Py_NewRef(tag);
   KosDynPrompt_POP_PC(prompt) = NULL;
   kos_dynnode_use_inline_segment((KosDynNode *) prompt);
   return prompt;
@@ -60,7 +60,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 */
 static KosDynPrompt *kos_dynprompt_new_invocation(
     KosDynNode *parent,
-    uint32_t prompt_id) {
+    PyObject *tag) {
 
   KosDynPrompt *prompt = kos_dynnode_alloc();
   if (! prompt)
@@ -69,14 +69,15 @@ static KosDynPrompt *kos_dynprompt_new_invocation(
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER);
   KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
-  KosDynPrompt_ID(prompt) = prompt_id;
+  KosDynPrompt_TAG(prompt) = Py_NewRef(tag);
   KosDynPrompt_POP_PC(prompt) = NULL;
   return prompt;
 }
 
 
 /**
-   Clone prompt id for captured segments.
+   Clone a prompt for captured segments: the same tag, by a reference
+   of its own.
 */
 static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
@@ -86,29 +87,28 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! clone)
     return NULL;
 
-  KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
+  KosDynPrompt_TAG(clone) = Py_XNewRef(KosDynPrompt_TAG(prompt));
   KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   return clone;
 }
 
 
 /**
-   Return node to freelist.
+   Release the tag and return the node to the freelist.
 */
 void kos_dynprompt_free(KosDynPrompt *prompt) {
   if (! prompt)
     return;
 
+  Py_CLEAR(KosDynPrompt_TAG(prompt));
   kos_dynnode_return_to_freelist((KosDynNode *) prompt);
 }
 
 
 static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 
-  if (snapshot_set_uint(data, "prompt_id",
-                        KosDynPrompt_ID((KosDynPrompt *) node)) < 0)
-    return -1;
-  return 0;
+  return snapshot_set_obj(data, "tag",
+                          KosDynPrompt_TAG((KosDynPrompt *) node));
 }
 
 
@@ -117,11 +117,11 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 */
 KosDynPrompt *kos_dyn_push_prompt(
     KosContext *ctx,
-    uint32_t prompt_id,
+    PyObject *tag,
     KosOp *pop) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
+  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), tag);
   if (! prompt)
     return NULL;
 
@@ -161,13 +161,11 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
 
 
 /**
-   GC traverse a KOS_DYN_PROMPT: nothing beyond the base node; the generic
-   traverse already covers the owned segment.
+   GC traverse a KOS_DYN_PROMPT: the tag; the generic traverse already
+   covers the owned segment.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  (void) node;
-  (void) visit;
-  (void) arg;
+  Py_VISIT(KosDynPrompt_TAG(node));
   return 0;
 }
 

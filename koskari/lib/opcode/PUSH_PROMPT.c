@@ -14,8 +14,11 @@
 */
 
 /**
-   PUSH_PROMPT: arg = constant index of prompt_id. Push a delimited prompt
-   onto the dynamic chain for shift/reset. The region's closing pc is
+   PUSH_PROMPT: arg = constant index of the tag selector: 0 for the
+   default prompt tag, None for a tag popped from the stack. Push a
+   delimited prompt onto the dynamic chain for shift/reset. The tag is
+   popped before the prompt is pushed, so it is not an operand of the
+   region or of the block around it. The region's closing pc is
    resolved from the PROMPT extent here, once, and stored on the node;
    POP_SHIFT reads the answer instead of re-deriving it from a pc that
    slice execution has long since moved.
@@ -23,18 +26,24 @@
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
   KOS_SYNC_PC(ctx, insn);
-  uint32_t prompt_id;
+  PyObject *tag;
+  KosDynPrompt *prompt;
   KosOp *pop;
 
-  if (get_prompt_id_from_insn(ctx, insn, &prompt_id) < 0)
+  if (get_prompt_tag_from_insn(ctx, insn, &tag) < 0)
     RESULT_RAISE();
 
   /* the POP_PROMPT closing the extent, for POP_SHIFT's live reset */
   if (kos_site_extent_close(ctx, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
-                            &pop) < 0)
+                            &pop) < 0) {
+    Py_DECREF(tag);
     RESULT_RAISE();
+  }
 
-  if (! kos_dyn_push_prompt(ctx, prompt_id, pop))
+  /* the prompt takes its own reference */
+  prompt = kos_dyn_push_prompt(ctx, tag, pop);
+  Py_DECREF(tag);
+  if (! prompt)
     RESULT_RAISE();
   RESULT_NEXT(ctx);
 }

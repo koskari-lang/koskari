@@ -493,22 +493,22 @@ class KoskariContinuationError(KoskariException):
     continuation-using call must not silently swallow these
     """
 
-    def __init__(self, message, prompt_id=None, operation=None):
+    def __init__(self, message, tag=None, operation=None):
         super().__init__(message)
         self.message = message
-        self.prompt_id = prompt_id
+        self.tag = tag
         self.operation = operation
 
 
 @builtin("KoskariPromptNotFound")
 class KoskariPromptNotFound(KoskariContinuationError):
     """
-    No prompt matching the requested id exists on the dynamic chain.
+    No prompt with the requested tag exists on the dynamic chain.
 
     The construct in operation (shift) has no enclosing delimiter;
-    establish one. prompt_id identifies the delimiter the capture was
-    seeking, letting a library recognize a failure against its own
-    delimiter and leave foreign failures alone
+    establish one. tag is the prompt tag the capture was seeking,
+    compared by identity, letting a library recognize a failure against
+    its own delimiter and leave foreign failures alone
     """
 
     pass
@@ -524,9 +524,9 @@ class KoskariPromptUnreachable(KoskariContinuationError):
     the denying node (for example a generator boundary)
     """
 
-    def __init__(self, message, prompt_id=None, operation=None,
+    def __init__(self, message, tag=None, operation=None,
                  boundary=None):
-        super().__init__(message, prompt_id, operation)
+        super().__init__(message, tag, operation)
         self.boundary = boundary
 
 

@@ -14,7 +14,9 @@
 */
 
 /**
-   PUSH_SHIFT: arg = constant index of prompt_id. Capture the continuation
+   PUSH_SHIFT: arg = constant index of the tag selector: 0 for the
+   default prompt tag, None for a tag popped from the stack before the
+   capture, so it is not among the captured operands. Capture the continuation
    from POP_SHIFT+1 to POP_PROMPT (via extent) when the prompt lies in
    acceptable chain heritage (kos_shift_capture locates it and offers
    handle(SHIFT) en route in one walk), push a SHIFT node on the current
@@ -25,21 +27,25 @@
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
   KOS_SYNC_PC(ctx, insn);
-  uint32_t prompt_id;
+  PyObject *tag;
   KosContinuation *k = NULL;
   KosOp *resume;
+  int captured;
 
-  if (get_prompt_id_from_insn(ctx, insn, &prompt_id) < 0)
+  if (get_prompt_tag_from_insn(ctx, insn, &tag) < 0)
     RESULT_RAISE();
 
   resume = kos_shift_ic_for((PyObject *) KosContext_FrameCode(ctx),
                             KosOp_PC(insn));
   if (! resume) {
+    Py_DECREF(tag);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
     RESULT_RAISE();
   }
 
-  if (kos_shift_capture(ctx, prompt_id, resume, &k) < 0)
+  captured = kos_shift_capture(ctx, tag, resume, &k);
+  Py_DECREF(tag);
+  if (captured < 0)
     RESULT_RAISE();
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);

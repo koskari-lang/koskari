@@ -421,9 +421,9 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(PUSH_PROMPT, 1, CONST)         // arg = prompt_id constant pool index; cache: extent close pc
+OP(PUSH_PROMPT, 1, CONST)         // arg = tag selector constant (0 default tag, None tag on TOS); cache: extent close pc
 OP(POP_PROMPT, 0, NOARG)          // pop prompt from dynamic chain
-OP(PUSH_SHIFT, 0, CONST)          // arg = prompt_id; capture continuation, enter shift block
+OP(PUSH_SHIFT, 0, CONST)          // arg = tag selector constant (0 default tag, None tag on TOS); capture continuation, enter shift block
 OP(POP_SHIFT, 0, NOARG)           // pop shift block; return from handler without invoking k
 
 // undelimited continuation (call/cc) block

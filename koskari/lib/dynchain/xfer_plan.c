@@ -206,7 +206,7 @@ static int kos_delimited_invoke_inplace(
      slice bound at it and its completion routes through the delim. */
   KosDynPrompt *invocation_prompt = kos_dynprompt_new_invocation(
       (KosDynNode *) delim,
-      KosDynPrompt_ID(prompt));
+      KosDynPrompt_TAG(prompt));
   if (! invocation_prompt) {
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
@@ -316,7 +316,7 @@ int kos_invoke_continuation(
      Only the first invoke can run in place (it consumes the live slice);
      re-invokes fall through to the PUSH graft, which instantiates the
      captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))). */
-  if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
+  if (KosContinuation_DELIMITED(k)
       && ! KosContinuation_LIVE_SLICE_CONSUMED(k)) {
     KosDynFrame *nested_frame = NULL;
 
@@ -327,8 +327,7 @@ int kos_invoke_continuation(
   /* Delimited k(value): the caller stays on the chain and the segment
      lands on a DELIM bookmark that routes the slice's completion back
      to this invoke site. Undelimited: the whole chain is replaced. */
-  int is_delimited =
-      (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
+  int is_delimited = KosContinuation_DELIMITED(k);
 
   /* Undelimited: the seam is the lowest common ancestor of the live
      chain and the template, matched by node id and by phase, so

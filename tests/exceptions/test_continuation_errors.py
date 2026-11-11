@@ -60,18 +60,18 @@ class TestContinuationErrorAttributes(unittest.TestCase):
     def test_base_attributes(self):
         exc = KoskariContinuationError("nope", 5, "shift")
         self.assertEqual(exc.message, "nope")
-        self.assertEqual(exc.prompt_id, 5)
+        self.assertEqual(exc.tag, 5)
         self.assertEqual(exc.operation, "shift")
         self.assertEqual(str(exc), "nope")
 
     def test_base_attribute_defaults(self):
         exc = KoskariContinuationError("nope")
-        self.assertIsNone(exc.prompt_id)
+        self.assertIsNone(exc.tag)
         self.assertIsNone(exc.operation)
 
     def test_unreachable_boundary(self):
         exc = KoskariPromptUnreachable("nope", 0, "shift", "generator")
-        self.assertEqual(exc.prompt_id, 0)
+        self.assertEqual(exc.tag, 0)
         self.assertEqual(exc.operation, "shift")
         self.assertEqual(exc.boundary, "generator")
 

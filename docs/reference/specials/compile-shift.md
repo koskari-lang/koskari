@@ -36,9 +36,9 @@ own exception under the `KoskariContinuationError` category (see
   capture does not cross the boundary. The denying boundary is recorded on the
   exception's `boundary` attribute.
 
-Both carry `prompt_id` (the delimiter id the capture was seeking) and
-`operation` (the surface construct, `shift`). A library that establishes its
-own delimiter can use `prompt_id` to recognize failures against it and
+Both carry `tag` (the prompt tag the capture was seeking, compared by
+identity) and `operation` (the surface construct, `shift`). A library that
+establishes its own delimiter can use `tag` to recognize failures against it and
 translate them into its own vocabulary, as `koskari.solve` does with
 `NoActiveSearch`.
 
