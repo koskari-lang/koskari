@@ -1767,10 +1767,11 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   (void) insn;
 
   if (unlikely(! gen)) {
+    /* an applied continuation's region can yield where no generator
+       runs: an ordinary error at the yield */
     Py_DECREF(val);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "yield outside generator: no generator node on chain");
-    return EVAL_FATAL();
+    PyErr_SetString(PyExc_RuntimeError, "yield outside generator");
+    RESULT_RAISE();
   }
 
   /* The freeze, then the delivery to a flattened consumer, or the
@@ -3267,9 +3268,9 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
 
     if (unlikely(! gen)) {
       Py_DECREF(res.val);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "yield outside generator: no generator node on chain");
-      return EVAL_FATAL();
+      PyErr_SetString(PyExc_RuntimeError, "yield outside generator");
+      KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
+      return apply_resume_result(ctx, r);
     }
     KOS_TRACE_POST_OP_WRAP(event_yield,
         r = eval_event_yield(ctx, gen, res.val));
