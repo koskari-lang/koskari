@@ -126,16 +126,17 @@ int kos_shift_abort(
     target = (KosDynNode *) handler;
   }
 
-  /* The region's operands are in the continuation; the prompt keeps
-     none for the handler to find. */
-  if (KosDynNode_STACK((KosDynNode *) prompt))
-    KosStack_Clear(&KosDynNode_STACK((KosDynNode *) prompt));
-
   /* a failure frees target */
   goal = kos_xfer_goal_new(target, (KosDynNode *) prompt, k, body_pc,
                            NULL, 0);
   if (! goal)
     return -1;
+
+  /* The region's operands are in the continuation, but they stay on
+     the prompt until the abort can no longer be cancelled: a finally
+     body that raises, breaks or returns on the way out leaves the
+     region running on them. ATTACHING drops them. */
+  goal->drop_seam_operands = 1;
   kos_xfer_goal_push(ctx, goal);
   return 0;
 }

@@ -65,6 +65,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->phase = KOS_GOAL_LEAVING;
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
   goal->voided_outer = 0;
+  goal->drop_seam_operands = 0;
   return goal;
 }
 
@@ -488,6 +489,12 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 
   int had_target = goal->target != NULL;
+
+  /* dyn_top is the seam. For a shift's abort that is its prompt, and
+     the region's operands on it went with the continuation: the leave
+     is done, so nothing can resume the region on them now. */
+  if (goal->drop_seam_operands && KosDynNode_STACK(goal->seam))
+    KosStack_Clear(&KosDynNode_STACK(goal->seam));
 
   if (goal->target) {
     KosDynNode *bottom = goal->target;

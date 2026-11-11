@@ -1390,7 +1390,9 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
    prompt, that frame was part of the region and is left with it, so a
    copy of it (same code, the live namespace, no operands) is attached to the
    SHIFT for the handler to run in. The region's operands on the prompt
-   are dropped: the continuation holds its own copy.
+   are dropped once the abort reaches the prompt: the continuation holds
+   its own copy, and until then a leave cancelled on the way out leaves
+   the region running on them.
 
    Pushes a transfer goal; the caller answers REPROLOGUE.
 

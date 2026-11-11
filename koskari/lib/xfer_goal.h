@@ -109,6 +109,9 @@ struct KosXferGoal {
   /* LEAVING unlinked an outer's frontier; ATTACHING retires the voided
      outers */
   uint8_t voided_outer;
+  /* a shift's abort: ATTACHING empties the seam, the prompt, whose
+     operands went with the continuation */
+  uint8_t drop_seam_operands;
 };
 
 
