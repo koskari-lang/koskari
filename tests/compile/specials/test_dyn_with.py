@@ -180,8 +180,8 @@ class TestDynWithShiftUnwind(SpecialsTestCase):
 
     async def test_shift_result_delivery_runs_exit_once(self):
         """
-        a shift body completing inside a dyn-with delivers its value to
-        the reset and runs the manager's __exit__ exactly once
+        a shift's abort out of a dyn-with runs the manager's __exit__
+        exactly once, and the handler's value is the reset's
         """
 
         events = []
@@ -227,10 +227,9 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
 
     async def test_shift_result_delivery_awaits_exit(self):
         """
-        a shift body completing inside a dyn-with whose __aexit__
-        suspends leaves the transfer waiting on the node; the second
-        send finishes __aexit__ and delivers the shift result to the
-        reset
+        a shift's abort out of a dyn-with whose __aexit__ suspends
+        leaves the transfer waiting on the node; the second send
+        finishes __aexit__, and the handler's value is the reset's
         """
 
         events = []

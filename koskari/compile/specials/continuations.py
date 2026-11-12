@@ -15,8 +15,9 @@
 koskari.compile.specials.continuations
 
 Special form handlers for compile/call/cc, compile/let/cc,
-compile/capture/cc, compile/reset, compile/shift, compile/return,
-compile/yield, and compile/await.
+compile/capture/cc, compile/reset, compile/reset-at, compile/shift,
+compile/shift-at, compile/return, compile/yield, compile/await, and
+compile/yield-from.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

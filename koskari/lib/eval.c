@@ -728,8 +728,8 @@ void kos_eval_prepare_boundary_raise(KosContext *ctx) {
 
 
 /**
-   Intercept a KoskariContinuationApply exception and install the appropriate
-   transfer plan.  PyErr must be set to KoskariContinuationApply on entry.
+   Intercept a KoskariContinuationApply exception and push the matching
+   transfer goal.  PyErr must be set to KoskariContinuationApply on entry.
 
    Own-token path: the continuation targets this eval context.  Extract the
    continuation and resume value, clear PyErr, and call
@@ -1342,7 +1342,7 @@ static PyObject *kos_import_module(
    CHECK_* - comparison / jump
    OBJECT_* - object protocol
    PUSH_*, POP_* - blocks, regions, NS
-   SHIFT, CALL on DelimitedContinuation, prompt - continuations
+   RESET, SHIFT, CALL on DelimitedContinuation - continuations
  */
 
 
@@ -1716,7 +1716,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   }
 
   /* The general path: the walk over the extents above the frame, the
-     generator parents, the delimited return, the
+     generator parents, a frame on a prompt, the
      root. Its own plain case is the transition above. The arms above
      are the RETURN row's own work; from here on is the signal's. */
   KOS_TRACE_TRAMPOLINE_STEP();
@@ -1751,9 +1751,8 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   (void) insn;
 
   if (unlikely(! gen)) {
-    /* the region of an applied continuation yielding, which has no
-       generator of its own to suspend: an ordinary error at the
-       yield, already set */
+    /* a yield with no generator around its frame to suspend: an
+       ordinary error at the yield, already set */
     Py_DECREF(val);
     RESULT_RAISE();
   }

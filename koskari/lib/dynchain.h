@@ -145,7 +145,7 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 
 /**
-   Node participates in raise-walk dispatch (handle/restitch); the fast
+   Node participates in raise-walk dispatch (handle); the fast
    first check before kos_dyn_handle.
 */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
@@ -534,8 +534,8 @@ struct KosDynNode {
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
   /* Owned operand segment. Region kinds always own one (aimed at the
      embedded iseg at construction or push, heap after a spill); NULL
-     marks a transfer bookmark, which inherits the enclosing extent's
-     segment. */
+     marks a transfer bookmark (CC, PROMPT, GEN), which inherits the
+     enclosing extent's segment. */
   KosSegment *stack;
   /* Namespace (reference owned): the node's own scope when it has
      KOS_DYN_CAP_OWNS_NS, otherwise a fill of the live namespace taken
@@ -578,9 +578,10 @@ struct KosDynNode {
       PyObject *fn;
       /* Unwind cache: the frame displaced at install (borrowed; an
          ancestor on the chain, so it outlives this frame while
-         installed). Set at install only; cleared at clone and at the
-         restitch of a stashed span; a frozen GEN span keeps it, and
-         the install rewrites the span's bottom frame's. NULL means
+         installed). Set at install, and by the clone pass of a copy
+         cloned for an attach; cleared at clone; a frozen GEN span
+         keeps it, and the install rewrites the span's bottom frame's.
+         NULL means
          fall back to the chain walk. While the
          frame is held in its function's cache this links the next
          cached frame instead (see KosFunction_CacheFrame), and the
@@ -675,7 +676,7 @@ struct KosDynNode {
   /* Embedded operand-segment storage for region kinds: stack aims
      here at construction and spills to a heap segment on growth (the
      storage then sits dormant until node reuse). Transfer bookmarks
-     leave it unused. */
+     (CC, PROMPT, GEN) leave it unused. */
   KosInlineSegment iseg;
 };
 
@@ -1656,8 +1657,8 @@ typedef enum KosPendingReturnKind {
    answer but EVAL_NORMAL.
 
    kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
-   innermost loop region in the current frame, pops to it crossing any
-   PROMPT between (the region is the frame's own), and on
+   innermost loop region in the current frame, pops to it (every node
+   between is the frame's own), and on
    EVAL_NORMAL has set the pc and either stored result on the region
    (CONTINUE) or popped the region and pushed result (BREAK). result is
    consumed on every answer.

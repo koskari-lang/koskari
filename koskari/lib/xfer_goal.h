@@ -35,7 +35,9 @@
    point with the registers live there (KosCloneShape); the first
    ATTACHING completes it from the registers at the seam, and every
    ATTACHING is a relink and a register load, with no walk. DELIVERING
-   pushes the payload, or sets the pending throw, and retires the goal.
+   pushes the payload, or sets the pending throw, and retires the goal;
+   a shift's abort, which has no target, instead calls its handler with
+   k above the prompt, its seam.
 
    A leave or enter that hands control to a thunk frame or an awaitable
    makes the goal wait on that node: the thunk's frame installs directly

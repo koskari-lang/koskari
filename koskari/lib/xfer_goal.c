@@ -679,7 +679,7 @@ static KosOpResult goal_call_handler(KosContext *ctx, KosXferGoal *goal) {
    resume, set it as a pending throw, or raise it at the boundary; then
    retire the goal. A shift's abort calls its handler instead
    (goal_call_handler). A receiving frame that carries a resume the goal
-   installed, through a restore record or a spliced template, was
+   installed, through a restore record or an attached copy, was
    waiting on a delivery when it was captured: the payload is that
    delivery, staged in the pending slot for the prologue pass that
    follows the drive. A goal that installed no frame state resumes the

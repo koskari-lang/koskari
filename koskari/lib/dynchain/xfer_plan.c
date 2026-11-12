@@ -61,8 +61,9 @@ int kos_invoke_continuation(
     kos_chain_common_ancestor(
         ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop, &frames);
 
-  /* The attached frames sit above the invoker's frame (delimited) or
-     above the seam's frame (undelimited); refuse here, before anything
+  /* The attached frames sit above the live frame, on the caller's
+     dyn_top (delimited), or above the seam's frame (undelimited);
+     refuse here, before anything
      moves, so RecursionError raises at the invoke site. */
   {
     KosDynNode *base = is_delimited
@@ -130,7 +131,7 @@ int kos_invoke_continuation(
    The lowest common ancestor of the live chain and a template: the
    top of the run of node pairs, matched by id and by phase, that
    reaches both roots. NULL on both sides when the roots differ.
-   Clones keep their source's id, so an attached clone of this template
+   Call/cc clones keep their source's id, so an attached clone of this template
    counts as the same extent. The two tops are brought to one depth
    and walked to the roots together: a mismatch clears the pair in
    hand, a match records one when none is in hand, so what remains is

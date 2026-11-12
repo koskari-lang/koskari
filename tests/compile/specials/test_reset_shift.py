@@ -249,8 +249,8 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_around_shift_captures_in_place(self):
         """
-        dyn-wind wrapping shift captures in place; the handler's return
-        and POP_WIND complete without extent or wind topology errors.
+        A shift inside a dyn-wind captures k and its abort leaves the
+        dyn-wind; the handler's return, k, is the reset's value
         """
 
         src_str = """
@@ -336,10 +336,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_thunk_count_remote_invoke(self):
         """
-        Remote invoke (reset finished before call) winds the graft exactly
-        once: natural [before, after] during capture, then one [before,
-        after] replay around the invoke. Regression guard for Path B in
-        design/interpreter/delimited-invoke-model.md.
+        Remote invoke (reset finished before call) enters the attached
+        copy's dyn-wind once: [before, after] for the body and the abort,
+        then one [before, after] around the invoke
         """
 
         events = []
@@ -428,10 +427,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
     async def test_call_cc_from_an_attached_copy_returns_below_its_delim(self):
         """
         A full continuation captured inside an attached delimited copy holds
-        that copy's return bookmark. Applied after the copy has returned,
-        it attaches the copy again, and the copy's value is delivered once
-        more to the frame the bookmark sits on, at the first invoke
-        site: 1 + 10 the first time, 1 + 100 the second
+        that copy's prompt and the invoke site's frame below it. Applied
+        after the copy has returned, it attaches the copy again, and the
+        copy's body returns its value once more to the frame below the
+        prompt, at the first invoke site: 1 + 10 the first time, 1 + 100
+        the second
         """
 
         calls = []
@@ -629,9 +629,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_inplace_slice_exception_caught_at_invoke_site(self):
         """
-        An exception raised inside an in-place (Path A) slice restitches the
-        invoke span and propagates to the invoke call site, where the
-        enclosing try in the shift body catches it.
+        An exception raised inside the copy the handler's invoke attaches
+        propagates to the invoke call site, where the enclosing try in the
+        shift body catches it.
         """
 
         def boom(v):
@@ -929,10 +929,11 @@ class TestTaggedResetShift(SpecialsTestCase):
 
 class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
     """
-    A delimited return that meets an after thunk on its way to the
-    invoke site waits on the wind and finishes once the thunk returns,
-    delivering the value at the invoke site inside the evaluator; it must
-    never surface at the boundary as a bare result. Each shift aborts
+    A shift whose abort meets an after thunk inside an attached copy
+    waits on the wind and calls its handler once the thunk returns; the
+    handler's value ends the copy's prompt and is delivered at the
+    invoke site inside the evaluator, never surfacing at the boundary as
+    a bare result. Each shift aborts
     to its reset and leaves the dyn-wind on the way: the first leaves
     the original, the second leaves the copy the invoke entered, so the
     after thunk runs twice.

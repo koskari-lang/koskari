@@ -518,14 +518,14 @@ class KoskariPromptNotFound(KoskariContinuationError):
 @builtin("KoskariPromptUnreachable")
 class KoskariPromptUnreachable(KoskariContinuationError, RuntimeError):
     """
-    A boundary stands between a capture or a transfer and its target.
+    A boundary stands between a capture and its target.
 
-    For a capture, a matching prompt exists but a crossed node denied
-    it. Adding a delimiter will not help; the region between the capture
-    point and the delimiter must be restructured. For a transfer, a
-    return named a caller that a shift had already left. boundary
-    describes the denying node (for example a generator boundary, or
-    shift). Also a RuntimeError, as a break outside a loop is
+    A matching prompt exists but a crossed node denied the capture.
+    Adding a delimiter will not help; the region between the capture
+    point and the delimiter must be restructured. boundary describes
+    the denying node (for example a generator boundary, or the before
+    or after thunk of a dyn-wind in flight). Also a RuntimeError, as a
+    break outside a loop is
     """
 
     def __init__(self, message, tag=None, operation=None,

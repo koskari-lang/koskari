@@ -37,7 +37,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (prompt/SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
+   POP_*), continuations (RESET/SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first

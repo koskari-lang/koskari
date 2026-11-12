@@ -95,7 +95,7 @@ class TestReset(CevalTest):
 
     async def test_reset_value_lands_on_the_caller(self):
         """
-        The RESET's value lands on the caller's operands like a call's:
+        The RESET's value goes on the caller's operands like a call's:
         (+ 1 (reset 7)) is 8
         """
 
@@ -571,8 +571,8 @@ class TestUndelimitedContinuations(CevalTest):
         Invoking a continuation from a nested koskari context (different eval
         token) raises KoskariContinuationApply in the nested context, which
         propagates upward through the Python awaitable chain until it reaches
-        the owning eval loop. The owning loop catches it via
-        eval_phase_post_opcode, matches the token, applies the continuation,
+        the owning eval loop. The owning loop catches it in its raise
+        ingress, matches the token, applies the continuation,
         and resumes normally. The result is the value passed to the
         continuation.
         """
@@ -727,7 +727,7 @@ class TestUndelimitedContinuations(CevalTest):
         A KoskariContinuationApply delivered into a suspended generator via
         asend.throw() reaches the unified RAISE ingress on the revive-throw
         path and is dispatched as a continuation signal: the generator's
-        local extents unwind through the cc-unwind plan (dyn-with __exit__
+        local extents unwind through the cc-unwind goal (dyn-with __exit__
         runs with no exception info) and the apply re-raises unchanged so it
         can travel onward to its owner.
         """

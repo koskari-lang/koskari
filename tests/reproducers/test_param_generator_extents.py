@@ -25,7 +25,7 @@ suspended mid-extent, and an abandoned generator takes its table with
 it.
 
 The extent-safe suspension methodology remains delimited continuations
-(shift/reset), whose transfer plans unwind and rewind PARAM extents per
+(shift/reset), whose transfers unwind and rewind PARAM extents per
 application: yield does not unwind; shift does.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

@@ -35,8 +35,8 @@ int kos_shift_abort(
     PyObject *k) {
 
   /* No resume pc: the frame below the prompt already stands after the
-     reset, and the handler's return, which ends the prompt, lands
-     there as the reset's value. */
+     reset, and the handler's return, which ends the prompt, is
+     delivered there as the reset's value. */
   KosXferGoal *goal = kos_xfer_goal_new(
       NULL, (KosDynNode *) prompt, handler, NULL, k, 0);
 

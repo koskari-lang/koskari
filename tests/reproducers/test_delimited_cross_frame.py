@@ -28,10 +28,6 @@ reset body; the deeper-frame tests there invoke k from a deeper frame,
 which is the opposite direction. Capture from a callee frame was
 uncovered, which is why this went unnoticed.
 
-The last two cases were quarantined in a separate uncollected module while
-they SIGSEGV'd, since a crash takes the whole pytest process down rather
-than failing one test. They pass now and are collected normally.
-
 Note these shapes are order-sensitive under compile_expr: define-global
 bindings do not persist across a fresh module per test, so running this
 file alone yields extra NameErrors that the phased runner does not show.
@@ -139,9 +135,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
     async def test_let_bound_lambda_shift_whole_body(self):
         """
-        Let-bound lambda whose whole body is the shift. This shape
-        SIGSEGV'd under the coroutine-driven test harness while the
-        equivalent .ki program merely misbehaved.
+        Let-bound lambda whose whole body is the shift
         """
 
         src = """

@@ -103,8 +103,8 @@ class TestDelimitedHandlerHelper(SpecialsTestCase):
 
     async def test_helper_multishot(self):
         """
-        The helper invokes k twice: the first runs in place, the second
-        through the graft, and the handler sums them
+        The helper invokes k twice, each invoke attaching its own copy,
+        and the handler sums them
         """
 
         src = """

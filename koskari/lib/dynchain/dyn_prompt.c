@@ -124,8 +124,7 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
 
 
 /**
-   GC traverse a KOS_DYN_PROMPT: the tag; the generic traverse already
-   covers the owned segment.
+   GC traverse a KOS_DYN_PROMPT: the tag. A prompt owns no segment.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynPrompt_TAG(node));

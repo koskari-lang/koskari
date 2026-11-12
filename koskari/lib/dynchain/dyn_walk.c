@@ -370,8 +370,7 @@ KosOpResult kos_dyn_unwind_to_loop(
     }
 
     /* The loop lies under the current frame, so every node between
-       is the frame's own: a reset's PROMPT leaves like any other node,
-       as it does for the return walk. */
+       is the frame's own. */
     r = kos_dyn_unlink_top(ctx, event, 1);
 
     if (r.kind == KOS_RES_NORMAL)

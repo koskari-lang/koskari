@@ -127,8 +127,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame)
       & ~KOS_FRAME_RETURN_TO_CACHE;
-  /* A snapshot stands where its source stood until a splice renumbers
-     it: an attached template, or the restitch of a stashed span. */
+  /* A snapshot stands where its source stood; kos_dyn_clone_segment
+     renumbers a copy cloned for an attach. */
   KosDynFrame_DEPTH(clone) = KosDynFrame_DEPTH(frame);
   KosDynFrame_CACHE_SLOT(clone) = NULL;
   /* clones opt out of the per-function frame cache */

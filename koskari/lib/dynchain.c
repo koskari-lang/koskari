@@ -156,9 +156,10 @@ static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft poi
 
 /**
    Mint a fresh, never-zero node id. Minted on first read through
-   kos_dynnode_id; clones for continuation capture copy the original's
-   id for LCA matching. Prompt instantiation at k-invoke time mints anew
-   so a grafted prompt is a distinct instance from the live original.
+   kos_dynnode_id; a call/cc clone copies the original's id for LCA
+   matching. Every node of a delimited continuation's template, and of
+   each copy attached from it, mints anew, so an attached copy is a
+   distinct instance from the live original.
 */
 uint32_t kos_dynnode_mint_id(void) {
   uint32_t id = dyn_node_id_counter++;
@@ -558,15 +559,14 @@ static void kos_dyn_debug_check_walk(
 
 /**
    Region kinds own an operand segment; transfer bookmarks (cc,
-   cc_raise, prompt, gen) stay transparent.
+   prompt, gen) own none and stay transparent.
    The compiler emits bookmark pushes mid-expression -- PUSH_CC inside
    an open call window, OBJECT_NEXT between operand loads -- so their
    extents legitimately straddle operand windows on the enclosing
    segment and must not capture them. Block-structured regions
    (PUSH_X body POP_X) isolate their body's operands on their own
-   segment. The eight kinds that predate universal ownership allocate
-   in their constructors; this covers the region kinds that inherited
-   before.
+   segment. Frame, try, finally, loop, foreach and with allocate in
+   their constructors; this covers param, ns, wind and collect.
 */
 static void kos_dyn_ensure_region_segment(KosDynNode *node) {
 
@@ -1813,7 +1813,7 @@ static void kos_dyn_resync_after_pop(
    clear, detaches clear, and direct links never stamp. (A
    continuation's copy is the exception: its clone stamps it as it
    goes, and the attach stamps its bottom from the seam.) Chain
-   mutations are top-regional (installs, restitches, and thaws happen at
+   mutations are top-regional (installs, attaches, and thaws happen at
    or near dyn_top), so unstamped nodes form a contiguous prefix;
    measure it, then stamp it rootward-first in chunks -- segment
    backs, frame back links, and ns fills -- so the pop-side caches are
@@ -2484,7 +2484,7 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
 /**
    Predicate: does the chain from dyn_top reach target?  Read-only; never
    sets PyErr.  Callers: the transfer goal's seam and frontier checks
-   (xfer_goal.c) and the delimited return route (eval.c).
+   (xfer_goal.c) and kos_validate_capture_cc.
 
    :return: 1 if target is on the chain from dyn_top, 0 otherwise
 */
@@ -2718,8 +2718,8 @@ int kos_shift_capture(
 
 
 /**
-   Undelimited call/cc: clone chain above CC, multi-shot continuation with
-   undelimited prompt id. Callers: opcode CAPTURE_CC.
+   Undelimited call/cc: clone the chain from the CC block's parent down
+   to root into a multi-shot continuation. Callers: opcode CAPTURE_CC.
 */
 int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
 

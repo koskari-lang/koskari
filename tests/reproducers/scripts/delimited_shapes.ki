@@ -110,7 +110,7 @@ def shape_remote_invoke_twice []:
         (#tuple (captured 5) (captured 30))))
 
 
-;; escaped k replays a dyn-wind around the graft on invoke
+;; escaped k enters and leaves the dyn-wind in its copy on invoke
 def shape_remote_invoke_wound []:
     var log (#list)
     var r:
@@ -153,7 +153,7 @@ def shape_reentrant_k_of_k []:
     (reset (+ 1 (shift k (k (k (k 0))))))
 
 
-;; k re-invoked from an inner handler while a graft of k is still live
+;; k re-invoked from an inner handler while a copy of k is still attached
 def shape_reentrant_nested_same_k []:
     var log (#list)
     var ks #[None]
@@ -183,8 +183,9 @@ def shape_reentrant_amb_product []:
 
 ;; === 1d. Bindings read back inside a resumed region ===
 ;;
-;; A let around the reset puts its bindings in an NS node that capture
-;; clones into the template. Reading one back inside the region after a
+;; A let around the reset binds names the reset's body closes over; its
+;; NS node sits below the prompt, outside the template. Reading one
+;; back inside the region after a
 ;; multi-shot re-invoke once found the cell empty or holding the raw
 ;; dict, and inside a function frame the same shape took the process
 ;; down. Module globals were unaffected, the module namespace never

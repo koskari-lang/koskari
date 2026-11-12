@@ -23,8 +23,8 @@
    Build the body over the live namespace, push a prompt carrying the
    tag, and call the body above it. The body's return, or the return of
    a shift's handler called above the same prompt, takes the prompt
-   with it and lands where this instruction's value goes, as any
-   callee's return does; this frame goes on at the next instruction.
+   with it and is this instruction's value, as any callee's return
+   is; this frame goes on at the next instruction.
 */
 
 KOS_OP_HANDLER(RESET) {

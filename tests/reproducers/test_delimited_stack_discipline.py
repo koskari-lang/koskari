@@ -15,7 +15,7 @@
 Operand-stack discipline across a delimited resume.
 
 The region's own operands must stay apart from an enclosing pending
-expression's operands: the resumed result must land on the enclosing
+expression's operands: the resumed result must go on the enclosing
 expression's argument list with nothing of the region's beneath it.
 Every case here puts the reset inside an enclosing pending call AND
 leaves operands pending inside the region; that combination is what
