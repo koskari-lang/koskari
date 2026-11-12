@@ -2135,3 +2135,20 @@ tags:
   - namespace
   - local-binding
 notes: a namespace repr names the function, the enclosing module (corpus.test under the corpus harness), then name=value for each of the scope's own names
+---
+id: special-shift-resumed-return-006
+feature: special/compile/shift
+source: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+verify:
+  read: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+  expand: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+  eval: "99"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-return.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: the reset's body is a function of its own; (call k 5) resumes a copy of it, and the return there gives the copy's value, 99, to the call, which the handler returns as the reset's value

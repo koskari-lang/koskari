@@ -207,10 +207,10 @@ static KosOpResult call_call_continuation(
   }
 
   /* Delimited: invoke on the current chain, whatever context captured
-   * it. Every invoke attaches a fresh clone of the template, delimiter
-   * included, onto the call site, and the copy returns to the call
-   * site on its POP_PROMPT. Undelimited on a foreign context goes to
-   * its owner through KoskariContinuationApply below. */
+   * it. Every invoke attaches a fresh clone of the template, prompt
+   * included, onto the call site, and the copy of the reset's body
+   * returns to the call site as a call does. Undelimited on a foreign
+   * context goes to its owner through KoskariContinuationApply below. */
 
   if (KosPyDelimitedContinuation_Check(callable)
       || KosContinuation_TOKEN_REF(k)

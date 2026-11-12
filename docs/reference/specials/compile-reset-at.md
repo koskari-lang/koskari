@@ -9,10 +9,13 @@ tag of its own so that its delimiter is not the one a caller's plain
 [`reset`](compile-reset.md) and `shift` find, and the caller's are not the
 ones the library finds.
 
-**Behaviour:** Evaluates `TAG`, emits `PUSH_PROMPT 1` (the tag is taken
-from the stack), compiles the body with `helper_begin`, emits
-`POP_PROMPT 0`. The form's value is the body's value, or the value of the
-handler of a `shift-at` that captured up to it.
+**Behaviour:** Evaluates `TAG`, compiles the body as a function of no
+arguments, and emits `RESET 1` carrying it (the tag is taken from the
+stack). The form's value is the body's value, or the value of the handler
+of a `shift-at` that captured up to it. The body is a function of its own
+as it is for [`reset`](compile-reset.md): what that page says of
+`return`, `break`, `continue`, `yield` and `var` in the body holds here
+unchanged.
 
 A tag is any object, and tags match by identity: two equal lists are two
 tags. `None` is the default tag, the one `reset` and `shift` use, so

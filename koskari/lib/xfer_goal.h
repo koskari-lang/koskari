@@ -130,9 +130,8 @@ struct KosXferGoal {
   /* LEAVING unlinked an outer's frontier; ATTACHING retires the voided
      outers */
   uint8_t voided_outer;
-  /* a shift's abort: ATTACHING empties the seam, the prompt, whose
-     operands went with the continuation, and DELIVERING calls the
-     handler in payload with the continuation in continuation_ref */
+  /* a shift's abort: DELIVERING calls the handler in payload with the
+     continuation in continuation_ref, above the seam, the prompt */
   uint8_t shift_abort;
 };
 

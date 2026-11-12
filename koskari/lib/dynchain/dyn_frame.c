@@ -97,12 +97,11 @@ KosDynFrame *kos_dynframe_new(
 
 
 /**
-   Clone a frame, with a copy of its operand segment when operands is
-   non-zero, or with an empty segment of its own in its place.
+   Clone a frame with its operand segment (continuation capture).
+   Callers: kos_dyn_clone and kos_frame_clone; the segment copy happens
+   here so a direct caller stays faithful without the dispatcher.
 */
-static KosDynFrame *kos_dynframe_clone_impl(
-    KosDynFrame *frame,
-    int operands) {
+KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   if (! frame)
     return NULL;
@@ -111,11 +110,8 @@ static KosDynFrame *kos_dynframe_clone_impl(
   if (! clone)
     return NULL;
 
-  if (! operands) {
-    if (KosDynNode_STACK(frame))
-      kos_dynnode_use_inline_segment((KosDynNode *) clone);
-  } else if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
-                                        (KosDynNode *) frame) < 0) {
+  if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
+                                 (KosDynNode *) frame) < 0) {
     kos_dynnode_return_to_freelist(clone);
     return NULL;
   }
@@ -163,26 +159,6 @@ static KosDynFrame *kos_dynframe_clone_impl(
   }
 
   return clone;
-}
-
-
-/**
-   Clone a frame with its operand segment (continuation capture, delim
-   return-frame snapshot). Callers: kos_dyn_clone and the direct
-   snapshot sites; the segment copy happens here so the direct callers
-   stay faithful without the dispatcher.
-*/
-KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
-  return kos_dynframe_clone_impl(frame, 1);
-}
-
-
-/**
-   Clone a frame without its operands: the capture baseline, whose
-   pending operands lie outside the reset and are not region content.
-*/
-static KosDynFrame *kos_dynframe_clone_bare(KosDynFrame *frame) {
-  return kos_dynframe_clone_impl(frame, 0);
 }
 
 

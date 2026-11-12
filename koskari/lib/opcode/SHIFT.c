@@ -21,11 +21,11 @@
    function of one parameter, the continuation).
 
    Build the handler over the live namespace, capture the continuation
-   from the next instruction up to the prompt, and abort to the prompt:
-   the transfer leaves everything above it, empties its block, sets
-   the frame's pc to the prompt's POP_PROMPT, and calls the handler
-   with the continuation above the prompt. The handler's value lands
-   on the prompt's block, and POP_PROMPT gives it to the reset.
+   from the next instruction up to the prompt, whole frames up to and
+   including the reset's body, and abort to the prompt: the transfer
+   leaves everything above it, and calls the handler with the
+   continuation above the prompt. The handler's return ends the prompt
+   and is the reset's return.
 */
 
 KOS_OP_HANDLER(SHIFT) {

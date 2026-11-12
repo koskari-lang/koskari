@@ -14,17 +14,13 @@
 """
 Operand-stack discipline across a delimited resume.
 
-A PROMPT is a barrier only -- the operand stack stays on the frame -- so
-the region's own operands are distinguished from an enclosing pending
-expression's operands solely by the depth recorded at PUSH_PROMPT.
-
-The in-place invoke path stashes the whole invoke-time frame stack and
-restitch restores it, so without truncating to that depth the region's
-pending operands survive underneath the resumed result. Every case here
-therefore puts the reset inside an enclosing pending call AND leaves
-operands pending inside the region; that combination is what displaces
-the enclosing argument list. With the reset at a clean stack base the
-residue sits below where nothing looks, which is why this went unnoticed.
+The region's own operands must stay apart from an enclosing pending
+expression's operands: the resumed result must land on the enclosing
+expression's argument list with nothing of the region's beneath it.
+Every case here puts the reset inside an enclosing pending call AND
+leaves operands pending inside the region; that combination is what
+would displace the enclosing argument list. With the reset at a clean
+stack base any residue would sit below where nothing looks.
 
 Failures are silent wrong answers rather than errors, except where a
 typed consumer (BUILD_LIST_APPEND) rejects the displaced operand.

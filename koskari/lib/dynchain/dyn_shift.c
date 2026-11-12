@@ -34,18 +34,16 @@ int kos_shift_abort(
     PyObject *handler,
     PyObject *k) {
 
+  /* No resume pc: the frame below the prompt already stands after the
+     reset, and the handler's return, which ends the prompt, lands
+     there as the reset's value. */
   KosXferGoal *goal = kos_xfer_goal_new(
-      NULL, (KosDynNode *) prompt, handler, KosDynPrompt_POP_PC(prompt),
-      k, 0);
+      NULL, (KosDynNode *) prompt, handler, NULL, k, 0);
 
   if (! goal)
     return -1;
 
-  /* The region's operands are in the continuation, but they stay on
-     the prompt until the abort can no longer be cancelled: a dyn-wind
-     after thunk or a with's __exit__ that raises on the way out leaves
-     the region running on them. ATTACHING drops them, and DELIVERING
-     calls the handler with k. */
+  /* DELIVERING calls the handler with k above the prompt */
   goal->shift_abort = 1;
   kos_xfer_goal_push(ctx, goal);
   return 0;

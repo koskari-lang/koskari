@@ -15,14 +15,12 @@ bare symbol always expands, `continue` can never name a variable.
 **Behaviour:** Compiles optional VAL (or pushes None), emits CONTINUE with
 count 0 or 1. Runtime jumps to the loop's continue target (loop head for while,
 ITER_NEXT for for-each). The target is the innermost loop of the same
-function, through any [`reset`](compile-reset.md) between the `continue`
-and the loop. A [`shift`](compile-shift.md) handler runs after the shift
-has left the captured region, so it has only the loops written inside it:
-a `continue` there with no loop of its own raises
-`RuntimeError("continue outside loop")`, whatever loop surrounds the
-`shift` or the `reset`. Inside a resumed delimited continuation the slice
-is the continuation's body: a `continue` there reaches only a loop opened
-inside the slice, and with none it raises the same error.
+function. The body of a [`reset`](compile-reset.md) and the handler of a
+[`shift`](compile-shift.md) are functions of their own, so each has only
+the loops written inside it: a `continue` there with no loop of its own
+raises `RuntimeError("continue outside loop")`, whatever loop surrounds
+the `reset` or the `shift`. The same holds in a resumed delimited
+continuation, whose slice ends with the `reset`'s body.
 
 **Examples:**
 

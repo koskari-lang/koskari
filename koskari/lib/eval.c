@@ -945,7 +945,7 @@ static KosOpResult process_raise(KosContext *ctx) {
 
 
 /**
-   The prompt tag a PUSH_PROMPT or SHIFT names by its count: 0 for the
+   The prompt tag a RESET or SHIFT names by its count: 0 for the
    default tag, or 1 for a tag the instruction pops from the stack;
    Code construction refuses any other count. The default tag is NULL,
    and a popped None names it too. Returns -1 with an exception set, or
@@ -1370,69 +1370,6 @@ static KosOpResult kos_eval_walk_outcome(KosContext *ctx, KosOpResult r) {
   if (r.kind == KOS_RES_AWAIT)
     return eval_event_await(ctx, r.val);
   return r;
-}
-
-
-/**
-   Route a return value to a delimited-invoke bookmark: a DELIM, whose
-   return frame is the first frame below it.  Shared by the POP_PROMPT
-   opcode (the
-   reset body completed normally) and the RETURN unwind walk (a return
-   crossed the delimiting reset); both deliver val to the k-invocation
-   site.  val is a new reference, consumed on every path.
-
-   :return: EVAL_NORMAL when routed (execution resumes at the invoke
-            site) or when an async unwind started (pending return
-            staged); EVAL_REPROLOGUE when the invoke site is a
-            code-less resume frame; EVAL_RAISE on error
-*/
-static KosOpResult kos_eval_route_delim_return(
-    KosContext *ctx,
-    KosDynDelim *ret_delim,
-    PyObject *val) {
-
-  SAYF("[eval] route_delim_return: unwinding to delim=%p return frame=%p",
-       (void *) ret_delim,
-       (void *) kos_dyndelim_return_frame(ret_delim));
-
-  {
-    KosOpResult wr;
-    KosDynNode *pending = NULL;
-    wr = kos_dyn_unwind_to_node(ctx, (KosDynNode *) ret_delim,
-                                KOS_XFER_EVENT_SHIFT, &pending);
-    if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
-      /* a leave went into a thunk or onto an awaitable; val is stored on
-         that node and re-enters this route once the node has finished */
-      if (kos_dyn_ob_store_return(pending, val, KOS_PENDING_RETURN_DELIM,
-                                 (KosDynNode *) ret_delim) < 0) {
-        Py_XDECREF(wr.val);
-        return EVAL_RAISE();
-      }
-      return wr;
-    }
-    if (wr.kind != KOS_RES_NORMAL) {
-      Py_DECREF(val);
-      return wr;
-    }
-  }
-
-  SAYF("[eval] route_delim_return after unwind: dyn_top=%p kind=%s",
-       (void *) KosContext_DYN_TOP(ctx),
-       KosContext_DYN_TOP(ctx)
-           ? kos_dynnode_kind_name(
-                 KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
-           : "NULL");
-
-  if (kos_dyn_finish_delimited_pop_return(ctx, ret_delim, val) < 0)
-    return EVAL_RAISE();
-
-  /* The finish leaves val on the invoking frame's stack. A code-less
-     invoker (a resume frame that called the continuation) has no pc to
-     continue at: the prologue delivers the value on its stack to the
-     resume set on it, the way a callee's return reaches it. */
-  if (! KosContext_FrameCode(ctx))
-    return EVAL_REPROLOGUE();
-  return EVAL_NORMAL();
 }
 
 
@@ -2772,13 +2709,12 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
 
-  /* the frame of an applied continuation returns nowhere: the general
-     path refuses it */
+  /* a frame on a prompt ends it: the general path takes it */
   parent = KosDynNode_PARENT(child);
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
-      || KosDynNode_IS_DELIM(parent))
+      || KosDynNode_IS_PROMPT(parent))
     return 0;
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
@@ -2858,7 +2794,7 @@ KOS_OP_INLINE int kos_return_is_region_resume(
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
-      || KosDynNode_IS_DELIM(parent)
+      || KosDynNode_IS_PROMPT(parent)
       || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
     return 0;
 
@@ -2976,6 +2912,25 @@ static KosOpResult eval_event_return_at_frame(
     return EVAL_FATAL();
   }
 
+  /* Case 2b: prompt parent -- a reset's body, or a shift's handler
+     called above the reset's prompt, returned. The frame on a prompt
+     ends the prompt: both go, and the value is the reset's, delivered
+     to whatever is below as any callee's return is. A prompt at the
+     root of a context ends the context, as a root generator does. */
+  if (parent && KosDynNode_IS_PROMPT(parent)) {
+    if (unlikely(kos_dyn_pop_frame(ctx) < 0
+                 || kos_dyn_pop_prompt(ctx, (KosDynPrompt *) parent) < 0)) {
+      Py_DECREF(val);
+      return EVAL_FATAL();
+    }
+    if (! KosContext_DYN_TOP(ctx)) {
+      KosContext_MarkDeadAfterReturn(ctx);
+      ctx->terminal = 1;
+      return EVAL_RETURN(val);
+    }
+    return eval_parent_return_deliver(ctx, val);
+  }
+
   /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, a
      for-each region, native frame, etc.) -- pop the callee frame and
      let eval_parent_return_deliver handle the context transition and
@@ -3007,28 +2962,6 @@ static inline KosOpResult eval_event_return(
     KosContext *ctx,
     PyObject *val) {
 
-  /* The frame of an applied continuation, the one sitting on its DELIM,
-     has nothing to return to, and is refused before any extent above
-     it is left, so the error is raised at the return: it is a copy of
-     the frame the reset was in, and that function's boundary lies
-     outside the reset, so outside the continuation. Nothing else is
-     ever a frame directly on a DELIM: the copy is attached as the
-     application pushes it, and a thunk its entering runs sits above
-     the copy. */
-  {
-    KosDynFrame *frame = KosContext_FRAME(ctx);
-    KosDynNode *under = frame ? KosDynNode_PARENT(frame) : NULL;
-
-    if (unlikely(under && KosDynNode_IS_DELIM(under))) {
-      Py_DECREF(val);
-      kos_raise_prompt_unreachable(
-          "return", "continuation",
-          "return cannot leave a resumed %s: its function's caller"
-          " is outside the captured region");
-      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
-    }
-  }
-
   if (unlikely(KosContext_DYN_TOP(ctx)
                != (KosDynNode *) KosContext_FRAME(ctx)))
     return eval_event_return_unwind(ctx, val);
@@ -3045,11 +2978,9 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob) {
 
   PyObject *val = ob->u.ret.value;
   KosPendingReturnKind kind = (KosPendingReturnKind) ob->u.ret.path;
-  KosDynDelim *delim = (KosDynDelim *) ob->u.ret.delim;
 
   ob->kind = KOS_OB_NONE;
   ob->u.ret.value = NULL;
-  ob->u.ret.delim = NULL;
 
   /* The node is gone, so the walk from the returning frame continues
      past it: further nodes may suspend again and store the value once
@@ -3057,22 +2988,6 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob) {
   switch (kind) {
   case KOS_PENDING_RETURN_FRAME:
     return eval_event_return(ctx, val);
-
-  case KOS_PENDING_RETURN_DELIM:
-    if (delim && kos_dyn_reaches(ctx, (KosDynNode *) delim)) {
-      /* The route delivers val at the invoke site inside the evaluator;
-         its NORMAL is a re-entry there, as eval_event_return_unwind maps it,
-         never a boundary result. */
-      KosOpResult rr = kos_eval_walk_outcome(
-          ctx, kos_eval_route_delim_return(ctx, delim, val));
-      if (rr.kind == KOS_RES_NORMAL)
-        return EVAL_REPROLOGUE();
-      return rr;
-    }
-    Py_DECREF(val);
-    PyErr_SetString(PyExc_SystemError,
-                    "pending return lost its delimited-invoke bookmark");
-    return kos_eval_walk_outcome(ctx, EVAL_RAISE());
 
   case KOS_PENDING_RETURN_BREAK:
   case KOS_PENDING_RETURN_CONTINUE: {

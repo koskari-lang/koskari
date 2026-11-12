@@ -145,51 +145,89 @@ def special_capture_cc(compiler, called_by, k, body):
 @special("compile/reset", patterns=_BODY_PATTERNS, unpack="kwargs")
 def special_reset(compiler, called_by, body):
     """
-    Compile (compile/reset EXPR...). Establishes a prompt with the default
-    tag, runs body, pops prompt. Enables delimited continuations via
-    compile/shift.
+    Compile (compile/reset EXPR...). The body is a function of no
+    arguments, which the reset calls with a prompt of the default tag
+    under it; its value, or the value of a compile/shift handler that
+    aborts to the prompt, is the reset's
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
-    fragment.instruction(OpCode.PUSH_PROMPT, 0)
-    helper_begin(fragment, body.datum)
-    fragment.instruction(OpCode.POP_PROMPT, 0)
+    spec = helper_reset_body(compiler, called_by, body, fragment)
+    fragment.instruction(OpCode.RESET, (0, spec, 0, 0))
 
     return fragment
 
 
-def helper_shift_handler(compiler, called_by, k, body, fragment):
+def helper_delimited_function(
+        compiler,
+        called_by,
+        name,
+        k,
+        body,
+        fragment,
+        refusal):
     """
-    The handler of a shift: a function of the one parameter K whose
-    body is BODY, compiled as its own fragment. A yield written in the
-    body itself is refused, since the handler is no generator; one in a
+    The function a reset calls for its body, or a shift for its
+    handler: of no parameters, or of the one parameter K, whose body is
+    BODY, compiled as its own fragment. A yield written in the body
+    itself is refused, since the function is no generator; one in a
     function defined within it belongs to that function
 
     :param compiler: the Compiler
     :param called_by: the special's called-by capture
-    :param k: the K capture
+    :param name: the fragment's name, which a traceback shows
+    :param k: the K capture, or None for no parameter
     :param body: the BODY capture
-    :param fragment: the fragment the SHIFT row is emitted into
+    :param fragment: the fragment the RESET or SHIFT row is emitted into
+    :param refusal: the message's text after the form's name, for a
+        yield written in the body
     :return: the FunctionSpec, or the Deferred standing in for it
     """
 
-    k_sym = k.datum
+    func = compiler.fragment(name)
+    params = ()
+    if k is not None:
+        func.declare_var(k.datum, position=k.position)
+        params = (str(k.datum),)
+    with compiler.resolution_scope(func, function=True):
+        func = helper_begin(func, body.datum)
 
-    handler = compiler.fragment("<shift>")
-    handler.declare_var(k_sym, position=k.position)
-    with compiler.resolution_scope(handler, function=True):
-        handler = helper_begin(handler, body.datum)
-
-    if any(op in YIELD_OPS for op, _ in handler.instructions):
+    if any(op in YIELD_OPS for op, _ in func.instructions):
         raise SpecialError(
-            f"{called_by.datum} handler cannot yield: it is a function"
-            " of its continuation, not a generator",
+            f"{called_by.datum} {refusal}",
             called_by.datum, position=called_by.position)
 
     return function_constant(
-        compiler, fragment, handler, None,
-        FormalsSpec((str(k_sym),), (), (), (), None, None))
+        compiler, fragment, func, None,
+        FormalsSpec(params, (), (), (), None, None))
+
+
+def helper_shift_handler(compiler, called_by, k, body, fragment):
+    """
+    The handler of a shift: a function of the one parameter K
+
+    :return: the FunctionSpec, or the Deferred standing in for it
+    """
+
+    return helper_delimited_function(
+        compiler, called_by, "<shift>", k, body, fragment,
+        "handler cannot yield: it is a function of its continuation,"
+        " not a generator")
+
+
+def helper_reset_body(compiler, called_by, body, fragment):
+    """
+    The body of a reset: a function of no parameters, which the reset
+    calls with its prompt under it
+
+    :return: the FunctionSpec, or the Deferred standing in for it
+    """
+
+    return helper_delimited_function(
+        compiler, called_by, "<reset>", None, body, fragment,
+        "body cannot yield: it is a function the reset calls, not part"
+        " of a generator around it")
 
 
 @builtin("compile/shift")
@@ -215,18 +253,18 @@ def special_shift(compiler, called_by, k, body):
 @special("compile/reset-at", patterns=_TAG_BODY_PATTERNS, unpack="kwargs")
 def special_reset_at(compiler, called_by, tag, body):
     """
-    Compile (compile/reset-at TAG EXPR...). Evaluates TAG, establishes a
-    prompt carrying it, runs body, pops prompt. A compile/shift-at
-    seeking the same tag, by identity, captures up to this prompt. A
-    TAG of None is the default tag, the one compile/reset uses
+    Compile (compile/reset-at TAG EXPR...). Evaluates TAG, then calls
+    the body, a function of no arguments, with a prompt carrying TAG
+    under it. A compile/shift-at seeking the same tag, by identity,
+    captures up to this prompt. A TAG of None is the default tag, the
+    one compile/reset uses
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.merge(compiler.full_compile(tag.datum))
-    fragment.instruction(OpCode.PUSH_PROMPT, 1)
-    helper_begin(fragment, body.datum)
-    fragment.instruction(OpCode.POP_PROMPT, 0)
+    spec = helper_reset_body(compiler, called_by, body, fragment)
+    fragment.instruction(OpCode.RESET, (1, spec, 0, 0))
 
     return fragment
 

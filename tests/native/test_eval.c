@@ -785,18 +785,65 @@ static PyObject *make_apply_k_5_spec(void) {
 }
 
 
-static int test_eval_reset_shift_invoke(void) {
+/*
+  The FunctionSpec of the reset's body (+ 1 (shift k (k 5))): a function
+  of no arguments. Returns a new reference, or NULL with PyErr set.
+*/
+static PyObject *make_reset_body_spec(void) {
+
+    PyObject *name = PyUnicode_FromString("body");
+    PyObject *none = PyTuple_New(0);
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *handler = make_apply_k_5_spec();
+    PyObject *row = NULL;
+    PyObject *nspec = NULL;
+    PyObject *instr = NULL;
+    PyObject *code = NULL;
+    PyObject *formals = NULL;
+    PyObject *spec = NULL;
+
+    if (! name || ! none || ! one || ! handler)
+        goto done;
+
+    row = Py_BuildValue("(iOii)", 0, handler, 0, 0);
+    nspec = KosNamespaceSpec_New(name, none, none, NULL);
+    instr = PyList_New(4);
+    if (! row || ! nspec || ! instr)
+        goto done;
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_SHIFT, row));
+    PyList_SET_ITEM(instr, 2, make_instr_int(
+        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+
+    code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    formals = KosFormalsSpec_New(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    if (code && formals)
+        spec = KosFunctionSpec_New(NULL, formals, code);
+
+ done:
+    Py_XDECREF(name);
+    Py_XDECREF(none);
+    Py_XDECREF(one);
+    Py_XDECREF(handler);
+    Py_XDECREF(row);
+    Py_XDECREF(nspec);
+    Py_XDECREF(instr);
+    Py_XDECREF(code);
+    Py_XDECREF(formals);
+    return spec;
+}
+
+
+static int test_eval_reset_body_shift(void) {
     /*
-      Bytecode: PUSH_PROMPT 0, CONST 1, SHIFT (0, handler, 0, 0),
-      OBJECT_ADD 2, POP_PROMPT 0, RETURN 1.
-      (+ 1 (shift k (k 5))) => 6. The handler applies k to 5; the
-      continuation is OBJECT_ADD 2 (1+5=6) then POP_PROMPT, and the
-      handler's value, 6, is the reset's.
+      Bytecode: RESET (0, body, 0, 0), RETURN 1, with the body
+      CONST 1, SHIFT (0, handler, 0, 0), OBJECT_ADD 2, RETURN 1.
+      The handler applies k to 5; the copy of the body returns 6 to
+      that call, and the handler's 6 is the RESET's.
     */
     PyObject *nspec = NULL;
-    PyObject *zero = NULL;
-    PyObject *one = NULL;
-    PyObject *handler = NULL;
+    PyObject *body = NULL;
     PyObject *row = NULL;
     PyObject *instr = NULL;
     PyObject *code_obj = NULL;
@@ -811,40 +858,28 @@ static int test_eval_reset_shift_invoke(void) {
     if (! nspec)
         return -1;
 
-    zero = PyLong_FromLong(0);
-    one = PyLong_FromLong(1);
-    handler = make_apply_k_5_spec();
-    row = handler ? Py_BuildValue("(iOii)", 0, handler, 0, 0) : NULL;
-    instr = PyList_New(6);
-    if (! zero || ! one || ! row || ! instr) {
-        Py_XDECREF(zero);
-        Py_XDECREF(one);
-        Py_XDECREF(handler);
+    body = make_reset_body_spec();
+    row = body ? Py_BuildValue("(iOii)", 0, body, 0, 0) : NULL;
+    instr = PyList_New(2);
+    if (! row || ! instr) {
+        Py_XDECREF(body);
         Py_XDECREF(row);
         Py_XDECREF(instr);
         Py_DECREF(nspec);
         return -1;
     }
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_PUSH_PROMPT, zero));
-    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
-    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_SHIFT, row));
-    PyList_SET_ITEM(instr, 3, make_instr_int(
-        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_PROMPT, 0));
-    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_RESET, row));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
     code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
-    Py_DECREF(zero);
-    Py_DECREF(one);
-    Py_DECREF(handler);
+    Py_DECREF(body);
     Py_DECREF(row);
     Py_DECREF(instr);
     Py_DECREF(nspec);
     if (! code_obj)
         return -1;
 
-    /* the handler is built over the frame's namespace, so the frame
-       needs a real one */
+    /* the body is built over the frame's namespace */
     empty = PyTuple_New(0);
     if (! empty)
         goto cleanup;
@@ -866,36 +901,14 @@ static int test_eval_reset_shift_invoke(void) {
     }
 
     ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
-    if (ev.kind == KOS_RES_FATAL) {
+    if (ev.kind != KOS_RES_RETURN || ! ev.val || ! PyLong_Check(ev.val)
+        || PyLong_AsLong(ev.val) != 6) {
         if (PyErr_Occurred())
             PyErr_Print();
-        else
-            fprintf(stderr, "  koskari_eval returned FATAL (no exception set)\n");
+        fprintf(stderr, "  FAIL: ev.kind=%d (expected RETURN of 6)\n",
+                (int) ev.kind);
         fflush(stderr);
         result = -1;
-        goto cleanup;
-    }
-    if (ev.kind != KOS_RES_RETURN) {
-        fprintf(stderr, "  ev.kind=%d (expected KOS_RES_RETURN), val=%p\n",
-                (int) ev.kind, (void *) ev.val);
-        fflush(stderr);
-        result = -1;
-        goto cleanup;
-    }
-    if (! ev.val) {
-        fprintf(stderr, "  FAIL: val not NULL\n");
-        result = -1;
-        goto cleanup;
-    }
-    if (! PyLong_Check(ev.val)) {
-        fprintf(stderr, "  FAIL: val is int\n");
-        result = -1;
-        goto cleanup;
-    }
-    if (PyLong_AsLong(ev.val) != 6) {
-        fprintf(stderr, "  FAIL: result is 6\n");
-        result = -1;
-        goto cleanup;
     }
 
  cleanup:
@@ -960,9 +973,9 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
 }
 
 
-/* === Test: POP_PROMPT without prompt => rejected at Code construction === */
+/* === Test: POP_CC without PUSH_CC => rejected at Code construction === */
 
-static int test_eval_pop_prompt_without_prompt(void) {
+static int test_eval_pop_without_push(void) {
     /*
       Malformed bytecode (POP without matching PUSH) is rejected during
       Code construction by extent validation, not at runtime.
@@ -971,7 +984,7 @@ static int test_eval_pop_prompt_without_prompt(void) {
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
     PyObject *instr = PyList_New(2);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP_PROMPT, 0));
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP_CC, 0));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
@@ -3414,9 +3427,9 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);
-    RUN_TEST(test_eval_reset_shift_invoke);
+    RUN_TEST(test_eval_reset_body_shift);
     RUN_TEST(test_eval_push_cc_capture_cc_pop_cc_returns_continuation);
-    RUN_TEST(test_eval_pop_prompt_without_prompt);
+    RUN_TEST(test_eval_pop_without_push);
     RUN_TEST(test_eval_call_continuation_underrun);
     RUN_TEST(test_eval_call_wrong_type);
     RUN_TEST(test_eval_build_function_no_defaults);

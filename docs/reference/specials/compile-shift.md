@@ -20,12 +20,11 @@ tuple `(a, b)`, and a call with keywords, `(k a x: 1)`, with a `values`
 instance over all of them. The resumed slice is the body of `K`: a `raise`
 in it propagates from the `(k ...)` call site, and a `break` or `continue`
 in it reaches only a loop opened inside the slice. The slice ends where the
-`reset` ends, so the function the `reset` is written in has no boundary
-inside it: a `return` in that function's part of the slice raises
-`KoskariPromptUnreachable`, with `operation` `return` and `boundary`
-`continuation`. A function the slice calls returns as usual. A `yield` in
-that part of the slice raises the same error with `operation` `yield`: the
-slice has no generator of its own, wherever `K` is called from.
+`reset`'s body ends, and the body is a function of its own (see
+[`reset`](compile-reset.md)): a `return` in the body's part of the slice
+gives that call's value to the `(k ...)` call. A function the slice calls
+returns as usual. A `yield` written in the body is refused at compile
+time, so the slice never yields to a generator outside it.
 
 The handler runs after the shift has aborted to its `reset`: the captured
 region is left first, and the handler is called with the `reset`'s prompt

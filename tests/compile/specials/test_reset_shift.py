@@ -612,7 +612,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         (let [[g nil]]
           (reset
             (begin
-              (setq n
+              (var n
                 (shift k
                   (begin
                     (setq g k)
@@ -798,7 +798,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         src_str = """
         (reset
           (begin
-            (setq g
+            (var g
               (call
                 (lambda [] (yield (shift k 1)))))
             (next g)))

@@ -1771,8 +1771,10 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
             goto failure;
           }
 
-          /* SHIFT's tag count names no tag or the one tag */
-          if (op == KOS_OP_SHIFT && slot == 0 && val > 1) {
+          /* a prompt instruction's tag count names no tag or the one
+             tag */
+          if ((op == KOS_OP_SHIFT || op == KOS_OP_RESET)
+              && slot == 0 && val > 1) {
             PyErr_Format(PyExc_ValueError, "Code instruction %zd EXTRA"
                          " field %d %R is not 0 or 1", i, slot, elem);
             goto failure;
@@ -1891,14 +1893,6 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                        i, b, (unsigned) KOS_SEGMENT_MAX_SLOTS);
           goto failure;
         }
-      }
-
-      /* A prompt instruction's count is the number of operands naming
-         its tag: none for the default tag, or the one tag. */
-      if (op == KOS_OP_PUSH_PROMPT && val > 1) {
-        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
-                     " is not 0 or 1", i, b);
-        goto failure;
       }
     }
 
@@ -2276,7 +2270,6 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
   { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
   { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
-  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT,   0 },
   { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
   { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
   { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },

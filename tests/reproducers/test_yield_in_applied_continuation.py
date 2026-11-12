@@ -15,12 +15,12 @@
 """
 tests.reproducers.test_yield_in_applied_continuation
 
-A delimited continuation captured inside a generator can outlive it.
-Applied where no generator is running, a yield in the resumed region
-has nothing to suspend: it is an ordinary error, raised at the yield,
-which a try around the application catches and a finally sees. The
-resumed region has no generator of its own, so the error names the
-continuation as what the yield could not leave.
+A delimited continuation captured inside a generator can outlive it. A
+reset's body is a function the reset calls, not part of the generator
+around it, so a yield written in the body is refused when the source is
+compiled, and the continuation never holds one. The generator yields
+the reset's value instead, and a continuation captured there resumes
+where no generator runs.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -30,60 +30,47 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import KoskariPromptUnreachable
+from koskari.exceptions import SpecialError
 from koskari.module import load_module_source_async, new_module
 
 
 pytestmark = pytest.mark.phase_reproducers
 
 
-SRC = """
+YIELD_SRC = """
 def gen [out]:
     (out.append (reset (+ (shift k k) (yield 5))))
+"""
+
+
+SRC = """
+def gen [out]:
+    yield (reset (+ (shift k (begin (out.append k) 1)) 10))
 
 def escaped []:
     var out #[]
-    (list (gen out))
-    (out.pop)
-
-def caught []:
-    var k (escaped)
-    try:
-        (k 1)
-    except [e RuntimeError]:
-        #[e.operation e.boundary]
-
-def cleaned [log]:
-    var k (escaped)
-    try:
-        (k 1)
-    finally:
-        (log.append "finally")
+    var seen (list (gen out))
+    #[seen ((out.pop) 5)]
 """
 
 
 class TestYieldInAppliedContinuation(unittest.IsolatedAsyncioTestCase):
 
-    async def load(self):
+    async def load(self, src=SRC):
         module = new_module("yield_in_applied_continuation")
         vars(module)["__file__"] = "<yield_in_applied_continuation>"
-        await load_module_source_async(module, SRC)
+        await load_module_source_async(module, src)
         return vars(module)
 
 
-    async def test_yield_with_no_generator_is_caught(self):
-        mod = await self.load()
-        self.assertEqual(["yield", "continuation"], await mod["caught"]())
+    async def test_yield_in_a_reset_body_is_refused(self):
+        with self.assertRaises(SpecialError):
+            await self.load(YIELD_SRC)
 
 
-    async def test_yield_with_no_generator_runs_finally(self):
+    async def test_continuation_from_a_generator_resumes_outside_it(self):
         mod = await self.load()
-        log = []
-        with self.assertRaises(KoskariPromptUnreachable) as caught:
-            await mod["cleaned"](log)
-        self.assertEqual("yield", caught.exception.operation)
-        self.assertEqual("continuation", caught.exception.boundary)
-        self.assertEqual(["finally"], log)
+        self.assertEqual([[1], 15], await mod["escaped"]())
 
 
 # The end.

@@ -27,9 +27,9 @@
 
 /**
    Invoke k with value. Pushes a transfer goal: for a delimited k the
-   caller stays on the chain and a fresh clone of the template is attached to
-   a DELIM bookmark, every time; for an undelimited k the chain is
-   replaced. Callers: callable invoke, apply paths.
+   caller stays on the chain and a fresh clone of the template is
+   attached on its dyn_top, every time; for an undelimited k the chain
+   is replaced. Callers: callable invoke, apply paths.
 */
 int kos_invoke_continuation(
     KosContext *ctx,
@@ -42,9 +42,9 @@ int kos_invoke_continuation(
     return -1;
   }
 
-  /* Delimited k(value): the caller stays on the chain and the segment
-     is attached to a DELIM bookmark that routes the slice's completion back
-     to this invoke site. Undelimited: the whole chain is replaced. */
+  /* Delimited k(value): the caller stays on the chain and the copy is
+     attached above it, returning to it as a call does. Undelimited: the
+     whole chain is replaced. */
   int is_delimited = KosContinuation_DELIMITED(k);
 
   /* Undelimited: the seam is the lowest common ancestor of the live
@@ -99,34 +99,19 @@ int kos_invoke_continuation(
   if (target)
     KosDynNode_PARENT(shape.bottom) = NULL;
 
-  if (is_delimited) {
-    KosDynDelim *ret_delim = kos_dyn_push_delim(
-        ctx, KosContext_FRAME(ctx) ? KosContext_PC(ctx) : NULL);
-    if (! ret_delim) {
-      kos_dynchain_free(target, NULL);
-      PyMem_Free(shape.pieces);
-      if (! PyErr_Occurred())
-        PyErr_SetString(PyExc_RuntimeError,
-                        "failed to push delimited return marker");
-      return -1;
-    }
-    seam = (KosDynNode *) ret_delim;
-    if (KOS_XFER_TRACE)
-      SAYF("[xfer] invoke: push DELIM dyn_top=%p frame_top=%p",
-           (void *) KosContext_DYN_TOP(ctx),
-           (void *) KosContext_FRAME(ctx));
-  }
+  /* A delimited copy is whole frames ending in its prompt, attached on
+     the caller's dyn_top: the body frame's copy returns to the caller
+     as any callee does, so there is nothing to leave. */
+  if (is_delimited)
+    seam = KosContext_DYN_TOP(ctx);
 
   {
     KosXferGoal *goal = kos_xfer_goal_new(
         target, seam, value, KosContinuation_RESUME_PC(k),
         continuation_ref, 0);
     if (! goal) {
-      /* target is freed by kos_xfer_goal_new on failure. Undo only the
-         DELIM this call pushed; an undelimited seam is a live node. */
+      /* target is freed by kos_xfer_goal_new on failure */
       PyMem_Free(shape.pieces);
-      if (is_delimited && seam)
-        (void) kos_dyn_pop_delim(ctx, (KosDynDelim *) seam);
       return -1;
     }
     goal->shape = shape;

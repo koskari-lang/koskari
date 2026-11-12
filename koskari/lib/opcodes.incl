@@ -421,8 +421,7 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(PUSH_PROMPT, 1, COUNT)         // arg = 0 (default tag) or 1 (tag popped from stack); cache: extent close pc
-OP(POP_PROMPT, 0, NOARG)          // pop prompt from dynamic chain
+OP(RESET, 0, EXTRA, COUNT, CONST, NOARG, NOARG)  // tag count (0, or 1 popped), body FunctionSpec; push the prompt, call the body above it
 OP(SHIFT, 0, EXTRA, COUNT, CONST, NOARG, NOARG)  // tag count (0, or 1 popped), handler FunctionSpec; abort, then call the handler with k
 
 // undelimited continuation (call/cc) block

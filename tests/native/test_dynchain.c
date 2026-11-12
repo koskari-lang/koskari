@@ -346,53 +346,6 @@ static int test_chain_clone_segment_fresh_ids(void) {
 }
 
 
-static int test_dyndelim_return_frame_is_the_frame_below(void) {
-    /*
-      A DELIM records a return pc and no frame: the frame it returns
-      into is the first FRAME below it. A clone carries the pc and, set
-      on another frame, returns into that one.
-    */
-    PyObject *ns = PyDict_New();
-    KosDynFrame *here;
-    KosDynFrame *there;
-    KosDynPrompt *between;
-    KosDynDelim *delim;
-    KosDynNode *clone;
-
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-    /* each frame takes a reference to the namespace */
-    Py_INCREF(ns);
-    here = kos_dynframe_new(NULL, NULL, ns);
-    there = kos_dynframe_new(NULL, NULL, ns);
-    TEST_ASSERT_NOT_NULL(here, "create a frame");
-    TEST_ASSERT_NOT_NULL(there, "create another frame");
-
-    between = kos_dynprompt_new((KosDynNode *) here, NULL);
-    TEST_ASSERT_NOT_NULL(between, "create a node between");
-    delim = kos_dyndelim_new((KosDynNode *) between, FAKE_INSN(3));
-    TEST_ASSERT_NOT_NULL(delim, "create DELIM");
-    TEST_ASSERT_SAME(kos_dyndelim_return_frame(delim), here,
-                     "the DELIM returns into the first frame below it");
-
-    clone = kos_dyn_clone((KosDynNode *) delim);
-    TEST_ASSERT_NOT_NULL(clone, "clone DELIM");
-    TEST_ASSERT_SAME(KosDynDelim_RETURN_PC(clone), FAKE_INSN(3),
-                     "the clone carries the return pc");
-    TEST_ASSERT_NULL(kos_dyndelim_return_frame((KosDynDelim *) clone),
-                     "a clone on no chain has no return frame");
-    KosDynNode_PARENT(clone) = (KosDynNode *) there;
-    TEST_ASSERT_SAME(kos_dyndelim_return_frame((KosDynDelim *) clone), there,
-                     "the clone returns into the frame it now sits on");
-
-    KosDynNode_PARENT(clone) = NULL;
-    kos_dyndelim_free((KosDynDelim *) clone);
-    kos_dynchain_free((KosDynNode *) delim, NULL);
-    kos_dynframe_free(there);
-
-    return 0;
-}
-
-
 /* === Continuation tests === */
 
 
@@ -500,7 +453,7 @@ static int test_dyngen_chain_free_leaves_the_owner_alone(void) {
 }
 
 
-/* === WITH / DELIM / region payload tests === */
+/* === WITH / region payload tests === */
 
 
 static int test_dynwith_free_exc_unconditional(void) {
@@ -609,7 +562,6 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_chain_free);
     RUN_TEST(test_chain_clone_segment);
     RUN_TEST(test_chain_clone_segment_fresh_ids);
-    RUN_TEST(test_dyndelim_return_frame_is_the_frame_below);
 
     /* Continuation tests */
     RUN_TEST(test_continuation_free_null);

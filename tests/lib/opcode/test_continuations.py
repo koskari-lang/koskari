@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for delimited and undelimited continuations (PUSH_PROMPT, SHIFT,
-CALL on DelimitedContinuation, POP_PROMPT, PUSH_CC, CAPTURE_CC, POP_CC)
-and evaluator token.
+Tests for delimited and undelimited continuations (RESET, SHIFT, CALL
+on DelimitedContinuation, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator
+token.
 Includes cross-context continuation pass-through tests verifying the
 segmented transfer path (foreign-token KoskariContinuationApply handling).
 
@@ -60,40 +60,141 @@ def handler_spec(code, local_syms=("k",)):
     return handler.function_spec(FormalsSpec(("k",)))
 
 
-class TestDelimitedContinuations(CevalTest):
+def body_spec(code):
     """
-    Tests for PUSH_PROMPT, SHIFT, CALL, POP_PROMPT
+    The FunctionSpec of a reset's body, a function of no arguments
+    whose body is code
+
+    :param code: Sequence of [op, arg] as in build_code
+    :return: FunctionSpec
     """
 
-    async def test_reset_shift_invoke(self):
+    body = build_code(code, name="body")
+    return body.function_spec(FormalsSpec())
+
+
+class TestReset(CevalTest):
+    """
+    Tests for RESET: the body is a function called above its prompt,
+    and its return, or the return of a shift's handler called above the
+    same prompt, is the value of the RESET
+    """
+
+    async def test_reset_body_value(self):
         """
-        Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT, SHIFT,
-        CALL in the handler, POP_PROMPT for continuation invocation
+        A body that returns 7 with no shift: the RESET's value is 7
         """
 
         code = [
-            ["PUSH_PROMPT", 0],
-            ["CONST", 1],
-            ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
-            ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RESET", (0, body_spec([["CONST", 7], ["RETURN", 1]]), 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
-        expr = make_callable(code_obj, ns)
-        result = await expr()
-        self.assertEqual(result, 6)
+        self.assertEqual(7, await make_callable(code_obj, ns)())
 
+
+    async def test_reset_value_lands_on_the_caller(self):
+        """
+        The RESET's value lands on the caller's operands like a call's:
+        (+ 1 (reset 7)) is 8
+        """
+
+        code = [
+            ["CONST", 1],
+            ["RESET", (0, body_spec([["CONST", 7], ["RETURN", 1]]), 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        self.assertEqual(8, await make_callable(code_obj, ns)())
+
+
+    async def test_reset_shift_invoke(self):
+        """
+        (reset (+ 1 (shift k (k 5)))) is 6: the handler's value, which
+        is the copy's, is the RESET's
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        self.assertEqual(6, await make_callable(code_obj, ns)())
+
+
+    async def test_k_applied_after_the_reset(self):
+        """
+        (reset (shift k k)) then (k 42): the copy's body returns 42 to
+        the call
+        """
+
+        body = body_spec([
+            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["CONST", 42],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        self.assertEqual(42, await make_callable(code_obj, ns)())
+
+
+    async def test_tagged_reset(self):
+        """
+        A tag taken from the stack: the body's value is the RESET's
+        """
+
+        code = [
+            ["VAR", "tag"],
+            ["RESET", (1, body_spec([["CONST", 5], ["RETURN", 1]]), 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag": object()})
+        self.assertEqual(5, await make_callable(code_obj, ns)())
+
+
+    async def test_reset_count_above_1_refused_at_build(self):
+        """
+        The tag count is 0 or 1; building code with another fails
+        """
+
+        code = [
+            ["RESET", (2, body_spec([["CONST", 5], ["RETURN", 1]]), 0, 0)],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 EXTRA field 0 2 is not 0 or 1",
+            str(caught.exception))
+
+
+class TestDelimitedContinuations(CevalTest):
+    """
+    Tests for SHIFT and CALL on a DelimitedContinuation, under RESET
+    """
 
     async def test_delimited_continuation_cannot_be_called_from_python(self):
         """
         (reset (shift k k)) returns k; calling k from Python raises TypeError
         """
 
-        code = [
-            ["PUSH_PROMPT", 0],
+        body = body_spec([
             ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -119,12 +220,14 @@ class TestDelimitedContinuations(CevalTest):
             ["CALL", 1],
             ["RETURN", 1],
         ], local_syms=("k", "j"))
-        code = [
-            ["PUSH_PROMPT", 0],
+        body = body_spec([
             ["CONST", 1],
             ["SHIFT", (0, stored, 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -139,10 +242,12 @@ class TestDelimitedContinuations(CevalTest):
         the handler. Result 42 returns to call site.
         """
 
-        code = [
-            ["PUSH_PROMPT", 0],
+        body = body_spec([
             ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["VAR_STORE", "k"],
             ["VAR", "k"],
             ["CONST", 42],
@@ -158,14 +263,17 @@ class TestDelimitedContinuations(CevalTest):
     async def test_delimited_result_from_outside_shift(self):
         """
         (reset (shift k k)) then (k 99) => 99. When invoking from outside
-        the handler, the continuation's first op is the POP_PROMPT after
-        SHIFT, which takes the value; the result 99 flows to the call site.
+        the handler, the continuation's first op is the body's RETURN
+        after SHIFT, which takes the value; the copy of the body returns
+        99 to the call site.
         """
 
-        code = [
-            ["PUSH_PROMPT", 0],
+        body = body_spec([
             ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["VAR_STORE", "k"],
             ["VAR", "k"],
             ["CONST", 99],
@@ -178,54 +286,38 @@ class TestDelimitedContinuations(CevalTest):
         self.assertEqual(result, 99)
 
 
-    async def test_invoke_delimited_continuation_after_pop_prompt_returns_value(self):
-        """
-        (reset (shift k k)) then (k 42): the handler returns k, then we
-        invoke k(42) after the prompt is gone. Push model allows invoke
-        from outside; result 42 returns to call site.
-        """
-
-        code = [
-            ["PUSH_PROMPT", 0],
-            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
-            ["POP_PROMPT", 0],
-            ["CONST", 42],
-            ["CALL", 1],
-            ["RETURN", 1],
-        ]
-        code_obj, ns = build_expr(code)
-        expr = make_callable(code_obj, ns)
-        result = await expr()
-        self.assertEqual(result, 42)
-
-
     async def test_tagged_shift_passes_inner_prompt_graft(self):
         """
-        A shift tagged A inside a default-tag prompt inside a prompt
+        A shift tagged A inside a default-tag reset inside a reset
         tagged A: the handler's value k is delivered at the outer
         prompt, and invoking k from there re-enters the region through
-        the inner prompt, whose own POP_PROMPT pops it as a reset.
+        the inner reset, whose body's return ends its prompt.
         (+ 1 5) then (+ 6 10): 16. Delivery at the inner prompt would
         add 10 to k; an early return at the inner prompt would give 6.
         """
 
-        code = [
-            ["VAR", "tag_a"],
-            ["PUSH_PROMPT", 1],
-            ["PUSH_PROMPT", 0],
+        tag_a = object()
+        inner = body_spec([
             ["CONST", 1],
-            ["VAR", "tag_a"],
+            ["CONST", tag_a],
             ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        outer = body_spec([
+            ["RESET", (0, inner, 0, 0)],
             ["CONST", 10],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, outer, 0, 0)],
             ["CONST", 5],
             ["CALL", 1],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, values={"tag_a": object()})
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 16)
@@ -233,28 +325,33 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_tagged_shift_passes_inner_prompt_inplace(self):
         """
-        The same shape with k invoked inside the handler: the slice
-        resumes on the live chain, the inner prompt pops as a reset, and
-        the outer prompt's POP_PROMPT returns 16 to the handler, which
-        delivers it at the outer prompt. Delivery at the inner prompt
-        would give 26.
+        The same shape with k invoked inside the handler: the copy
+        attaches on the live chain, the inner body's return ends the
+        inner prompt, and the outer body's return of 16 reaches the
+        handler, which delivers it at the outer prompt. Delivery at the
+        inner prompt would give 26.
         """
 
-        code = [
-            ["VAR", "tag_a"],
-            ["PUSH_PROMPT", 1],
-            ["PUSH_PROMPT", 0],
+        tag_a = object()
+        inner = body_spec([
             ["CONST", 1],
-            ["VAR", "tag_a"],
+            ["CONST", tag_a],
             ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        outer = body_spec([
+            ["RESET", (0, inner, 0, 0)],
             ["CONST", 10],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, outer, 0, 0)],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, values={"tag_a": object()})
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 16)
@@ -262,37 +359,42 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_shift_inside_a_copy_attached_from_a_handler(self):
         """
-        A shift tagged A crosses a default-tag prompt, and its handler
+        A shift tagged A crosses a default-tag reset, and its handler
         invokes k. In the copy that is attached, a second shift seeks the
         default tag: it stops at the copy's inner prompt, which is region
-        content and pops as a reset, while the copy's tag A prompt
-        delivers to the invoke site. (+ 10 5), then (+ 15 100) from the
+        content and ends with its body, while the copy's outer body
+        returns to the invoke site. (+ 10 5), then (+ 15 100) from the
         second handler, then (+ 1 115): 116
         """
 
+        tag_a = object()
         apply_k_100 = handler_spec([
             ["VAR", "k"],
             ["CONST", 100],
             ["CALL", 1],
             ["RETURN", 1],
         ])
-        code = [
-            ["VAR", "tag_a"],
-            ["PUSH_PROMPT", 1],
-            ["CONST", 1],
-            ["PUSH_PROMPT", 0],
+        inner = body_spec([
             ["CONST", 10],
-            ["VAR", "tag_a"],
+            ["CONST", tag_a],
             ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
             ["SHIFT", (0, apply_k_100, 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        outer = body_spec([
+            ["CONST", 1],
+            ["RESET", (0, inner, 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, outer, 0, 0)],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, values={"tag_a": object()})
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 116)
@@ -307,16 +409,17 @@ class TestDelimitedContinuations(CevalTest):
 
         tag_a = [1]
         tag_b = [1]
+        body = body_spec([
+            ["CONST", tag_b],
+            ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
+            ["RETURN", 1],
+        ])
         code = [
             ["VAR", "tag_a"],
-            ["PUSH_PROMPT", 1],
-            ["VAR", "tag_b"],
-            ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
-            ["POP_PROMPT", 0],
+            ["RESET", (1, body, 0, 0)],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(
-            code, values={"tag_a": tag_a, "tag_b": tag_b})
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
         expr = make_callable(code_obj, ns)
         with self.assertRaises(KoskariPromptNotFound) as caught:
             await expr()
@@ -326,22 +429,23 @@ class TestDelimitedContinuations(CevalTest):
     async def test_stack_tag_is_not_a_captured_operand(self):
         """
         A tag an instruction takes from the stack is gone before the
-        prompt is pushed or the continuation captured: the region's one
-        pending operand is the 1, so (k 5) is 6. None taken from the
-        stack is the default tag, so it reaches the prompt a count of
-        0 made
+        continuation is captured: the region's one pending operand is
+        the 1, so (k 5) is 6. None taken from the stack is the default
+        tag, so it reaches the prompt a count of 0 made
         """
 
-        code = [
-            ["PUSH_PROMPT", 0],
+        body = body_spec([
             ["CONST", 1],
-            ["VAR", "tag"],
+            ["CONST", None],
             ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, values={"tag": None})
+        code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 6)
@@ -350,16 +454,19 @@ class TestDelimitedContinuations(CevalTest):
     async def test_none_stack_tag_makes_a_default_prompt(self):
         """
         A prompt pushed with None taken from the stack carries the
-        default tag: a shift whose count is 0 captures up to it
+        default tag: a shift whose count is 0 captures up to it, and the
+        tag is not an operand under the reset's value
         """
 
-        code = [
-            ["VAR", "tag"],
-            ["PUSH_PROMPT", 1],
+        body = body_spec([
             ["CONST", 1],
             ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag"],
+            ["RESET", (1, body, 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code, values={"tag": None})
@@ -368,21 +475,11 @@ class TestDelimitedContinuations(CevalTest):
         self.assertEqual(result, 6)
 
 
-    async def test_prompt_count_above_1_refused_at_build(self):
+    async def test_shift_count_above_1_refused_at_build(self):
         """
-        A prompt instruction's count is 0 for the default tag or 1 for
-        a tag from the stack; building code with any other count fails
+        A shift's count is 0 for the default tag or 1 for a tag from the
+        stack; building code with any other count fails
         """
-
-        code = [
-            ["PUSH_PROMPT", 2],
-            ["RETURN", 0],
-        ]
-        with self.assertRaises(ValueError) as caught:
-            build_expr(code)
-        self.assertEqual(
-            "Code instruction 0 argument 2 is not 0 or 1",
-            str(caught.exception))
 
         code = [
             ["SHIFT", (2, handler_spec(_RETURN_K), 0, 0)],

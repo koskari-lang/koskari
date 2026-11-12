@@ -142,9 +142,8 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
 
 /**
    Generic unwind walk toward a target node. See dynchain.h for the
-   contract. Pops until dyn_top == target or empty, crossing barriers and
-   delimiters since these walks deliberately unwind through delimited
-   prompt boundaries. Callers: eval.c route_delim_return.
+   contract. Pops until dyn_top == target or empty, crossing barriers.
+   Callers: transform.c.
 */
 KosOpResult kos_dyn_unwind_to_node(
     KosContext *ctx,
@@ -265,7 +264,7 @@ KosOpResult kos_dyn_unwind_return(
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
       /* The node's leave started and will suspend; val is stored on the node
          and the return resumes once the node has left the chain. */
-      if (kos_dyn_ob_store_return(top, val, (uint8_t) kind, NULL) < 0) {
+      if (kos_dyn_ob_store_return(top, val, (uint8_t) kind) < 0) {
         Py_XDECREF(r.val);
         return EVAL_RAISE();
       }
@@ -285,12 +284,9 @@ KosOpResult kos_dyn_unwind_return(
    Find the nearest enabled LOOP or FOREACH from dyn_top. A loop whose
    else clause is running has been disabled by CLEAR_LOOP or
    CLEAR_FOREACH and is finished: a break or continue issued there
-   belongs to the loop enclosing it. A live delimited-invoke bookmark
-   ends the search: the resumed slice above it is the continuation's
-   body, and a loop below it (the one around the reset, or one in the
-   shift handler) is outside that body, as a return or a raise in the
-   slice is delivered to the (k ...) call site and not past it.
-   Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
+   belongs to the loop enclosing it. A loop in another frame is not
+   reachable: kos_dyn_unwind_to_loop refuses one below the current
+   frame. Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
    kos_dyn_unwind_to_loop serving BREAK/CONTINUE.
 */
 KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
@@ -298,8 +294,6 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
   while (node) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
-    if (KosDynNode_IS_DELIM(node))
-      return NULL;
     node = KosDynNode_PARENT(node);
   }
   return NULL;
@@ -389,7 +383,7 @@ KosOpResult kos_dyn_unwind_to_loop(
       uint8_t path = (event == KOS_XFER_EVENT_BREAK)
           ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
 
-      if (kos_dyn_ob_store_return(top, result, path, NULL) < 0) {
+      if (kos_dyn_ob_store_return(top, result, path) < 0) {
         Py_XDECREF(r.val);
         return EVAL_RAISE();
       }

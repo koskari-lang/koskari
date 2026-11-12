@@ -15,8 +15,9 @@
 
 
 /**
-  Included by dynchain.c. The KOS_DYN_PROMPT node: the reset delimiter
-  owning its region's operand segment.
+  Included by dynchain.c. The KOS_DYN_PROMPT node: the reset delimiter.
+  The frame called on it, the reset's body or a shift's handler, ends
+  it when it returns.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -26,10 +27,8 @@
 
 
 /**
-   Allocate PROMPT delimiter owning the delimited region's operand-stack
-   block. The region's operands live in that block, so dropping the node
-   leaves the parent block at the depth it had on entry, and capture takes
-   the region's operands without needing to know where they start.
+   Allocate a PROMPT delimiter. It owns no operands: the region's are
+   in the frames above it, the reset's body first among them.
    Callers: kos_dyn_push_prompt.
 */
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
@@ -41,8 +40,6 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER);
   KosDynPrompt_TAG(prompt) = Py_XNewRef(tag);
-  KosDynPrompt_POP_PC(prompt) = NULL;
-  kos_dynnode_use_inline_segment((KosDynNode *) prompt);
   return prompt;
 }
 
@@ -60,7 +57,6 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
     return NULL;
 
   KosDynPrompt_TAG(clone) = Py_XNewRef(KosDynPrompt_TAG(prompt));
-  KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   return clone;
 }
 
@@ -85,19 +81,14 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
+   Push prompt via kos_dyn_push. Callers: opcode RESET.
 */
-KosDynPrompt *kos_dyn_push_prompt(
-    KosContext *ctx,
-    PyObject *tag,
-    KosOp *pop) {
+KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, PyObject *tag) {
 
   // CONTEXT: dirty, touches context directly
   KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), tag);
   if (! prompt)
     return NULL;
-
-  KosDynPrompt_POP_PC(prompt) = pop;
 
   if (kos_dyn_push(ctx, (KosDynNode *) prompt) < 0) {
     kos_dynprompt_free(prompt);

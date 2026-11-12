@@ -21,7 +21,9 @@ or a parameterize inside the region does not reach it. A handler is a
 function of its continuation: a yield written in it is refused, a
 generator defined in it is its own, loops of its own break and
 continue, and a return in it gives the reset its value, wherever the
-shift was written.
+shift was written. A reset's body is a function too: a return in a
+resumed copy of it is that copy's value, and a yield written in it is
+refused.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -31,7 +33,7 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import KoskariPromptUnreachable, SpecialError
+from koskari.exceptions import SpecialError
 from koskari.module import load_module_source_async, new_module
 
 
@@ -110,30 +112,19 @@ def region_callee_return []:
     reset:
         (add_one (shift k (k 5)))
 
+"""
+
+
+REGION_YIELD_OWN_SRC = """
 def region_yield_own_handler []:
     reset:
         (+ (shift k (k 1)) (yield 5))
+"""
 
-def run_region_yield_own_handler []:
-    try:
-        (list (region_yield_own_handler))
-    except [e KoskariPromptUnreachable]:
-        #[e.operation e.boundary]
 
+REGION_YIELD_ESCAPING_SRC = """
 def region_yield_escaping [out]:
     (out.append (reset (+ (shift k k) (yield 5))))
-
-def other_generator [k]:
-    yield (k 1)
-
-def run_region_yield_other_generator []:
-    var out #[]
-    (list (region_yield_escaping out))
-    var k (out.pop)
-    try:
-        (list (other_generator k))
-    except [e KoskariPromptUnreachable]:
-        #[e.operation e.boundary]
 """
 
 
@@ -199,17 +190,14 @@ class TestShiftAbortFirst(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, await mod["param_in_handler"]())
 
 
-    async def test_return_in_a_resumed_region_is_refused(self):
+    async def test_return_in_a_resumed_region_is_its_value(self):
         mod = await self.load()
-        with self.assertRaises(KoskariPromptUnreachable) as caught:
-            await mod["region_return"]()
-        self.assertEqual("return", caught.exception.operation)
-        self.assertEqual("continuation", caught.exception.boundary)
+        self.assertEqual(99, await mod["region_return"]())
 
 
-    async def test_refused_region_return_is_raised_at_the_return(self):
+    async def test_return_in_a_resumed_region_inside_a_try_is_its_value(self):
         mod = await self.load()
-        self.assertEqual(106, await mod["region_return_caught"]())
+        self.assertEqual(99, await mod["region_return_caught"]())
 
 
     async def test_return_in_a_function_called_by_the_region(self):
@@ -217,18 +205,15 @@ class TestShiftAbortFirst(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(6, await mod["region_callee_return"]())
 
 
-    async def test_region_yield_applied_in_its_own_handler(self):
-        mod = await self.load()
-        self.assertEqual(
-            ["yield", "continuation"],
-            await mod["run_region_yield_own_handler"]())
+    async def test_yield_in_a_region_applied_in_its_own_handler_is_refused(
+            self):
+        with self.assertRaises(SpecialError):
+            await self.load(REGION_YIELD_OWN_SRC)
 
 
-    async def test_region_yield_applied_in_another_generator(self):
-        mod = await self.load()
-        self.assertEqual(
-            ["yield", "continuation"],
-            await mod["run_region_yield_other_generator"]())
+    async def test_yield_in_an_escaping_region_is_refused(self):
+        with self.assertRaises(SpecialError):
+            await self.load(REGION_YIELD_ESCAPING_SRC)
 
 
 # The end.

@@ -45,9 +45,10 @@
   KosDynKind enumerates the types of nodes in the dynamic chain.
 
   KOS_DYN_FRAME    - Function activation record
-  KOS_DYN_PROMPT   - Delimiter for delimited continuations (reset)
-  KOS_DYN_DELIM    - Delimited invoke return marker with return metadata
-  KOS_DYN_WIND     - Dynamic-wind extent with before/after hooks
+  KOS_DYN_PROMPT   - Delimiter for delimited continuations (reset): the
+                     frame on it is the reset's body or a shift's
+                     handler, and ends it
+  KOS_DYN_WIND    - Dynamic-wind extent with before/after hooks
   KOS_DYN_TRY      - try region
   KOS_DYN_FINALLY  - finally region
   KOS_DYN_LOOP     - loop region
@@ -66,7 +67,6 @@
 typedef enum KosDynKind {
   KOS_DYN_FRAME = 0,
   KOS_DYN_PROMPT,
-  KOS_DYN_DELIM,
   KOS_DYN_WIND,
   KOS_DYN_TRY,
   KOS_DYN_FINALLY,
@@ -393,7 +393,6 @@ typedef struct KosObligation {
     struct {
       PyObject *value;             /* owned */
       uint8_t path;                /* KosPendingReturnKind */
-      struct KosDynNode *delim;    /* borrowed bookmark, delimited path */
     } ret;
   } u;
 } KosObligation;
@@ -593,21 +592,7 @@ struct KosDynNode {
          owned. NULL is the default tag, the one reset and shift use,
          and the one None names: None itself is never stored. */
       PyObject *tag;
-      /* the POP_PROMPT closing this prompt's region, resolved from the
-         PROMPT extent when PUSH_PROMPT ran. A shift's abort resumes
-         the frame there; stored resolved because by the time a shift
-         runs, no live acting pc still points into the extent. */
-      KosOp *pop_pc;
     } prompt;
-    struct {
-      /* Where the return continues in the invoking frame; NULL for a
-         code-less frame, whose resume takes the delivery. The frame is
-         not recorded: it is the first FRAME below the node, found at
-         delivery (kos_dyndelim_return_frame), so a clone of the node
-         attached elsewhere returns into the frame it now sits on. A pc
-         cannot go stale across a clone; a frame pointer can. */
-      KosOp *pc;
-    } delim;
     struct {
       KosOp *resume_pc;  /* the instruction after POP_CC */
     } cc;
@@ -741,7 +726,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx);
 
 
 typedef struct KosDynNode KosDynPrompt;
-typedef struct KosDynNode KosDynDelim;
 typedef struct KosDynNode KosDynWind;
 typedef struct KosDynNode KosDynTry;
 typedef struct KosDynNode KosDynFinally;
@@ -762,8 +746,9 @@ typedef struct KosDynNode KosDynGen;
    KosContinuation holds a captured delimited continuation.
 
    The captured_chain is a cloned segment of the dynamic chain from the
-   capture point down through the prompt and its owning FRAME node
-   (delimited), or from above the CC block down to root (undelimited).
+   capture point down through the prompt, whole frames up to and
+   including the reset's body (delimited), or from above the CC block
+   down to root (undelimited).
 
    The resume_pc is the instruction to resume at; the frame it
    resumes in is resolved from the chain at invoke time (the attached
@@ -850,26 +835,6 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag);
    :param prompt: prompt to free (may be NULL)
 */
 void kos_dynprompt_free(KosDynPrompt *prompt);
-
-
-/**
-   Allocate a new DELIM node: the return bookmark an application of a
-   delimited continuation leaves at its call site.
-
-   :param parent: parent node in dynamic chain
-   :param pc: the instruction the return continues at, or NULL
-
-   :return: new DELIM node, or NULL on error
-*/
-KosDynDelim *kos_dyndelim_new(KosDynNode *parent, KosOp *pc);
-
-
-/**
-   Free a DELIM node.
-
-   :param delim: DELIM node to free (may be NULL)
-*/
-void kos_dyndelim_free(KosDynDelim *delim);
 
 
 /**
@@ -1347,20 +1312,16 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
 
 /**
-   Push a prompt delimiter onto the dynamic chain.
+   Push a prompt delimiter onto the dynamic chain. It owns no operands:
+   the frame called on it, a reset's body, holds the region's.
 
    :param ctx: execution context
    :param tag: the prompt's tag, matched by identity, or NULL for the
       default tag (never None); a reference is taken
-   :param pop: the POP_PROMPT closing the region (from the PROMPT
-      extent at the push site); a shift's abort resumes there
 
    :return: new prompt, or NULL on error
 */
-KosDynPrompt *kos_dyn_push_prompt(
-    KosContext *ctx,
-    PyObject *tag,
-    KosOp *pop);
+KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, PyObject *tag);
 
 
 /**
@@ -1374,45 +1335,6 @@ KosDynPrompt *kos_dyn_push_prompt(
   :return: 0 on success, -1 on error
 */
 int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
-
-
-/**
-   Push a DELIM node via kos_dyn_push.
-
-   :param ctx: execution context
-   :param pc: the instruction the return continues at, or NULL
-
-   :return: new DELIM node, or NULL on error
-*/
-KosDynDelim *kos_dyn_push_delim(KosContext *ctx, KosOp *pc);
-
-
-/**
-   Pop a DELIM node from the dynamic chain.
-
-   :param ctx: execution context
-   :param delim: DELIM node to pop (must be dyn_top)
-*/
-int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
-
-
-/**
-   Complete a delimited POP_PROMPT return after the unwind walk succeeds
-   (non-async). Pushes value onto the first operand block below the
-   DELIM, sets the return frame's pc to the DELIM's, and pops the DELIM.
-   The return frame is the first FRAME below the DELIM.
-
-   :param ctx: execution context
-   :param delim: the DELIM the applied continuation returns through
-   :param value: return value (consumes a reference on success or failure)
-
-   :return: 0 on success, -1 if ctx, value or delim is invalid or no
-      frame lies below the DELIM (sets PyExc_RuntimeError)
-*/
-int kos_dyn_finish_delimited_pop_return(
-   KosContext *ctx,
-   KosDynDelim *delim,
-   PyObject *value);
 
 
 /**
@@ -1439,14 +1361,14 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 /**
    Abort a shift to its prompt, then call its handler with k there.
 
-   The transfer leaves everything above the prompt, which keeps the
-   region's operands until the abort can no longer be cancelled: a
-   dyn-wind after thunk or a with's __exit__ that raises on the way out
-   abandons the transfer, and the region carries on where the raise is
-   caught. Once the prompt is at dyn_top its block is emptied, the
-   frame's pc is the prompt's POP_PROMPT, and the handler is called
-   above the prompt; its value lands on the prompt's block, for that
-   POP_PROMPT. A shift in the handler finds the same prompt.
+   The transfer leaves everything above the prompt, the reset's body
+   frame included, which holds the region's operands until the abort
+   can no longer be cancelled: a dyn-wind after thunk or a with's
+   __exit__ that raises on the way out abandons the transfer, and the
+   region carries on where the raise is caught. Once the prompt is at
+   dyn_top the handler is called above it; the handler's return takes
+   the prompt with it and is the reset's return. A shift in the handler
+   finds the same prompt.
 
    Pushes a transfer goal; the caller answers REPROLOGUE.
 
@@ -1515,21 +1437,17 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 /**
    The GEN node of the generator the running frame belongs to: the
    nearest GEN walking outward from the frame, or NULL when the frame
-   is not in a generator. It crosses every node, a DELIM included: a
-   caller that wants the chain's generators starts from it.
+   is not in a generator. It crosses every node: a caller that wants the
+   chain's generators starts from it.
 */
 KosDynGen *kos_dyn_find_gen(KosContext *ctx);
 
 
 /**
    The GEN node a yield in the running frame suspends: the nearest GEN
-   walking outward from the frame, without crossing a DELIM. NULL with
-   an exception set when there is none to suspend: a
-   KoskariPromptUnreachable when a DELIM ended the search (the region
-   of an applied continuation is yielding, and no generator is inside
-   it), a RuntimeError when the chain ran out. Callers:
-   kos_yield_deliver and the trampoline's YIELD arm, which then freeze
-   the node through kos_dyn_gen_freeze.
+   walking outward from the frame. NULL with a RuntimeError set when
+   the chain ran out. Callers: kos_yield_deliver and the trampoline's
+   YIELD arm, which then freeze the node through kos_dyn_gen_freeze.
 */
 KosDynGen *kos_dyn_yield_gen(KosContext *ctx);
 
@@ -1707,8 +1625,7 @@ KosOpResult kos_dyn_unlink_top(
 typedef enum KosPendingReturnKind {
   KOS_PENDING_RETURN_NONE = 0,
   KOS_PENDING_RETURN_FRAME,     /* a bytecode frame's RETURN */
-  KOS_PENDING_RETURN_DELIM,     /* routed to a delimited-invoke bookmark */
-  KOS_PENDING_RETURN_BREAK,     /* a loop's BREAK, value in hand */
+  KOS_PENDING_RETURN_BREAK,    /* a loop's BREAK, value in hand */
   KOS_PENDING_RETURN_CONTINUE,  /* a loop's CONTINUE, value in hand */
 } KosPendingReturnKind;
 
@@ -1723,7 +1640,7 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_to_node offers nothing: it unlinks each node above
    the target through kos_dyn_unlink_top with the barrier allowed, so
-   it crosses barriers and delimiters and no node can consume. A
+   it crosses barriers and no node can consume. A
    suspension leaves the value the caller is carrying with the caller,
    to store on the node whose leave is in flight, which is stored in
    *out_pending (NULL otherwise; the out-param itself may be NULL when
@@ -1732,11 +1649,8 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
    FINALLY consumes the return, taking val onto its block and branching
-   to its handler, and the walk answers EVAL_REPROLOGUE. It meets no
-   DELIM: the frame of an applied continuation that sits on one is
-   refused its return before the walk starts, and every other frame
-   above a DELIM has its own caller above it too. EVAL_NORMAL leaves val
-   the caller's. A suspension stores val on the in-flight node as a RETURN
+   to its handler, and the walk answers EVAL_REPROLOGUE. EVAL_NORMAL
+   leaves val the caller's. A suspension stores val on the in-flight node as a RETURN
    obligation carrying the given kind before answering; the loop walk
    stores a break or continue the same way. val is consumed on every
    answer but EVAL_NORMAL.
@@ -1881,8 +1795,7 @@ int kos_dyn_ob_store_exception(
 int kos_dyn_ob_store_return(
     KosDynNode *node,
     PyObject *val,
-    uint8_t path,
-    KosDynNode *delim);
+    uint8_t path);
 
 
 /**
@@ -1958,16 +1871,15 @@ KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 /**
   Find the innermost enabled LOOP or FOREACH region on the dynamic
-  chain, walking from dyn_top toward root. A live delimited-invoke
-  bookmark ends the walk: the resumed slice above it has no loop of
-  its own. Read-only; never sets PyErr.
+  chain, walking from dyn_top toward root. Read-only; never sets
+  PyErr.
 
   Callers: opcode/ITER_NEXT.c, kos_dyn_unwind_to_loop.
 
   :param ctx: context
 
   :return: the topmost enabled LOOP or FOREACH region, or NULL if the
-    walk reaches the root or a live bookmark first
+    walk reaches the root first
 */
 KosDynNode *kos_dyn_find_loop(KosContext *ctx);
 
@@ -2177,7 +2089,6 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
-#define KosDynNode_IS_DELIM(n)   (KosDynNode_KIND(n) == KOS_DYN_DELIM)
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
 #define KosDynNode_IS_TRY(n)     (KosDynNode_KIND(n) == KOS_DYN_TRY)
 #define KosDynNode_IS_FINALLY(n) (KosDynNode_KIND(n) == KOS_DYN_FINALLY)
@@ -2288,53 +2199,12 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
 }
 
 
-/**
-  The DELIM a prompt delivers through when it is the delimiter of a
-  applied continuation, or NULL for a reset running its own region. A
-  continuation's template is its region down through the delimiting
-  prompt, set on one frame copy, and an application attaches it to a DELIM
-  at the call site: so the prompt's parent is a frame whose parent is a
-  DELIM. No POP_PROMPT instruction pairs with such a prompt as its own
-  reset; the region's value goes to the application through the DELIM.
-  The shape is the whole test: a reset's own prompt is pushed onto a
-  node of its frame's extent, never onto a frame sitting on a DELIM,
-  since the code of an attached copy runs above that copy's prompt.
-*/
-static inline KosDynDelim *kos_prompt_applied_delim(KosDynNode *prompt) {
-  KosDynNode *frame = KosDynNode_PARENT(prompt);
-  KosDynNode *delim;
-
-  if (! frame || ! KosDynNode_IS_FRAME(frame))
-    return NULL;
-  delim = KosDynNode_PARENT(frame);
-  if (! delim || ! KosDynNode_IS_DELIM(delim))
-    return NULL;
-  return (KosDynDelim *) delim;
-}
-
 /* A resume is set when the kind is non-NULL; the name is a read-only
    view through the kind for messages and the snapshot. */
 #define KosDynFrame_RESUME_NAME(f)                                        \
   (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->name : NULL)
 
 #define KosDynPrompt_TAG(p)              (((KosDynNode *)(p))->u.prompt.tag)
-#define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
-
-#define KosDynDelim_RETURN_PC(d)   (((KosDynNode *)(d))->u.delim.pc)
-
-
-/**
-  The frame a DELIM's continuation returns into: the first FRAME below
-  the node, the frame that made the application. Derived, never stored,
-  so it is right wherever the node or a clone of it sits.
-*/
-static inline KosDynFrame *kos_dyndelim_return_frame(KosDynDelim *delim) {
-  KosDynNode *node = KosDynNode_PARENT((KosDynNode *) delim);
-
-  while (node && ! KosDynNode_IS_FRAME(node))
-    node = KosDynNode_PARENT(node);
-  return (KosDynFrame *) node;
-}
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

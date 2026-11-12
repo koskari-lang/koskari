@@ -518,12 +518,6 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
   int had_target = goal->target != NULL;
   KosCloneShape *shape = &goal->shape;
 
-  /* dyn_top is the seam. For a shift's abort that is its prompt, and
-     the region's operands on it went with the continuation: the leave
-     is done, so nothing can resume the region on them now. */
-  if (first && goal->shift_abort && KosDynNode_STACK(goal->seam))
-    KosStack_Clear(&KosDynNode_STACK(goal->seam));
-
   if (goal->target) {
     /* the rest of the target starts on the previous split point */
     KosDynNode *bottom = first
@@ -647,14 +641,15 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
    DELIVERING for a shift's abort: retire the goal and call the handler
    with the continuation, as a transfer fires a dyn-wind thunk, but
    keeping its value. The prompt is at dyn_top, so the handler's frame
-   installs above it and its return pushes the value on the prompt's
-   block; a value in hand is settled and pushed there now. The frame's
-   pc is the prompt's POP_PROMPT, which takes that value.
+   installs above it, and its return ends the prompt and is the reset's
+   return, as the body's would have been. A value in hand ends the
+   prompt here and goes where the reset's value goes.
 */
 static KosOpResult goal_call_handler(KosContext *ctx, KosXferGoal *goal) {
 
   PyObject *handler = goal->payload;
   PyObject *k = goal->continuation_ref;
+  KosDynPrompt *prompt = (KosDynPrompt *) goal->seam;
   KosOpResult r;
 
   goal->payload = NULL;
@@ -665,8 +660,13 @@ static KosOpResult goal_call_handler(KosContext *ctx, KosXferGoal *goal) {
   Py_DECREF(handler);
   Py_DECREF(k);
 
-  if (r.kind == KOS_RES_RETURN)
+  if (r.kind == KOS_RES_RETURN) {
+    if (kos_dyn_pop_prompt(ctx, prompt) < 0) {
+      Py_DECREF(r.val);
+      return EVAL_RAISE();
+    }
     return KosContext_PushOrAwait(ctx, r.val);
+  }
   if (r.kind == KOS_RES_RAISE || r.kind == KOS_RES_AWAIT
       || r.kind == KOS_RES_FATAL)
     return r;

@@ -429,7 +429,6 @@ typedef struct KosPosition {
 typedef enum KosExtentKind {
   KOS_EXT_TRY,
   KOS_EXT_LOOP,
-  KOS_EXT_PROMPT,
   KOS_EXT_CC,
   KOS_EXT_FINALLY,
   KOS_EXT_WIND,

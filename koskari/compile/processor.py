@@ -511,13 +511,13 @@ def merge_function_constant_needs(fragment, instructions):
     Merge the closure and write needs of every completed function
     constant in instructions into fragment, so a scope that encloses
     the function captures what it closes over. A function constant is
-    a CONST row's, or the handler a SHIFT row carries. One whose Code
-    is not yet complete has nothing to merge
+    a CONST row's, the handler a SHIFT row carries, or the body a RESET
+    row carries. One whose Code is not yet complete has nothing to merge
     """
 
     reso = fragment.resolution
     for op, arg in instructions:
-        if op == OpCode.SHIFT:
+        if op == OpCode.SHIFT or op == OpCode.RESET:
             arg = arg[1]
         elif op != OpCode.CONST:
             continue
