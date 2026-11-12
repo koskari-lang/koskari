@@ -30,8 +30,12 @@
    on, so a before thunk or __enter__ runs with only the extents outside
    it on the chain, as dynamic-wind runs one. The two alternate until
    the target is used up, and the last piece installs the resume pc.
-   DELIVERING pushes the payload, or sets the pending throw, and
-   retires the goal.
+   The target arrives as one clone that already numbered its frames,
+   linked its frames' and segments' back links, and recorded each split
+   point with the registers live there (KosCloneShape); the first
+   ATTACHING completes it from the registers at the seam, and every
+   ATTACHING is a relink and a register load, with no walk. DELIVERING
+   pushes the payload, or sets the pending throw, and retires the goal.
 
    A leave or enter that hands control to a thunk frame or an awaitable
    makes the goal wait on that node: the thunk's frame installs directly
@@ -90,18 +94,6 @@ typedef struct KosXferRestore {
 } KosXferRestore;
 
 
-/**
-   A point where ATTACHING splits the target: a node a transfer runs
-   (KOS_DYN_CAP_WINDS), and the node resting on it in the target, or
-   NULL when it is the target's top. Both are borrowed: they belong to
-   the target until attached and to the chain after.
-*/
-typedef struct KosXferPiece {
-  KosDynNode *cut;
-  KosDynNode *rest;
-} KosXferPiece;
-
-
 struct KosXferGoal {
   KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
 
@@ -116,10 +108,10 @@ struct KosXferGoal {
   KosDynNode *frontier;
   uint32_t frontier_id;
 
-  /* the target's split points, outermost first: recorded by the first
-     ATTACHING in one walk; owned array, or NULL when it holds none */
-  KosXferPiece *pieces;
-  size_t piece_count;
+  /* what the clone of the target met: its bottom, its split points
+     with their registers (shape.pieces, owned), and the registers at
+     its top; empty when there is no target */
+  KosCloneShape shape;
   size_t piece_next;           /* the entry the next ATTACHING splits at */
   size_t piece_entered;        /* entries whose node ENTERING has run */
 
@@ -149,7 +141,8 @@ struct KosXferGoal {
    Allocate a goal. target is an owned, already cloned segment (or
    NULL); seam is borrowed and must be on the live chain (or NULL for
    the root); payload is borrowed and a reference is taken;
-   continuation_ref likewise.
+   continuation_ref likewise. A caller with a target sets shape to what
+   its clone recorded, which the goal then owns.
 
    :return: the goal, or NULL with PyErr set (target is then freed)
 */

@@ -206,12 +206,11 @@ static KosOpResult call_call_continuation(
     }
   }
 
-  /* Delimited: two-path invoke on the current chain, whatever context
-   * captured it. In-place resume when the capture-time prompt is live
-   * in ancestry; otherwise the push model grafts a clone of the
-   * template, delimiter included, onto the call site. Both return to
-   * the call site on POP_PROMPT. Undelimited on a foreign context goes
-   * to its owner through KoskariContinuationApply below. */
+  /* Delimited: invoke on the current chain, whatever context captured
+   * it. Every invoke attaches a fresh clone of the template, delimiter
+   * included, onto the call site, and the copy returns to the call
+   * site on its POP_PROMPT. Undelimited on a foreign context goes to
+   * its owner through KoskariContinuationApply below. */
 
   if (KosPyDelimitedContinuation_Check(callable)
       || KosContinuation_TOKEN_REF(k)

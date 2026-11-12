@@ -276,8 +276,10 @@ static int test_chain_clone_segment(void) {
 
     /* Clone from p3 down to (but not including) p1, keeping ids as a
        call/cc capture does */
+    KosCloneShape shape;
     KosDynNode *cloned = kos_dyn_clone_segment((KosDynNode *) p3,
-                                                 (KosDynNode *) p1, 0);
+                                                 (KosDynNode *) p1, 0,
+                                                 0, 0, &shape);
     TEST_ASSERT_NOT_NULL(cloned, "clone segment");
     TEST_ASSERT_EQ(kos_dynnode_id(cloned), kos_dynnode_id((KosDynNode *) p3),
                    "a clone that keeps ids has its source's");
@@ -313,6 +315,7 @@ static int test_chain_clone_segment_fresh_ids(void) {
     */
     KosDynPrompt *p1 = kos_dynprompt_new(NULL, NULL);
     KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
+    KosCloneShape shape;
     KosDynNode *first;
     KosDynNode *second;
     uint32_t source;
@@ -321,8 +324,10 @@ static int test_chain_clone_segment_fresh_ids(void) {
     TEST_ASSERT_NOT_NULL(p2, "create prompt 2");
     source = kos_dynnode_id((KosDynNode *) p2);
 
-    first = kos_dyn_clone_segment((KosDynNode *) p2, (KosDynNode *) p1, 1);
-    second = kos_dyn_clone_segment((KosDynNode *) p2, (KosDynNode *) p1, 1);
+    first = kos_dyn_clone_segment((KosDynNode *) p2, (KosDynNode *) p1, 1,
+                                  0, 0, &shape);
+    second = kos_dyn_clone_segment((KosDynNode *) p2, (KosDynNode *) p1, 1,
+                                   0, 0, &shape);
     TEST_ASSERT_NOT_NULL(first, "clone once");
     TEST_ASSERT_NOT_NULL(second, "clone twice");
 

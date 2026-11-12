@@ -56,8 +56,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  goal->pieces = NULL;
-  goal->piece_count = 0;
+  memset(&goal->shape, 0, sizeof(goal->shape));
   goal->piece_next = 0;
   goal->piece_entered = 0;
   goal->payload = Py_XNewRef(payload);
@@ -112,9 +111,8 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
     goal->restore_count = 0;
   }
   /* the split points borrow nodes of the target or the chain */
-  PyMem_Free(goal->pieces);
-  goal->pieces = NULL;
-  goal->piece_count = 0;
+  PyMem_Free(goal->shape.pieces);
+  memset(&goal->shape, 0, sizeof(goal->shape));
   PyMem_Free(goal);
 }
 
@@ -461,60 +459,6 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
-   Record the target's split points in one walk from its top: each node
-   a transfer runs (KOS_DYN_CAP_WINDS) with the node resting on it,
-   stored outermost first, and the target's bottom in *out_bottom. Runs
-   at the first ATTACHING, before anything is spliced.
-
-   :return: 0, or -1 with PyErr set and nothing recorded
-*/
-static int goal_record_pieces(
-    KosXferGoal *goal,
-    KosDynNode **out_bottom) {
-
-  KosXferPiece *pieces = NULL;
-  size_t count = 0;
-  size_t cap = 0;
-  KosDynNode *prev = NULL;
-  KosDynNode *node;
-
-  /* the walk meets the innermost first */
-  for (node = goal->target; node; node = KosDynNode_PARENT(node)) {
-    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
-      if (count == cap) {
-        size_t grow = cap ? cap * 2 : 4;
-        KosXferPiece *next = PyMem_Realloc(
-            pieces, grow * sizeof(KosXferPiece));
-
-        if (! next) {
-          PyMem_Free(pieces);
-          PyErr_NoMemory();
-          return -1;
-        }
-        pieces = next;
-        cap = grow;
-      }
-      pieces[count].cut = node;
-      pieces[count].rest = prev;
-      count++;
-    }
-    prev = node;
-  }
-
-  for (size_t i = 0; i < count / 2; i++) {
-    KosXferPiece swap = pieces[i];
-
-    pieces[i] = pieces[count - 1 - i];
-    pieces[count - 1 - i] = swap;
-  }
-  goal->pieces = pieces;
-  goal->piece_count = count;
-  *out_bottom = prev;
-  return 0;
-}
-
-
-/**
    ATTACHING: splice the next piece of the target onto the chain. A
    transfer re-enters the target outermost first, and each node it runs
    (KOS_DYN_CAP_WINDS) runs its enter with only the nodes outside it on
@@ -527,11 +471,16 @@ static int goal_record_pieces(
    onto the split point the previous piece ended at, which is dyn_top.
    The piece that uses the target up installs the resume pc.
 
-   Infallible but for recording the split points, which the first
-   ATTACHING does before anything is spliced, and the restore. An outer
-   goal whose frontier LEAVING unlinked is void: the node it waited on
-   and everything above it are gone, and the extent it was moving
-   through no longer exists. With a NULL seam that is every outer.
+   The clone that made the target numbered its frames, linked its back
+   links and recorded each split point with the registers live there
+   (KosCloneShape). The first ATTACHING completes those from the
+   registers live at the seam; after that a piece is a relink and a
+   register load, and nothing walks the chain.
+
+   Infallible but for the restore. An outer goal whose frontier LEAVING
+   unlinked is void: the node it waited on and everything above it are
+   gone, and the extent it was moving through no longer exists. With a
+   NULL seam that is every outer.
 */
 static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 
@@ -540,10 +489,7 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
   int first = goal->piece_next == 0;
   KosDynNode *base = first ? goal->seam : KosContext_DYN_TOP(ctx);
   int had_target = goal->target != NULL;
-  KosDynNode *bottom = NULL;
-
-  if (first && goal->target && goal_record_pieces(goal, &bottom) < 0)
-    return EVAL_RAISE();
+  KosCloneShape *shape = &goal->shape;
 
   /* dyn_top is the seam. For a shift's abort that is its prompt, and
      the region's operands on it went with the continuation: the leave
@@ -552,16 +498,19 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
     KosStack_Clear(&KosDynNode_STACK(goal->seam));
 
   if (goal->target) {
-    KosDynNode *top = goal->target;
-
     /* the rest of the target starts on the previous split point */
-    if (! first)
-      bottom = goal->pieces[goal->piece_next - 1].rest;
+    KosDynNode *bottom = first
+        ? shape->bottom : shape->pieces[goal->piece_next - 1].rest;
+    const KosLiveRegs *regs = &shape->top;
 
-    if (goal->piece_next < goal->piece_count) {
-      KosXferPiece *piece = &goal->pieces[goal->piece_next++];
+    /* the registers live now are the ones below the copy */
+    if (first)
+      kos_dyn_settle_clone(ctx, shape);
 
-      top = piece->cut;
+    if (goal->piece_next < shape->piece_count) {
+      KosXferPiece *piece = &shape->pieces[goal->piece_next++];
+
+      regs = &piece->regs;
       if (piece->rest)
         KosDynNode_PARENT(piece->rest) = NULL;
       else
@@ -572,18 +521,22 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
 
     KosDynNode_PARENT(bottom) = base;
     kos_dynnode_note_parent(bottom);
-    /* The clone's frames carry capture-time depths; the invoke checked
-       that they fit above the seam before the push. */
-    kos_dyn_renumber_frames(top, base, kos_dyn_frame_depth_at(base));
-    KosContext_DYN_TOP(ctx) = top;
-    kos_dyn_resync_chain(ctx);
+    kos_live_regs_apply(ctx, regs);
+
+#if KOS_EVAL_SAFETYNET
+    if (! kos_dyn_live_regs_derived(ctx)) {
+      PyErr_SetString(PyExc_SystemError,
+          "transfer: a piece's registers are not the chain's");
+      return EVAL_RAISE();
+    }
+#endif
   }
 
   /* Below the seam the extents are the ones the capture ran in; only
      the operands they held come back. This runs after the splice and
-     its resync: retargeting the live frame flushes the live pc into
-     the frame it leaves, which would overwrite a restore done first.
-     The records cover the seam's run, below the first piece. */
+     its register load: retargeting the live frame flushes the live pc
+     into the frame it leaves, which would overwrite a restore done
+     first. The records cover the seam's run, below the first piece. */
   if (first && goal->restore) {
     if (goal_apply_restore(ctx, goal) < 0)
       return EVAL_RAISE();
@@ -653,7 +606,7 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
   if (goal->piece_entered == goal->piece_next)
     return EVAL_NORMAL();
 
-  node = goal->pieces[goal->piece_entered].cut;
+  node = goal->shape.pieces[goal->piece_entered].regs.top;
   r = kos_dyn_extent_enter(ctx, node);
   if (r.kind == KOS_RES_NORMAL)
     goal->piece_entered++;

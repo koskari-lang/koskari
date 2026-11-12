@@ -54,9 +54,12 @@ int kos_invoke_continuation(
      the capture sits above the seam and is left and re-entered. */
   KosDynNode *seam = NULL;
   KosDynNode *tmpl_stop = NULL;
+  unsigned frames = KosContinuation_FRAMES(k);
+  unsigned top_depth;
+
   if (! is_delimited)
     kos_chain_common_ancestor(
-        ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop);
+        ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop, &frames);
 
   /* The attached frames sit above the invoker's frame (delimited) or
      above the seam's frame (undelimited); refuse here, before anything
@@ -67,38 +70,41 @@ int kos_invoke_continuation(
 
     while (base && ! KosDynNode_IS_FRAME(base))
       base = KosDynNode_PARENT(base);
-    if (kos_eval_check_frame_room(
-            ctx, (KosDynFrame *) base,
-            kos_dyn_frame_count(KosContinuation_CAPTURED_CHAIN(k),
-                                tmpl_stop)) < 0)
+    if (kos_eval_check_frame_room(ctx, (KosDynFrame *) base, frames) < 0)
       return -1;
+    top_depth = (base ? KosDynFrame_DEPTH(base) : 0u) + frames;
   }
 
   /* The attached segment is a fresh clone of the captured template, so
      each invoke instantiates the template anew (multi-shot, e.g.
      (sum (k 0) (k 1))); the template itself is never attached. A
      delimited copy's nodes are new instances; an undelimited one's
-     keep the ids the seam and the restore records match by. */
+     keep the ids the seam and the restore records match by. The
+     clone's one pass also numbers the copy's frames as they stand once
+     attached, links their back links, and records the split points
+     ATTACHING needs with the registers live at each. */
+  KosCloneShape shape;
   KosDynNode *target = kos_dyn_clone_segment(
-      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop, is_delimited);
+      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop, is_delimited, 1,
+      top_depth, &shape);
   if (! target && KosContinuation_CAPTURED_CHAIN(k) != tmpl_stop) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "continuation template clone failed without PyErr");
     return -1;
   }
-  /* kos_dyn_clone_segment leaves the clone's bottom parented at
-     tmpl_stop; sever it so goal_attach's walk to the bottom stops at the
-     clone and re-parents it to the seam, rather than following into the
-     template and moving the template's own root onto the live chain. */
-  if (target && tmpl_stop)
-    kos_chain_detach_template(target, tmpl_stop);
+  /* the copy's bottom sits on tmpl_stop, a template node: unlink it, so
+     the copy holds nothing of the template, and ATTACHING links it to
+     the seam */
+  if (target)
+    KosDynNode_PARENT(shape.bottom) = NULL;
 
   if (is_delimited) {
     KosDynDelim *ret_delim = kos_dyn_push_delim(
         ctx, KosContext_FRAME(ctx) ? KosContext_PC(ctx) : NULL);
     if (! ret_delim) {
       kos_dynchain_free(target, NULL);
+      PyMem_Free(shape.pieces);
       if (! PyErr_Occurred())
         PyErr_SetString(PyExc_RuntimeError,
                         "failed to push delimited return marker");
@@ -118,10 +124,12 @@ int kos_invoke_continuation(
     if (! goal) {
       /* target is freed by kos_xfer_goal_new on failure. Undo only the
          DELIM this call pushed; an undelimited seam is a live node. */
+      PyMem_Free(shape.pieces);
       if (is_delimited && seam)
         (void) kos_dyn_pop_delim(ctx, (KosDynDelim *) seam);
       return -1;
     }
+    goal->shape = shape;
     if (tmpl_stop
         && kos_xfer_goal_capture_restore(goal, seam, tmpl_stop) < 0) {
       kos_xfer_goal_free(goal);
@@ -141,16 +149,20 @@ int kos_invoke_continuation(
    counts as the same extent. The two tops are brought to one depth
    and walked to the roots together: a mismatch clears the pair in
    hand, a match records one when none is in hand, so what remains is
-   the top of the root-anchored run.
+   the top of the root-anchored run. The template's frames are counted
+   on the way down, and a match keeps the count of those above it.
 */
 void kos_chain_common_ancestor(
     KosContext *ctx,
     KosDynNode *tmpl,
     KosDynNode **out_live,
-    KosDynNode **out_tmpl) {
+    KosDynNode **out_tmpl,
+    unsigned *out_frames) {
 
   size_t n_live = 0;
   size_t n_tmpl = 0;
+  unsigned frames = 0;
+  unsigned above = 0;
   KosDynNode *live = KosContext_DYN_TOP(ctx);
   KosDynNode *node;
 
@@ -163,8 +175,11 @@ void kos_chain_common_ancestor(
 
   for (; n_live > n_tmpl; n_live--)
     live = KosDynNode_PARENT(live);
-  for (; n_tmpl > n_live; n_tmpl--)
+  for (; n_tmpl > n_live; n_tmpl--) {
+    if (KosDynNode_IS_FRAME(tmpl))
+      frames++;
     tmpl = KosDynNode_PARENT(tmpl);
+  }
 
   for (; live; live = KosDynNode_PARENT(live), tmpl = KosDynNode_PARENT(tmpl)) {
     if (kos_dynnode_id(live) != kos_dynnode_id(tmpl)
@@ -174,8 +189,12 @@ void kos_chain_common_ancestor(
     } else if (! *out_live) {
       *out_live = live;
       *out_tmpl = tmpl;
+      above = frames;
     }
+    if (KosDynNode_IS_FRAME(tmpl))
+      frames++;
   }
+  *out_frames = *out_tmpl ? above : frames;
 }
 
 

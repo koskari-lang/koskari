@@ -196,6 +196,48 @@ typedef struct KosLiveRegs {
 
 
 /**
+   A point where a transfer attaches its copy in pieces: a node the
+   transfer runs (KOS_DYN_CAP_WINDS) at regs.top, the node resting on
+   it in the copy at rest (NULL when it is the copy's top), and the
+   registers live with regs.top at dyn_top. Borrowed: they belong to
+   the copy until attached and to the chain after.
+*/
+typedef struct KosXferPiece {
+  struct KosDynNode *rest;
+  KosLiveRegs regs;
+} KosXferPiece;
+
+
+/**
+   What one pass of kos_dyn_clone_segment met, so no caller walks the
+   clone again: its bottom, how many frames it holds, and the registers
+   live with its top at dyn_top (top.top is the clone's top). Borrowed
+   pointers into the clone, but for pieces.
+
+   A copy cloned for an attach also carries what attaching it needs:
+   every frame back link and segment back inside the copy is set, the
+   lowest frame and the lowest segment are left open for the facts
+   below the copy, and the split points come with their registers. A
+   register field no node of the copy supplies is NULL, and is the one
+   below the copy; ns_open heads the run of nodes at the copy's bottom
+   that carry no namespace. kos_dyn_settle_clone fills all of these
+   from the seam once.
+*/
+typedef struct KosCloneShape {
+  struct KosDynNode *bottom;
+  unsigned frames;
+  KosLiveRegs top;
+
+  /* for an attach only */
+  struct KosDynNode *open_frame;
+  KosSegment *open_segment;
+  struct KosDynNode *ns_open;
+  KosXferPiece *pieces;        /* outermost first; owned */
+  size_t piece_count;
+} KosCloneShape;
+
+
+/**
    Where the step in flight runs, recorded in KosGenState::busy: on a
    consumer's chain, or on the generator's own context (a Python
    adapter's drive). Only a step on its own context can be left there
@@ -509,9 +551,9 @@ struct KosDynNode {
       KosOp *acting_pc;   /* instruction currently being executed */
       uint32_t frame_flags;
       /* Frame nesting depth on this context's chain: the enclosing
-         frame's depth + 1, the root frame at 1. Set at install and
-         renumbered whenever a segment carrying frames is spliced in
-         (continuation application, generator install), so the frame
+         frame's depth + 1, the root frame at 1. Set at install, set by
+         the clone for a continuation's copy, and renumbered whenever a
+         generator's span is spliced in, so the frame
          depth test against the frame depth limit at install is one
          load and one compare. The limit defaults to 10000 and is
          settable up to KOS_FRAME_DEPTH_MAX, the width of this field. */
@@ -736,6 +778,7 @@ struct KosContinuation {
   KosOp *resume_pc;             /* the instruction to resume at */
   uint8_t delimited;            /* 1 = shift capture, 0 = call/cc */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
+  unsigned frames;              /* frames in captured_chain */
 };
 
 
@@ -743,6 +786,7 @@ struct KosContinuation {
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_DELIMITED(k)       (((KosContinuation *)(k))->delimited)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
+#define KosContinuation_FRAMES(k)          (((KosContinuation *)(k))->frames)
 
 
 /* === DynNode allocation and lifecycle === */
@@ -932,8 +976,10 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
 /**
    Clone a chain segment from top down to (but not including) stop.
 
-   Each node in the segment is cloned and linked. The cloned chain's
-   bottom node's parent is set to stop (or NULL if stop is NULL).
+   Each node in the segment is cloned and linked, in one pass from top
+   down. The clone's bottom node's parent is set to stop (or NULL if
+   stop is NULL); a caller that keeps the clone off the chain unlinks
+   it through shape->bottom.
 
    :param top: top of segment to clone
    :param stop: stop at this node (not cloned), or NULL to clone all
@@ -942,13 +988,52 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
       its id minted on first read. Zero for call/cc, whose clones keep
       their source's id so an attached clone counts as the same extent as
       the node it was captured from
+   :param for_attach: non-zero for a copy an invoke attaches: the pass
+      also numbers its frames, the topmost at top_depth and each one
+      below it one less, as they stand once attached. Zero for a
+      template, whose frames keep their source's depths
+   :param top_depth: the depth the copy's topmost frame takes
+   :param shape: filled with what the pass met; see KosCloneShape
 
-   :return: cloned chain top, or NULL on error
+   :return: cloned chain top, or NULL on error (shape is then empty)
 */
 KosDynNode *kos_dyn_clone_segment(
-   KosDynNode *top,
-   KosDynNode *stop,
-   int fresh_ids);
+    KosDynNode *top,
+    KosDynNode *stop,
+    int fresh_ids,
+    int for_attach,
+    unsigned top_depth,
+    KosCloneShape *shape);
+
+
+/**
+   Complete a copy cloned for an attach from the facts below it: the
+   live registers, read with the seam the copy goes on at dyn_top. The
+   lowest frame's back link and the lowest segment's back take the
+   live frame and block, the run of nodes at the bottom with no
+   namespace takes the live one, and every register the copy left
+   open takes the live value. Runs once, before the first piece is
+   attached.
+*/
+void kos_dyn_settle_clone(KosContext *ctx, KosCloneShape *shape);
+
+
+/**
+   Make regs the live registers: dyn_top is regs->top, and the frame,
+   block and namespace are loaded as a chain walk from it would find
+   them, flushing the outgoing frame's pc.
+*/
+void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs);
+
+
+#if KOS_EVAL_SAFETYNET
+/**
+   Whether the live frame, block and namespace are what a walk from
+   dyn_top derives. A diagnostic for a register load from recorded
+   facts.
+*/
+int kos_dyn_live_regs_derived(KosContext *ctx);
+#endif
 
 
 /* === Unified dynamic chain API === */
@@ -1047,12 +1132,6 @@ KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
 KosDynFrame *kos_dyn_push_frame_native(KosContext *ctx);
 
 /**
-   The depth of the nearest frame at or below node, 0 when the chain
-   under node holds no frame (or node is NULL).
-*/
-unsigned kos_dyn_frame_depth_at(KosDynNode *node);
-
-/**
    Count the FRAME nodes on the segment from top down to but excluding
    base (NULL: the whole chain).
 */
@@ -1061,20 +1140,11 @@ unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base);
 /**
    Renumber the frames on the segment from top down to but excluding
    base so the lowest sits at base_depth + 1 and each frame above it is
-   one deeper. Called after a segment carrying frames is spliced onto a
-   chain; the caller has already established that the result fits
-   under the frame depth limit, which never exceeds
-   KOS_FRAME_DEPTH_MAX.
-*/
-void kos_dyn_renumber_frames(
-    KosDynNode *top,
-    KosDynNode *base,
-    unsigned base_depth);
-
-/**
-   kos_dyn_renumber_frames for a caller that has already counted the
-   segment's frames (count from kos_dyn_frame_count over the same
-   bounds), saving the recount.
+   one deeper, for a caller that has already counted the segment's
+   frames (count from kos_dyn_frame_count over the same bounds). Called
+   after a segment carrying frames is spliced onto a chain; the caller
+   has already established that the result fits under the frame depth
+   limit, which never exceeds KOS_FRAME_DEPTH_MAX.
 */
 void kos_dyn_renumber_frames_counted(
     KosDynNode *top,
@@ -1992,13 +2062,16 @@ void kos_continuation_free(KosContinuation *k);
   the top of the run of pairs, matched by node id and by phase (a live
   node that has moved on since the capture ends the match), that
   reaches both roots. *out_live on the chain, *out_tmpl its
-  counterpart; both NULL when the roots differ.
+  counterpart; both NULL when the roots differ. *out_frames is the
+  number of template frames above *out_tmpl, or in the whole template
+  when there is none: the frames a transfer attaches.
 */
 void kos_chain_common_ancestor(
     KosContext *ctx,
     KosDynNode *tmpl,
     KosDynNode **out_live,
-    KosDynNode **out_tmpl);
+    KosDynNode **out_tmpl,
+    unsigned *out_frames);
 
 /**
   Invoke a captured continuation.

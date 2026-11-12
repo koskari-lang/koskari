@@ -175,10 +175,9 @@ static void kos_live_regs_capture(KosContext *ctx, KosLiveRegs *regs) {
 
 
 /**
-   Make regs the live registers: dyn_top and the retarget a resync from
-   that top would produce, with the outgoing frame's pc flushed.
+   Make regs the live registers. See dynchain.h.
 */
-static void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
+void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
   KosContext_DYN_TOP(ctx) = regs->top;
   kos_dyn_resync_apply(ctx, (KosDynFrame *) regs->frame, regs->block,
                        regs->ns, 1);

@@ -97,12 +97,13 @@ KosDynFrame *kos_dynframe_new(
 
 
 /**
-   Clone a frame with its operand segment (continuation capture, delim
-   return-frame snapshot, capture baseline). Callers: kos_dyn_clone
-   and the direct snapshot sites; the segment copy happens here so the
-   direct callers stay faithful without the dispatcher.
+   Clone a frame, with a copy of its operand segment when operands is
+   non-zero, or with an empty segment of its own in its place.
 */
-KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
+static KosDynFrame *kos_dynframe_clone_impl(
+    KosDynFrame *frame,
+    int operands) {
+
   if (! frame)
     return NULL;
 
@@ -110,8 +111,11 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! clone)
     return NULL;
 
-  if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
-                                 (KosDynNode *) frame) < 0) {
+  if (! operands) {
+    if (KosDynNode_STACK(frame))
+      kos_dynnode_use_inline_segment((KosDynNode *) clone);
+  } else if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
+                                        (KosDynNode *) frame) < 0) {
     kos_dynnode_return_to_freelist(clone);
     return NULL;
   }
@@ -159,6 +163,26 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   }
 
   return clone;
+}
+
+
+/**
+   Clone a frame with its operand segment (continuation capture, delim
+   return-frame snapshot). Callers: kos_dyn_clone and the direct
+   snapshot sites; the segment copy happens here so the direct callers
+   stay faithful without the dispatcher.
+*/
+KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
+  return kos_dynframe_clone_impl(frame, 1);
+}
+
+
+/**
+   Clone a frame without its operands: the capture baseline, whose
+   pending operands lie outside the reset and are not region content.
+*/
+static KosDynFrame *kos_dynframe_clone_bare(KosDynFrame *frame) {
+  return kos_dynframe_clone_impl(frame, 0);
 }
 
 
@@ -560,16 +584,6 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
 /* === Frame depth === */
 
 
-unsigned kos_dyn_frame_depth_at(KosDynNode *node) {
-
-  for (; node; node = KosDynNode_PARENT(node)) {
-    if (KosDynNode_IS_FRAME(node))
-      return KosDynFrame_DEPTH(node);
-  }
-  return 0;
-}
-
-
 unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base) {
 
   unsigned count = 0;
@@ -597,16 +611,6 @@ void kos_dyn_renumber_frames_counted(
     if (KosDynNode_IS_FRAME(node))
       KosDynFrame_DEPTH(node) = (uint16_t) depth--;
   }
-}
-
-
-void kos_dyn_renumber_frames(
-    KosDynNode *top,
-    KosDynNode *base,
-    unsigned base_depth) {
-
-  kos_dyn_renumber_frames_counted(top, base, base_depth,
-                                  kos_dyn_frame_count(top, base));
 }
 
 

@@ -16,8 +16,8 @@ Reproducer: cyclic GC of abandoned delimited continuations must not
 corrupt the dynchain node freelist.
 
 A captured continuation's template chain used to keep its bottom parent
-link pointing at the live context chain (kos_chain_detach_template never
-severed the seam). When namespace GC tracking made abandoned
+link pointing at the live context chain (the capture never severed the
+seam). When namespace GC tracking made abandoned
 reset/shift cycles collectable, freeing a dead continuation walked
 through the seam and double-freed nodes the evaluator had already
 released, knotting the freelist so a later generator's yield walk
