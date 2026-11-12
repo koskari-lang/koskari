@@ -437,8 +437,8 @@ static int kos_raise_prompt_not_found(PyObject *tag) {
 
 
 /**
-   Raise KoskariPromptUnreachable at a node that refused a capture or a
-   transfer: a node that denied handle(SHIFT), or one whose clone
+   Raise KoskariPromptUnreachable at a node that refused a capture: a
+   node that denied handle(SHIFT), or one whose clone
    refused because its call is in flight. fmt takes the boundary word
    once. A capture's refuse
    site does not know which prompt the walk was seeking, and a clone
@@ -2733,8 +2733,8 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
     return -1;
   }
 
-  /* Capture from the frame above the CC block (parent of CC) down to root.
-   * On invoke we install this segment and resume at resume_pc in that frame. */
+  /* Capture from the CC block's parent down to root. On invoke we
+   * install this segment and resume at resume_pc in its innermost frame. */
   KosDynNode *segment_top = KosDynNode_PARENT(cc);
   if (! segment_top) {
     PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: CC block has no parent");
@@ -2923,7 +2923,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node) {
 /**
    GC traverse a single dynamic chain node.  Dispatches on node kind to
    per-kind helpers in dynchain/dyn_*.c.  Used by kos_dynchain_traverse and
-   by continuation/plan traversals.
+   by continuation and transfer goal traversals.
 */
 int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
   if (! node)

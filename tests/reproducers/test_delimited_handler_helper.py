@@ -12,12 +12,13 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-A shift handler in a callee frame that hands k to a helper, which invokes
-it. Chain order root..top at the invoke is caller FRAME, PROMPT, callee
-FRAME, SHIFT, helper FRAME: the handler's frame and the invoking frame
-are two different frames, and the slice frees the handler's frame while
-the helper's survives in the stashed span. The in-place invoke has to
-snapshot the handler's frame, not the invoking one.
+A shift in a callee frame whose handler hands k to a helper, which
+invokes it. The handler runs above the prompt, so chain order root..top
+at the invoke is caller FRAME, PROMPT, handler FRAME, helper FRAME. The
+invoke attaches a fresh copy of the captured frames, prompt included, on
+the helper's dyn_top; the copy resumes in the callee's frame and its
+body frame returns to the helper's call site, so the helper's code after
+the invoke and the handler's code after the helper call each run once.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

@@ -14,10 +14,10 @@
 """
 Tests for PUSH_DYN_WITH, POP_DYN_WITH opcodes.
 
-Multi-shot context manager: enter runs before body, exit runs after (or on
-exception). Uses KOS_DYN_WITH (multi-shot) on the dynamic chain. Supports async
-enter/exit (auto-await). Participates in transfer plans (exit on unwind,
-enter on wind).
+Context manager: enter runs before body, exit runs after (or on
+exception). Uses a KOS_DYN_WITH node carrying KOS_DYN_CAP_WINDS on the
+dynamic chain. Supports async enter/exit (auto-await). A continuation
+transfer runs it (exit on unwind, enter on wind).
 """
 
 import pytest

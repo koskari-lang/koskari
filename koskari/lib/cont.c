@@ -161,8 +161,9 @@ static int continuation_raise_apply(
 
 /**
    call_call_continuation: callable and resume_val are borrowed (we
-   INCREF resume_val; we own that ref only).  Plan INCREFs callable on
-   same-evaluator path; handler releases callable and args.
+   INCREF resume_val; we own that ref only).  On the invoke path the
+   transfer goal takes its own references to callable and resume_val
+   (kos_xfer_goal_new); handler releases callable and args.
 */
 static KosOpResult call_call_continuation(
     KosContext *ctx,

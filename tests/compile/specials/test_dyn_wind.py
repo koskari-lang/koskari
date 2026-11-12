@@ -283,10 +283,10 @@ class TestDynWindSpecial(SpecialsTestCase):
 class TestDynWindContinuations(SpecialsTestCase):
     """
     Tests for interactions between dyn-wind and let/cc.
-    These exercise the interrupted-transfer machinery: when a wind thunk
-    invokes a continuation while an outer transfer plan is already active,
-    the outer plan must be suspended, the inner transfer must complete, and
-    then the outer plan must be replanned and finished.
+    These exercise nested transfer goals: a wind thunk that invokes a
+    continuation while an outer goal waits on it pushes an inner goal,
+    and the outer goal is retired when the inner's leave unlinks the
+    node the outer waits on.
     """
 
     async def test_after_thunk_fires_on_continuation_caused_unwind(self):
@@ -339,8 +339,8 @@ class TestDynWindContinuations(SpecialsTestCase):
     async def test_continuation_invoked_from_before_thunk_during_transfer(self):
         """
         Invoking an escape continuation from a dyn-wind before-thunk (which
-        fires on re-entry during a transfer plan) also exercises the interrupted
-        transfer path.  The escape wins and the outer transfer is replanned.
+        fires on re-entry during a transfer) also exercises nested transfer
+        goals.  The escape wins and the outer transfer is retired.
         """
 
         log = []
@@ -371,7 +371,7 @@ class TestDynWindContinuations(SpecialsTestCase):
 class TestDynWindTransferWindReproducer(SpecialsTestCase):
     """
     Minimal reproducer: continuation invoke into a dyn-wind body should
-    re-run the before-thunk as part of the transfer plan wind step.
+    re-run the before-thunk as the transfer goal enters the node.
     """
 
     async def test_before_thunk_runs_on_transfer_into_dyn_wind_body(self):
@@ -528,9 +528,9 @@ class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
 
 class TestDynWindTransferFailures(SpecialsTestCase):
     """
-    Failed transfer abandonment: when a transfer plan step raises during
-    dyn-wind before-thunk execution, the plan nest is abandoned and the
-    exception is dispatched through try/except on the manifested chain.
+    Failed transfer abandonment: when a dyn-wind before-thunk raises
+    during a transfer, the transfer is abandoned and the exception is
+    dispatched through try/except on the chain as the transfer left it.
     """
 
     async def test_try_except_catches_python_error_in_before_thunk_during_transfer(

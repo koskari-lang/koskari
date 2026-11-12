@@ -239,7 +239,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
    breaker polled ahead of every pass -- run until no step asks for
    another pass, then the instruction at ctx->pc fetched and tail-called.
    Every re-entry into the instruction stream (a raise walk that found
-   its handler, a plan transfer, a continuation replay, a staged
+   its handler, a transfer, a continuation replay, a staged
    delivery) tails into this, and it returns only a boundary result.
    insn and val are unused.
 */

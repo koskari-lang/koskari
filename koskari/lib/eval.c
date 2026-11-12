@@ -1416,7 +1416,7 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx);
    and no goal active: DISPATCH, so the trampoline threads from ctx->pc
    without a prologue pass, and a handler that ran the delivery itself
    threads on directly. Anything else (a value staged for a resume, a
-   codeless frame, a plan) is the prologue's to deliver.
+   codeless frame, a goal) is the prologue's to deliver.
 */
 static inline KosOpResult kos_eval_delivery_done(KosContext *ctx) {
   KosDynFrame *frame = KosContext_FRAME(ctx);
@@ -3401,7 +3401,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
   (void) insn;
   (void) val;
 
-  /* A re-entry is a cooperation point: a raise walk, a plan transfer,
+  /* A re-entry is a cooperation point: a raise walk, a transfer,
      a continuation replay, or a staged delivery arrives here, and the
      poll runs before the pass delivers, so a pending signal is seen
      ahead of a staged delivery. */
@@ -3459,8 +3459,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     }
 
     /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a
-       wind before-thunk) must run abandon + try_local before draining
-       the plan; otherwise the wind EXTENT_ACTION can complete while
+       wind before-thunk) must go through process_raise before
+       eval_step_drain_goal; otherwise the goal could step on while
        PyErr is still set. */
     if (err) {
       KosOpResult pend = process_raise(ctx);
@@ -3535,7 +3535,7 @@ kos_eval_prologue_bad_code:
 
 
 /**
-   The evaluator entry: entry and revive normalization, transfer-plan
+   The evaluator entry: entry and revive normalization, transfer goal
    synchronization, then the trampoline that threaded dispatch returns
    to.  Threading enters from ctx->pc; a chain then runs handler to
    handler by tail calls and comes back here only with a signal.

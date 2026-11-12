@@ -15,7 +15,7 @@
 Tests for koskari.compile reset and shift special forms.
 
 reset establishes a prompt; shift captures the continuation and runs a
-handler. Mirrors the semantics in design/language/control-flow.md.
+handler above the prompt; the handler's return is the reset's value.
 """
 
 import gc

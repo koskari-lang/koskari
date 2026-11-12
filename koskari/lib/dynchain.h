@@ -18,9 +18,9 @@
    koskari/lib/dynchain.h
 
    Dynamic chain infrastructure for delimited continuations and
-   dynamic-wind semantics. Provides DynNode types (FRAME, PROMPT,
-   WIND, REGION, and others) that form a unified parent
-   chain, replacing the separate frame and handler chains.
+   dynamic-wind semantics. Provides the DynNode kinds (FRAME, PROMPT,
+   WIND, TRY, FINALLY, LOOP, FOREACH, NS, COLLECT, CC, PARAM, WITH,
+   GEN) that link into one parent chain.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -1923,9 +1923,8 @@ int kos_shift_capture(
 
 
 /**
-   Raise KoskariPromptUnreachable at a node that refused a capture or a
-   transfer. fmt takes the boundary word once; operation may be NULL
-   for None.
+   Raise KoskariPromptUnreachable at a node that refused a capture. fmt
+   takes the boundary word once; operation may be NULL for None.
 */
 void kos_raise_prompt_unreachable(
     const char *operation,

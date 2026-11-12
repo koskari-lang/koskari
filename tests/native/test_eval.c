@@ -2205,9 +2205,9 @@ static int test_eval_yield_throw_caught(void) {
                 LABEL(5), EXCEPTION, POP 1, CONST 55,
                 LABEL(9), POP_TRY, RETURN 1.
       First eval (NULL, NULL): KOS_RES_YIELD(42); TRY region stays live.
-      Second eval (NULL, throw_exc): eval_phase_entry calls
-      try_local_exception_handler, which finds the TRY region and redirects
-      PC to the handler => EXCEPTION/POP/CONST 55/POP_TRY/RETURN =>
+      Second eval (NULL, throw_exc): eval_phase_entry calls process_raise,
+      whose kos_dyn_unwind_raise finds the TRY region and redirects PC to
+      the handler => EXCEPTION/POP/CONST 55/POP_TRY/RETURN =>
       KOS_RES_RETURN(55).
     */
     PyObject *forty_two = PyLong_FromLong(42);
@@ -2284,11 +2284,11 @@ static int test_eval_opcode_error_caught_by_try(void) {
       Bytecode: PUSH_TRY(3), YIELD 1, JUMP 7,
                 LABEL(3), EXCEPTION, POP 1, CONST 77,
                 LABEL(7), POP_TRY, RETURN 1.
-      YIELD 1 with empty stack returns op_res=-1 with PyErr set.
-      eval_phase_post_opcode detects PyErr and calls try_local_exception_handler,
-      which finds the TRY region and redirects to the handler =>
+      YIELD 1 with empty stack raises with PyErr set (RESULT_RAISE).
+      kos_eval_raise calls process_raise, whose kos_dyn_unwind_raise
+      finds the TRY region and redirects to the handler =>
       EXCEPTION/POP/CONST 77/POP_TRY/RETURN => KOS_RES_RETURN(77).
-      This exercises the exception path inside eval_phase_post_opcode directly.
+      This exercises the opcode raise path through kos_eval_raise directly.
     */
     PyObject *seventy_seven = PyLong_FromLong(77);
     PyObject *label_3 = PyLong_FromLong(3);

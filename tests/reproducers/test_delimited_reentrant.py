@@ -15,21 +15,18 @@
 Re-entrant delimited continuations: a shift firing inside an invoked k.
 
 Danvy/Filinski shift reifies k = lambda x. <E[x]> -- the captured
-continuation carries its own delimiter, so every invocation of k runs
-the region under a fresh prompt instance. A shift inside that run
-captures up to the fresh instance, terminates only that invocation, and
-delivers its value at the invoke site. Before prompt instance identity
-(design/interpreter/prompt-instance-identity.md) the machinery resolved
-prompts by chain position, so the inner shift unwound to the ORIGINAL
-prompt and discarded the remainder of the suspended outer handler --
-Felleisen control semantics where shift was promised.
+continuation carries its own delimiter, so every invocation of k
+attaches a fresh copy of the captured frames with a copy of the prompt.
+A shift inside that run captures up to the copy's prompt, terminates
+only that invocation, and delivers its value at the invoke site; the
+outer handler continues after the invoke.
 
 The function-valued amb cases are the acceptance shapes: amb is a
 callee-hosted shift whose handler invokes k once per choice, so nesting
 two ambs demands a multi-shot shift inside each invocation of another
 multi-shot shift, and the collected results must be the full product.
 
-Note these shapes are order-sensitive under compile_expr: define-global
+These shapes are order-sensitive under compile_expr: define-global
 bindings do not persist across a fresh module per test, so running this
 file alone yields extra NameErrors that the phased runner does not show.
 The VM behaviour is the same either way; only the binding lookup differs.
