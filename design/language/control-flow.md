@@ -107,32 +107,42 @@
 ### reset (Prompt Delimiter)
 
 **`reset`**: Establish continuation delimiter
-- Syntax: `(reset EXPR)` or `(reset TAG EXPR)`
-- Pushes a prompt marker onto the dynamic chain
-- Evaluates EXPR
-- On normal completion, pops prompt and returns value
-- TAG is an optional prompt tag for matching (default: 0)
+- Syntax: `(reset EXPR ...)`, or `(reset-at TAG EXPR ...)` for a tagged prompt
+- The body is a function of no arguments; reset pushes a prompt marker onto
+  the dynamic chain and calls the body above it
+- The body's return pops the prompt, and its value is the reset's
+- TAG is any object; `None` names the default tag, the one `reset` uses
 
 **Semantics**:
-- A prompt does NOT create a new frame; it is a lightweight marker
+- The prompt is a marker node; the body runs in a frame of its own on it
+- In the body, `return` gives the reset its value, `break` and `continue`
+  reach only loops opened in the body, `var` is local, and `yield` is a
+  compile error
 - Multiple prompts with different tags can be active simultaneously
-- Prompts are matched by tag identity (numeric equality)
+- Prompts are matched by tag identity
 
 ### shift (Continuation Capture)
 
 **`shift`**: Capture delimited continuation
-- Syntax: `(shift K EXPR)` or `(shift TAG K EXPR)`
-- Locates nearest prompt with matching tag
-- Captures continuation from current point to prompt
-- Binds captured continuation to K
-- Aborts to prompt and evaluates EXPR in that context
+- Syntax: `(shift K EXPR ...)`, or `(shift-at TAG K EXPR ...)` for a tagged prompt
+- Locates nearest prompt with matching tag, crossing prompts of other tags
+- Captures the continuation from the current point to the prompt: whole
+  frames, the reset's body included
+- Aborts to the prompt: the extents in between leave
+- Calls the handler, a function of K whose body is EXPR ..., above the
+  prompt; its value is the reset's
 
 **Semantics**:
 - Captured continuation K is a callable object
-- Calling `(K VALUE)` resumes at the capture point with VALUE
+- Calling `(K VALUE)` resumes at the capture point with VALUE; the call
+  returns the value the resumed body returns
 - Continuations are multi-shot: can be called multiple times
-- Each call clones the captured state
-- Capture fails if Python/C boundary exists between current and prompt
+- Each call attaches a fresh copy of the captured frames on the caller
+- The handler is a function as the reset body is: `return`, `break`,
+  `continue`, `var` and `yield` follow the same rules
+- Capture fails if a generator boundary lies between the shift and the
+  prompt; a prompt beyond a Python/C call is on another chain and is not
+  found
 
 **Example**:
 ```scheme
@@ -146,9 +156,9 @@
 ; => (10 20 30)
 
 ;; Tagged prompts
-(reset 'outer
-  (reset 'inner
-    (+ 1 (shift 'outer k (k 10)))))
+(reset-at 'outer
+  (reset-at 'inner
+    (+ 1 (shift-at 'outer k (k 10)))))
 ; => 11 (captured to outer prompt)
 ```
 
@@ -170,9 +180,13 @@
 - Hooks terminate with `END_WIND` opcode
 
 **Ordering during continuation transfer**:
-1. Leaving: AFTER hooks from the current top down to the seam the two chains share (inner-to-outer)
-2. Attaching: splice the target segment onto the seam
-3. Entering: BEFORE hooks from the seam up to the target top (outer-to-inner)
+1. Leaving: AFTER hooks from the current top down to the seam (inner-to-outer)
+2. Attaching and entering alternate: each piece of the target is attached
+   up to the next wind, and its BEFORE hook runs with only the extents
+   outside it on the chain (outer-to-inner)
+
+`dyn-with` and `parameterize` take part in the same ordering. A plain
+`with`, `try` and `finally` are local: a transfer runs nothing of them.
 
 **Example**:
 ```scheme
@@ -194,7 +208,9 @@
           (k 'second)))
       (lambda () (set! log (cons 'after log)))))
   log)
-; => (after before after before)
+; => (after before after before after before)
+;    the first after is the abort to the prompt; each call of k
+;    re-enters (before) and its body's return leaves (after)
 ```
 
 ## Migration Notes

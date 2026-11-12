@@ -3,21 +3,22 @@
 This document specifies the context-manager forms that stress-test dynamic-extent
 extensibility while keeping semantics crisp and VM-friendly. It defines the
 opcode contracts, stack/block behaviour, dynamic-chain integration, and
-transfer-plan rules.
+transfer-goal rules.
 
 **See also:** [OPCODES.md](../OPCODES.md) (opcode reference), [extent-wind-unwind.md](extent-wind-unwind.md)
 (extent contract and unlink), [execution-invariants.md](execution-invariants.md).
 
-WITH nodes (single-shot `with` and multi-shot `dyn-with`, told apart by the node's shot, `u.with.shot`) answer the same extent contract as WIND: `kos_dyn_extent_enter` / `kos_dyn_extent_leave` answer NORMAL, REPROLOGUE, AWAIT, or RAISE, `settle` takes a returned `__enter__` / `__exit__` result off the block, and the node leaves the chain only through `kos_dyn_unlink_top`.
+WITH nodes (`with`, local to its body, and `dyn-with`, which continuation transfers run, told apart by `KOS_DYN_CAP_WINDS`, which only a dyn-with carries) answer the same extent contract as WIND: `kos_dyn_extent_enter` / `kos_dyn_extent_leave` answer NORMAL, REPROLOGUE, AWAIT, or RAISE, `settle` takes a returned `__enter__` / `__exit__` result off the block, and the node leaves the chain only through `kos_dyn_unlink_top`.
 
 
 ## Goal
 
-- **`with`**: Single-shot. Safe for normal control-flow, exception unwind,
-  and continuation transfers: a transfer out of the body runs `exit` once,
-  and a transfer back into a captured body does not run `enter` or `exit`
-  again (Rule 1).
-- **`dyn-with`**: Multi-shot, full wind/unwind participation for non-local
+- **`with`**: Local to its body. `exit` runs on normal completion, on a
+  raise, and on a return, break or continue through it. A continuation
+  transfer runs neither `exit` nor `enter`: a transfer out of the body
+  unlinks the node, and a transfer back into a captured body does not
+  re-enter it (Rule 1).
+- **`dyn-with`**: Full wind/unwind participation for continuation
   transfers (shift/reset and undelimited call/cc), including re-entry.
 
 Both forms are **auto-async**: enter/exit may return awaitables; the VM flattens
@@ -43,8 +44,8 @@ them like CALL.
 (dyn-with [name? expr] body...)
 ```
 
-Same as `with`, but the dynamic extent is multi-shot and re-enters when a
-transfer goal attaches it.
+Same as `with`, but a transfer goal leaving the extent runs `exit`, and
+one attaching it runs `enter` again.
 
 
 ## Bytecode / opcodes
@@ -52,12 +53,12 @@ transfer goal attaches it.
 Two opcode families, each taking an optional binding name (or `None`) as
 argument.
 
-### Single-shot opcodes
+### `with` opcodes
 
 - `PUSH_WITH <name-or-None>`
 - `POP_WITH`
 
-### Multi-shot opcodes
+### `dyn-with` opcodes
 
 - `PUSH_DYN_WITH <name-or-None>`
 - `POP_DYN_WITH`
@@ -70,7 +71,7 @@ dedicated `None` sentinel. See [OPCODES.md §18.1](../OPCODES.md#181-context-man
 
 One dyn node kind serves both forms:
 
-- `KOS_DYN_WITH` — context manager extent. The shot lives in `u.with.shot`: PUSH_WITH pushes it as `KOS_DYN_WITH_SHOT_SINGLE_ACTIVE`, which becomes `KOS_DYN_WITH_SHOT_SINGLE_DONE` once `__exit__` has run; PUSH_DYN_WITH pushes it as `KOS_DYN_WITH_SHOT_MULTI`.
+- `KOS_DYN_WITH` -- context manager extent. PUSH_WITH pushes it without `KOS_DYN_CAP_WINDS`; PUSH_DYN_WITH pushes it with the cap.
 
 ### Node payload (minimum)
 
@@ -83,13 +84,13 @@ One dyn node kind serves both forms:
 - `resume_pc`: PC to resume at after the with body (pop_pc + 1); stored at push
   time from the WITH extent, so the evaluator does not look it up at unwind
 - `stack_block`: reference/handle to the operand-stack block created for the body
-- `mode`: SINGLE or MULTI
+- caps: `KOS_DYN_CAP_WINDS` for a dyn-with, absent for a with
 
 ### Invariants
 
 - The node owns exactly one operand stack block.
-- Enter/exit are invoked at most once per dynamic extent instance (except MULTI
-  re-entry, which creates a new instance on re-wind).
+- Enter/exit are invoked at most once per dynamic extent instance; each copy
+  a continuation attaches is an instance of its own.
 - Stack restoration is structural: pop the owned stack block; no height-mark
   arithmetic.
 
@@ -250,8 +251,8 @@ value (`None` after a swallow).
 
 Same as PUSH_WITH, except:
 
-- Pushes the `KOS_DYN_WITH` node with shot `KOS_DYN_WITH_SHOT_MULTI`.
-- A transfer goal re-enters the node when it attaches the extent: an attachment re-enters a `KOS_DYN_CAP_CONTROL_HOOK` node unless it is a single-shot WITH.
+- Pushes the `KOS_DYN_WITH` node with `KOS_DYN_CAP_WINDS`.
+- A transfer goal leaving the node runs `exit`, and one attaching it runs `enter` (ENTERING), as for a WIND or PARAM.
 
 
 ### POP_DYN_WITH
@@ -269,33 +270,31 @@ The VM always uses the Python convention:
 
 ## Continuation / non-local transfer rules
 
-### Rule 1: Single-shot `with` exits once and is never re-entered
+### Rule 1: `with` is local to its body
 
-A continuation transfer (delimited or undelimited) that LEAVES through an
-active `KOS_DYN_WITH` node is not refused. The goal unlinks the node with
-`KOS_XFER_EVENT_TRANSFER`, which runs `exit` in the no-exception form, as
-an exception unwind would, and the instance is finished. A transfer that
-ATTACHES a segment containing a single-shot `with` does not run `enter`
-again: ENTERING skips the node, and its exit-done mark is shared across
-clones, so no instance runs `exit` twice.
+A `with` node carries no `KOS_DYN_CAP_WINDS`, and a transfer runs nothing
+of it. A continuation transfer (delimited or undelimited) that LEAVES
+through an active `with` is not refused: the goal unlinks the node with
+`KOS_XFER_EVENT_TRANSFER`, which does not ask it to leave, so `exit` does
+not run (a call of its in flight is aborted). A shift's abort leaves a
+`with` in the region this way. A transfer that ATTACHES a segment
+containing a `with` does not run `enter`: the node is not a split point,
+so ENTERING never reaches it.
 
-Single-shot means one `enter` and one `exit` per extent instance, not a
-barrier. WITH nodes are cloneable and may be captured in a chain segment
-([dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md)
-§9.7); each clone is a separate node that shares the original's exit-done
-mark and is never entered: an attachment skips it, and leaving it runs no
-`exit`. A body re-entered through a continuation runs without the manager
-entered again; the original instance's own leave runs `exit` if it has not
-run yet.
+WITH nodes are cloneable and may be captured in a chain segment. A copy of
+a `with` is the extent its body already entered: it keeps the entered
+state, and runs `exit` when that copy's body leaves it locally (completes,
+raises, returns, breaks or continues). A `with` whose `enter` or `exit` is
+in flight refuses capture with `KoskariPromptUnreachable`.
 
 ### Rule 2: `dyn-with` participates in transfer goals
 
 A `dyn-with` node answers the extent contract like a wind: when a goal
 LEAVES through it, `kos_dyn_extent_leave` runs `exit` (the no-exception
 form; a transfer is not a raise); when a goal ATTACHES a segment containing
-it, ENTERING runs `enter` and re-binds `name` if present. A single-shot
-`with` in an attached segment is skipped by ENTERING: its `exit_done` ref is
-shared across clones, so no instance runs `__exit__` twice.
+it, ENTERING runs `enter` and re-binds `name` if present, with only the
+extents outside it on the chain. A copy of a `dyn-with` starts not
+entered, and the transfer enters it afresh.
 
 **Suspension:** `enter` / `exit` may suspend (auto-await). The leave or
 enter answers AWAIT, the goal waits on the node, the driver receives
@@ -311,8 +310,8 @@ for other extent kinds; no special case for dyn-with.
 
 **Notes:**
 
-- Re-entry creates a fresh dynamic extent instance; multi-shot continuations
-  must not share mutable node state.
+- Re-entry creates a fresh dynamic extent instance; copies of a
+  continuation share no mutable node state.
 
 
 ## Interaction with other extents
@@ -345,20 +344,21 @@ for other extent kinds; no special case for dyn-with.
 
 ## Required tests (minimal)
 
-### Single-shot
+### `with`
 
 1. Normal enter/exit; expression returns the body's value.
 2. Exception inside body; exit sees exception; swallow = false ⇒ exception propagates.
 3. Exception swallowed; stack restored; execution resumes; expression yields None.
 4. Break/continue exits body; exit runs; stack restored.
-5. Continuation transfer out of the body runs exit once; a transfer back into
-   the captured body runs neither enter nor exit again.
+5. A continuation transfer out of the body runs no exit, and one back into
+   the captured body runs no enter; the copy's body exits locally through
+   exit.
 6. Async enter/exit: VM awaits enter then body then exit; expression returns
    the body's value (sync completion and suspend/resume paths). Opcode tests:
    `tests/lib/opcode/test_with.py` (sync and async). Special-form tests:
    `tests/compile/specials/test_with.py` (sync and async).
 
-### Multi-shot
+### `dyn-with`
 
 1. Continuation capture inside `dyn-with`; invoke outside; enter/exit run on
    transfer; binding correct.
@@ -370,8 +370,8 @@ for other extent kinds; no special case for dyn-with.
 
 - Stack restoration for with bodies is structural (block push/pop), never
   arithmetic marking.
-- `with` is single-shot: each dynamic extent instance is entered and exited at most once. A transfer leaving through an active WITH instance runs its exit and finishes it; an attached segment does not re-enter one; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
-- `dyn-with` is multi-shot and must wind/unwind on non-local transfer.
+- `with` is local to its body: a continuation transfer runs neither its exit nor its enter; capture of a chain containing a WITH node is permitted, and the copy exits when its body leaves it locally.
+- `dyn-with` carries `KOS_DYN_CAP_WINDS` and winds/unwinds on every continuation transfer through it.
 - Expression value is the body's value, or `None` when exit swallowed an
   exception.
 - Enter failure installs no dyn node and no stack block.

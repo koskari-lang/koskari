@@ -220,17 +220,19 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
   Python/C frames until the owning Koskari evaluator loop is reached.
 * The dynamic chain does **not** track Python boundaries with nodes. One chain
   per evaluator context (driver). Delimited capture only finds prompts in the
-  current chain. Delimited invocation from Python is **blocked** at
-  `DelimitedContinuation.tp_call` (always raises).
+  current chain. Delimited invocation from Python is **blocked** in
+  `DelimitedContinuation`'s `kc_pycall` worker (`delimited_continuation_call`,
+  always raises).
 * Python and C frames are **not** embedded in the Koskari dynamic chain; only
   Koskari frames are re-enterable.
 
 **Rationale**: Python call frames cannot be cloned or resumed. Including them
 would create non-resumable continuations.
 
-**Implementation**: `kos_validate_capture()` verifies prompt reachability from
-`dyn_top` on the chain. Context/token identity and type-level blocking enforce
-the boundary constraint.
+**Implementation**: `kos_shift_capture` finds the prompt by one walk from
+`dyn_top` on the chain, and `kos_validate_capture_cc` checks a call/cc
+capture. Context/token identity and type-level blocking enforce the boundary
+constraint.
 
 ---
 
@@ -247,8 +249,7 @@ the boundary constraint.
 
 **Node types**:
 * `KOS_DYN_FRAME` — function activation record
-* `KOS_DYN_PROMPT` — reset/shift delimiter; owns a COW stack block for the delimited region; BARRIER
-* `KOS_DYN_SHIFT` — shift block marker; simple, no stack block or handlers
+* `KOS_DYN_PROMPT` -- reset/shift delimiter (RESET); carries the tag and no stack block; the frame on it (the reset's body or a shift's handler) ends it by returning; BARRIER
 * `KOS_DYN_WIND` — dynamic-wind extent (before/after hooks)
 * `KOS_DYN_TRY` — try block (handler_pc, enabled; owns stack block)
 * `KOS_DYN_FINALLY` — finally block (handler_pc, enabled, handling_raise; owns stack block)
@@ -258,14 +259,16 @@ the boundary constraint.
 * `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
 * `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
-* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH, PUSH_DYN_WITH/POP_DYN_WITH for the multi-shot shot); CATCH, CONTROL_HOOK
+* `KOS_DYN_WITH` -- with context manager extent (PUSH_WITH/POP_WITH; PUSH_DYN_WITH/POP_DYN_WITH add WINDS); CATCH, CONTROL_HOOK
+* `KOS_DYN_GEN` -- an installed generator's span boundary
 
 **Capability bits** govern behavior without kind checks in generic handlers:
 * `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH)
 * `KOS_DYN_CAP_LOOP_REGION` — a LOOP or FOREACH region still running its body, the target of break and continue; CLEAR_LOOP and CLEAR_FOREACH take it away
 * `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT); the raise walk crosses it in one unlink with the barrier allowed
-* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort) and carries an obligation slot: WIND, WITH. A transfer attachment re-enters such a node unless it is a single-shot WITH; PARAM re-winds by kind
-* `KOS_DYN_CAP_INTERCEPTS_RAISE` — the raise walk offers handle(RAISE): TRY, FINALLY, GEN, INPLACE DELIM
+* `KOS_DYN_CAP_WINDS` -- a transfer runs the node: its leave on the way out, its enter on re-entry. WIND, PARAM, and a dyn-with's WITH. A transfer walk tests this one cap, never the kind; a node without it (a plain WITH, TRY, FINALLY) is local and a transfer runs nothing of it
+* `KOS_DYN_CAP_CONTROL_HOOK` -- node answers the extent contract (enter, leave, settle, abort) and carries an obligation slot: WIND, WITH
+* `KOS_DYN_CAP_INTERCEPTS_RAISE` -- the raise walk offers handle(RAISE): TRY, FINALLY, GEN
 * `KOS_DYN_CAP_OWNS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
 
 ---
@@ -275,8 +278,8 @@ the boundary constraint.
 * Wind/unwind thunks are **null-arity Koskari callables** (bytecode blocks)
   invoked via `kos_callable_call`, not Python callables.
 * Thunks run as normal frames in the eval loop; when a thunk returns into
-  its WIND, `kos_dyn_settle_top` advances the node, and the walk or transfer
-  goal that was waiting on it continues.
+  its WIND, the node settles, and the walk or transfer goal that was
+  waiting on it continues.
 * Thunks capture lexical context via closure.
 * **Local jumps and wind/unwind are distinct**: local jumps do *not* invoke
   wind/unwind handlers; continuation transfer *does* invoke them.
@@ -290,17 +293,24 @@ continuation capture and avoids special hook machinery.
 
 * Koskari implements both **delimited continuations** (reset/shift) and
   **reusable full continuations** (call/cc).
-* Delimited continuations are restricted to the same evaluator context.
+* A delimited continuation is invoked on the caller's chain, whichever
+  context captured it: each call attaches a fresh copy of the captured
+  frames on the caller and returns to it as a call does.
 * Continuations capture a reference to their owning evaluator context.
 * Each evaluator context records an explicit lifecycle state (at least: active,
   sleeping/await/yield, exited). It is an error to apply a continuation whose
   owning context state does not permit invocation. Attempting to invoke an
   unusable continuation (delimited or full) raises an exception at the
   invocation site.
-* Delimited continuations capture from the current point up to (but not
-  including) the nearest matching prompt.
-* Captured continuations are **multi-shot** by default.
-* Continuation invocation executes proper wind/unwind hooks in correct order.
+* A reset's body and a shift's handler are functions called above the
+  prompt. A delimited continuation is whole frames from the shift down
+  through the nearest matching prompt, the reset's body frame on it
+  included; the shift aborts to the prompt before its handler runs.
+* Captured continuations are **multi-shot**.
+* Continuation invocation runs the leaves and enters of the
+  `KOS_DYN_CAP_WINDS` nodes it crosses: leaves innermost first, enters
+  outermost first, each enter with only the extents outside it on the
+  chain. Plain `with` and `try`/`finally` are local and are not run.
 
 ---
 
@@ -311,10 +321,12 @@ continuation capture and avoids special hook machinery.
 * The driver derives its next step from the live chain on every pass, so a
   chain that moved while the goal was waiting is its input, never a hazard.
 * A goal waiting on a node (its thunk or `__exit__` is running, or it awaits)
-  acts again only when `dyn_top` is where it was when the node fired.
-* Attaching is total: splice, resume pc, and the freeing of outer goals on an
-  undelimited attachment happen in one synchronous step.
-* A failed step frees every goal and raises through the chain as it stands.
+  acts again only when `dyn_top` is that node again.
+* Each attaching step is synchronous: the next piece of the target, its
+  registers, the resume pc once the target is used up, and the freeing of
+  outer goals whose node LEAVING unlinked.
+* A raise frees every goal not waiting on a live thunk and raises through
+  the chain as it stands; a waiting goal lives as long as its thunk.
 
 ---
 

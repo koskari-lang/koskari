@@ -802,12 +802,9 @@ or `EVAL_NORMAL()`). When the frame has no parent or its parent is the generator
 node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
 delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
-Two frames have no caller and a RETURN in them raises
-`KoskariPromptUnreachable` before any extent is left: the frame copy a
-`shift` handler runs in when the shift is in a called function
-(`KOS_FRAME_SHIFT_HANDLER`, `boundary` `shift`), and the bottom frame of a
-applied delimited continuation, whose parent is a DELIM (`boundary`
-`continuation`).
+A `reset` body and a `shift` handler are functions, so a RETURN written in
+either returns from it, and its value is the reset's: the frame on a prompt
+ends the prompt when it returns, and the value goes below the prompt.
 
 **Examples:**
 
@@ -1075,8 +1072,8 @@ optionally with a result value.
 **Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
 The target is the nearest enabled loop of the same frame, found at run time
-(`kos_dyn_find_loop`). The search passes a PROMPT and stops at a SHIFT and
-at a DELIM: a `shift` handler and a applied continuation reach only loops
+(`kos_dyn_find_loop`). A `reset` body and a `shift` handler are functions,
+so they, and an applied continuation's copy of the body, reach only loops
 opened inside them. With no loop found it raises
 `RuntimeError("break outside loop")`.
 
@@ -1098,8 +1095,8 @@ opened inside them. With no loop found it raises
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits CONTINUE with
 count 0 or 1. Runtime jumps to the loop's continue target (loop head for while,
-ITER_NEXT for for-each). The loop is found as BREAK finds it: the search
-stops at a SHIFT and at a DELIM, and with no loop found it raises
+ITER_NEXT for for-each). The loop is found as BREAK finds it, and with no
+loop found it raises
 `RuntimeError("continue outside loop")`.
 
 **Examples:**
@@ -1150,10 +1147,11 @@ the sent value is pushed onto the stack and execution continues at the next
 instruction.
 
 The generator is the nearest GEN outward from the running frame
-(`kos_dyn_yield_gen`). The search stops at a DELIM: a YIELD in the bottom
-frame of a applied delimited continuation raises `KoskariPromptUnreachable`
-(`operation` `yield`, `boundary` `continuation`). With no GEN and no DELIM
-it raises `RuntimeError("yield outside generator")`.
+(`kos_dyn_yield_gen`). With no GEN it raises
+`RuntimeError("yield outside generator")`. A `yield` written in a `reset`
+body or a `shift` handler is a `SpecialError` at compile time: those are
+functions, not generators. One in a function defined within either yields
+for that function.
 
 **Examples:**
 
@@ -1354,11 +1352,12 @@ a miss.
 Optional `name` binds the context manager's enter result for the body. If
 omitted, only `expr` and `body ...` are given (no binding).
 
-**Use-case:** Single-shot context manager: evaluate `expr` to get a manager,
-call enter (auto-await if needed), run body in a fresh operand stack block,
-then call exit on normal or exception exit. Safe for normal control-flow and
-exception unwind; **not** safe across continuation transfers (transfer across
-an active `with` raises a runtime error).
+**Use-case:** Context manager local to its body: evaluate `expr` to get a
+manager, call enter (auto-await if needed), run body in a fresh operand stack
+block, then call exit on normal or exception exit, and on a return, break or
+continue through it. A continuation transfer runs neither: a shift's abort
+or a continuation call that leaves an active `with` unlinks it without
+calling exit, and a continuation's copy does not call enter again.
 
 **Behaviour:** Compiles `expr`, emits PUSH_WITH with optional name (constant
 pool index or no-binding sentinel), compiles body with `helper_begin`, emits
@@ -1392,10 +1391,11 @@ enter/exit, normal completion, and exception propagation/swallow.
 
 Same syntax as `with`; optional `name` binds the enter result.
 
-**Use-case:** Multi-shot context manager that participates in continuation
-transfer (shift/reset, undelimited call/cc). On non-local transfer, exit
-runs as the goal leaves and enter runs again when a goal attaches the extent;
-each attachment is a fresh extent instance.
+**Use-case:** Context manager that continuation transfers run (shift/reset,
+undelimited call/cc): its node carries `KOS_DYN_CAP_WINDS`. Exit runs as
+the goal leaves the extent and enter runs again when a goal re-enters it,
+outermost extent first; each copy of a delimited continuation is a fresh
+extent instance.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 Expression value is always `None`. See
@@ -2965,12 +2965,22 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 **Syntax:** `(reset BODY ...)`
 
 **Use-case:** Establish a prompt delimiter for delimited continuations
-(`compile/shift`). The body is evaluated with a prompt on the dynamic chain;
-`compile/shift` inside the body can capture the continuation up to (but not
-including) this prompt.
+(`compile/shift`). The body runs with a prompt on the dynamic chain under
+it; `compile/shift` in the body, or in a function it calls, captures the
+continuation up to this prompt.
 
-**Behaviour:** Emits `PUSH_PROMPT 0` (count 0: the default tag), compiles the
-body with `helper_begin`, emits `POP_PROMPT 0`.
+**Behaviour:** Compiles `BODY` as its own function of no parameters (a
+fragment named `<reset>`, compiled with `helper_begin` in a function
+resolution scope) and emits one `RESET` instruction, an EXTRA row of the
+tag count 0 (the default tag) and the body's FunctionSpec. At run time
+RESET builds the body over the live namespace, pushes the prompt, and
+calls the body above it; the body's return ends the prompt and is the
+form's value.
+
+The body is a function: `return` in it returns from the body and gives the
+reset its value; `break` and `continue` reach only loops opened inside it;
+a `var` declared in it is local to it. A `yield` written in the body is a
+`SpecialError` at compile time.
 
 **Examples:**
 
@@ -2982,7 +2992,9 @@ body with `helper_begin`, emits `POP_PROMPT 0`.
     (shift k (call k 5))))
 ```
 
-**Tests:** `tests/compile/specials/test_reset_shift.py`
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_reset_frame.py`,
+`tests/reproducers/test_break_across_reset.py`
 
 ## compile/shift
 
@@ -2991,31 +3003,35 @@ body with `helper_begin`, emits `POP_PROMPT 0`.
 **Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
-`compile/reset` prompt and bind it to `K`, then run `BODY` in place of the
-captured region. `K` is a `DelimitedContinuation` that cannot be called from
+`compile/reset` prompt, abort to that prompt, and call the handler, a
+function of `K` whose body is `BODY`, there. The handler's value is the
+reset's. `K` is a `DelimitedContinuation` that cannot be called from
 Python (only from within a Koskari eval loop, through CALL).
 
-**Behaviour:** Emits `PUSH_SHIFT 0` (count 0: the default tag), declares `K`
-as a local variable, emits `VAR_STORE K` (binds the captured delimited
-continuation), compiles body with `helper_begin`, emits `POP_SHIFT 0`.
+**Behaviour:** Compiles the handler as its own function of the one
+parameter `K` (a fragment named `<shift>`, compiled with `helper_begin` in
+a function resolution scope) and emits one `SHIFT` instruction, an EXTRA
+row of the tag count 0 (the default tag) and the handler's FunctionSpec.
 
-At runtime PUSH_SHIFT captures the region, then aborts to the prompt: every
-node above the prompt is left as a raise leaves it (a WIND after thunk, a
-WITH exit and a FINALLY body run; a TRY is dropped), and `BODY` runs on a
-SHIFT node pushed on the prompt. `BODY` is outside the region's extents: a
-TRY in the region does not catch its raises, and a PARAM in the region is
-not bound for it. Each call of `K` installs a copy of the region on a DELIM at
-the call site and enters the copy's extents.
+At runtime SHIFT builds the handler over the live namespace, captures the
+continuation -- whole frames from the shift up to the prompt, the reset's
+body frame included, resuming at the instruction after the SHIFT -- and
+aborts to the prompt. A transfer goal leaves every node above the prompt:
+a node carrying `KOS_DYN_CAP_WINDS` runs its leave (a dyn-wind after thunk,
+a dyn-with exit, a parameterize restore), and a plain `with`, `try` or
+`finally` is unlinked without running anything of its own. The prompt
+stays, and the handler is called with `K` above it. The handler is outside
+the region's extents: a `try` in the region does not catch its raises, and
+a `parameterize` in the region is not bound for it. Each call of `K`
+attaches a fresh copy of the captured frames, prompt included, on the
+caller, enters the copy's extents outermost first, and returns the copy's
+value to the caller as a call does.
 
-- `break`, `continue` in `BODY`: reach only a loop opened inside `BODY`.
-- `yield` in `BODY`: suspends the generator the reset is in.
-- `return` in `BODY`: returns from the function when the reset is in the
-  same function. When the shift is in a called function, `BODY` runs in a
-  copy of that function's frame, and the return raises
-  `KoskariPromptUnreachable`.
-- `return`, `yield` in the resumed region, in the reset's own function:
-  raise `KoskariPromptUnreachable`. A function the region calls returns
-  normally.
+The handler is a function: `return` in it returns from the handler and
+gives the reset its value; `break` and `continue` reach only loops opened
+inside it; a `var` declared in it is local to it. A `yield` written in the
+handler is a `SpecialError` at compile time. A `shift` in the handler finds
+the same prompt.
 
 **Examples:**
 
@@ -3038,9 +3054,9 @@ the call site and enters the copy's extents.
 **Use-case:** Establish a prompt delimiter carrying `TAG`, for a
 `compile/shift-at` seeking the same tag.
 
-**Behaviour:** Compiles `TAG`, emits `PUSH_PROMPT 1` (count 1: the tag is
-popped from the stack), compiles the body with `helper_begin`, emits
-`POP_PROMPT 0`. A tag is any object, matched by identity. `None` is the
+**Behaviour:** Compiles `TAG`, then the body as `compile/reset` does, and
+emits `RESET` with tag count 1 (the tag is popped from the stack). A tag is
+any object, matched by identity. `None` is the
 default tag: `(reset-at None BODY ...)` is `(reset BODY ...)`. `gensym`
 makes a tag no other code can name.
 
@@ -3063,10 +3079,9 @@ makes a tag no other code can name.
 **Use-case:** `compile/shift` with the delimiter chosen by tag: capture up to
 the nearest `compile/reset-at` carrying `TAG`.
 
-**Behaviour:** Compiles `TAG`, emits `PUSH_SHIFT 1` (count 1: the tag is
-popped before the capture and is not among the captured operands), declares
-`K`, emits `VAR_STORE K`, compiles body with `helper_begin`, emits
-`POP_SHIFT 0`. Prompts of other tags between the shift and its prompt are
+**Behaviour:** Compiles `TAG`, then the handler as `compile/shift` does, and
+emits `SHIFT` with tag count 1 (the tag is popped before the capture and is
+not among the captured operands). Prompts of other tags between the shift and its prompt are
 crossed and become part of the continuation. The capture failure
 `KoskariPromptNotFound` carries the tag sought as `tag`. Everything else is
 as `compile/shift`.
@@ -3359,10 +3374,12 @@ deploy --now
 The following specials are implemented but are not given full sections above.
 See the cited modules for behaviour and examples.
 
-- **compile/with** — Single-shot context manager; `(with EXPR BODY ...)`.
+- **compile/with** -- Context manager local to its body, which continuation
+transfers do not run; `(with EXPR BODY ...)`.
 Emits `PUSH_WITH` / `POP_WITH`. Implementation:
 `koskari/compile/specials/context.py`.
-- **compile/dyn-with** — Multi-shot dynamic context manager; async enter/exit.
+- **compile/dyn-with** -- Context manager that continuation transfers leave
+and re-enter; async enter/exit.
 Emits `PUSH_DYN_WITH` / `POP_DYN_WITH`. Implementation:
 `koskari/compile/specials/context.py`.
 

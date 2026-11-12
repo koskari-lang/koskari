@@ -34,9 +34,11 @@ itself and never reads the transfer state.
 
 Phases: WIND `IDLE -> PRE_BEGIN -> POST_BEGIN -> PRE_AFTER -> POST_AFTER`;
 WITH `IDLE -> PENDING_ENTER_AWAIT? -> (body) -> PENDING_EXIT_AWAIT? ->
-LEFT`. A single-shot `with` records `exit_done` in a `KosRef` shared with its
-clones, so `__exit__` runs once across every instance; a multi-shot
-`dyn-with` (shot `KOS_DYN_WITH_SHOT_MULTI`) re-enters on every attachment.
+LEFT`. A plain `with` is local to its body: it carries no
+`KOS_DYN_CAP_WINDS`, so a transfer unlinks it without asking it to leave
+(a call of its in flight is aborted) and never re-enters it. A `dyn-with`
+carries the cap: a transfer leaves it and re-enters it on every
+attachment.
 
 Thunks and `__enter__`/`__exit__` bodies are ordinary frames in the same
 `koskari_eval` loop. When one returns into the node (a frame return that
@@ -53,21 +55,28 @@ Every node leaves through **`kos_dyn_unlink_top(es, ev, allow_barrier)`**:
 
 1. A `CONTROL_HOOK` node is asked to leave; any answer but NORMAL returns
    with the node still on the chain, and the caller waits and asks again.
-2. The synchronous per-kind teardown runs.
+   Under `KOS_XFER_EVENT_TRANSFER` a node without `KOS_DYN_CAP_WINDS` is
+   local and is not asked: a call of its in flight is aborted
+   (`kos_dyn_extent_abort`) and nothing else of it runs.
+2. The synchronous per-kind teardown runs. A kind whose work must wait
+   until the node is freed fills the unlink's after-free hook
+   (`KosAfterFree`); a flattened GEN uses it to finish its generator once
+   the node is gone, with any exception in flight held across the free.
 3. The node's obligation is detached.
 4. The parent becomes `dyn_top`; the node is freed.
 5. The obligation is acted on by its kind and by `ev` (see Obligations).
 
 | Kind | Enter | Synchronous teardown at unlink |
 |---|---|---|
-| PARAM | `kos_dyn_param_wind`: bind the cells (also re-bound when a goal attaches the extent) | `kos_dyn_param_unwind`: restore what they displaced |
+| PARAM | `kos_dyn_param_wind`: bind the cells (also re-bound when a goal re-enters the extent) | `kos_dyn_param_unwind`: restore what they displaced |
 | WIND | before thunk (contract) | after thunk if entered (contract), then free |
-| WITH | `__enter__` (contract) | `__exit__` (contract), then free |
+| WITH | `__enter__` (contract) | `__exit__` (contract; under TRANSFER only for a dyn-with), then free |
 | NS | owns the let namespace (set at push) | drop the node; the live namespace follows the chain top |
 | TRY / FINALLY | (none) | restore the handler-visible exception state a consumed raise displaced |
-| LOOP / FOREACH / COLLECT / PROMPT | (none) | drop the owned segment |
+| LOOP / FOREACH / COLLECT | (none) | drop the owned segment |
 | YIELD_FROM | (none) | close the delegate |
-| DELIM / SHIFT / CC / GEN / NEXT | (none) | bookmark bookkeeping only |
+| PROMPT / CC | (none) | bookmark bookkeeping only |
+| GEN | (none) | a flattened GEN finishes its generator through the after-free hook; a root GEN refuses a transfer |
 
 `allow_barrier` = 0 refuses a `KOS_DYN_CAP_BARRIER` node (PROMPT) with
 RAISE; 1 crosses it.
@@ -83,7 +92,7 @@ the node owes when it is unlinked.
 |---|---|---|
 | `KOS_OB_VALUE` | the body value at `POP_WIND` or `POP_WITH` | the pop opcode |
 | `KOS_OB_EXCEPTION` | the exception `__exit__` is handling, or one stored while the after thunk runs | the raise walk, `POP_WITH` on a raise |
-| `KOS_OB_RETURN` | a return, break, or continue value crossing a leave in flight, with its path and delimiter bookmark | the return and loop walks |
+| `KOS_OB_RETURN` | a return, break, or continue value crossing a leave in flight, with its path | the return and loop walks |
 | `KOS_OB_SWALLOWED` | nothing: `__exit__` consumed the raise and None stands in for the body value | the with's exit classification |
 
 Release at unlink, by kind and by event:
@@ -114,9 +123,11 @@ raise. The GC traverses the slot through the node.
    exception on a wind before running the after thunk; the return walk
    stores the value.
 3. **Transfer goals** (`xfer_goal.c`): LEAVING unlinks with
-   `KOS_XFER_EVENT_TRANSFER` down to the seam; ENTERING asks
-   `kos_dyn_extent_enter` of each attached `CONTROL_HOOK` node outermost
-   first. After a leave or enter that answers REPROLOGUE or AWAIT the goal
+   `KOS_XFER_EVENT_TRANSFER` down to the seam; ATTACHING and ENTERING
+   alternate, outermost first, ENTERING asking `kos_dyn_extent_enter` of
+   each `KOS_DYN_CAP_WINDS` node (WIND, PARAM, dyn-with) with only the
+   extents outside it attached. The walks test that one cap, never the
+   kind. After a leave or enter that answers REPROLOGUE or AWAIT the goal
    waits on that node. See [EVALUATOR.md §6](../EVALUATOR.md).
 
 Suspension inside a thunk is ordinary: the thunk's own AWAIT reaches the
