@@ -111,4 +111,29 @@ def catch-no-search [thunk]:
   (catch-no-search (lambda [] (reset (amb (#list 1 2))))))
 
 
+; A plain shift in the thunk with no reset of its own crosses the
+; search delimiter, whose tag differs. It captures up to a reset around
+; the solve call, the search included: k runs the rest of the thunk and
+; the search, and the handler's value is that reset's value.
+(var shift-past-search
+  (reset
+    (solve
+      (lambda []
+        (+ 10 (shift k (#tuple "handler" (k 5))))))))
+
+
+; With no reset around the solve call either, the shift finds no prompt
+; of its own tag. The search does not claim the failure.
+def catch-not-found [thunk]:
+  try:
+    (thunk)
+    None
+  except [e KoskariPromptNotFound]:
+    e
+
+(var shift-without-reset
+  (catch-not-found
+    (lambda [] (solve (lambda [] (shift k (k 5)))))))
+
+
 ;; The end.

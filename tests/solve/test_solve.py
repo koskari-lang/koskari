@@ -99,4 +99,17 @@ class TestSolveModule(unittest.TestCase):
         err = getattr(self.cases, "reset-without-search")
         self.assertIsInstance(err, solve.NoActiveSearch)
 
+    def test_plain_shift_in_the_thunk_captures_past_the_search(self):
+        self.assertEqual(getattr(self.cases, "shift-past-search"),
+                         ("handler", [15]))
+
+    def test_plain_shift_with_no_reset_is_not_a_search_error(self):
+        import koskari.solve as solve
+        from koskari.exceptions import KoskariPromptNotFound
+
+        err = getattr(self.cases, "shift-without-reset")
+        self.assertIsInstance(err, KoskariPromptNotFound)
+        self.assertNotIsInstance(err, solve.NoActiveSearch)
+        self.assertIsNone(err.tag)
+
 # The end.
