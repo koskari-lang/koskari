@@ -149,7 +149,7 @@ source: |-
   
 verify:
   read: (while True (reset (shift k (break 9))))
-  invalid: "a shift handler runs after the shift has left the captured region and stands at the reset, so it has only the loops written inside it. The break is in the handler and the while is around the reset, so it fails at runtime with RuntimeError: break outside loop. The same holds for continue. Put the loop inside the handler, as in (reset (shift k (while True (break 9)))), or break in the reset body outside the shift."
+  invalid: "a shift handler runs after the shift has left the captured region and stands at the reset, so it has only the loops written inside it. The break is in the handler and the while is around the reset, so it fails at runtime with RuntimeError: break outside loop. The same holds for continue. Put the loop inside the handler, as in (reset (shift k (while True (break 9)))), or have the reset return a value that the loop tests after the reset."
 references:
   - reference/specials/compile-shift.md
   - reference/specials/compile-break.md

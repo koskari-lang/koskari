@@ -23,8 +23,31 @@ reference.
 
 **Examples:**
 
+The shift's abort runs exit, and resuming `k` runs enter again before the
+body continues; that copy runs exit when it completes.
+
 ```koskari
-;; Capture continuation inside dyn-with; invoke outside runs exit then enter
-(dyn-with [r (make-resource)]
-  (k (refq r)))
+class Mgr []:
+    def __init__ [self log]:
+        (set! self.log log)
+        (set! self.open False)
+        (set! self.seen None)
+    def __enter__ [self]:
+        (self.log.append "enter")
+        (set! self.open True)
+        self
+    def __exit__ [self *: args]:
+        (self.log.append "exit")
+        (set! self.open False)
+        (set! self.seen args[0])
+        False
+
+def dyn_with_resumes [log]:
+    var r (reset
+        (+ 1 (dyn-with [c (Mgr log)]
+               (shift k (begin (log.append "handler") (k 1))))))
+    #[r log]
+
+(dyn_with_resumes #[])
+;; => [2, ["enter", "exit", "handler", "enter", "exit"]]
 ```

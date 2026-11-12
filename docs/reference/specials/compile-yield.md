@@ -28,17 +28,12 @@ value, and `YIELD N` (for `N > 1`) packages the values as a tuple. A keyword
 argument re-heads the form as `(values ...)`, so `(yield a: 1 b: 2)` yields a
 `values` object; positional and keyword arguments must not be mixed.
 
-At runtime, YIELD finds the running frame's generator node
-(`kos_dyn_find_gen`) and freezes the chain above it into the node
-(`kos_dyn_gen_freeze`); the open extents inside the generator are kept,
-not unwound, so no `finally` or `__exit__` runs at a yield. When the
-generator is consumed on the same chain (a `for-each`, a NEXT, or a
-delegating `yield-from`), the value is delivered to that consumer and
-evaluation continues there without leaving `koskari_eval`. When the
-generator is driven from outside (a Python `next` or `send`), the opcode
-returns `EVAL_YIELD(val)`, `SUSPENSION_EVENT = YIELD` is set, and
-`koskari_eval` returns `KOS_RES_YIELD`. On resume, `revive_yield` pushes
-`send_val` onto the stack.
+At runtime, `yield` suspends the generator with its open extents kept,
+not unwound, so no `finally` or `__exit__` runs at a yield. The value goes
+to the generator's consumer: a `for-each`, a `next`, a delegating
+`yield-from`, or a Python consumer. When the generator is resumed, the
+`yield` form evaluates to the value sent in, or `None` when none is sent;
+an exception thrown in is raised at the `yield`.
 
 The body of a [`reset`](compile-reset.md) and the handler of a
 [`shift`](compile-shift.md) are functions of their own and not part of a

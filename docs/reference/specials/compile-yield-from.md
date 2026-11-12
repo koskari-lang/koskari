@@ -10,15 +10,14 @@ only forward an entire sequence (for example `(items data)` for
 `dict.items()`).
 
 **Behaviour:** Compiles `EXPR` onto the stack, emits `YIELD_FROM` with operand
-`0`, then emits `CONST None` so control can continue after delegation completes
-(see `koskari/compile/specials/continuations.py`). At runtime the opcode
-consumes the iterable value on TOS, classifies it (sync iterator or generator,
-Python async iterator or async generator, Koskari async generator), rejects bare
-coroutines, and drives the delegate until exhaustion while forwarding yields and
-send/throw/close semantics. Like `compile/yield`, participating code is marked
-with `KOS_CODE_YIELDS`. Opcode behaviour is documented in
-[KOS_OP_YIELD_FROM](../vm/opcodes/kos-op-yield-from.md); implementation is in
-`koskari/lib/opcode/YIELD_FROM.c`.
+`0`, then emits `CONST None`, so the form's value is `None`. At runtime the
+delegate may be a sync iterator or generator, a Python async iterator or async
+generator, or a Koskari generator; a bare coroutine is refused. Each value the
+delegate produces is yielded through the current generator until the delegate
+is exhausted, and send, throw and close reach the delegate. Like
+`compile/yield`, a `yield-from` makes the enclosing function a generator.
+Opcode behaviour is documented in
+[YIELD_FROM](../vm/opcodes/kos-op-yield-from.md).
 
 **Examples:**
 

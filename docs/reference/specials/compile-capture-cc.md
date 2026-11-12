@@ -11,7 +11,7 @@ visible in a scope that already contains `K`.
 
 **Behaviour:** Emits `PUSH_CC`, then `CAPTURE_CC` (captures and pushes the
 continuation), `VAR_STORE K` (stores into the current namespace's slot for
-`K`), the body via `helper_begin`, and finally `POP_CC`.
+`K`), the body as a `begin`, and finally `POP_CC`.
 
 **Examples:**
 

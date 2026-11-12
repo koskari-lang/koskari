@@ -1703,7 +1703,7 @@ tags:
   - return
   - variadic
   - idiom
-notes: return is variadic; two or more positional arguments return a tuple. koskari/compile/specials/continuations.py
+notes: return is variadic; two or more positional arguments return a tuple.
 ---
 id: special-return-multiple-values-destructure-001
 feature: special/compile/return
@@ -1729,7 +1729,7 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) return is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) return is consumed positionally with var over a pattern
 ---
 id: special-return-keyword-values-001
 feature: special/compile/return
@@ -1749,7 +1749,7 @@ tags:
   - keyword-argument
   - "surface:block"
   - idiom
-notes: keyword arguments to return produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py
+notes: keyword arguments to return produce a values object labelling each result; dict exposes its fields.
 ---
 id: special-yield-multiple-values-001
 feature: special/compile/yield
@@ -1767,7 +1767,7 @@ tags:
   - generator
   - variadic
   - idiom
-notes: yield is variadic; two or more positional arguments yield a tuple. koskari/compile/specials/continuations.py
+notes: yield is variadic; two or more positional arguments yield a tuple.
 ---
 id: special-yield-multiple-values-destructure-001
 feature: special/compile/yield
@@ -1791,7 +1791,7 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) yield is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) yield is consumed positionally with var over a pattern
 ---
 id: special-yield-keyword-values-001
 feature: special/compile/yield
@@ -1812,7 +1812,7 @@ tags:
   - keyword-argument
   - "surface:block"
   - idiom
-notes: keyword arguments to yield produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py
+notes: keyword arguments to yield produce a values object labelling each result; dict exposes its fields.
 ---
 id: special-return-bare-word-001
 feature: special/compile/return

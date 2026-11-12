@@ -17,10 +17,12 @@ with keywords, `(k a x: 1)`, with a `values` instance over all of them.
 **Behaviour:** Emits `PUSH_CC` (opens a CC block), compiles `FN`, emits
 `CAPTURE_CC` (captures the continuation and pushes it), emits `CALL 1` (calls
 `FN` with the continuation), then `POP_CC` (closes the CC block on normal
-return). The continuation may be invoked from within the same eval context
-(direct apply) or from Python code in a frame above the owning eval loop
-(upwards apply via `KoskariContinuationApply`). Cross-context invocation from
-a different eval context triggers the segmented-transfer path.
+return). The continuation may be invoked from Koskari code in the evaluation
+that captured it, from Python code that evaluation calls, or from a nested
+Koskari evaluation running under such Python code. A transfer from a nested
+evaluation leaves it and any evaluation between it and the capturing one,
+running the exit of each `dyn-with` in them with no exception, and resumes
+the capturing evaluation with the value.
 
 Invoking the continuation leaves every extent between the call site and the
 capture point: the after thunk of a [`dyn-wind`](compile-dyn-wind.md) and
