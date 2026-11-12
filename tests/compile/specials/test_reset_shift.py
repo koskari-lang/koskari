@@ -890,6 +890,27 @@ class TestTaggedResetShift(SpecialsTestCase):
         self.assertEqual(caught.exception.operation, "shift")
 
 
+    async def test_prompt_not_found_names_the_forms(self):
+        """
+        the failure's message names the forms written: a shift-at with a
+        tag has no reset-at carrying it, a plain shift no reset
+        """
+
+        tagged, _ = self.compile_expr(
+            "(+ 1 (shift-at seek k (call k 5)))", seek=object())
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await tagged()
+        self.assertEqual(
+            "shift-at has no enclosing reset-at carrying its tag",
+            str(caught.exception))
+
+        plain, _ = self.compile_expr("(+ 1 (shift k (call k 5)))")
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await plain()
+        self.assertEqual(
+            "shift has no enclosing reset", str(caught.exception))
+
+
     async def test_tag_expression_is_evaluated_once_per_form(self):
         calls = []
 

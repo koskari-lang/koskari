@@ -866,8 +866,10 @@ own_fail:
                        EVAL_RAISE
      2. cc test      - PyErr_ExceptionMatches(KoskariContinuationApply),
                        exactly once
-     3. nest abandon - kos_xfer_goal_abandon_all when a goal is active
-                       AND the exception is not a continuation signal
+     3. nest abandon - kos_xfer_goal_abandon_stepping when a goal is
+                       active AND the exception is not a continuation
+                       signal: the goals not waiting on a thunk go; a
+                       waiting one goes when the walk reaches its node
      4. cc dispatch  - continuation signal: handle_continuation_apply
                        (own token: invoke; foreign: cc-unwind goal);
                        REPROLOGUE re-enters the loop with a goal active
@@ -910,8 +912,12 @@ static KosOpResult process_raise(KosContext *ctx) {
   int is_cc_apply = (KoskariContinuationApply
                      && PyErr_ExceptionMatches(KoskariContinuationApply));
 
+  /* A goal waiting on a thunk lives as long as the thunk: a raise the
+     thunk catches leaves it waiting, and the walk below retires it if it
+     reaches the node the goal waits on. The goals above the waiters
+     were stepping when the raise came, and it ends them. */
   if (! is_cc_apply && KosContext_GOAL(ctx))
-    kos_xfer_goal_abandon_all(ctx);
+    kos_xfer_goal_abandon_stepping(ctx);
 
   if (is_cc_apply)
     return handle_continuation_apply(ctx);
@@ -3526,10 +3532,11 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        the walk below unwinds as it always did, and this cannot loop.
 
        A goal in play is routed past this offer and through the phase
-       below, whose process_raise abandons the goal stack and then
-       answers RESUME, relayed to the resume with no goal active -- so
-       a transfer still reaches abandon first, and the resume still
-       takes the failure. */
+       below, whose process_raise retires every goal not waiting on a
+       thunk still above its node and then answers RESUME -- so a
+       transfer the raise ends is retired first, and the resume still
+       takes the failure. A goal left waiting is dormant below the
+       resume, whose frame belongs to the thunk it waits for. */
     if (err
         && ! KosContext_GOAL(ctx)
         && KosContext_FRAME(ctx)

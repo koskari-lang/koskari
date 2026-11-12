@@ -25,7 +25,10 @@ Everything [`shift`](compile-shift.md) says of `K`, of the handler running
 after the abort, and of `return`, `break`, `continue` and `yield` holds
 here unchanged.
 
-**Errors:** As for [`shift`](compile-shift.md). `KoskariPromptNotFound`
+**Errors:** As for [`shift`](compile-shift.md). With no `reset-at`
+carrying `TAG` on the dynamic chain, `KoskariPromptNotFound` is raised
+with the message `shift-at has no enclosing reset-at carrying its tag`
+(a `TAG` of `None` is the default tag, and fails as `shift` does). It
 carries the tag sought on its `tag` attribute, so code that owns a tag
 can tell a failure against its own delimiter from one against another's.
 

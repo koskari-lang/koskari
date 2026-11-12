@@ -40,8 +40,22 @@
 /* === Forward declarations === */
 
 
-static KosOpResult kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
-                                             KosXferEvent event);
+/**
+   What an unlink runs once the node is freed: fn(arg), with arg owned
+   and released after. A node's uninstall fills it when its kind has
+   work that must wait for the node to be gone; fn NULL is nothing.
+*/
+typedef struct KosAfterFree {
+  void (*fn)(PyObject *arg);
+  PyObject *arg;
+} KosAfterFree;
+
+
+static KosOpResult kos_dyn_uninstall_handler(
+    KosContext *ctx,
+    KosDynNode *node,
+    KosXferEvent event,
+    KosAfterFree *after);
 static KosOpResult kos_dyn_unlink_top_take(
     KosContext *ctx,
     KosXferEvent ev,
@@ -400,7 +414,8 @@ static int kos_load_capture_excs(void) {
 /**
    Raise KoskariPromptNotFound for a capture walk that exhausted the
    chain without meeting a prompt tagged tag. A NULL tag is the default
-   tag, which the exception reports as None.
+   tag, which the exception reports as None, and is what a shift seeks;
+   any other is a shift-at's, which seeks a reset-at carrying it.
 */
 static int kos_raise_prompt_not_found(PyObject *tag) {
   PyObject *exc;
@@ -410,7 +425,8 @@ static int kos_raise_prompt_not_found(PyObject *tag) {
 
   exc = PyObject_CallFunction(
       exc_prompt_not_found, "sOs",
-      "shift has no enclosing reset",
+      tag ? "shift-at has no enclosing reset-at carrying its tag"
+          : "shift has no enclosing reset",
       tag ? tag : Py_None, "shift");
   if (! exc)
     return -1;
@@ -1208,8 +1224,9 @@ void kos_dynnode_free(KosDynNode *node) {
          clear released the generator). An installed node is not in
          the state's node slot, kos_dyngen_new having taken it out.
          The step's busy mark is not reset here: every path that
-         finishes the owner resets it (kos_dyn_finish_flattened_gen
-         and a consumer's resume through ki_finish,
+         finishes the owner resets it (the unlink of a flattened GEN,
+         through kos_dyngen_finish_owner, and a consumer's resume
+         through ki_finish,
          KosPyAsyncGen_Teardown itself, transform_finalize finishing
          each owner on its chain). Only a raw chain free, a context's
          clear or KosContext_ReleaseChain, leaves a consumer's step
@@ -2080,6 +2097,7 @@ static KosOpResult kos_dyn_unlink_top_take(
   KosDynNode *node = KosContext_DYN_TOP(ctx);
   KosDynNode *parent;
   KosObligation ob;
+  KosAfterFree after = { NULL, NULL };
 
   /* detached state, acted on once the node is gone */
   PyObject *deliver = NULL;   /* a stored VALUE: a body value */
@@ -2107,7 +2125,7 @@ static KosOpResult kos_dyn_unlink_top_take(
         return r;
     }
   } else {
-    KosOpResult r = kos_dyn_uninstall_handler(ctx, node, ev);
+    KosOpResult r = kos_dyn_uninstall_handler(ctx, node, ev, &after);
     if (r.kind != KOS_RES_NORMAL)
       return r;
   }
@@ -2119,9 +2137,24 @@ static KosOpResult kos_dyn_unlink_top_take(
   }
 
   parent = KosDynNode_PARENT(node);
-  kos_dyn_commit_dyn_top(ctx, parent);
-  KosDynNode_PARENT(node) = NULL;
-  kos_dynnode_free(node);
+  if (after.fn) {
+    /* The work after the free runs Python, and so may the free: the
+       exception in flight, if any, is held across the commit and the
+       free, and is pending again when fn runs. */
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+    PyErr_Fetch(&typ, &val, &tb);
+    kos_dyn_commit_dyn_top(ctx, parent);
+    KosDynNode_PARENT(node) = NULL;
+    kos_dynnode_free(node);
+    PyErr_Restore(typ, val, tb);
+    after.fn(after.arg);
+    Py_DECREF(after.arg);
+  } else {
+    kos_dyn_commit_dyn_top(ctx, parent);
+    KosDynNode_PARENT(node) = NULL;
+    kos_dynnode_free(node);
+  }
 
   /* Step 5: act on the obligation by kind and event. */
   switch (ob.kind) {
@@ -2197,14 +2230,37 @@ KosOpResult kos_dyn_unlink_top(
 /**
    Run the pop handler for a node being popped off the chain.  Types with
    no pop action return EVAL_NORMAL() immediately via the default case.
+   A kind whose work must wait until the node is freed puts it in after
+   (zeroed by the caller; NULL for a caller that never pops such a
+   kind).
+
+   A GEN is a generator's span boundary. A flattened one, with the
+   consumer below it, is left with its generator finished once the GEN
+   is gone; the root of a generator's own context is the driver
+   boundary, which no transfer leaves.
 
    :return: EVAL_NORMAL on success, EVAL_RAISE on error,
      EVAL_AWAIT or EVAL_REPROLOGUE when async started
 */
-static KosOpResult kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
-                                              KosXferEvent event) {
+static KosOpResult kos_dyn_uninstall_handler(
+    KosContext *ctx,
+    KosDynNode *node,
+    KosXferEvent event,
+    KosAfterFree *after) {
+
   (void) event;
   switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_GEN:
+      if (! KosDynNode_PARENT(node)) {
+        PyErr_SetString(PyExc_SystemError,
+                        "transfer would leave a generator context");
+        return EVAL_RAISE();
+      }
+      if (after) {
+        after->fn = kos_dyngen_finish_owner;
+        after->arg = Py_NewRef(KosDynGen_OWNER(node));
+      }
+      return EVAL_NORMAL();
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);
       return EVAL_NORMAL();

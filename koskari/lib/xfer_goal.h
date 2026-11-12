@@ -49,8 +49,11 @@
    was moving through is gone; with a NULL seam that is every outer. The
    wait marks its frontier node, so LEAVING voids the outer as it
    unlinks that node, and an ATTACHING whose LEAVING voided none touches no
-   outer. A raise frees the whole stack; the chain a walk left behind is
-   a chain to raise through.
+   outer. A raise frees every goal not waiting on a thunk still above
+   its node; a waiting goal lives as long as its thunk, so a raise the
+   thunk catches itself leaves the transfer going, and one that leaves
+   the thunk frees the goal when the walk unlinks the node it waits on.
+   The chain a walk left behind is a chain to raise through.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -188,6 +191,33 @@ void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal);
    it is.
 */
 void kos_xfer_goal_abandon_all(KosContext *ctx);
+
+
+/**
+   A raise entered the walk: free the goals that are not waiting on a
+   live thunk, from the active one down to the first that waits on one.
+   Those were stepping when the raise came, or their thunk is no longer
+   above their node (dyn_top is the node), and the raise ends them. A
+   goal whose thunk is still above its node stays: the thunk may catch
+   the raise itself, after which it returns and the goal goes on, and
+   if it does not, the walk unlinks the node and retires the goal there
+   (kos_xfer_goal_thunk_died). Every outer of a waiting goal waits on a
+   node further down.
+*/
+void kos_xfer_goal_abandon_stepping(KosContext *ctx);
+
+
+/**
+   The raise walk unlinked node, which a goal waited on (it carried
+   KOS_DYNF_GOAL_WAIT, with node_id its id read before the unlink): the
+   thunk the goal waited for is dead. Free that goal and every goal
+   started above it. The node is never dereferenced. Nothing to do when
+   no goal waits on it (a mark a freed goal left behind).
+*/
+void kos_xfer_goal_thunk_died(
+    KosContext *ctx,
+    const KosDynNode *node,
+    uint32_t node_id);
 
 
 /**

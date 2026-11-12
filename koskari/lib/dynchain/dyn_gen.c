@@ -99,26 +99,21 @@ void kos_gen_state_clear(KosGenState *state) {
 
 
 /**
-   The owner is held by the record that steps the generator for the
-   installed span: the for-each request, the next request's resume
-   state, the native frame's record, the yield-from delegate slot, or
-   a Python adapter. The reference taken here keeps it through the
-   free and the finish, whose side effects may release the record.
+   Mark a flattened generator's owner closed, once the unlink that left
+   its span has freed the GEN: the work a GEN's uninstall hands back to
+   the unlink (kos_dyn_uninstall_handler). The owner is held by the
+   record that steps the generator for the installed span: the for-each
+   request, the next request's resume state, the native frame's record,
+   the yield-from delegate slot, or a Python adapter. The unlink holds
+   its own reference through the free and this finish, whose side
+   effects may release the record.
 */
-void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
+static void kos_dyngen_finish_owner(PyObject *owner) {
 
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-  KosDynNode *consumer = KosDynNode_PARENT(gen);
-  PyObject *owner = Py_NewRef(KosDynGen_OWNER(gen));
   KosIterSlots *islots;
 
-  PyErr_Fetch(&typ, &val, &tb);
-  kos_dyn_commit_dyn_top(ctx, consumer);
-  kos_dynnode_free((KosDynNode *) gen);
-  PyErr_Restore(typ, val, tb);
   if (KosIter_CheckSlots(owner, &islots))
     islots->ki_finish(owner, 1);
-  Py_DECREF(owner);
 }
 
 

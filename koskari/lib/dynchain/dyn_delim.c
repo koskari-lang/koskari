@@ -106,7 +106,8 @@ int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
     return -1;
   }
 
-  kos_dyn_uninstall_handler(ctx, (KosDynNode *) delim, KOS_XFER_EVENT_NONE);
+  kos_dyn_uninstall_handler(ctx, (KosDynNode *) delim, KOS_XFER_EVENT_NONE,
+                            NULL);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) delim);
 

@@ -290,6 +290,40 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
 }
 
 
+void kos_xfer_goal_abandon_stepping(KosContext *ctx) {
+
+  /* A waiter whose node is dyn_top has no thunk above it any more: the
+     call returned or failed, or what it waits on is an awaitable, so
+     the raise is its thunk's. Every outer of a waiting goal waits on a
+     node further down. */
+  while (KosContext_GOAL(ctx)
+         && (! KosContext_GOAL(ctx)->frontier
+             || KosContext_GOAL(ctx)->frontier == KosContext_DYN_TOP(ctx)))
+    kos_xfer_goal_pop(ctx);
+}
+
+
+void kos_xfer_goal_thunk_died(
+    KosContext *ctx,
+    const KosDynNode *node,
+    uint32_t node_id) {
+
+  KosXferGoal *goal;
+
+  for (goal = KosContext_GOAL(ctx); goal; goal = goal->outer) {
+    if (goal->frontier == node && goal->frontier_id == node_id)
+      break;
+  }
+  if (! goal)
+    return;
+
+  /* the goals started inside the thunk, then its waiter */
+  while (KosContext_GOAL(ctx) != goal)
+    kos_xfer_goal_pop(ctx);
+  kos_xfer_goal_pop(ctx);
+}
+
+
 /* === Waits === */
 
 
@@ -314,8 +348,9 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
    ENTERING runs, since each ENTERING runs only the nodes its own
    ATTACHING put on the chain. The clear when the wait ends therefore
    drops no other goal's mark. A mark left behind by a goal freed while
-   it waited (a raise abandons every goal) only makes a later LEAVING
-   look through the outers for a waiter that is not there.
+   it waited (a continuation signal abandons every goal) only makes a
+   later LEAVING, or the raise walk, look through the goals for a
+   waiter that is not there.
 */
 static void goal_wait(KosXferGoal *goal, KosDynNode *node) {
 
@@ -401,10 +436,11 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
 
 /**
-   LEAVING: unlink from dyn_top down to the seam. A flattened generator
-   on the way is finished as the raise walk finishes one; a root
-   generator is the driver boundary, which only a cc-unwind reaches, as
-   its seam.
+   LEAVING: unlink from dyn_top down to the seam, every node through the
+   same unlink. What leaving a node does is the node's own: a flattened
+   generator's span boundary finishes its generator as it goes, and the
+   root of a generator's own context refuses, being the driver
+   boundary, which only a cc-unwind reaches, as its seam.
 */
 static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
@@ -429,15 +465,6 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: the seam is not on the chain");
       return EVAL_RAISE();
-    }
-    if (KosDynNode_IS_GEN(top)) {
-      if (! KosDynNode_PARENT(top)) {
-        PyErr_SetString(PyExc_SystemError,
-            "transfer would leave a generator context");
-        return EVAL_RAISE();
-      }
-      kos_dyn_finish_flattened_gen(ctx, (KosDynGen *) top);
-      continue;
     }
 
     /* an outer waits on this node: its id is read now, as the unlink

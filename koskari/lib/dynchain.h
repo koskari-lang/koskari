@@ -1282,15 +1282,6 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span);
 
 
 /**
-   Finish a flattened generator whose frame has already left the chain
-   and which is now dyn_top: unlink and free its GEN node, then mark
-   its owner closed. The raise walk and a transfer's leave both cross a
-   flattened generator this way. PyErr is preserved across it.
-*/
-void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen);
-
-
-/**
    Install a resting, started span onto the context's chain: a new GEN
    node under the chain's top, the span above it, the live registers
    retargeted to the span's top, and Py_None pushed as the suspended

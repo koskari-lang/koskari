@@ -598,10 +598,14 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
           }
 
           /* Flattened generator whose frame the earlier raise phases
-             already crossed (dyn_top is the GEN itself). Finish it and
-             continue the walk so the raise propagates into the
-             consumer's regions, per Python generator semantics. */
-          kos_dyn_finish_flattened_gen(ctx, (KosDynGen *) top);
+             already crossed (dyn_top is the GEN itself). Its unlink
+             finishes it, with the raise held across the free; the walk
+             continues so the raise propagates into the consumer's
+             regions, per Python generator semantics. Unlinking a GEN
+             that has a parent cannot fail. */
+          if (kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_RAISE, 1).kind
+              != KOS_RES_NORMAL)
+            return EVAL_FATAL();
           continue;
         }
 
@@ -673,6 +677,11 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
       int top_is_wind = (top && KosDynNode_IS_WIND(top));
       int top_is_barrier =
           (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+      /* A goal waits on this node for a thunk that sat above it: the
+         walk crossed that thunk, so once the node is unlinked the goal
+         is told. Its id is read now, as the unlink frees the node. */
+      uint32_t waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)
+          ? kos_dynnode_id(top) : 0;
       /* A wind about to fire its after-thunk runs it clean: the
          exception in flight is held here and stored on the node once
          the thunk has started. A wind (or with) whose thunk is dead is
@@ -716,6 +725,12 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
         }
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
+      /* unlinked: dyn_top moved off the node, and no leave of its own
+         started a call above it */
+      if (waited_id && KosContext_DYN_TOP(ctx) != top
+          && pop_res.kind != KOS_RES_REPROLOGUE
+          && pop_res.kind != KOS_RES_AWAIT)
+        kos_xfer_goal_thunk_died(ctx, top, waited_id);
       if (pop_res.kind == KOS_RES_AWAIT) {
         return pop_res;
       }
@@ -743,6 +758,8 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
                             "raise walk: a node's leave keeps failing");
             return EVAL_FATAL();
           }
+          if (waited_id)
+            kos_xfer_goal_thunk_died(ctx, top, waited_id);
         }
         continue;
       }
