@@ -1,5 +1,7 @@
 # Tail-call promotion as a compiler bytecode pass
 
+> Status note: this write-up references `PUSH_PROMPT`, `PUSH_SHIFT`, and `CompiledSpecial`, which the code no longer has.
+
 **Status:** Design proposal — not yet implemented.
 
 **Goal:** Remove tail-position awareness from special-form handlers. Specials

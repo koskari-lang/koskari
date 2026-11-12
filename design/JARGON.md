@@ -167,8 +167,8 @@ assume a yielded generator is still on any chain.
 
 Older transfer-plan vocabulary for attaching: splicing a cloned chain
 segment onto another chain. Say "attach" and "seam": a goal attaches its
-target to the seam, the DELIM a delimited invoke pushed or the root for
-an undelimited one. Reference: EVALUATOR.md §6.
+target to the seam, the caller's `dyn_top` for a delimited invoke or the
+lowest common ancestor for an undelimited one. Reference: EVALUATOR.md §6.
 
 ## host (host context)
 
@@ -282,17 +282,18 @@ or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 ## seam
 
-The node a transfer goal leaves down to and attaches its target to: the DELIM a
-delimited invoke pushed (nothing below the invoker leaves), the prompt's
-parent for POP_SHIFT, the root GEN for a foreign cc-unwind, an
-undelimited invoke's lowest common ancestor with the template (matched
-by node id), or NULL when an undelimited invoke's chains share no node
-and the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
+The node a transfer goal leaves down to and attaches its target to: the
+caller's `dyn_top` for a delimited invoke (nothing leaves), the prompt
+for a shift's abort (which attaches nothing and calls the handler above
+it), the root GEN for a foreign cc-unwind, an undelimited invoke's
+lowest common ancestor with the template (matched by node id and
+phase), or NULL when an undelimited invoke's chains share no node and
+the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
 
 ## transfer goal
 
-The record a continuation invoke pushes and the evaluator's prologue
-drives to move execution between chains: where control is going (seam,
+The record a continuation invoke or a shift's abort pushes and the
+evaluator's prologue drives to move execution between chains: where control is going (seam,
 target clone, payload, resume pc), never what to do. The driver
 re-derives LEAVING, ATTACHING, ENTERING, and DELIVERING from the live
 chain on every pass. Replaced the transfer plan's precomputed step list.
@@ -301,7 +302,10 @@ Reference: EVALUATOR.md §6.
 ## waiting goal
 
 A transfer goal waiting on a node whose leave or enter is in flight:
-the node's thunk frame or awaitable is running, and the goal acts
-again only when `dyn_top` is back where it was. Reference:
+the node's thunk frame or awaitable is running, the node carries
+`KOS_DYNF_GOAL_WAIT`, and the goal acts again only when `dyn_top` is
+back at that node. A raise leaves a waiting goal in place while its
+thunk is above the node, and frees it when the raise walk unlinks the
+node. Reference:
 EVALUATOR.md §6.2. Iteration and await suspension are "suspended",
 not waiting.

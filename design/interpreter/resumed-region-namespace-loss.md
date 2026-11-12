@@ -1,5 +1,7 @@
 # Resumed region runs against the wrong namespace
 
+> Status note: this write-up references the invocation prompt and invocation-bounded capture, the synthesized baseline frame, `baseline_ns`, and the in-place resume of a delimited continuation, which the code no longer has.
+
 ## Status
 
 Fixed. Reproducers are the `shape_bind_*` functions of

@@ -261,7 +261,7 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
 **Evaluator Types** (new for Koskari VM):
 - `DelimitedContinuation`: Captured delimited continuation (shift); multi-shot
   - Callable from Python: always raises `TypeError` (invocation only via CALL inside koskari_eval)
-  - Delimited: captures up to prompt delimiter, not entire stack
+  - Delimited: captures whole frames down through the prompt, the reset's body frame included, not the entire stack; each call attaches a fresh copy on the caller's chain and returns its value to the caller
   - Supports resume value or exception injection
   - Cannot span Python/C call boundaries
 - `Continuation`: Captured undelimited continuation (call/cc); multi-shot
@@ -280,19 +280,20 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
 
 **Dynamic Chain Types** (internal, for evaluator infrastructure):
 - `KosDynNode`: Base structure for dynamic chain nodes
-  - Kinds: FRAME, PROMPT, DELIM, WIND, TRY, FINALLY, LOOP, FOREACH, NS, COLLECT, CC, YIELD_FROM, PARAM, WITH, SHIFT, GEN, NEXT
-  - `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, FOREACH
+  - Kinds: FRAME, PROMPT, WIND, TRY, FINALLY, LOOP, FOREACH, NS, COLLECT, CC, PARAM, WITH, GEN
+  - TRY, FINALLY, LOOP, FOREACH are the region kinds; each has only its own `KosDynNode_IS_*` test
 - `KosDynFrame`: Function activation record (code, pc, stack, namespace)
-- `KosDynPrompt`: Delimiter for delimited continuations (prompt_id, handler)
+- `KosDynPrompt`: Delimiter for delimited continuations (tag, matched by identity; NULL is the default tag); the frame on it, a reset's body or a shift's handler, ends it by returning
 - `KosDynWind`: Dynamic-wind extent (before/after thunk callables, obligation slot)
 - Region kinds (formerly `KosDynRegion` with `KosRegionStyle`; now separate kinds):
   - `KOS_DYN_TRY`: try block (handler_pc, enabled)
   - `KOS_DYN_FINALLY`: finally block (handler_pc, enabled, handling_raise)
   - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, result; enabled is the `KOS_DYN_CAP_LOOP_REGION` capability)
   - `KOS_DYN_FOREACH`: for-each loop (the LOOP record plus its `KosIterRequest`: iter, islots, kind)
-- `KosXferGoal` (`xfer_goal.h`): where a continuation transfer is going (seam,
-  target clone, payload, resume pc, the frontier it waits on, outer goal); the
-  evaluator's prologue drives it, re-deriving each step from the live chain.
+- `KosXferGoal` (`xfer_goal.h`): where a continuation transfer or a shift's
+  abort is going (seam, target clone, payload, resume pc, the frontier it
+  waits on, outer goal); the evaluator's prologue drives it, re-deriving each
+  step from the live chain.
 - `KosObligation`: the slot a WIND or WITH owes at unlink (value, stored
   exception, or return in flight).
 

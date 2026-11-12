@@ -230,29 +230,34 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 ### Continuations (summary)
 
 - **Delimited**: `reset`, `shift`, and `reset-at` / `shift-at`, which take
-  an evaluated tag matched by identity (`None` is the default tag). A shift
-  captures its region and aborts to its prompt before the handler runs, so
-  the handler stands where the region stood. Each call of the continuation,
-  through the **CALL** family, installs a copy of the region on a DELIM at the
-  call site. Extents inside the region are left at the shift and entered
-  again per call. A delimited continuation cannot be called from Python
+  an evaluated tag matched by identity (`None` is the default tag). A reset
+  compiles to one **RESET**, which pushes a prompt and calls the body, a
+  function, above it; a shift compiles to one **SHIFT**, which captures
+  whole frames through the prompt and aborts to the prompt before calling
+  its handler, a function of k, above it. The handler's return is the
+  reset's value. Each call of the continuation, through the **CALL**
+  family, attaches a fresh copy of the captured frames and prompt on the
+  caller's chain, and the copy's return is the call's value. Extents
+  inside the region are left at the shift and entered again per call. A
+  delimited continuation cannot be called from Python
   ([EVALUATOR.md](EVALUATOR.md) §6.4).
 - **Transfers at a continuation boundary**: a `break` or `continue` in a
-  shift handler reaches only a loop inside the handler. A `return` in a
-  handler written in a called function, and a `return` or `yield` in a
-  installed copy's own frame, raise `KoskariPromptUnreachable`, which is a
-  `RuntimeError` ([EVALUATOR.md](EVALUATOR.md) §6.5).
+  reset body or shift handler reaches only a loop inside it, and one aimed
+  at an outer loop raises `RuntimeError` ("break outside loop") at run
+  time. A `return` returns from the body or handler, so its value is the
+  reset's. A `yield` written in either is a compile-time `SpecialError`
+  ([EVALUATOR.md](EVALUATOR.md) §6.5).
 - **Undelimited**: `call/cc`, `let/cc`, `capture/cc`; Python invoke via **`KoskariContinuationApply`**.
 - **Dynamic wind**: `dyn-wind`; **PUSH_WIND** / **POP_WIND** on transfer.
 - **`koskari.solve`**: `amb`, `fail`, `require`, `solve`, `solve-first`,
   delimited by a gensym tag of the module's own, so a `reset` in the thunk
   being solved is not a search delimiter.
-- **Transfer goals (done):** a continuation invoke, a shift's abort and a
-  handler's completion each push a goal recording where control is going;
-  the prologue re-derives each step from the live chain, waits while a
-  thunk or `__exit__` runs, nests when a thunk invokes another
-  continuation, and frees every goal on a failed step before the raise
-  walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md); tests
+- **Transfer goals (done):** a continuation invoke and a shift's abort
+  each push a goal recording where control is going; the prologue
+  re-derives each step from the live chain, waits while a thunk or
+  `__exit__` runs, nests when a thunk invokes another continuation, and
+  on a raise frees every goal not waiting on a live thunk before the
+  raise walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md); tests
   in **`TestDynWindContinuations`** and **`TestDelimitedTransferNested`**.
 - **Frame depth limit (done):** frame depth is bounded by the process-wide
   frame depth limit (default 10000, set through
@@ -275,12 +280,12 @@ Items below are **done** in Koskari unless noted in [TODO.md](TODO.md).
 
 **Evaluator core** -- `KosContext`, dynamic chain (`KosDynNode`), transfer goals
 (waiting across thunks and awaits, nested on a thunk's invoke, freed on a
-failed step before **`try_local`**), the extent contract and obligations, `koskari_eval`, coroutine/async-gen
+raise unless waiting on a live thunk), the extent contract and obligations, `koskari_eval`, coroutine/async-gen
 wrappers, GC hooks.
 
 **Bytecode** — `Code`, full opcode surface per [OPCODES.md](OPCODES.md) §1.6 (runtime implementations for all shipped opcodes except compile-time labels and **THEEND**).
 
-**Continuation opcodes** — PUSH/POP PROMPT/SHIFT/CC, CAPTURE_CC, PUSH/POP WIND; continuations invoke through CALL.
+**Continuation opcodes** — RESET, SHIFT, PUSH/POP CC, CAPTURE_CC, PUSH/POP WIND; continuations invoke through CALL.
 
 **Namespace opcodes** — PUSH_NS / POP_NS; **VAR_STORE**.
 

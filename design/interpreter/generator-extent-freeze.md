@@ -1,5 +1,7 @@
 # Extents across a generator yield: freeze/install today, wind/unwind later?
 
+> Status note: this write-up references `KOS_DYN_CAP_NEEDS_INSTALL_WIND`, an attachment re-entering every `KOS_DYN_CAP_CONTROL_HOOK` node, and the single-shot WITH with its transfer refusal, which the code no longer has.
+
 A generator freeze moves the span above the GEN off the live chain as
 it is and the install moves it back. Nothing between the frame and the
 GEN acts on a yield: no `finally`, no `__exit__`, no after-thunk. That

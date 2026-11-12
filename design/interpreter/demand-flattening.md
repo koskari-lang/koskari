@@ -1,5 +1,7 @@
 # Demand path flattening
 
+> Status note: this write-up references `POP_PROMPT` (`opcode/POP_PROMPT.c`), `kos_eval_route_delim_return`, `kos_dyn_inplace_restitch`, `kos_delimited_inplace_ready`, and the in-place invoke of a delimited continuation, which the code no longer has.
+
 Status: in progress, uncommitted. Started 2026-09-25 from the design
 TODO entry "Recursion guard at the Python boundary". Reviewed by two
 independent passes (plan review, implementation advice); their verified

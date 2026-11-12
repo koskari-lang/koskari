@@ -74,8 +74,7 @@ Every node leaves through **`kos_dyn_unlink_top(es, ev, allow_barrier)`**:
 | NS | owns the let namespace (set at push) | drop the node; the live namespace follows the chain top |
 | TRY / FINALLY | (none) | restore the handler-visible exception state a consumed raise displaced |
 | LOOP / FOREACH / COLLECT | (none) | drop the owned segment |
-| YIELD_FROM | (none) | close the delegate |
-| PROMPT / CC | (none) | bookmark bookkeeping only |
+| PROMPT / CC | (none) | bookmark bookkeeping only (a PROMPT releases its tag at free) |
 | GEN | (none) | a flattened GEN finishes its generator through the after-free hook; a root GEN refuses a transfer |
 
 `allow_barrier` = 0 refuses a `KOS_DYN_CAP_BARRIER` node (PROMPT) with
