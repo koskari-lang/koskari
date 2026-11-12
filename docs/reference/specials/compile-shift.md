@@ -4,18 +4,17 @@
 **Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
-`compile/reset` prompt and bind it to `K`, then run `BODY` in place of the
-captured region. `K` is a `DelimitedContinuation`; it is called from Koskari
-code and cannot be called from Python.
+`compile/reset` prompt, abort to that prompt, and call the handler -- a
+function of `K` whose body is `BODY` -- with the continuation there. The
+handler's value is the value of the `reset`. `K` is a
+`DelimitedContinuation`; it is called from Koskari code and cannot be
+called from Python.
 
-**Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
-`VAR_STORE K` (binds the captured delimited continuation), compiles body with
-`helper_begin`, emits `POP_SHIFT 0`. `K` is a binding in the enclosing scope,
-as a loop variable or a `with` name is: it stays bound after the form, it
-rebinds an existing `K`, and a later `shift` in the slice that reuses the
-name rebinds it again. A handler that invokes its continuation more than
-once therefore takes a name no later `shift` in the slice uses, since each
-shot runs the slice against the same scope. Calling `K` packs its arguments the way
+**Behaviour:** Compiles the handler as a function of the one parameter `K`,
+closed over the scope the `shift` is written in, and emits `SHIFT 0`
+carrying it. `K` is the handler's parameter only: nothing is bound in the
+enclosing scope, a `var` in `BODY` is local to the handler, and two
+`shift` forms in one slice may use the same name. Calling `K` packs its arguments the way
 `return` does: `(k)` resumes with `None`, `(k v)` with `v`, `(k a b)` with the
 tuple `(a, b)`, and a call with keywords, `(k a x: 1)`, with a `values`
 instance over all of them. The resumed slice is the body of `K`: a `raise`
@@ -28,10 +27,15 @@ inside it: a `return` in that function's part of the slice raises
 that part of the slice raises the same error with `operation` `yield`: the
 slice has no generator of its own, wherever `K` is called from.
 
-`BODY` runs after the shift has aborted to its `reset`: the captured region
-is left first, and `BODY` stands where the region stood. A `dyn-wind`
-around the `shift` runs its after thunk and a `dyn-with` exits before `BODY`
-does. A `finally` body and a plain `with` inside the region are local to
+The handler runs after the shift has aborted to its `reset`: the captured
+region is left first, and the handler is called with the `reset`'s prompt
+still in place, so a `shift` in `BODY` captures up to the same `reset`. The
+handler reads the names of the scope the `shift` is written in, including
+the locals of a function the region called. A `dyn-wind`
+around the `shift` runs its after thunk and a `dyn-with` exits before the
+handler is called; when that after thunk or exit raises, the handler is
+not called and the region carries on where the raise is caught. A
+`finally` body and a plain `with` inside the region are local to
 their body and do not run on the abort: the `with`'s manager stays entered.
 A `try` inside the region does not catch what `BODY` raises, and a
 `parameterize` inside the region is not in effect for it. Each call of `K`
@@ -47,12 +51,12 @@ entered unwind.
 
 `BODY` has only the loops written inside it. A `break` or `continue` there
 with no loop of its own raises `break outside loop` or `continue outside
-loop`, whatever loop surrounds the `shift` or the `reset`. A `yield` in
-`BODY` suspends the generator the `reset` is in. A `return` in `BODY`
-returns from the function when the `reset` is in that same function. When
-the `shift` is in a function called from the region, that function's caller
-was left with the region, and the `return` raises
-`KoskariPromptUnreachable` with `operation` `return` and `boundary` `shift`.
+loop`, whatever loop surrounds the `shift` or the `reset`. A `return` in
+`BODY` returns from the handler, so its value is the value of the `reset`,
+wherever the `shift` is written. A `yield` or `yield-from` in `BODY` is
+refused at compile time with `SpecialError`: the handler is a function of
+`K`, not part of the generator the `reset` is in. A generator defined
+inside `BODY` is its own function and may yield.
 
 **Errors:** Capture can fail in two structurally different ways, each with its
 own exception under the `KoskariContinuationError` category (see
@@ -82,10 +86,15 @@ translate them into its own vocabulary, as `koskari.solve` does with
   (shift k
     (k "value")))
 
-;; Two shifts in one slice, each shot of k reaching j: distinct names,
-;; since both bind in the same scope
+;; Two shifts in one slice, each shot of k reaching j
 (reset
   (#tuple (shift k (#tuple (k 1) (k 2)))
           (shift j (#tuple (j 10) (j 20)))))
 ;; => (((1, 10), (1, 20)), ((2, 10), (2, 20)))
+
+;; return in the handler gives the reset its value
+def h []:
+    var r (reset (+ 1 (shift k (return 5))))
+    (* 10 r)
+;; (h) => 50
 ```

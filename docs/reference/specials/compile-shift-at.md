@@ -4,14 +4,16 @@
 **Syntax:** `(shift-at TAG K BODY ...)`
 
 **Use-case:** Capture the delimited continuation up to the nearest
-[`reset-at`](compile-reset-at.md) carrying `TAG`, bind it to `K`, then run
-`BODY` in place of the captured region. It is [`shift`](compile-shift.md)
-with the delimiter chosen by tag.
+[`reset-at`](compile-reset-at.md) carrying `TAG`, abort to it, and call
+the handler -- a function of `K` whose body is `BODY` -- with the
+continuation there. It is [`shift`](compile-shift.md) with the delimiter
+chosen by tag.
 
-**Behaviour:** Evaluates `TAG`, emits `PUSH_SHIFT 1` (the tag is taken
-from the stack before the capture, so it is not part of the continuation),
-declares `K` as a local variable, emits `VAR_STORE K`, compiles the body
-with `helper_begin`, emits `POP_SHIFT 0`.
+**Behaviour:** Evaluates `TAG`, compiles the handler as a function of the
+one parameter `K`, and emits `SHIFT 1` carrying it (the tag is taken from
+the stack before the capture, so it is not part of the continuation). The
+handler is called with the `reset-at`'s prompt still in place, so a
+`shift-at` of the same tag in `BODY` captures up to the same `reset-at`.
 
 The capture walks outward from the `shift-at` to the nearest delimiter
 whose tag is the same object as `TAG`. Delimiters of other tags on the
@@ -19,7 +21,7 @@ way are crossed and become part of the continuation: each call of `K`
 establishes them again. `None` is the default tag, so
 `(shift-at None K BODY ...)` is `(shift K BODY ...)`.
 
-Everything [`shift`](compile-shift.md) says of `K`, of `BODY` running
+Everything [`shift`](compile-shift.md) says of `K`, of the handler running
 after the abort, and of `return`, `break`, `continue` and `yield` holds
 here unchanged.
 

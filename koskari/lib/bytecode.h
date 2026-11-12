@@ -431,7 +431,6 @@ typedef enum KosExtentKind {
   KOS_EXT_LOOP,
   KOS_EXT_PROMPT,
   KOS_EXT_CC,
-  KOS_EXT_SHIFT,
   KOS_EXT_FINALLY,
   KOS_EXT_WIND,
   KOS_EXT_WITH,
@@ -819,13 +818,6 @@ int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
 uint32_t kos_extent_top(PyObject *code, uint32_t pc);
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
-
-
-/**
-   The resume record for the innermost SHIFT extent at pc: the
-   instruction after its POP_SHIFT. NULL when none encloses pc.
-*/
-KosOp *kos_shift_ic_for(PyObject *code, uint32_t pc);
 
 
 /**

@@ -68,7 +68,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->phase = KOS_GOAL_LEAVING;
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
   goal->voided_outer = 0;
-  goal->drop_seam_operands = 0;
+  goal->shift_abort = 0;
   return goal;
 }
 
@@ -548,7 +548,7 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
   /* dyn_top is the seam. For a shift's abort that is its prompt, and
      the region's operands on it went with the continuation: the leave
      is done, so nothing can resume the region on them now. */
-  if (first && goal->drop_seam_operands && KosDynNode_STACK(goal->seam))
+  if (first && goal->shift_abort && KosDynNode_STACK(goal->seam))
     KosStack_Clear(&KosDynNode_STACK(goal->seam));
 
   if (goal->target) {
@@ -664,16 +664,48 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
+   DELIVERING for a shift's abort: retire the goal and call the handler
+   with the continuation, as a transfer fires a dyn-wind thunk, but
+   keeping its value. The prompt is at dyn_top, so the handler's frame
+   installs above it and its return pushes the value on the prompt's
+   block; a value in hand is settled and pushed there now. The frame's
+   pc is the prompt's POP_PROMPT, which takes that value.
+*/
+static KosOpResult goal_call_handler(KosContext *ctx, KosXferGoal *goal) {
+
+  PyObject *handler = goal->payload;
+  PyObject *k = goal->continuation_ref;
+  KosOpResult r;
+
+  goal->payload = NULL;
+  goal->continuation_ref = NULL;
+  kos_xfer_goal_pop(ctx);
+
+  r = KosContext_Call(ctx, handler, &k, 1, NULL, 0, NULL, NULL);
+  Py_DECREF(handler);
+  Py_DECREF(k);
+
+  if (r.kind == KOS_RES_RETURN)
+    return KosContext_PushOrAwait(ctx, r.val);
+  if (r.kind == KOS_RES_RAISE || r.kind == KOS_RES_AWAIT
+      || r.kind == KOS_RES_FATAL)
+    return r;
+  return EVAL_REPROLOGUE();
+}
+
+
+/**
    DELIVERING: push the payload, stage it for the receiving frame's
    resume, set it as a pending throw, or raise it at the boundary; then
-   retire the goal. A receiving frame that carries a resume the goal
+   retire the goal. A shift's abort calls its handler instead
+   (goal_call_handler). A receiving frame that carries a resume the goal
    installed, through a restore record or a spliced template, was
    waiting on a delivery when it was captured: the payload is that
    delivery, staged in the pending slot for the prologue pass that
-   follows the drive. A goal that installed no frame state (a shift's)
-   resumes the live frame at a pc, and a resume that frame still
-   carries belongs to the instruction the transfer left: it is cleared
-   and the payload is pushed.
+   follows the drive. A goal that installed no frame state resumes the
+   live frame at a pc, and a resume that frame still carries belongs to
+   the instruction the transfer left: it is cleared and the payload is
+   pushed.
 */
 static KosOpResult goal_deliver(
     KosContext *ctx,
@@ -697,6 +729,9 @@ static KosOpResult goal_deliver(
   }
   if (! goal->target && ! goal->restore)
     kos_dynframe_clear_resume(KosContext_FRAME(ctx));
+
+  if (goal->shift_abort)
+    return goal_call_handler(ctx, goal);
 
   if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
 #if KOS_EVAL_SAFETYNET

@@ -24,11 +24,14 @@ compile/yield, and compile/await.
 
 
 from ...bootstrap import builtin
-from ...lib import OpCode, cons, nil, symbol
+from ...exceptions import SpecialError
+from ...hygiene import function_constant
+from ...lib import FormalsSpec, OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_keyword
 from ..helpers import helper_begin
+from ..processor import YIELD_OPS
 
 
 _symbol_values = symbol("values")
@@ -156,23 +159,54 @@ def special_reset(compiler, called_by, body):
     return fragment
 
 
-@builtin("compile/shift")
-@special("compile/shift", patterns=_K_BODY_PATTERNS, unpack="kwargs")
-def special_shift(compiler, called_by, k, body):
+def helper_shift_handler(compiler, called_by, k, body, fragment):
     """
-    Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
-    handler body. K must be a symbol. The capture seeks the default tag.
+    The handler of a shift: a function of the one parameter K whose
+    body is BODY, compiled as its own fragment. A yield written in the
+    body itself is refused, since the handler is no generator; one in a
+    function defined within it belongs to that function
+
+    :param compiler: the Compiler
+    :param called_by: the special's called-by capture
+    :param k: the K capture
+    :param body: the BODY capture
+    :param fragment: the fragment the SHIFT row is emitted into
+    :return: the FunctionSpec, or the Deferred standing in for it
     """
 
     k_sym = k.datum
 
+    handler = compiler.fragment("<shift>")
+    handler.declare_var(k_sym, position=k.position)
+    with compiler.resolution_scope(handler, function=True):
+        handler = helper_begin(handler, body.datum)
+
+    if any(op in YIELD_OPS for op, _ in handler.instructions):
+        raise SpecialError(
+            f"{called_by.datum} handler cannot yield: it is a function"
+            " of its continuation, not a generator",
+            called_by.datum, position=called_by.position)
+
+    return function_constant(
+        compiler, fragment, handler, None,
+        FormalsSpec((str(k_sym),), (), (), (), None, None))
+
+
+@builtin("compile/shift")
+@special("compile/shift", patterns=_K_BODY_PATTERNS, unpack="kwargs")
+def special_shift(compiler, called_by, k, body):
+    """
+    Compile (compile/shift K EXPR...). Captures the continuation up to
+    the nearest prompt of the default tag, aborts to that prompt, and
+    calls the handler, a function of K whose body is EXPR..., with the
+    continuation there. The handler's value is the reset's. K must be a
+    symbol
+    """
+
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
-    fragment.instruction(OpCode.PUSH_SHIFT, 0)
-    fragment.declare_var(k_sym, position=k.position)
-    fragment.instruction(OpCode.VAR_STORE, k_sym)
-    helper_begin(fragment, body.datum)
-    fragment.instruction(OpCode.POP_SHIFT, 0)
+    spec = helper_shift_handler(compiler, called_by, k, body, fragment)
+    fragment.instruction(OpCode.SHIFT, (0, spec, 0, 0))
 
     return fragment
 
@@ -202,21 +236,17 @@ def special_reset_at(compiler, called_by, tag, body):
 def special_shift_at(compiler, called_by, tag, k, body):
     """
     Compile (compile/shift-at TAG K EXPR...). Evaluates TAG, captures the
-    continuation up to the nearest prompt carrying it, binds it to K,
-    runs handler body. K must be a symbol. Prompts of other tags between
-    are crossed and become part of the continuation
+    continuation up to the nearest prompt carrying it, aborts to that
+    prompt, and calls the handler, a function of K whose body is
+    EXPR..., with the continuation there. K must be a symbol. Prompts of
+    other tags between are crossed and become part of the continuation
     """
-
-    k_sym = k.datum
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.merge(compiler.full_compile(tag.datum))
-    fragment.instruction(OpCode.PUSH_SHIFT, 1)
-    fragment.declare_var(k_sym, position=k.position)
-    fragment.instruction(OpCode.VAR_STORE, k_sym)
-    helper_begin(fragment, body.datum)
-    fragment.instruction(OpCode.POP_SHIFT, 0)
+    spec = helper_shift_handler(compiler, called_by, k, body, fragment)
+    fragment.instruction(OpCode.SHIFT, (1, spec, 0, 0))
 
     return fragment
 

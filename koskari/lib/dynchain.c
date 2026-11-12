@@ -94,7 +94,6 @@ static const char *kos_dynnode_kind_names[] = {
   "CC",
   "PARAM",
   "WITH",
-  "SHIFT",
   "GEN",
   "UNKNOWN",
 };
@@ -424,8 +423,8 @@ static int kos_raise_prompt_not_found(PyObject *tag) {
 /**
    Raise KoskariPromptUnreachable at a node that refused a capture or a
    transfer: a node that denied handle(SHIFT), one whose clone refused
-   because its call is in flight, or a SHIFT a return would have had to
-   cross. fmt takes the boundary word once. A capture's refuse
+   because its call is in flight, or a DELIM a return or yield would
+   have had to cross. fmt takes the boundary word once. A capture's refuse
    site does not know which prompt the walk was seeking, and a clone
    site does not know which construct is capturing, so the tag is
    left None and operation may be NULL for None; kos_capture_note
@@ -1199,9 +1198,6 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
     case KOS_DYN_WITH:
       kos_dynwith_free((KosDynWith *) node);
-      break;
-    case KOS_DYN_SHIFT:
-      kos_dynshift_free((KosDynShift *) node);
       break;
 
     case KOS_DYN_GEN:
@@ -2219,8 +2215,6 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
       return (KosDynNode *) kos_dynparam_clone((KosDynParam *) node);
     case KOS_DYN_WITH:
       return (KosDynNode *) kos_dyn_with_clone((KosDynWith *) node);
-    case KOS_DYN_SHIFT:
-      return (KosDynNode *) kos_dynshift_clone((KosDynShift *) node);
 
     case KOS_DYN_GEN:
       kos_raise_prompt_unreachable(
@@ -2512,7 +2506,7 @@ static KosContinuation *kos_continuation_capture_segment(
 /**
    Delimited shift: locate the prompt and offer handle(SHIFT) en route in
    one walk, clone the chain segment for the invoke template, build the
-   KosContinuation. Callers: opcode PUSH_SHIFT.
+   KosContinuation. Callers: opcode SHIFT.
 */
 int kos_shift_capture(
     KosContext *ctx,
@@ -2585,7 +2579,7 @@ int kos_shift_capture(
       below = KosDynNode_PARENT(below);
     if (! below) {
       PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_SHIFT: no frame below prompt");
+                      "SHIFT: no frame below prompt");
       return -1;
     }
     baseline_src = (KosDynFrame *) below;
@@ -2624,7 +2618,7 @@ int kos_shift_capture(
         tag,
         baseline_src,
         baseline_ns,
-        "PUSH_SHIFT: no frame in captured chain");
+        "SHIFT: no frame in captured chain");
 
     if (! k)
       return -1;
@@ -2643,7 +2637,7 @@ int kos_shift_capture(
 
     /* The template's prompts need no marking. Its delimiter sits on
        the frame copy, which an application attaches to a DELIM, and that
-       shape is what POP_PROMPT and POP_SHIFT read
+       shape is what POP_PROMPT reads
        (kos_prompt_applied_delim). A prompt above the delimiter is region
        content, a reset of another tag the shift crossed, and pops as a
        reset. */
@@ -2773,8 +2767,6 @@ static int dynnode_to_dict_payload(KosDynNode *node, PyObject *data) {
       return dynnode_to_dict_param(node, data);
     case KOS_DYN_WITH:
       return dynnode_to_dict_with(node, data);
-    case KOS_DYN_SHIFT:
-      return dynnode_to_dict_shift(node, data);
 
     case KOS_DYN_GEN:
       return dynnode_to_dict_gen(node, data);
@@ -2907,8 +2899,6 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       return dynnode_traverse_delim(node, visit, arg);
     case KOS_DYN_CC:
       return dynnode_traverse_cc(node, visit, arg);
-    case KOS_DYN_SHIFT:
-      return dynnode_traverse_shift(node, visit, arg);
     case KOS_DYN_WIND:
       return dynnode_traverse_wind(node, visit, arg);
 

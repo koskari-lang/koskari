@@ -939,20 +939,20 @@ static KosOpResult process_raise(KosContext *ctx) {
 
 
 /**
-   The prompt tag a PUSH_PROMPT or PUSH_SHIFT names. Its count is 0 for
-   the default tag, or 1 for a tag the instruction pops from the stack;
+   The prompt tag a PUSH_PROMPT or SHIFT names by its count: 0 for the
+   default tag, or 1 for a tag the instruction pops from the stack;
    Code construction refuses any other count. The default tag is NULL,
    and a popped None names it too. Returns -1 with an exception set, or
    0 with *out_tag a new reference or NULL.
 */
-static int get_prompt_tag_from_insn(
+static int pop_prompt_tag(
     KosContext *ctx,
-    KosOp *insn,
+    unsigned count,
     PyObject **out_tag) {
 
   PyObject *tag = NULL;
 
-  if (KosOp_ARG(insn)) {
+  if (count) {
     tag = KosContext_StackPopRef(ctx);
     if (! tag) {
       if (! PyErr_Occurred())
@@ -965,6 +965,43 @@ static int get_prompt_tag_from_insn(
 
   *out_tag = tag;
   return 0;
+}
+
+
+/**
+   Build a function from fspec over parent_ns, for BUILD_FUNCTION and
+   SHIFT. defaults and annotations are dicts or NULL, borrowed.
+
+   __module__ is the name of the module the function is built in,
+   recorded here as CPython records a function's globals' __name__: the
+   root of the namespace chain, when it is a module's namespace, whose
+   name is what the module answers as __name__. A function built over a
+   bare namespace has none.
+
+   :return: the function, a new reference, or NULL with PyErr set
+*/
+KOS_OP_INLINE PyObject *kos_eval_build_function(
+    PyObject *fspec,
+    PyObject *defaults,
+    PyObject *annotations,
+    PyObject *parent_ns) {
+
+  PyObject *fn;
+  PyObject *root = parent_ns;
+
+  if (annotations)
+    fn = KosFunction_NewWithAnnotations(fspec, defaults, parent_ns,
+                                        annotations);
+  else
+    fn = KosFunction_New(fspec, defaults, parent_ns);
+  if (unlikely(! fn))
+    return NULL;
+
+  while (! KosModuleNamespace_CheckExact(root) && KosNamespace_PARENT(root))
+    root = KosNamespace_PARENT(root);
+  if (KosModuleNamespace_CheckExact(root))
+    ((KosFunction *) fn)->module_override = Py_NewRef(KosNamespace_NAME(root));
+  return fn;
 }
 
 
@@ -2729,14 +2766,13 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
 
-  /* a shift handler's frame copy and the frame of an applied
-     continuation return nowhere: the general path refuses them */
+  /* the frame of an applied continuation returns nowhere: the general
+     path refuses it */
   parent = KosDynNode_PARENT(child);
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
-      || KosDynNode_IS_DELIM(parent)
-      || (KosDynFrame_FLAGS(child) & KOS_FRAME_SHIFT_HANDLER))
+      || KosDynNode_IS_DELIM(parent))
     return 0;
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
@@ -2817,7 +2853,6 @@ KOS_OP_INLINE int kos_return_is_region_resume(
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
       || KosDynNode_IS_DELIM(parent)
-      || (KosDynFrame_FLAGS(child) & KOS_FRAME_SHIFT_HANDLER)
       || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
     return 0;
 
@@ -2966,32 +3001,18 @@ static inline KosOpResult eval_event_return(
     KosContext *ctx,
     PyObject *val) {
 
-  /* Two frames have nothing to return to, and are refused before any
-     extent above them is left, so the error is raised at the return.
-
-     The copy a shift's handler runs in when the shift was written in
-     a called function: the abort left that function's caller with the
-     region.
-
-     The frame of an applied continuation, the one sitting on its DELIM:
-     it is a copy of the frame the reset was in, and that function's
-     boundary lies outside the reset, so outside the continuation.
-     Nothing else is ever a frame directly on a DELIM: the copy is attached
-     as the application pushes it, and a thunk its entering runs sits
-     above the copy. */
+  /* The frame of an applied continuation, the one sitting on its DELIM,
+     has nothing to return to, and is refused before any extent above
+     it is left, so the error is raised at the return: it is a copy of
+     the frame the reset was in, and that function's boundary lies
+     outside the reset, so outside the continuation. Nothing else is
+     ever a frame directly on a DELIM: the copy is attached as the
+     application pushes it, and a thunk its entering runs sits above
+     the copy. */
   {
     KosDynFrame *frame = KosContext_FRAME(ctx);
     KosDynNode *under = frame ? KosDynNode_PARENT(frame) : NULL;
 
-    if (unlikely(frame
-                 && (KosDynFrame_FLAGS(frame) & KOS_FRAME_SHIFT_HANDLER))) {
-      Py_DECREF(val);
-      kos_raise_prompt_unreachable(
-          "return", "shift",
-          "return cannot leave a %s handler written in a called"
-          " function: its caller was in the captured region");
-      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
-    }
     if (unlikely(under && KosDynNode_IS_DELIM(under))) {
       Py_DECREF(val);
       kos_raise_prompt_unreachable(

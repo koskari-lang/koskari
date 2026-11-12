@@ -890,6 +890,24 @@ tags:
   - continuation
 notes: a shift handler has the loops written inside it; the break leaves the handler's own while, and 9 is the handler's value and so the reset's
 ---
+id: special-shift-handler-return-in-callee-005
+feature: special/compile/shift
+source: |-
+  (reset ((lambda [] (+ 1 (shift k (return 5))))))
+
+verify:
+  read: (reset ((lambda [] (+ 1 (shift k (return 5))))))
+  expand: (reset ((lambda [] (+ 1 (shift k (return 5))))))
+  eval: "5"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-return.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: the handler is a function of k, so a return in it returns the handler's value, which is the reset's; where the shift was written makes no difference
+---
 id: special-reset-at-default-tag-001
 feature: special/compile/reset-at
 source: |-

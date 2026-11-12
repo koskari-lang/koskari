@@ -161,25 +161,6 @@ tags:
   - pitfall
 notes: "runtime failure, not a compile error; a break written directly in a reset body, outside any shift, does reach the loop around the reset. corrective: (reset (shift k (while True (break 9))))"
 ---
-id: special-shift-handler-return-in-callee-invalid-002
-feature: special/compile/shift
-source: |-
-  (reset ((lambda [] (+ 1 (shift k (return 5))))))
-  
-verify:
-  read: (reset ((lambda [] (+ 1 (shift k (return 5))))))
-  invalid: "the shift is in a function called from the region the reset delimits. Its handler runs after the shift has left that region, and the function's caller left with it, so the return has nothing to return to and fails at runtime with KoskariPromptUnreachable (operation return, boundary shift). The handler's value already becomes the reset's value: write (shift k 5)."
-references:
-  - reference/specials/compile-shift.md
-  - reference/specials/compile-return.md
-stability: evolving
-tags:
-  - special
-  - continuation
-  - invalid
-  - pitfall
-notes: "runtime failure, not a compile error; a return in a handler whose reset is in the same function returns from that function as usual. corrective: (reset ((lambda [] (+ 1 (shift k 5)))))"
----
 id: special-shift-resumed-return-invalid-003
 feature: special/compile/shift
 source: |-
@@ -206,7 +187,7 @@ source: |-
   
 verify:
   read: (list ((lambda [] (reset (+ (shift k (call k 1)) (yield 5))))))
-  invalid: "(call k 1) resumes the captured region, and the yield after the shift runs in that resumed region, which has no generator of its own. It fails at runtime with KoskariPromptUnreachable (operation yield, boundary continuation), wherever k is called from. A yield in the shift handler itself, as in (shift k (yield (call k 1))), suspends the generator the reset is in."
+  invalid: "(call k 1) resumes the captured region, and the yield after the shift runs in that resumed region, which has no generator of its own. It fails at runtime with KoskariPromptUnreachable (operation yield, boundary continuation), wherever k is called from. Yield the reset's value instead, in the function the reset is written in."
 references:
   - reference/specials/compile-shift.md
   - reference/specials/compile-yield.md
@@ -216,4 +197,23 @@ tags:
   - continuation
   - invalid
   - pitfall
-notes: "runtime failure, not a compile error; yield before the shift, or in the handler, is unaffected. corrective: (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))"
+notes: "runtime failure, not a compile error; yield before the shift is unaffected, and a yield in the handler is refused at compile time. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
+---
+id: special-shift-handler-yield-invalid-005
+feature: special/compile/shift
+source: |-
+  (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))
+
+verify:
+  read: (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))
+  error: "SpecialError: shift handler cannot yield: it is a function of its continuation, not a generator"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "compile error: the handler is a function of k, not part of the generator the reset is in. A generator defined inside the handler may yield. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"

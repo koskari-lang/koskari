@@ -123,7 +123,8 @@ struct KosXferGoal {
   size_t piece_next;           /* the entry the next ATTACHING splits at */
   size_t piece_entered;        /* entries whose node ENTERING has run */
 
-  PyObject *payload;           /* owned: the value, or the exception */
+  /* owned: the value, the exception, or a shift abort's handler */
+  PyObject *payload;
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
   KosOp *resume_pc;            /* NULL when unset */
   KosXferRestore *restore;     /* owned array, or NULL */
@@ -135,8 +136,9 @@ struct KosXferGoal {
      outers */
   uint8_t voided_outer;
   /* a shift's abort: ATTACHING empties the seam, the prompt, whose
-     operands went with the continuation */
-  uint8_t drop_seam_operands;
+     operands went with the continuation, and DELIVERING calls the
+     handler in payload with the continuation in continuation_ref */
+  uint8_t shift_abort;
 };
 
 

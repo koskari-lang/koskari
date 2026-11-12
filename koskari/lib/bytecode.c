@@ -1770,6 +1770,13 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                 i, slot, elem, (unsigned) KOS_SEGMENT_MAX_SLOTS);
             goto failure;
           }
+
+          /* SHIFT's tag count names no tag or the one tag */
+          if (op == KOS_OP_SHIFT && slot == 0 && val > 1) {
+            PyErr_Format(PyExc_ValueError, "Code instruction %zd EXTRA"
+                         " field %d %R is not 0 or 1", i, slot, elem);
+            goto failure;
+          }
           uint16_t v = (uint16_t) val;
           if (slot == 0) {
             row.a0 = v;
@@ -1888,8 +1895,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
       /* A prompt instruction's count is the number of operands naming
          its tag: none for the default tag, or the one tag. */
-      if ((op == KOS_OP_PUSH_PROMPT || op == KOS_OP_PUSH_SHIFT)
-          && val > 1) {
+      if (op == KOS_OP_PUSH_PROMPT && val > 1) {
         PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
                      " is not 0 or 1", i, b);
         goto failure;
@@ -2271,7 +2277,6 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
   { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
   { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT,   0 },
-  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT,    0 },
   { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
   { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
   { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },
@@ -3789,22 +3794,6 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
   }
 
   return &KosCode_EXTENTS(code)[extent_id];
-}
-
-
-KosOp *kos_shift_ic_for(PyObject *code, uint32_t pc) {
-
-  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_SHIFT);
-  if (eid == KOS_EXTENT_NONE) {
-    return NULL;
-  }
-
-  const KosExtentDesc *const e = kos_extent_desc(code, eid);
-  if (! e) {
-    return NULL;
-  }
-
-  return &KosCode_CODE(code)[e->pop_pc + 1];
 }
 
 

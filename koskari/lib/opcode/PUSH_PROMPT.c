@@ -21,8 +21,8 @@
    popped before the prompt is pushed, so it is not an operand of the
    region or of the block around it. The region's closing pc is
    resolved from the PROMPT extent here, once, and stored on the node;
-   POP_SHIFT reads the answer instead of re-deriving it from a pc that
-   slice execution has long since moved.
+   a shift's abort reads the answer instead of re-deriving it from a pc
+   that slice execution has long since moved.
 */
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
@@ -31,10 +31,10 @@ KOS_OP_HANDLER(PUSH_PROMPT) {
   KosDynPrompt *prompt;
   KosOp *pop;
 
-  if (get_prompt_tag_from_insn(ctx, insn, &tag) < 0)
+  if (pop_prompt_tag(ctx, KosOp_ARG(insn), &tag) < 0)
     RESULT_RAISE();
 
-  /* the POP_PROMPT closing the extent, for POP_SHIFT's live reset */
+  /* the POP_PROMPT closing the extent, where a shift's abort resumes */
   if (kos_site_extent_close(ctx, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
                             &pop) < 0) {
     Py_XDECREF(tag);

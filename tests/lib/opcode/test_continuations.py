@@ -33,24 +33,48 @@ from tests.lib.opcode import CevalTest, _op, build_code, build_expr
 pytestmark = pytest.mark.phase_lib
 
 
+_RETURN_K = [
+    ["VAR", "k"],
+    ["RETURN", 1],
+]
+
+_APPLY_K_5 = [
+    ["VAR", "k"],
+    ["CONST", 5],
+    ["CALL", 1],
+    ["RETURN", 1],
+]
+
+
+def handler_spec(code, local_syms=("k",)):
+    """
+    The FunctionSpec of a shift handler, a function of the one
+    parameter k, whose body is code
+
+    :param code: Sequence of [op, arg] as in build_code
+    :param local_syms: the handler's local names, k first
+    :return: FunctionSpec
+    """
+
+    handler = build_code(code, local_syms=local_syms, name="handler")
+    return handler.function_spec(FormalsSpec(("k",)))
+
+
 class TestDelimitedContinuations(CevalTest):
     """
-    Tests for PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, CALL, POP_PROMPT
+    Tests for PUSH_PROMPT, SHIFT, CALL, POP_PROMPT
     """
 
     async def test_reset_shift_invoke(self):
         """
-        Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT,
-        PUSH_SHIFT, CALL, POP_SHIFT, POP_PROMPT for continuation invocation
+        Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT, SHIFT,
+        CALL in the handler, POP_PROMPT for continuation invocation
         """
 
         code = [
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
-            ["PUSH_SHIFT", 0],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
@@ -65,11 +89,10 @@ class TestDelimitedContinuations(CevalTest):
         """
         (reset (shift k k)) returns k; calling k from Python raises TypeError
         """
-        # Shift body returns k without invoking via POP_SHIFT (empty body)
+
         code = [
             ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
@@ -84,23 +107,27 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_var_store_then_var_call_invokes_delimited(self):
         """
-        Shift body stores cont in ns, then VAR and CALL invoke it with value.
-        (+ 1 (shift k (do (var-store k k) (k 5)))) => 6
+        The handler stores k in a local, then VAR and CALL invoke it with
+        a value. (+ 1 (shift k (do (var-store j k) (j 5)))) => 6
         """
+
+        stored = handler_spec([
+            ["VAR", "k"],
+            ["VAR_STORE", "j"],
+            ["VAR", "j"],
+            ["CONST", 5],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ], local_syms=("k", "j"))
         code = [
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
-            ["PUSH_SHIFT", 0],
-            ["VAR_STORE", "k"],
-            ["VAR", "k"],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, stored, 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, local_syms=("k",))
+        code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 6)
@@ -108,13 +135,13 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_delimited_continuation_stored_and_invoked_outside_shift(self):
         """
-        (reset (shift k (pop-shift k))) stores k; then (k 42) invokes from
-        outside the shift body. Result 42 returns to call site.
+        (reset (shift k k)) stores k; then (k 42) invokes it from outside
+        the handler. Result 42 returns to call site.
         """
+
         code = [
             ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
             ["POP_PROMPT", 0],
             ["VAR_STORE", "k"],
             ["VAR", "k"],
@@ -130,14 +157,14 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_delimited_result_from_outside_shift(self):
         """
-        (reset (shift k (pop-shift k))) then (k 99) => 99. When invoking from
-        outside (after POP_SHIFT), the continuation's first op is POP_SHIFT
-        which yields the value; the result 99 flows to the call site.
+        (reset (shift k k)) then (k 99) => 99. When invoking from outside
+        the handler, the continuation's first op is the POP_PROMPT after
+        SHIFT, which takes the value; the result 99 flows to the call site.
         """
+
         code = [
             ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
             ["POP_PROMPT", 0],
             ["VAR_STORE", "k"],
             ["VAR", "k"],
@@ -153,15 +180,14 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_invoke_delimited_continuation_after_pop_prompt_returns_value(self):
         """
-        (reset (shift k k)) then (k 42): shift returns k via POP_SHIFT, then
-        we invoke k(42) after the prompt is gone. Push model allows invoke
+        (reset (shift k k)) then (k 42): the handler returns k, then we
+        invoke k(42) after the prompt is gone. Push model allows invoke
         from outside; result 42 returns to call site.
         """
-        # (reset (shift k k)) returns k; (k 42) invokes from outside the reset
+
         code = [
             ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
             ["POP_PROMPT", 0],
             ["CONST", 42],
             ["CALL", 1],
@@ -189,8 +215,7 @@ class TestDelimitedContinuations(CevalTest):
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["VAR", "tag_a"],
-            ["PUSH_SHIFT", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["CONST", 10],
@@ -221,10 +246,7 @@ class TestDelimitedContinuations(CevalTest):
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["VAR", "tag_a"],
-            ["PUSH_SHIFT", 1],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["CONST", 10],
@@ -248,6 +270,12 @@ class TestDelimitedContinuations(CevalTest):
         second handler, then (+ 1 115): 116
         """
 
+        apply_k_100 = handler_spec([
+            ["VAR", "k"],
+            ["CONST", 100],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ])
         code = [
             ["VAR", "tag_a"],
             ["PUSH_PROMPT", 1],
@@ -255,15 +283,9 @@ class TestDelimitedContinuations(CevalTest):
             ["PUSH_PROMPT", 0],
             ["CONST", 10],
             ["VAR", "tag_a"],
-            ["PUSH_SHIFT", 1],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
-            ["PUSH_SHIFT", 0],
-            ["CONST", 100],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, apply_k_100, 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["OBJECT_ADD", 2],
@@ -289,8 +311,7 @@ class TestDelimitedContinuations(CevalTest):
             ["VAR", "tag_a"],
             ["PUSH_PROMPT", 1],
             ["VAR", "tag_b"],
-            ["PUSH_SHIFT", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
@@ -315,10 +336,7 @@ class TestDelimitedContinuations(CevalTest):
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["VAR", "tag"],
-            ["PUSH_SHIFT", 1],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
@@ -339,10 +357,7 @@ class TestDelimitedContinuations(CevalTest):
             ["VAR", "tag"],
             ["PUSH_PROMPT", 1],
             ["CONST", 1],
-            ["PUSH_SHIFT", 0],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
             ["RETURN", 1],
@@ -359,16 +374,25 @@ class TestDelimitedContinuations(CevalTest):
         a tag from the stack; building code with any other count fails
         """
 
-        for name in ("PUSH_PROMPT", "PUSH_SHIFT"):
-            code = [
-                [name, 2],
-                ["RETURN", 0],
-            ]
-            with self.assertRaises(ValueError) as caught:
-                build_expr(code)
-            self.assertEqual(
-                "Code instruction 0 argument 2 is not 0 or 1",
-                str(caught.exception))
+        code = [
+            ["PUSH_PROMPT", 2],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 argument 2 is not 0 or 1",
+            str(caught.exception))
+
+        code = [
+            ["SHIFT", (2, handler_spec(_RETURN_K), 0, 0)],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 EXTRA field 0 2 is not 0 or 1",
+            str(caught.exception))
 
 
 class TestUndelimitedContinuations(CevalTest):

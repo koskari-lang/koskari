@@ -249,8 +249,8 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_around_shift_captures_in_place(self):
         """
-        dyn-wind wrapping shift captures in place; shift body POP_SHIFT and
-        POP_WIND complete without extent or wind topology errors.
+        dyn-wind wrapping shift captures in place; the handler's return
+        and POP_WIND complete without extent or wind topology errors.
         """
 
         src_str = """
@@ -591,14 +591,12 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_recursive_invoke_in_slice_path(self):
         """
-        Recursive delimited invoke: the shift body stashes k in a module
-        global and the slice conditionally re-invokes it, so k runs in the
-        path of k. Recursion is permitted and structurally safe: in-path
-        invokes can never take Path A (the live SHIFT node sits in the
-        INPLACE delim's stash during the slice, so readiness fails) and
-        route to the bounded PUSH graft, one template instance per level.
-        Levels unwind independently: guard sees 0, 1, 2, 3 and every level
-        returns the base value 3.
+        Recursive delimited invoke: the handler stashes k in a binding of
+        the enclosing let and the slice conditionally re-invokes it, so k
+        runs in the path of k. Recursion is permitted and structurally
+        safe, one template instance per level. Levels unwind
+        independently: guard sees 0, 1, 2, 3 and every level returns the
+        base value 3.
         """
 
         events = []
@@ -611,8 +609,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return n + 1
 
         src_str = """
-        (begin
-          (setq g nil)
+        (let [[g nil]]
           (reset
             (begin
               (setq n

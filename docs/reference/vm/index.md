@@ -103,8 +103,6 @@ exception is an ordinary raise, which a Koskari `try` can catch.
   - `KOS_DYN_WITH` -- context manager (`with` and `dyn-with`). Whether a
     continuation transfer runs it is a capability of the node, not a
     second kind.
-  - `KOS_DYN_SHIFT` -- shift handler bookmark. Owns the handler body's
-    operand segment; no frame or namespace of its own.
   - `KOS_DYN_GEN` -- generator node. Intercepts yield, return, and raise,
     and denies shift.
   - `KOS_DYN_UNKNOWN` -- sentinel past the last kind; never a live node.
@@ -303,7 +301,7 @@ The opcodes by family, each linking to its section.
 - [18. Block control](#18-block-control) -- PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) -- PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) -- OBJECT_* (comparisons, predicates, numeric, general)
-- [20. Delimited continuations](#20-delimited-continuations) -- PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT
+- [20. Delimited continuations](#20-delimited-continuations) -- PUSH_PROMPT, SHIFT, POP_PROMPT
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) -- PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) -- PUSH_WIND, POP_WIND
 - [23. Parameterize extent](#23-parameterize-extent-and-parameter-reads) -- PUSH_PARAM, PARAM, POP_PARAM
@@ -659,8 +657,7 @@ The opcodes by family, each linking to its section.
 | OBJECT_TYPE | NOARG | Pop TOS, push `type(TOS)` | [section 19](opcodes/kos-op-object-type.md) |
 | OBJECT_VARS | NOARG | Pop TOS, push its `__dict__` | [section 19](opcodes/kos-op-object-vars.md) |
 | PUSH_PROMPT | CONST | Push prompt (delimited cont.) | [section 20](opcodes/kos-op-push-prompt.md) |
-| PUSH_SHIFT | CONST | Capture continuation, enter shift block | [section 20](opcodes/kos-op-push-shift.md) |
-| POP_SHIFT | NOARG | Return from shift block without invoking k | [section 20](opcodes/kos-op-pop-shift.md) |
+| SHIFT | EXTRA | Capture continuation, abort to the prompt, call the handler with it | [section 20](opcodes/kos-op-shift.md) |
 | POP_PROMPT | NOARG | Pop prompt | [section 20](opcodes/kos-op-pop-prompt.md) |
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [section 21](opcodes/kos-op-push-cc.md) |
 | CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [section 21](opcodes/kos-op-capture-cc.md) |
@@ -4365,61 +4362,50 @@ back-edge increment is this single dispatch.
 ## 20. Delimited continuations
 
 Delimited continuations use a block-based layout: PUSH_PROMPT establishes the
-reset and owns the operand segment for the delimited region; PUSH_SHIFT and
-POP_SHIFT delimit the shift block (handler); the continuation is the code
-between POP_SHIFT and POP_PROMPT.
+reset and owns the operand segment for the delimited region, and POP_PROMPT
+closes it. SHIFT is one instruction: it captures the continuation from the
+instruction after it up to the prompt, aborts to the prompt, and calls the
+handler, a function of the continuation, there; the handler's value is the
+value POP_PROMPT takes.
 
 ### KOS_OP_PUSH_PROMPT
 
 - **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pc + 1), then pushes the prompt node onto the dynamic chain.
-- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
-- **Invariants**: PUSH_SHIFT captures up to this prompt. An exception unwinding past a PROMPT drops the segment and unlinks the node in one step.
+- **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (a shift's abort resumes the frame at that POP_PROMPT), then pushes the prompt node onto the dynamic chain.
+- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT). PROMPT owns the segment for the delimited region.
+- **Invariants**: SHIFT captures up to this prompt. An exception unwinding past a PROMPT drops the segment and unlinks the node in one step.
 - **Compiler form:** The arg is the count, `0` or `1`, before and after compilation.
 
 **Example:** reset (push prompt). The count `0` is the default tag.
 
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | PUSH_PROMPT| 0   | 0        | push prompt (owning its segment) onto chain |
-| 1     | ...          | ...   | ...        | body before shift (continuation prefix) |
-| 2     | PUSH_SHIFT | 0   | 0        | capture k; enter shift block with k on stack |
-| 3     | ...          | ...   | ...        | shift body (k available) |
-| 4     | POP_SHIFT  | 0   | 0        | return from shift without invoking |
-| 5     | ...          | ...   | ...        | continuation (body after shift) |
-| 6     | POP_PROMPT | 0   | 0        | drop segment; pop prompt |
+| index | opcode      | arg | arg view     | comment |
+|------:|-------------|-----|--------------|---------|
+| 0     | PUSH_PROMPT | 0   | 0            | push prompt (owning its segment) onto chain |
+| 1     | ...         | ... | ...          | body before shift (continuation prefix) |
+| 2     | SHIFT       | 0   | 0 (0, fspec) | capture k; abort to the prompt; call the handler with k |
+| 3     | ...         | ... | ...          | continuation (body after shift) |
+| 4     | POP_PROMPT  | 0   | 0            | drop segment; pop prompt |
 
 ---
 
-### KOS_OP_PUSH_SHIFT
+### KOS_OP_SHIFT
 
-- **Style**: COUNT. Arg = `0` for the default prompt tag, or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit), a SHIFT marker is attached to the prompt, and the captured continuation is delivered to it at the shift block's first instruction. A shift hosted in a callee leaves that callee's frame with the region, and a copy of the frame is attached to the SHIFT for the shift block to run in. SHIFT owns the segment the shift body's operands go on; the region's pending operands are in the continuation.
-- **Pushes:** KOS_DYN_SHIFT (bookmark for the shift body: owns its operand segment, no handlers).
-- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. The SHIFT's parent is the prompt the shift aborted to.
+- **Style**: EXTRA (`COUNT`, `CONST`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = constant pool index of the handler's **function spec**, a function of one parameter, the continuation. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: Builds the handler from its spec against the current frame namespace, as BUILD_FUNCTION does. Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole, resuming at the instruction after SHIFT -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit). When an after thunk or exit raises, the abort is abandoned and the raise propagates from where it ran, with the region's operands still in place. Once the prompt is at the top of the chain its operand segment is emptied, the frame's pc is the prompt's POP_PROMPT, and the handler is called with the continuation above the prompt. The handler's return pushes its value on the prompt's segment, and POP_PROMPT takes it as the reset's value.
+- **Pushes:** Nothing on the dynamic chain; the handler's frame is a call above the prompt, so a SHIFT in the handler finds the same prompt.
+- **Invariants**: Invoking the captured continuation re-delimits: each invocation installs a copy of the region under a fresh prompt instance, so a shift inside that run aborts only to that copy's prompt, and its handler's value is the value of that invocation.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`.
-- **Compiler form:** The arg is the count, `0` or `1`, before and after compilation.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, function_spec, 0, 0)`; `NOARG` slots are ignored by the assembler. `shift` emits count `0`; `shift-at` compiles its tag first and emits count `1`.
 
-**Example:** shift k: body. Capture k, run shift body with k on stack. The count `0` is the default tag.
+**Example:** `(reset (+ 1 (shift k (k 5))))`. Pool: 0 = 1, 1 = the handler's function spec; extra row: `(0, fspec, 0, 0)`.
 
-| index | opcode    | arg | arg view | comment |
-|------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0        | capture k; abort to the prompt; attach SHIFT marker; enter shift block with k on stack |
-
----
-
-### KOS_OP_POP_SHIFT
-
-- **Style**: NOARG.
-- **Stack**: Pops TOS as result. The delimiter is the SHIFT's parent, the prompt the shift aborted to. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For the prompt of an applied continuation (its parent is the copy's frame, sitting on a DELIM; no POP_PROMPT pairs with it as its own reset): the result is the value of that k-invocation, delivered at the invoke site through that DELIM.
-- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). The segment owned by the PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value is pushed on the frame's stack below the former block boundary.
-- **Compiler form:** No argument.
-
-**Example:** Shift handler returns value without invoking k.
-
-| index | opcode   | arg | arg view | comment |
-|------:|----------|-----|----------|---------|
-| 4     | POP_SHIFT| 0   | 0        | pop result; unwind through SHIFT+PROMPT; drop segment; inject result onto outer stack |
+| index | opcode      | arg | arg view     | comment |
+|------:|-------------|-----|--------------|---------|
+| 0     | PUSH_PROMPT | 0   | 0            | push prompt (owning its segment) onto chain |
+| 1     | CONST       | 0   | 0 (1)        | region operand; stack: [1] |
+| 2     | SHIFT       | 0   | 0 (0, fspec) | capture k; abort to the prompt; call the handler with k |
+| 3     | OBJECT_ADD  | 2   | 2            | the continuation resumes here with the hole's value |
+| 4     | POP_PROMPT  | 0   | 0            | the handler's value, or the region's, is the reset's |
 
 ---
 

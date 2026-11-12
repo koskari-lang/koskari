@@ -59,8 +59,6 @@
   KOS_DYN_PARAM    - Parameter bindings (parameterize extent)
   KOS_DYN_WITH     - Context manager (with / dyn-with); a dyn-with carries
                      KOS_DYN_CAP_WINDS, not a second kind
-  KOS_DYN_SHIFT    - Shift handler bookmark (transparent; no segment,
-                     frame, or namespace of its own)
   KOS_DYN_GEN      - Generator node; intercepts handle(RETURN/RAISE),
                      denies handle(SHIFT)
   KOS_DYN_UNKNOWN  - Sentinel value for unknown node kind
@@ -79,7 +77,6 @@ typedef enum KosDynKind {
   KOS_DYN_CC,
   KOS_DYN_PARAM,
   KOS_DYN_WITH,
-  KOS_DYN_SHIFT,
   KOS_DYN_GEN,
 
   KOS_DYN_UNKNOWN,
@@ -555,8 +552,8 @@ struct KosDynNode {
          and the one None names: None itself is never stored. */
       PyObject *tag;
       /* the POP_PROMPT closing this prompt's region, resolved from the
-         PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
-         pop_pc + 1; stored resolved because by the time a shift body
+         PROMPT extent when PUSH_PROMPT ran. A shift's abort resumes
+         the frame there; stored resolved because by the time a shift
          runs, no live acting pc still points into the extent. */
       KosOp *pop_pc;
     } prompt;
@@ -632,10 +629,6 @@ struct KosDynNode {
       KosObligation ob;
       KosExcState saved;
     } with;
-    /* A SHIFT has no payload. It marks the handler a shift runs after
-       aborting to its prompt, and its parent is that prompt: POP_SHIFT
-       finds the delimiter there. It owns the handler's operand block
-       and carries the namespace live at the shift. */
     struct {
       /* The generator object whose span this node marks, borrowed. It
          is alive while the node is installed on a running chain: the
@@ -717,7 +710,6 @@ typedef struct KosDynNode KosDynCollect;
 typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
-typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynGen;
 
 
@@ -1300,7 +1292,7 @@ int kos_dyn_pop_frame(KosContext *ctx);
    :param tag: the prompt's tag, matched by identity, or NULL for the
       default tag (never None); a reference is taken
    :param pop: the POP_PROMPT closing the region (from the PROMPT
-      extent at the push site); POP_SHIFT resumes at pop + 1
+      extent at the push site); a shift's abort resumes there
 
    :return: new prompt, or NULL on error
 */
@@ -1384,31 +1376,31 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
 
 /**
-   Abort a shift to its prompt and start its handler there. Everything
-   above prompt is left, as a raise would leave it; a SHIFT node is attached
-   to the prompt carrying the namespace live at the shift, and k is
-   delivered to it at body_pc. When the shift ran in a frame above the
-   prompt, that frame was part of the region and is left with it, so a
-   copy of it (same code, the live namespace, no operands) is attached to the
-   SHIFT for the handler to run in. The region's operands on the prompt
-   are dropped once the abort reaches the prompt: the continuation holds
-   its own copy, and until then a leave cancelled on the way out leaves
-   the region running on them.
+   Abort a shift to its prompt, then call its handler with k there.
+
+   The transfer leaves everything above the prompt, which keeps the
+   region's operands until the abort can no longer be cancelled: a
+   dyn-wind after thunk or a with's __exit__ that raises on the way out
+   abandons the transfer, and the region carries on where the raise is
+   caught. Once the prompt is at dyn_top its block is emptied, the
+   frame's pc is the prompt's POP_PROMPT, and the handler is called
+   above the prompt; its value lands on the prompt's block, for that
+   POP_PROMPT. A shift in the handler finds the same prompt.
 
    Pushes a transfer goal; the caller answers REPROLOGUE.
 
    :param ctx: execution context
    :param prompt: the prompt the shift captured up to
+   :param handler: the handler, a function of one parameter; borrowed
    :param k: the continuation object the handler receives; borrowed
-   :param body_pc: the handler's first instruction
 
    :return: 0 on success, -1 with an exception set
 */
 int kos_shift_abort(
     KosContext *ctx,
     KosDynPrompt *prompt,
-    PyObject *k,
-    KosOp *body_pc);
+    PyObject *handler,
+    PyObject *k);
 
 
 /**
@@ -1690,7 +1682,7 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
    innermost loop region in the current frame, pops to it crossing any
-   PROMPT or SHIFT between (the region is the frame's own), and on
+   PROMPT between (the region is the frame's own), and on
    EVAL_NORMAL has set the pc and either stored result on the region
    (CONTINUE) or popped the region and pushed result (BREAK). result is
    consumed on every answer.
@@ -2132,7 +2124,6 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
-#define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
@@ -2200,15 +2191,6 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
    recorded wherever a frame is linked under a parent
    (kos_dynframe_note_parent) */
 #define KOS_FRAME_PARENT_IS_FRAME   (1u << 3)
-
-/* the frame is the copy a shift's handler runs in when the shift was
-   written in a called function (kos_shift_abort). The function's
-   caller was in the region the shift left, so the frame has nothing
-   to return to and a return in it is refused. Its parent is a SHIFT,
-   but so is the parent of any frame the handler calls, which returns
-   to the handler as usual: the frame carries the fact itself. A clone
-   keeps it. */
-#define KOS_FRAME_SHIFT_HANDLER     (1u << 4)
 #define KosDynFrame_CACHE_SLOT(f) (((KosDynNode *)(f))->u.frame.cache_slot)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)

@@ -156,13 +156,14 @@ def shape_reentrant_k_of_k []:
 ;; k re-invoked from an inner handler while a graft of k is still live
 def shape_reentrant_nested_same_k []:
     var log (#list)
+    var ks #[None]
     (reset
-      (+ (shift k (+ (k 1) (k 2)))
+      (+ (shift k (begin (set! ks[0] k) (+ (k 1) (k 2))))
          (shift j
            (cond
              ((== (len log) 1)
                (log.append "re")
-               (+ (j 100) (k 7)))
+               (+ (j 100) (ks[0] 7)))
              (else:
                (log.append "x")
                (j 100))))))

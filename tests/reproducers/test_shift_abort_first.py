@@ -17,9 +17,11 @@ tests.reproducers.test_shift_abort_first
 
 A shift aborts to its prompt before its handler runs, so the handler
 stands where the region stood and outside the region's extents: a try
-or a parameterize inside the region does not reach it. A handler yields
-in its own generator, and loops of its own break and continue. A
-handler written in a called function has no caller left to return to.
+or a parameterize inside the region does not reach it. A handler is a
+function of its continuation: a yield written in it is refused, a
+generator defined in it is its own, loops of its own break and
+continue, and a return in it gives the reset its value, wherever the
+shift was written.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -29,7 +31,7 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import KoskariPromptUnreachable
+from koskari.exceptions import KoskariPromptUnreachable, SpecialError
 from koskari.module import load_module_source_async, new_module
 
 
@@ -38,16 +40,6 @@ pytestmark = pytest.mark.phase_reproducers
 
 SRC = """
 (define-parameter depth 0)
-
-def yield_in_handler []:
-    reset:
-        + 100:
-            shift k:
-                yield (k 1)
-                yield (k 2)
-
-def run_yield_in_handler []:
-    (list (yield_in_handler))
 
 def yield_in_handler_generator []:
     reset:
@@ -145,18 +137,28 @@ def run_region_yield_other_generator []:
 """
 
 
+YIELD_SRC = """
+def yield_in_handler []:
+    reset:
+        + 100:
+            shift k:
+                yield (k 1)
+                yield (k 2)
+"""
+
+
 class TestShiftAbortFirst(unittest.IsolatedAsyncioTestCase):
 
-    async def load(self):
+    async def load(self, src=SRC):
         module = new_module("shift_abort_first")
         vars(module)["__file__"] = "<shift_abort_first>"
-        await load_module_source_async(module, SRC)
+        await load_module_source_async(module, src)
         return vars(module)
 
 
-    async def test_handler_yields_in_its_own_generator(self):
-        mod = await self.load()
-        self.assertEqual([101, 102], await mod["run_yield_in_handler"]())
+    async def test_yield_in_a_handler_is_refused(self):
+        with self.assertRaises(SpecialError):
+            await self.load(YIELD_SRC)
 
 
     async def test_generator_defined_in_handler_applies_k(self):
@@ -176,20 +178,14 @@ class TestShiftAbortFirst(unittest.IsolatedAsyncioTestCase):
             [1, 2, 3], await mod["continue_in_handler_loop"]())
 
 
-    async def test_return_in_a_callee_handler_is_refused(self):
+    async def test_return_in_a_callee_handler_is_the_reset_value(self):
         mod = await self.load()
-        with self.assertRaises(KoskariPromptUnreachable) as caught:
-            await mod["return_in_callee_handler"]()
-        self.assertEqual("return", caught.exception.operation)
-        self.assertEqual("shift", caught.exception.boundary)
-        self.assertIsInstance(caught.exception, RuntimeError)
+        self.assertEqual(5, await mod["return_in_callee_handler"]())
 
 
-    async def test_refused_return_is_raised_at_the_return(self):
+    async def test_return_in_a_callee_handler_try_is_the_reset_value(self):
         mod = await self.load()
-        self.assertEqual(
-            "caught in the handler",
-            await mod["return_in_callee_handler_caught"]())
+        self.assertEqual(5, await mod["return_in_callee_handler_caught"]())
 
 
     async def test_try_inside_the_region_does_not_catch_the_handler(self):

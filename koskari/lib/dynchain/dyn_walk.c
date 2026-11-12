@@ -289,11 +289,7 @@ KosOpResult kos_dyn_unwind_return(
    ends the search: the resumed slice above it is the continuation's
    body, and a loop below it (the one around the reset, or one in the
    shift handler) is outside that body, as a return or a raise in the
-   slice is delivered to the (k ...) call site and not past it. A
-   SHIFT ends it too: the shift aborted to its prompt, so a loop the
-   handler was written inside is gone, and the search cannot tell the
-   next loop out from one that was never the handler's. Only a loop
-   inside the handler is the handler's.
+   slice is delivered to the (k ...) call site and not past it.
    Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
    kos_dyn_unwind_to_loop serving BREAK/CONTINUE.
 */
@@ -302,7 +298,7 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
   while (node) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
-    if (KosDynNode_IS_SHIFT(node) || KosDynNode_IS_DELIM(node))
+    if (KosDynNode_IS_DELIM(node))
       return NULL;
     node = KosDynNode_PARENT(node);
   }
@@ -380,8 +376,8 @@ KosOpResult kos_dyn_unwind_to_loop(
     }
 
     /* The loop lies under the current frame, so every node between
-       is the frame's own: a reset's PROMPT and a SHIFT leave like any
-       other node, as they do for the return walk. */
+       is the frame's own: a reset's PROMPT leaves like any other node,
+       as it does for the return walk. */
     r = kos_dyn_unlink_top(ctx, event, 1);
 
     if (r.kind == KOS_RES_NORMAL)

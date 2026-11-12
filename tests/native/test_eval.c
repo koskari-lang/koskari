@@ -736,19 +736,71 @@ static int test_eval_try_finally_rerase(void) {
 /* === Test: reset (+ 1 (shift k (k 5))) => 6 === */
 
 
+/*
+  The FunctionSpec of the handler (k 5): a function of the one
+  parameter k. Returns a new reference, or NULL with PyErr set.
+*/
+static PyObject *make_apply_k_5_spec(void) {
+
+    PyObject *name = PyUnicode_FromString("handler");
+    PyObject *locals = Py_BuildValue("(s)", "k");
+    PyObject *closures = PyTuple_New(0);
+    PyObject *k_name = PyUnicode_FromString("k");
+    PyObject *five = PyLong_FromLong(5);
+    PyObject *nspec = NULL;
+    PyObject *instr = NULL;
+    PyObject *code = NULL;
+    PyObject *formals = NULL;
+    PyObject *spec = NULL;
+
+    if (! name || ! locals || ! closures || ! k_name || ! five)
+        goto done;
+
+    nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
+    instr = PyList_New(4);
+    if (! nspec || ! instr)
+        goto done;
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, k_name));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CALL, 1));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+
+    code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    formals = KosFormalsSpec_New(locals, NULL, NULL, NULL, NULL, NULL,
+                                 NULL);
+    if (code && formals)
+        spec = KosFunctionSpec_New(NULL, formals, code);
+
+ done:
+    Py_XDECREF(name);
+    Py_XDECREF(locals);
+    Py_XDECREF(closures);
+    Py_XDECREF(k_name);
+    Py_XDECREF(five);
+    Py_XDECREF(nspec);
+    Py_XDECREF(instr);
+    Py_XDECREF(code);
+    Py_XDECREF(formals);
+    return spec;
+}
+
+
 static int test_eval_reset_shift_invoke(void) {
     /*
-      Bytecode: PUSH_PROMPT 0, CONST 1, PUSH_SHIFT 0, CONST 5, CALL 1,
-      POP_SHIFT 0, OBJECT_ADD 2, POP_PROMPT 0, RETURN 1.
-      (+ 1 (shift k (k 5))) => 6. Shift body: k on stack, CONST 5, CALL 1.
-      Continuation: OBJECT_ADD 2 (1+5=6), POP_PROMPT, RETURN.
+      Bytecode: PUSH_PROMPT 0, CONST 1, SHIFT (0, handler, 0, 0),
+      OBJECT_ADD 2, POP_PROMPT 0, RETURN 1.
+      (+ 1 (shift k (k 5))) => 6. The handler applies k to 5; the
+      continuation is OBJECT_ADD 2 (1+5=6) then POP_PROMPT, and the
+      handler's value, 6, is the reset's.
     */
     PyObject *nspec = NULL;
     PyObject *zero = NULL;
     PyObject *one = NULL;
-    PyObject *five = NULL;
+    PyObject *handler = NULL;
+    PyObject *row = NULL;
     PyObject *instr = NULL;
     PyObject *code_obj = NULL;
+    PyObject *empty = NULL;
     PyObject *ns = NULL;
     KosDynFrame *frame = NULL;
     KosContext *ctx = NULL;
@@ -761,37 +813,43 @@ static int test_eval_reset_shift_invoke(void) {
 
     zero = PyLong_FromLong(0);
     one = PyLong_FromLong(1);
-    five = PyLong_FromLong(5);
-    instr = PyList_New(9);
-    if (! zero || ! one || ! five || ! instr) {
+    handler = make_apply_k_5_spec();
+    row = handler ? Py_BuildValue("(iOii)", 0, handler, 0, 0) : NULL;
+    instr = PyList_New(6);
+    if (! zero || ! one || ! row || ! instr) {
         Py_XDECREF(zero);
         Py_XDECREF(one);
-        Py_XDECREF(five);
+        Py_XDECREF(handler);
+        Py_XDECREF(row);
         Py_XDECREF(instr);
         Py_DECREF(nspec);
         return -1;
     }
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_PUSH_PROMPT, zero));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
-    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_PUSH_SHIFT, zero));
-    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, five));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_CALL, 1));
-    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_SHIFT, 0));
-    PyList_SET_ITEM(instr, 6, make_instr_int(
+    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_SHIFT, row));
+    PyList_SET_ITEM(instr, 3, make_instr_int(
         KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
-    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_PROMPT, 0));
-    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_PROMPT, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
 
     code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     Py_DECREF(zero);
     Py_DECREF(one);
-    Py_DECREF(five);
+    Py_DECREF(handler);
+    Py_DECREF(row);
     Py_DECREF(instr);
     Py_DECREF(nspec);
     if (! code_obj)
         return -1;
 
-    ns = PyDict_New();
+    /* the handler is built over the frame's namespace, so the frame
+       needs a real one */
+    empty = PyTuple_New(0);
+    if (! empty)
+        goto cleanup;
+    ns = KosNamespace_NewFull(NULL, NULL, empty, NULL, NULL);
+    Py_DECREF(empty);
     if (! ns)
         goto cleanup;
 
