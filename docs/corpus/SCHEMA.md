@@ -44,6 +44,12 @@ references:
   it must emit no warning during eval. It qualifies the eval stage and is not a
   stage of its own.
 
+**verify.gc_collect** (optional)
+: A boolean. `true` runs a full garbage collection after the eval, before the
+  warnings are checked. Set it on a record whose warning is emitted when a
+  dropped object is finalized. Absent or `false`, no collection runs. It
+  qualifies the eval stage and is not a stage of its own.
+
 **references**
 : Links to pages under `docs/` (reference, start, guide, etc.).
 

@@ -768,6 +768,7 @@ verify:
   expand: (defer? (defer (lambda [] 1)))
   eval: "true"
   warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
+  gc_collect: true
 references:
   - reference/runtime/types-and-predicates.md
 stability: evolving

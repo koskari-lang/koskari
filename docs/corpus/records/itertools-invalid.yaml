@@ -7,6 +7,7 @@ source: |-
 verify:
   eval: "list:[1,2,3,4,1]"
   warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
+  gc_collect: true
   invalid: >-
     python's itertools calls the predicate through the python calling
     convention, where a koskari lambda returns a coroutine rather than
@@ -40,6 +41,7 @@ source: |-
 verify:
   eval: "list:[]"
   warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
+  gc_collect: true
   invalid: >-
     the same boundary problem inverted. python's filterfalse keeps
     what its predicate rejects, and a koskari lambda hands it a truthy

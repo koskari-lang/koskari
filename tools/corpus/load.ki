@@ -42,6 +42,7 @@ var _VERIFY_KEY_ORDER #(
     "compile"
     "eval"
     "warning"
+    "gc_collect"
     "error"
     "invalid")
 
@@ -164,8 +165,14 @@ def _format_verify [verify indent]:
         unless (in? key verify):
             (continue)
 
+        var value verify[key]
+        when (instance? value bool):
+            var word (if value "true" "false")
+            (lines.append f"{prefix}  {key}: {word}")
+            (continue)
+
         (lines.extend
-            (_format_scalar_lines key verify[key] (+ indent 1)))
+            (_format_scalar_lines key value (+ indent 1)))
 
     return lines
 
