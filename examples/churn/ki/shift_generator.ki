@@ -1,0 +1,27 @@
+;; churn_shift_generator -- a producer that hands each value out of its
+;; reset with a shift, paired with the continuation that goes on to the
+;; next.  The consumer calls each continuation once, so one capture and
+;; one resume per value dominate.
+
+(var MASK32 0xffffffff)
+
+
+def produce [items]:
+    for-each [v items]:
+        shift k:
+            #(v k)
+    None
+
+
+def churn_shift_generator [n]:
+    var data (list (range n))
+    var acc 0
+    var step (reset (produce data))
+    while (not (None? step)):
+        set! acc (& (+ (* acc 31) step[0]) MASK32)
+        var k step[1]
+        set! step (k None)
+    acc
+
+
+;; The end.

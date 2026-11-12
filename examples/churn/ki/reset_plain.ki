@@ -1,0 +1,16 @@
+;; churn_reset_plain -- one reset per step whose body never shifts, with
+;; one integer mixing op in the body, so establishing the delimiter and
+;; returning through it dominates.
+
+(var MASK32 0xffffffff)
+
+
+def churn_reset_plain [n x]:
+    var i 0
+    while (< i n):
+        set! x (reset (& (+ (* x 1664525) 1013904223) MASK32))
+        set! i (+ i 1)
+    x
+
+
+;; The end.

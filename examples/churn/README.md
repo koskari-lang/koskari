@@ -66,7 +66,7 @@ called bare and its coroutine handed to the loop. The per-call
 Tags in use: `dispatch`, `call`, `keyword`, `method`, `recursion`,
 `iteration`, `alloc`, `attr`, `slots`, `branch`, `match`, `loop`, `str`,
 `demand`, `parameterize`, `coroutine`, `await`, `send`, `generator`, `float`,
-`bignum`, `array`, `game`, `async`.
+`bignum`, `array`, `game`, `async`, `continuation`.
 
 ## Options
 
@@ -164,6 +164,10 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `demand_call_method` | `map` over a bound method; the Koskari side goes through `demand` | deterministic baseline |
 | `demand_call_param` | `demand_call` with one dynamic binding read per call: `parameterize` on the Koskari side, a `contextvars` binding on the Python side | deterministic baseline |
 | `yieldfrom` | `yield-from` delegation, consumed fully and abandoned after one value | deterministic baseline |
+| `reset_plain` | one `reset` per step whose body never shifts; a `try` block that never raises on the Python side | — |
+| `shift_abort` | one `shift` per step that drops its continuation, through one call; a raise caught one frame up on the Python side | — |
+| `shift_generator` | a producer that shifts each value out with its continuation, resumed once per value; a generator stepped with `next` on the Python side | — |
+| `shift_amb` | a three-level search where each choice is a `shift` whose handler calls the continuation once per choice; three nested loops on the Python side | the six Pythagorean triples under 21 |
 | `coro_call` | hosted: `asyncio.gather` over one coroutine per element; the Koskari side gathers Koskari Coroutines | deterministic baseline |
 | `coro_await` | hosted: serial `await` of one coroutine per element; the Koskari side awaits Koskari Coroutines | deterministic baseline |
 | `coro_send` | `send(None)` into one coroutine per element, result taken from its StopIteration; the Koskari side sends into Koskari Coroutines | deterministic baseline |
