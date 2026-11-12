@@ -178,7 +178,7 @@ extent metadata, so nesting is computed once.
 The strongest motivation for the processor -- the same principle as
 "opcodes are thin interfaces": the pass owns the optimization, specials
 emit naive forms. Detail lives in
-[language/tail-call-bytecode-pass.md](../language/tail-call-bytecode-pass.md);
+[tail-call-bytecode-pass.md](tail-call-bytecode-pass.md);
 the processor-specific mechanics as built:
 
 - Specials always emit `CALL*` + `RETURN`. The `tc=` threading is

@@ -11,7 +11,7 @@ its node.
 
 **See also:** [extent-wind-unwind.md](extent-wind-unwind.md) (the
 extent contract), [with-dyn-with.md](with-dyn-with.md),
-[demand-flattening.md](demand-flattening.md) (why a Koskari consumer
+[demand-flattening.md](../archive/demand-flattening.md) (why a Koskari consumer
 steps a Koskari generator on its own chain).
 
 ## What exists today

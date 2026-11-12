@@ -322,17 +322,6 @@ Ref: [interpreter/kio-format.md](interpreter/kio-format.md);
 [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [api/import-system.md](api/import-system.md).
 
-### Module `__dict__` as a dict (investigate)
-
-The Koskari Module in `sys.modules` exposes a `ModuleNamespace` as its
-`__dict__`, which `exec` refuses, so `@dataclass`, `typing` and
-`inspect` fail on imported `.ki` modules. Options: a dict subclass that
-reads through the namespace and purges anything written into it on the
-next read, or dict-backed ItemRef bindings made invisible by dict
-version or watcher caching.
-
-Ref: [interpreter/module-dict.md](interpreter/module-dict.md).
-
 ### Import path selection
 
 Add a feature flag (e.g. environment variable or loader knob) to choose at
@@ -369,23 +358,6 @@ Gaps per [documentation-goals.md](documentation-goals.md):
 ---
 
 ## To design (broader)
-
-### C stack at the Koskari-to-CPython call boundary (investigate)
-
-A Koskari call out to CPython that re-enters Koskari costs 1,424 bytes
-of C stack per level, 1,104 of them in Koskari's own frames. Attempt
-tail-call threading from the call site into the CPython call, or a
-CPS-style rebound to the trampoline that then tail-call threads, so the
-handler and call-path frames are gone before CPython runs.
-Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md) (step 6).
-
-### Context snapshot after completion (investigate)
-
-A boundary drive's root is now a code-less frame with no namespace, so
-a retained `Context` reports `namespace` as None once the drive ends.
-Investigate a snapshot API that preserves a finished context's state
-(namespace, last frames) for later inspection.
-Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
 
 ### Extents across a generator yield (investigate)
 

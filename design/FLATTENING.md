@@ -8,7 +8,7 @@ fails to flatten is a bug. The invariant is recorded in
 
 This rollup classifies Koskari-to-Koskari call, drive and await paths.
 Current corrective work:
-[interpreter/demand-flattening.md](interpreter/demand-flattening.md).
+[archive/demand-flattening.md](archive/demand-flattening.md).
 
 ## Flattens
 

@@ -210,7 +210,7 @@ and flattens. The text below records the gap as it stood.
 `Koskari_DemandSync`. A Koskari predicate or APP extractor in a
 runtime `match` nested an eval.
 The comment there names it a flattening gap and points at
-[resumable-reads.md](resumable-reads.md) section 8, the match row.
+[resumable-reads.md](../interpreter/resumable-reads.md) section 8, the match row.
 
 **D11. Composable continuations invoked from a code-less resume frame.**
 Fixed in the working tree; the transform case predates this work. When

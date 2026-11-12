@@ -30,7 +30,7 @@ with two goals served by the same shape:
 
 Non-goals (this effort): changing the opcode set or compiler emission;
 namespace-free frames (future, own design note); the tail-call
-promotion bytecode pass ([language/tail-call-bytecode-pass.md](../language/tail-call-bytecode-pass.md),
+promotion bytecode pass ([tail-call-bytecode-pass.md](tail-call-bytecode-pass.md),
 complementary); PGO ([pgo-build.md](pgo-build.md), complementary).
 
 ## Current cost ledger (hot CALL_FAST on a KosFunction)

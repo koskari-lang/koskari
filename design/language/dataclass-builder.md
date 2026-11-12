@@ -20,7 +20,7 @@ the rest by writing Python source and running `exec` against
 `sys.modules[cls.__module__].__dict__`. For a Koskari module that dict
 is the module namespace, which works only because the namespace is a
 dict subclass whose reads relay to the module's bindings
-([interpreter/module-dict.md](../interpreter/module-dict.md)). Koskari's
+([archive/module-dict.md](../archive/module-dict.md)). Koskari's
 own dataclasses should not depend on that relay, or on `exec` at all:
 the methods are ordinary functions over the field list and the compiler
 is already in hand at expansion time.
