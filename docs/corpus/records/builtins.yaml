@@ -4425,7 +4425,7 @@ tags:
   - catch
   - pitfall
   - surface:sexpr
-notes: continuation errors are not RuntimeError subclasses
+notes: KoskariContinuationError is not a RuntimeError subclass; KoskariPromptUnreachable is the one subclass that is
 ---
 id: builtin-koskaripromptnotfound-shift-without-reset-001
 feature: builtin/KoskariPromptNotFound

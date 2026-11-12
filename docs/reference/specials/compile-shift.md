@@ -66,9 +66,13 @@ own exception under the `KoskariContinuationError` category (see
   [`reset`](compile-reset.md).
 - `KoskariPromptUnreachable` -- a matching prompt exists, but a node between
   the shift and the prompt denied the capture: `shift cannot capture across a
-  generator boundary`. Adding a `reset` will not help; restructure so the
-  capture does not cross the boundary. The denying boundary is recorded on the
-  exception's `boundary` attribute. It is also a `RuntimeError`.
+  generator boundary`. A `shift` made inside a running `__enter__`,
+  `__exit__`, before thunk or after thunk of a `with`, `dyn-with` or
+  `dyn-wind` in the region is refused the same way. Adding a `reset` will
+  not help; restructure so the capture does not cross the boundary. The
+  denying boundary is recorded on the exception's `boundary` attribute
+  (`generator`, `enter`, `exit`, `before` or `after`). It is also a
+  `RuntimeError`.
 
 Both carry `tag` (the prompt tag the capture was seeking, compared by
 identity; `None` is the default tag `reset` and `shift` use) and

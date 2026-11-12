@@ -27,10 +27,11 @@ with [f (open path)]:
 ```
 
 The bracket holds the name and the expression. With no name to bind,
-write `with [(lock)]:`. Cleanup runs when the body exits, by any route.
-An async context manager works the same way; `dyn-with` is the form
-for a manager that must be entered on the dynamic extent rather than
-the lexical one, which matters for continuations and rarely otherwise.
+write `with [(lock)]:`. Cleanup runs when the body completes, raises, or
+is left by `return`, `break` or `continue`. An async context manager
+works the same way. A continuation transfer out of or back into the body
+runs neither exit nor enter; `dyn-with` is the form for a manager that a
+transfer exits and enters again.
 
 ## Exceptions
 

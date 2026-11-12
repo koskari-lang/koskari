@@ -798,7 +798,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: shift aborts the reset body and returns 42; k is the delimited continuation
+notes: shift aborts the reset body, so the pending (+ 1 ...) never runs; the handler's value, 42, is the reset's value; k is unused
 ---
 id: special-reset-shift-call-003
 feature: special/compile/reset
@@ -834,7 +834,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: shift k aborts the reset context; 42 is the result; k is unused
+notes: shift aborts the region up to the reset before the handler runs; the handler's value, 42, is the reset's value; k is unused
 ---
 id: special-shift-call-002
 feature: special/compile/shift
@@ -870,7 +870,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: multi-shot continuation; k called twice with nesting; empty body outside hole yields 1
+notes: multi-shot continuation; k is called twice, nested; the region around the shift is the hole alone, so each call of k returns its argument and the result is 1
 ---
 id: special-shift-handler-own-loop-004
 feature: special/compile/shift
@@ -1015,7 +1015,7 @@ tags:
   - with
   - context-manager
   - cleanup
-notes: dynamic extent with no binding; context manager enter result discarded; async-safe variant of compile/with
+notes: no binding; context manager enter result discarded; unlike compile/with, a continuation transfer out of or back into the body runs exit and enter
 ---
 id: special-dyn-with-binding-002
 feature: special/compile/dyn-with
@@ -1068,7 +1068,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: dyn-wind (before thunk after); calling the result runs before, body, after; returns body value 99
+notes: each part of the dyn-wind is a body, not a function to call; the body evaluates (lambda [] 99), which is the form's value, and (call r) calls it for 99. The before and after bodies run on entry and exit and only build functions here
 ---
 id: special-dyn-wind-events-002
 feature: special/compile/dyn-wind
@@ -1083,7 +1083,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: dyn-wind calls the thunk (body) directly; before/after are invoked on continuation boundary events, not during normal execution
+notes: each part of the dyn-wind is a body, not a function to call; the before and after bodies run on entry and exit but only build lambdas that nothing calls, and the body's lambda is the form's value, so calling it records only "body"
 ---
 id: special-dyn-wind-expand-003
 feature: special/compile/dyn-wind
@@ -1098,7 +1098,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: dyn-wind takes three expressions; no macro expansion; lowers directly to WIND_WRAP opcode
+notes: dyn-wind takes three expressions; no macro expansion; compiles to a PUSH_WIND / POP_WIND pair around the body
 ---
 id: special-capture-cc-basic-001
 feature: special/compile/capture/cc
@@ -1539,7 +1539,7 @@ tags:
   - catch
   - cleanup
   - error-handling
-notes: finally peer always runs; exception caught, returns 99; finally form evaluates to None
+notes: finally peer runs on every local exit; exception caught, returns 99; finally form evaluates to None
 ---
 id: special-let-named-inner-loop-001
 feature: special/compile/let

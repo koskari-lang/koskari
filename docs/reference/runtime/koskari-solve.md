@@ -62,7 +62,10 @@ The search delimits with a tag of its own (see
 [`reset-at`](../specials/compile-reset-at.md)). A `reset` in the thunk
 being solved is therefore not a search delimiter: `amb` and `fail` reach
 past it to the search, and a `shift` in the thunk stops at the thunk's own
-`reset`, never at the search.
+`reset`, never at the search. A `shift` in the thunk with no `reset` of its
+own crosses the search delimiter: it captures up to a `reset` around the
+`solve` or `solve-first` call, the search included, and with none it raises
+`KoskariPromptNotFound`, not `NoActiveSearch`.
 
 ## Errors
 
