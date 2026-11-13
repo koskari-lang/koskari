@@ -45,6 +45,14 @@
    again, which means the thunk's frame came and went. Everything above
    belongs to the thunk.
 
+   A goal is storage only for as long as its transfer is unfinished. A
+   transfer that starts at an instruction which keeps its own frame
+   runs at once from a goal in that instruction's storage
+   (kos_xfer_goal_run), and is allocated only if a step pauses or
+   fails. One that starts where the calling frame may be written to
+   after the start, or inside the raise walk, is allocated and pushed
+   (kos_xfer_goal_new, kos_xfer_goal_push) for the prologue to drive.
+
    Goals nest: a continuation invoked from inside a thunk pushes an inner
    goal while the outer stays waiting. ATTACHING retires every outer
    goal whose frontier the inner's LEAVING unlinked, since the extent it
@@ -132,6 +140,8 @@ struct KosXferGoal {
   /* LEAVING unlinked an outer's frontier; ATTACHING retires the voided
      outers */
   uint8_t voided_outer;
+  /* the goal is storage of kos_xfer_goal_run's caller, not its own */
+  uint8_t in_place;
 };
 
 
@@ -139,11 +149,27 @@ struct KosXferGoal {
 
 
 /**
-   Allocate a goal. target is an owned, already cloned segment (or
-   NULL); seam is borrowed and must be on the live chain (or NULL for
-   the root); payload is borrowed and a reference is taken;
-   continuation_ref likewise. A caller with a target sets shape to what
-   its clone recorded, which the goal then owns.
+   Fill a goal in storage the caller provides, for kos_xfer_goal_run.
+   target is an owned, already cloned segment (or NULL); seam is
+   borrowed and must be on the live chain (or NULL for the root);
+   payload is borrowed and a reference is taken; continuation_ref
+   likewise. A caller with a target sets shape to what its clone
+   recorded, which the goal then owns. Cannot fail.
+*/
+void kos_xfer_goal_init(
+    KosXferGoal *goal,
+    KosDynNode *target,
+    KosDynNode *seam,
+    PyObject *payload,
+    KosOp *resume_pc,
+    PyObject *continuation_ref,
+    int is_cc_unwind);
+
+
+/**
+   Allocate a goal and fill it as kos_xfer_goal_init does, for
+   kos_xfer_goal_push: a transfer that starts where its caller cannot
+   run it.
 
    :return: the goal, or NULL with PyErr set (target is then freed)
 */
@@ -159,7 +185,8 @@ KosXferGoal *kos_xfer_goal_new(
 /**
    Release a goal's own resources: the target still unattached, the
    payload, the continuation reference, the restore records, the split
-   points. Does not touch outer.
+   points, and its storage unless it is run in place. Does not touch
+   outer.
 */
 void kos_xfer_goal_free(KosXferGoal *goal);
 
@@ -250,6 +277,28 @@ int kos_xfer_goal_will_drive(KosContext *ctx);
 
 
 int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg);
+
+
+/**
+   Run a transfer now, from a goal in the caller's own storage that
+   kos_xfer_goal_init filled. The goal is the active one for as long as
+   it runs. A transfer that completes leaves nothing behind: no goal
+   was allocated. One whose step pauses on a thunk frame or an
+   awaitable, or fails, outlives the caller, so it is moved to storage
+   of its own first and goes on as a pushed goal does. Either way the
+   caller's storage is dead on return.
+
+   The caller is the instruction or install the transfer starts from,
+   with no exception pending and the frame it transfers from able to
+   go: nothing may be written to that frame afterward.
+
+   :return: EVAL_NORMAL when the transfer is done and the evaluator
+     threads on from the live registers; EVAL_REPROLOGUE when a frame
+     was installed or the prologue has a delivery or an outer goal to
+     see to; EVAL_AWAIT with the awaitable when a step suspended;
+     EVAL_RAISE with PyErr set when a step failed
+*/
+KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal);
 
 
 #endif

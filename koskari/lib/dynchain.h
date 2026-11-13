@@ -1398,17 +1398,19 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
    and is the reset's return. A shift or an abort in the handler finds
    the same prompt.
 
-   Pushes a transfer goal whose target is the aside; the caller answers
-   REPROLOGUE.
+   Runs the transfer at once (kos_xfer_goal_run), its target the aside;
+   the caller relays the result.
 
    :param ctx: execution context
    :param prompt: the prompt to abort to
    :param entry: the handler's first instruction, in the running
      frame's code
 
-   :return: 0 on success, -1 with an exception set
+   :return: EVAL_NORMAL when the handler's frame is live and the
+     evaluator threads into it; otherwise the result to relay:
+     EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE with an exception set
 */
-int kos_abort_to_prompt(
+KosOpResult kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
     KosOp *entry);
@@ -2007,7 +2009,7 @@ void kos_chain_common_ancestor(
   Invoke a captured continuation.
 
   Pushes a transfer goal from the current position to the continuation's
-  captured chain and schedules execution.
+  captured chain, for the prologue to drive.
 
   :param ctx: context
   :param k: continuation to invoke
@@ -2016,6 +2018,31 @@ void kos_chain_common_ancestor(
   :return: 0 on success, -1 on error
 */
 int kos_invoke_continuation(
+   KosContext *ctx,
+   KosContinuation *k,
+   PyObject *value,
+   PyObject *continuation_ref);
+
+
+/**
+  Call a captured continuation from a call site.
+
+  A delimited continuation's transfer runs at once
+  (kos_xfer_goal_run): the calling frame stays on the chain under the
+  copy. An undelimited one is pushed as kos_invoke_continuation pushes
+  it.
+
+  :param ctx: context
+  :param k: continuation to call
+  :param value: resume value
+  :param continuation_ref: the continuation object, kept alive for the
+    transfer; borrowed
+
+  :return: EVAL_NORMAL when the transfer is done or pushed; otherwise
+    the result to relay: EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE
+    with an exception set
+*/
+KosOpResult kos_call_continuation(
    KosContext *ctx,
    KosContinuation *k,
    PyObject *value,

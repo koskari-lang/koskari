@@ -26,16 +26,20 @@
 
 
 /**
-   Invoke k with value. Pushes a transfer goal: for a delimited k the
-   caller stays on the chain and a fresh clone of the template is
-   attached on its dyn_top, every time; for an undelimited k the chain
-   is replaced. Callers: callable invoke, apply paths.
+   What a transfer to k needs before its goal is made: the seam, the
+   template node the copy stops at, and a fresh clone of the template
+   with the shape its clone recorded. For a delimited k the caller
+   stays on the chain and the clone is attached on its dyn_top, every
+   time; for an undelimited k the chain above the seam is replaced.
+   Returns 0, or -1 with PyErr set and nothing to release.
 */
-int kos_invoke_continuation(
+static int kos_invoke_prepare(
     KosContext *ctx,
     KosContinuation *k,
-    PyObject *value,
-    PyObject *continuation_ref) {
+    KosDynNode **out_target,
+    KosDynNode **out_seam,
+    KosDynNode **out_tmpl_stop,
+    KosCloneShape *out_shape) {
 
   if (! k) {
     PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
@@ -84,10 +88,9 @@ int kos_invoke_continuation(
      clone's one pass also numbers the copy's frames as they stand once
      attached, links their back links, and records the split points
      ATTACHING needs with the registers live at each. */
-  KosCloneShape shape;
   KosDynNode *target = kos_dyn_clone_segment(
       KosContinuation_CAPTURED_CHAIN(k), tmpl_stop, is_delimited, 1,
-      top_depth, &shape);
+      top_depth, out_shape);
   if (! target && KosContinuation_CAPTURED_CHAIN(k) != tmpl_stop) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
@@ -98,7 +101,7 @@ int kos_invoke_continuation(
      the copy holds nothing of the template, and ATTACHING links it to
      the seam */
   if (target)
-    KosDynNode_PARENT(shape.bottom) = NULL;
+    KosDynNode_PARENT(out_shape->bottom) = NULL;
 
   /* A delimited copy is whole frames ending in its prompt, attached on
      the caller's dyn_top: the body frame's copy returns to the caller
@@ -106,24 +109,92 @@ int kos_invoke_continuation(
   if (is_delimited)
     seam = KosContext_DYN_TOP(ctx);
 
-  {
-    KosXferGoal *goal = kos_xfer_goal_new(
-        target, seam, value, KosContinuation_RESUME_PC(k),
-        continuation_ref, 0);
-    if (! goal) {
-      /* target is freed by kos_xfer_goal_new on failure */
-      PyMem_Free(shape.pieces);
-      return -1;
-    }
-    goal->shape = shape;
-    if (tmpl_stop
-        && kos_xfer_goal_capture_restore(goal, seam, tmpl_stop) < 0) {
-      kos_xfer_goal_free(goal);
-      return -1;
-    }
-    kos_xfer_goal_push(ctx, goal);
-  }
+  *out_target = target;
+  *out_seam = seam;
+  *out_tmpl_stop = tmpl_stop;
   return 0;
+}
+
+
+/**
+   Invoke k with value by pushing a transfer goal for the prologue to
+   drive. See dynchain.h for the contract. Callers: the apply path in
+   the raise walk, kos_call_continuation for an undelimited k.
+*/
+int kos_invoke_continuation(
+    KosContext *ctx,
+    KosContinuation *k,
+    PyObject *value,
+    PyObject *continuation_ref) {
+
+  KosDynNode *target;
+  KosDynNode *seam;
+  KosDynNode *tmpl_stop;
+  KosCloneShape shape;
+  KosXferGoal *goal;
+
+  if (kos_invoke_prepare(ctx, k, &target, &seam, &tmpl_stop, &shape) < 0)
+    return -1;
+
+  goal = kos_xfer_goal_new(
+      target, seam, value, KosContinuation_RESUME_PC(k), continuation_ref,
+      0);
+  if (! goal) {
+    /* target is freed by kos_xfer_goal_new on failure */
+    PyMem_Free(shape.pieces);
+    return -1;
+  }
+  goal->shape = shape;
+  if (tmpl_stop
+      && kos_xfer_goal_capture_restore(goal, seam, tmpl_stop) < 0) {
+    kos_xfer_goal_free(goal);
+    return -1;
+  }
+  kos_xfer_goal_push(ctx, goal);
+  return 0;
+}
+
+
+/**
+   Call k with value from a call site. See dynchain.h for the contract.
+   Callers: the continuation types' install.
+*/
+KosOpResult kos_call_continuation(
+    KosContext *ctx,
+    KosContinuation *k,
+    PyObject *value,
+    PyObject *continuation_ref) {
+
+  KosDynNode *target;
+  KosDynNode *seam;
+  KosDynNode *tmpl_stop;
+  KosXferGoal goal;
+
+  /* An undelimited k may take the calling frame off the chain, and the
+     call site may still set that frame's resume once the install
+     returns: its transfer waits for the prologue. */
+  if (! k || ! KosContinuation_DELIMITED(k)) {
+    if (kos_invoke_continuation(ctx, k, value, continuation_ref) < 0)
+      return EVAL_RAISE();
+    return EVAL_NORMAL();
+  }
+
+  /* A delimited k leaves nothing: the copy goes on above the calling
+     frame, which stays where it is, so the transfer runs here. There
+     is no template node to stop at and so nothing to restore. */
+  if (kos_invoke_prepare(
+          ctx, k, &target, &seam, &tmpl_stop, &goal.shape) < 0)
+    return EVAL_RAISE();
+
+  {
+    KosCloneShape shape = goal.shape;
+
+    kos_xfer_goal_init(
+        &goal, target, seam, value, KosContinuation_RESUME_PC(k),
+        continuation_ref, 0);
+    goal.shape = shape;
+  }
+  return kos_xfer_goal_run(ctx, &goal);
 }
 
 

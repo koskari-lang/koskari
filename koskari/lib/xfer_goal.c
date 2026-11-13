@@ -32,7 +32,8 @@
 /* === Lifecycle === */
 
 
-KosXferGoal *kos_xfer_goal_new(
+void kos_xfer_goal_init(
+    KosXferGoal *goal,
     KosDynNode *target,
     KosDynNode *seam,
     PyObject *payload,
@@ -40,16 +41,7 @@ KosXferGoal *kos_xfer_goal_new(
     PyObject *continuation_ref,
     int is_cc_unwind) {
 
-  KosXferGoal *goal = PyMem_Malloc(sizeof(KosXferGoal));
-
   KOS_TRACE_EVENTS_INC(KOS_TE_TRANSFER_GOAL_NEW);
-  if (! goal) {
-    if (target)
-      kos_dynchain_free(target, NULL);
-    PyErr_NoMemory();
-    return NULL;
-  }
-
   goal->outer = NULL;
   goal->target = target;
   goal->seam = seam;
@@ -67,6 +59,30 @@ KosXferGoal *kos_xfer_goal_new(
   goal->phase = KOS_GOAL_LEAVING;
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
   goal->voided_outer = 0;
+  goal->in_place = 0;
+}
+
+
+KosXferGoal *kos_xfer_goal_new(
+    KosDynNode *target,
+    KosDynNode *seam,
+    PyObject *payload,
+    KosOp *resume_pc,
+    PyObject *continuation_ref,
+    int is_cc_unwind) {
+
+  KosXferGoal *goal = PyMem_Malloc(sizeof(KosXferGoal));
+
+  if (! goal) {
+    if (target)
+      kos_dynchain_free(target, NULL);
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_xfer_goal_init(
+      goal, target, seam, payload, resume_pc, continuation_ref,
+      is_cc_unwind);
   return goal;
 }
 
@@ -112,7 +128,9 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
   /* the split points borrow nodes of the target or the chain */
   PyMem_Free(goal->shape.pieces);
   memset(&goal->shape, 0, sizeof(goal->shape));
-  PyMem_Free(goal);
+  /* a goal run in place is its caller's storage */
+  if (! goal->in_place)
+    PyMem_Free(goal);
 }
 
 
@@ -693,11 +711,19 @@ static KosOpResult goal_deliver(
 }
 
 
-KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
+/**
+   Drive the active goal as far as the chain allows, and each outer it
+   retires into; with only set, stop once only is no longer the active
+   goal.
+*/
+static KosOpResult goal_drive(
+    KosContext *ctx,
+    const KosXferGoal *only,
+    int *out_boundary) {
 
   *out_boundary = 0;
 
-  while (KosContext_GOAL(ctx)) {
+  while (KosContext_GOAL(ctx) && (! only || KosContext_GOAL(ctx) == only)) {
     KosXferGoal *goal = KosContext_GOAL(ctx);
     KosOpResult r;
 
@@ -755,6 +781,84 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
     }
   }
   return EVAL_NORMAL();
+}
+
+
+KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
+  return goal_drive(ctx, NULL, out_boundary);
+}
+
+
+/**
+   goal, run in place, is still linked: a step paused or failed, and the
+   goal outlives the storage it was run in. Move it to storage of its
+   own, in the same place among the goals. Returns 0, or -1 with
+   MemoryError set and the goal unlinked and released.
+*/
+static int goal_keep(KosContext *ctx, KosXferGoal *goal) {
+
+  KosXferGoal **link = &KosContext_GOAL(ctx);
+  KosXferGoal *kept;
+
+  while (*link != goal)
+    link = &(*link)->outer;
+
+  kept = PyMem_Malloc(sizeof(KosXferGoal));
+  if (! kept) {
+    *link = goal->outer;
+    goal->outer = NULL;
+    if (goal->frontier)
+      goal_end_wait(goal);
+    kos_xfer_goal_free(goal);
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  *kept = *goal;
+  kept->in_place = 0;
+  *link = kept;
+  return 0;
+}
+
+
+KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal) {
+
+  int boundary = 0;
+  int linked = 0;
+  KosOpResult r;
+
+  goal->in_place = 1;
+  kos_xfer_goal_push(ctx, goal);
+
+  /* what the prologue does ahead of a drive: a delivery staged for the
+     path the transfer replaces is dropped */
+  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+
+  r = goal_drive(ctx, goal, &boundary);
+
+  for (KosXferGoal *g = KosContext_GOAL(ctx); g; g = g->outer) {
+    if (g == goal) {
+      linked = 1;
+      break;
+    }
+  }
+  if (linked && goal_keep(ctx, goal) < 0) {
+    if (r.kind == KOS_RES_AWAIT)
+      Py_XDECREF(r.val);
+    return EVAL_RAISE();
+  }
+
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
+
+  /* done: thread on from the registers the transfer loaded, unless a
+     delivery is staged for the frame's resume or an outer goal is
+     still to be looked at */
+  if (! KosContext_GOAL(ctx)
+      && ! KosContext_PENDING_VALUE(ctx)
+      && kos_frame_threads(KosContext_FRAME(ctx)))
+    return EVAL_NORMAL();
+  return EVAL_REPROLOGUE();
 }
 
 

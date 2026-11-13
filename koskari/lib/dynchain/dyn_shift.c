@@ -28,7 +28,7 @@
    Abort to a prompt and run a handler there. See dynchain.h for the
    contract. Callers: opcodes ABORT, SHIFT_VAR, SHIFT_FAST.
 */
-int kos_abort_to_prompt(
+KosOpResult kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
     KosOp *entry) {
@@ -36,7 +36,7 @@ int kos_abort_to_prompt(
   PyObject *ns = KosContext_NAMESPACE(ctx);
   KosDynNode *base;
   KosDynFrame *aside;
-  KosXferGoal *goal;
+  KosXferGoal goal;
 
   /* The aside outlives the frame it is taken from, which the abort
      leaves: it holds the code and the namespace itself, and the
@@ -50,30 +50,30 @@ int kos_abort_to_prompt(
       NULL, (KosDynFrame *) base, KosDynFrame_CODE(KosContext_FRAME(ctx)),
       ns, entry);
   if (! aside)
-    return -1;
+    return EVAL_RAISE();
 
   /* The target is the one frame, which ATTACHING links on the prompt,
      the seam. No payload: the handler takes nothing from its stack.
      No resume pc: the aside stands at the handler's first instruction,
      and the frame below the prompt already stands after the reset,
-     where the handler's return, which ends the prompt, is delivered. */
-  goal = kos_xfer_goal_new(
-      (KosDynNode *) aside, (KosDynNode *) prompt, NULL, NULL, NULL, 0);
-  if (! goal)
-    return -1;
+     where the handler's return, which ends the prompt, is delivered.
+     The transfer runs here, from a goal in this frame, and is kept
+     only if a leave on the way pauses or fails. */
+  kos_xfer_goal_init(
+      &goal, (KosDynNode *) aside, (KosDynNode *) prompt, NULL, NULL, NULL,
+      0);
 
   /* what a clone for an attach records, for a copy of one frame: its
      back link and its segment's are open for the seam's registers */
-  goal->shape.bottom = (KosDynNode *) aside;
-  goal->shape.frames = 1;
-  goal->shape.top.top = (KosDynNode *) aside;
-  goal->shape.top.frame = (KosDynNode *) aside;
-  goal->shape.top.block = &KosDynNode_STACK((KosDynNode *) aside);
-  goal->shape.top.ns = KosDynNode_NS((KosDynNode *) aside);
-  goal->shape.open_frame = (KosDynNode *) aside;
-  goal->shape.open_segment = KosDynNode_STACK((KosDynNode *) aside);
-  kos_xfer_goal_push(ctx, goal);
-  return 0;
+  goal.shape.bottom = (KosDynNode *) aside;
+  goal.shape.frames = 1;
+  goal.shape.top.top = (KosDynNode *) aside;
+  goal.shape.top.frame = (KosDynNode *) aside;
+  goal.shape.top.block = &KosDynNode_STACK((KosDynNode *) aside);
+  goal.shape.top.ns = KosDynNode_NS((KosDynNode *) aside);
+  goal.shape.open_frame = (KosDynNode *) aside;
+  goal.shape.open_segment = KosDynNode_STACK((KosDynNode *) aside);
+  return kos_xfer_goal_run(ctx, &goal);
 }
 
 

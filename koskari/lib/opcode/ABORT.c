@@ -40,9 +40,7 @@ KOS_OP_HANDLER(ABORT) {
   if (! prompt)
     RESULT_RAISE();
 
-  if (kos_abort_to_prompt(ctx, prompt, entry) < 0)
-    RESULT_RAISE();
-  RESULT_REPROLOGUE(ctx);
+  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt, entry));
 }
 
 
