@@ -115,6 +115,9 @@ static PyObject *formals_spec_call(PyObject *self,
   if (! PyArg_ParseTuple(args, "|O", &defaults))
     return NULL;
 
+  if (defaults == Py_None)
+    defaults = NULL;
+
   return KosFormals_New(self, defaults);
 }
 
@@ -148,6 +151,7 @@ static void formals_spec_dealloc(PyObject *self) {
   Py_CLEAR(KosFormalsSpec_STAR(self));
   Py_CLEAR(KosFormalsSpec_STARSTAR(self));
   Py_CLEAR(KosFormalsSpec_BY_REFS(self));
+  Py_CLEAR(KosFormalsSpec_FORMALS(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -160,6 +164,7 @@ static int formals_spec_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosFormalsSpec_STAR(self));
   Py_VISIT(KosFormalsSpec_STARSTAR(self));
   Py_VISIT(KosFormalsSpec_BY_REFS(self));
+  Py_VISIT(KosFormalsSpec_FORMALS(self));
   return 0;
 }
 
@@ -172,6 +177,7 @@ static int formals_spec_clear(PyObject *self) {
   Py_CLEAR(KosFormalsSpec_STAR(self));
   Py_CLEAR(KosFormalsSpec_STARSTAR(self));
   Py_CLEAR(KosFormalsSpec_BY_REFS(self));
+  Py_CLEAR(KosFormalsSpec_FORMALS(self));
   return 0;
 }
 
@@ -262,6 +268,7 @@ PyObject *KosFormalsSpec_New(
   KosFormalsSpec_STAR(self) = NULL;
   KosFormalsSpec_STARSTAR(self) = NULL;
   KosFormalsSpec_BY_REFS(self) = NULL;
+  KosFormalsSpec_FORMALS(self) = NULL;
 
   TUPLE_OR_NULL(pos);
   KosFormalsSpec_POS(self) = pos;
@@ -283,6 +290,19 @@ PyObject *KosFormalsSpec_New(
 
   TUPLE_OR_NULL(by_refs);
   KosFormalsSpec_BY_REFS(self) = by_refs;
+
+  /* the Formals every defaults-free function of this spec shares */
+  KosFormalsSpec_FORMALS(self) = KosFormals_NewFull(
+      KosFormalsSpec_POS(self),
+      KosFormalsSpec_POS_ONLY(self),
+      KosFormalsSpec_KWD(self),
+      KosFormalsSpec_KWD_ONLY(self),
+      KosFormalsSpec_STAR(self),
+      KosFormalsSpec_STARSTAR(self),
+      NULL,
+      KosFormalsSpec_BY_REFS(self));
+  if (! KosFormalsSpec_FORMALS(self))
+    goto tuple_error;
 
   /* fully built: reveal to the collector */
   PyObject_GC_Track(self);
@@ -622,6 +642,9 @@ PyObject *KosFormals_New(PyObject *spec, PyObject *defaults) {
     PyErr_Format(PyExc_TypeError, "expected FormalsSpec, got %R", spec);
     return NULL;
   }
+
+  if (! defaults)
+    return Py_NewRef(KosFormalsSpec_FORMALS(spec));
 
   return KosFormals_NewFull(
     KosFormalsSpec_POS(spec),

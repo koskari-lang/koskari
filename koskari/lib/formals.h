@@ -40,6 +40,12 @@ typedef struct KosFormalsSpec {
   PyObject *starstar;
   PyObject *by_refs;
 
+  PyObject *formals;  /* the KosFormals over this spec with no defaults,
+                         built at construction. A Formals is never
+                         written after it is built, so every function
+                         made from this spec without defaults shares it
+                         (KosFormals_New) */
+
 } KosFormalsSpec;
 
 
@@ -79,6 +85,9 @@ PyObject *KosFormalsSpec_NamespaceSpec(
 #define KosFormalsSpec_BY_REFS(fmls)            \
   (((KosFormalsSpec *) fmls)->by_refs)
 
+#define KosFormalsSpec_FORMALS(fmls)            \
+  (((KosFormalsSpec *) fmls)->formals)
+
 #define KosFormalsSpec_CheckExact(obj)                  \
   ((obj) && ((obj)->ob_type == &KosFormalsSpecType))
 
@@ -104,6 +113,13 @@ typedef struct KosFormals {
 } KosFormals;
 
 
+/**
+   The Formals of spec with the given defaults. With defaults NULL the
+   result is the spec's own shared Formals; pass NULL, not None, for no
+   defaults. With a dict the result is a new Formals holding a copy.
+
+   :return: a new reference, or NULL with PyErr set
+*/
 PyObject *KosFormals_New(PyObject *spec, PyObject *defaults);
 
 

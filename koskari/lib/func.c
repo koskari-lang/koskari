@@ -44,6 +44,9 @@ static PyObject *function_construct(PyTypeObject *type, PyObject *code,
                                     PyObject *formals, PyObject *parent_ns);
 
 
+static PyObject *kos_str_doc = NULL;  // "doc", interned
+
+
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
 
@@ -403,6 +406,9 @@ static PyObject *function_spec_call(PyObject *self,
 
   if (! PyArg_ParseTuple(args, "OO:FunctionSpec", &defaults, &parent))
     return NULL;
+
+  if (defaults == Py_None)
+    defaults = NULL;
 
   return KosFunction_New(self, defaults, parent);
 }
@@ -1133,7 +1139,9 @@ doc_from_code(PyObject *code) {
   extras = KosCode_EXTRAS(code);
   if (! extras || ! PyDict_Check(extras))
     return NULL;
-  raw = PyDict_GetItemString(extras, "doc");
+  /* the interned key: a lookup by a C string builds and hashes a new
+     str on every function built */
+  raw = PyDict_GetItem(extras, kos_str_doc);
   if (! raw)
     return NULL;
   if (! PyUnicode_Check(raw))
@@ -1880,6 +1888,10 @@ int koskari_func_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  STR_CONST(kos_str_doc, "doc");
+  if (! kos_str_doc)
+    return -1;
+
   if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosExpressionType)) ||
       PyType_Ready(&KosFunctionSpecType) ||
       PyType_Ready(KOS_EVALUATED_PYTYPE(KosBoundMethodType)) ||
@@ -1920,6 +1932,7 @@ int koskari_func_clear(PyObject *mod) {
   Py_CLEAR(kos_inspect_Signature);
   Py_CLEAR(kos_inspect_Parameter_empty);
   Py_CLEAR(kos_str_return);
+  Py_CLEAR(kos_str_doc);
 
   return 0;
 }
