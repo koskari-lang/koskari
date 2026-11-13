@@ -337,6 +337,40 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
 
 /**
+   Push a frame that runs the live frame's own code over the live
+   namespace, starting at entry, an instruction of that code. The frame
+   introduces no namespace: it holds the live one as its fill, as a
+   native frame does, so it does not carry KOS_DYN_CAP_OWNS_NS and the
+   namespace is not measured against the code again. Its return is any
+   frame's. Callers: opcode RESET, for the body it runs above its
+   prompt. Returns the frame, or NULL with PyErr set.
+*/
+KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry) {
+
+  KosDynFrame *cur = KosContext_FRAME(ctx);
+  KosCode *code = KosDynFrame_CODE(cur);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+  KosDynFrame *frame;
+
+  if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
+    return NULL;
+
+  Py_INCREF(ns);
+  frame = kos_dyn_push_frame_unchecked(ctx, NULL, ns);
+  if (! frame)
+    return NULL;
+
+  Py_INCREF(code);
+  KosDynFrame_CODE(frame) = code;  /* owned */
+  KosDynFrame_PC(frame) = entry;
+  KosDynFrame_ACTING_PC(frame) = entry;
+  KosContext_SET_PC(ctx, entry);
+  KosContext_ACTING_PC(ctx) = entry;
+  return frame;
+}
+
+
+/**
    Push frame with NULL code/ns (placeholder). Callers: setup paths needing a
    frame before code is bound.
 */

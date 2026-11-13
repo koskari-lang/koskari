@@ -17,62 +17,42 @@
 /**
    RESET: arg = extra index. Schema COUNT (0 for the default prompt
    tag, or 1 for a tag popped from the stack, where a popped None is
-   the default tag again), CONST (the body's FunctionSpec, a function
-   of no arguments).
+   the default tag again), LABEL (where this frame goes on once the
+   body has returned).
 
-   Build the body over the live namespace, push a prompt carrying the
-   tag, and call the body above it. The body's return, or the return of
-   a shift's handler called above the same prompt, takes the prompt
-   with it and is this instruction's value, as any callee's return
-   is; this frame goes on at the next instruction.
+   The body is the instructions from the next one up to its RETURN,
+   compiled into this code against this namespace. Push a prompt
+   carrying the tag, and above it a frame over this frame's code and
+   the live namespace that starts at the body. The body's return, or
+   the return of a shift's handler called above the same prompt, takes
+   the prompt with it and is this instruction's value, as any callee's
+   return is; this frame goes on at the label with that value pushed.
 */
 
 KOS_OP_HANDLER(RESET) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
+  KosOp *body = KosContext_PC(ctx);
   PyObject *tag;
-  PyObject *body;
   KosDynPrompt *prompt;
-  KosOpResult r;
 
   if (pop_prompt_tag(ctx, (unsigned) KosExtra_IMM(row, 0), &tag) < 0)
     RESULT_RAISE();
 
-  body = kos_eval_build_function(KosExtra_OBJ(row, 1), NULL, NULL,
-                                 CURRENT_NS());
-  if (! body) {
-    Py_XDECREF(tag);
-    RESULT_RAISE();
-  }
-
   /* the prompt takes its own reference; NULL is the default tag */
   prompt = kos_dyn_push_prompt(ctx, tag);
   Py_XDECREF(tag);
-  if (! prompt) {
-    Py_DECREF(body);
+  if (! prompt)
     RESULT_RAISE();
-  }
 
-  r = KosContext_Call(ctx, body, NULL, 0, NULL, 0, NULL, NULL);
-  Py_DECREF(body);
+  /* the position this frame keeps while the body runs: the push below
+     stores it, and the body's return continues from it */
+  KosContext_SET_PC(ctx, KosExtra_TARGET(row, 1));
 
-  switch (r.kind) {
-    case KOS_RES_RETURN:
-      /* a value in hand: the body ended with no frame of its own */
-      if (kos_dyn_pop_prompt(ctx, prompt) < 0) {
-        Py_DECREF(r.val);
-        RESULT_RAISE();
-      }
-      RESULT_RELAY(ctx, KosContext_PushOrAwait(ctx, r.val));
-    case KOS_RES_RAISE:
-      RESULT_RAISE();
-    case KOS_RES_AWAIT:
-    case KOS_RES_FATAL:
-      RESULT_RELAY(ctx, r);
-    default:
-      /* the body's frame is installed above the prompt */
-      RESULT_REPROLOGUE(ctx);
-  }
+  if (! kos_dyn_push_frame_shared(ctx, body))
+    RESULT_RAISE();
+
+  RESULT_NEXT_POLL(ctx);
 }
 
 

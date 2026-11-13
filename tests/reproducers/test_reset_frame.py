@@ -15,13 +15,13 @@
 """
 tests.reproducers.test_reset_frame
 
-A reset's body is a function of no arguments, called with the prompt
-under it: a return in it gives the reset its value, a loop outside it
-is out of reach of its break and continue, a yield written in it is
-refused, and a var in it is its own while it reads and writes the
-enclosing function's names through the closure. A continuation holds
-whole frames up to and including the body's, so a return in a resumed
-copy is that copy's value.
+A reset's body runs in a frame of its own over the enclosing function's
+code and names, with the prompt under it: a return in it gives the
+reset its value, a loop outside it is out of reach of its break and
+continue, a yield written in it is refused, and a var in it is a name
+of the enclosing function. A continuation holds whole frames up to and
+including the body's, so a return in a resumed copy is that copy's
+value.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -75,7 +75,7 @@ def generator_in_body []:
             yield 2
         (list (g))
 
-def var_is_local []:
+def var_is_enclosing []:
     var x 1
     reset:
         var x 2
@@ -184,9 +184,9 @@ class TestResetFrame(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([1, 2], await mod["generator_in_body"]())
 
 
-    async def test_var_in_body_is_local(self):
+    async def test_var_in_body_is_the_enclosing_function_name(self):
         mod = await self.load()
-        self.assertEqual(1, await mod["var_is_local"]())
+        self.assertEqual(2, await mod["var_is_enclosing"]())
 
 
     async def test_set_of_an_enclosing_local(self):
@@ -230,7 +230,7 @@ class TestResetFrame(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([111, 111, 5], await mod["two_tags"]())
 
 
-    async def test_traceback_shows_the_body_frame(self):
+    async def test_traceback_names_the_body_frame_for_its_function(self):
         mod = await self.load()
         # assertRaises detaches the traceback from the exception it
         # keeps, so the frames are read inside the except arm
@@ -241,7 +241,7 @@ class TestResetFrame(unittest.IsolatedAsyncioTestCase):
                      for f, _ in traceback.walk_tb(exc.__traceback__)]
         else:
             self.fail("no ValueError")
-        self.assertIn("<reset>", names)
+        self.assertEqual(["raise_in_body", "raise_in_body"], names[-2:])
 
 
 # The end.

@@ -9,11 +9,11 @@ tag of its own so that its delimiter is not the one a caller's plain
 [`reset`](compile-reset.md) and `shift` find, and the caller's are not the
 ones the library finds.
 
-**Behaviour:** Evaluates `TAG`, compiles the body as a function of no
-arguments, and emits `RESET 1` carrying it (the tag is taken from the
-stack). The form's value is the body's value, or the value of the handler
-of a `shift-at` that captured up to it. The body is a function of its own
-as it is for [`reset`](compile-reset.md): what that page says of
+**Behaviour:** Evaluates `TAG` and emits `RESET 1` (the tag is taken from
+the stack), then the body inline. The form's value is the body's value, or
+the value of the handler of a `shift-at` that captured up to it. The body
+runs in a frame of its own over the enclosing function's names, as it does
+for [`reset`](compile-reset.md): what that page says of
 `return`, `break`, `continue`, `yield` and `var` in the body holds here
 unchanged.
 

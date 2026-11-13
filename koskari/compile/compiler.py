@@ -1370,8 +1370,7 @@ class Compiler:
         for i, (op, arg) in enumerate(rows):
             if op is OpCode.CONST and isinstance(arg, Deferred):
                 rows[i] = (op, arg.complete(self, fragment, ancestors))
-            elif (op is OpCode.SHIFT or op is OpCode.RESET) \
-                    and isinstance(arg[1], Deferred):
+            elif op is OpCode.SHIFT and isinstance(arg[1], Deferred):
                 rows[i] = (op, (
                     arg[0], arg[1].complete(self, fragment, ancestors),
                     arg[2], arg[3]))

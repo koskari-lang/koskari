@@ -8,15 +8,16 @@
 `compile/shift` inside the body can capture the continuation up to (but not
 including) this prompt.
 
-**Behaviour:** Compiles the body as a function of no arguments, closed over
-the scope the `reset` is written in, and emits `RESET 0` carrying it.
-`RESET` pushes a prompt and calls the body above it; the body's return
-ends the prompt, and its value is the value of the `reset`. The delimiter
-carries the default tag, the one a plain `shift` seeks.
+**Behaviour:** Emits `RESET 0`, then the body inline, ending in a return.
+`RESET` pushes a prompt and runs the body in a frame of its own above it,
+over the names of the function the `reset` is written in; the body's
+return ends the prompt, and its value is the value of the `reset`. The
+delimiter carries the default tag, the one a plain `shift` seeks.
 [`reset-at`](compile-reset-at.md) establishes a delimiter with a tag of
 the caller's choosing.
 
-The body is a function of its own, so:
+The body runs in a frame of its own and shares the enclosing function's
+names, so:
 
 - A `return` in the body returns from the body: its value is the value of
   the `reset`, and the function the `reset` is written in carries on after
@@ -26,13 +27,16 @@ The body is a function of its own, so:
   the body. Aimed at a loop around the `reset`, it raises
   `break outside loop` or `continue outside loop`.
 - A `yield` or `yield-from` written in the body is refused at compile time
-  with `SpecialError`: the body is a function the `reset` calls, not part
-  of a generator around it. A generator or a function defined inside the
+  with `SpecialError`: the body runs in a frame of its own, not in the
+  generator around it. A generator or a function defined inside the
   body is its own function and may yield.
-- A `var` in the body is local to the body. A `set!` of a local of the
-  enclosing function writes that local through the closure.
+- A `var` in the body is a name of the enclosing function: it is visible
+  after the `reset`, and it rebinds a name the function already has. A
+  `set!` of a local of the enclosing function writes that local. Every
+  copy of the region a `shift`'s `K` resumes shares these names.
 
-The body's frame appears in a traceback under the name `<reset>`.
+The body's frame appears in a traceback under the name of the enclosing
+function, on the line of the body it was running.
 
 A `shift` that cannot reach a prompt raises `KoskariPromptNotFound` (no
 delimiter established) or `KoskariPromptUnreachable` (a delimiter exists but a

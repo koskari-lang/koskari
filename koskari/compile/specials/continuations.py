@@ -146,89 +146,91 @@ def special_capture_cc(compiler, called_by, k, body):
 @special("compile/reset", patterns=_BODY_PATTERNS, unpack="kwargs")
 def special_reset(compiler, called_by, body):
     """
-    Compile (compile/reset EXPR...). The body is a function of no
-    arguments, which the reset calls with a prompt of the default tag
-    under it; its value, or the value of a compile/shift handler that
-    aborts to the prompt, is the reset's
+    Compile (compile/reset EXPR...). The body runs in a frame of its
+    own above a prompt of the default tag; its value, or the value of
+    a compile/shift handler that aborts to the prompt, is the reset's
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
-    spec = helper_reset_body(compiler, called_by, body, fragment)
-    fragment.instruction(OpCode.RESET, (0, spec, 0, 0))
+    helper_reset_body(compiler, called_by, body, fragment, 0)
 
     return fragment
 
 
-def helper_delimited_function(
-        compiler,
-        called_by,
-        name,
-        k,
-        body,
-        fragment,
-        refusal):
+def refuse_yield(called_by, instructions, refusal):
     """
-    The function a reset calls for its body, or a shift for its
-    handler: of no parameters, or of the one parameter K, whose body is
-    BODY, compiled as its own fragment. A yield written in the body
-    itself is refused, since the function is no generator; one in a
-    function defined within it belongs to that function
+    Raise SpecialError when instructions hold a yield or yield-from
 
-    :param compiler: the Compiler
     :param called_by: the special's called-by capture
-    :param name: the fragment's name, which a traceback shows
-    :param k: the K capture, or None for no parameter
-    :param body: the BODY capture
-    :param fragment: the fragment the RESET or SHIFT row is emitted into
-    :param refusal: the message's text after the form's name, for a
-        yield written in the body
-    :return: the FunctionSpec, or the Deferred standing in for it
+    :param instructions: the instructions of a reset's body or a
+        shift's handler, without those of a function defined within it
+    :param refusal: the message's text after the form's name
     """
 
-    func = compiler.fragment(name)
-    params = ()
-    if k is not None:
-        func.declare_var(k.datum, position=k.position)
-        params = (str(k.datum),)
-    with compiler.resolution_scope(func, function=True):
-        func = helper_begin(func, body.datum)
-
-    if any(op in YIELD_OPS for op, _ in func.instructions):
+    if any(op in YIELD_OPS for op, _ in instructions):
         raise SpecialError(
             f"{called_by.datum} {refusal}",
             called_by.datum, position=called_by.position)
 
-    return function_constant(
-        compiler, fragment, func, None,
-        FormalsSpec(params, (), (), (), None, None))
-
 
 def helper_shift_handler(compiler, called_by, k, body, fragment):
     """
-    The handler of a shift: a function of the one parameter K
+    The handler of a shift: a function of the one parameter K, whose
+    body is BODY, compiled as its own fragment. A yield written in the
+    body itself is refused, since the function is no generator; one in
+    a function defined within it belongs to that function
 
+    :param compiler: the Compiler
+    :param called_by: the special's called-by capture
+    :param k: the K capture
+    :param body: the BODY capture
+    :param fragment: the fragment the SHIFT row is emitted into
     :return: the FunctionSpec, or the Deferred standing in for it
     """
 
-    return helper_delimited_function(
-        compiler, called_by, "<shift>", k, body, fragment,
+    func = compiler.fragment("<shift>")
+    func.declare_var(k.datum, position=k.position)
+    with compiler.resolution_scope(func, function=True):
+        func = helper_begin(func, body.datum)
+
+    refuse_yield(
+        called_by, func.instructions,
         "handler cannot yield: it is a function of its continuation,"
         " not a generator")
 
+    return function_constant(
+        compiler, fragment, func, None,
+        FormalsSpec((str(k.datum),), (), (), (), None, None))
 
-def helper_reset_body(compiler, called_by, body, fragment):
+
+def helper_reset_body(compiler, called_by, body, fragment, tag_count):
     """
-    The body of a reset: a function of no parameters, which the reset
-    calls with its prompt under it
+    Emit a RESET row and the body it runs into fragment. The body is
+    compiled in the scope the reset is written in, so its names are
+    that scope's, and is laid out after the row: the RESET starts a
+    frame over this code at the body's first instruction, the body
+    ends in a RETURN, and the RESET's label is where the frame the
+    reset is written in goes on. A yield written in the body is
+    refused, since the body's frame is not the generator's; one in a
+    function defined within it belongs to that function
 
-    :return: the FunctionSpec, or the Deferred standing in for it
+    :param compiler: the Compiler
+    :param called_by: the special's called-by capture
+    :param body: the BODY capture
+    :param fragment: the fragment to emit into
+    :param tag_count: 0 for the default tag, 1 for a tag the fragment
+        has already pushed
     """
 
-    return helper_delimited_function(
-        compiler, called_by, "<reset>", None, body, fragment,
-        "body cannot yield: it is a function the reset calls, not part"
-        " of a generator around it")
+    inner = helper_begin(compiler.fragment("<reset>"), body.datum)
+    refuse_yield(called_by, inner.instructions, "body cannot yield")
+
+    after = compiler.gen_label("reset.end")
+    fragment.instruction(OpCode.RESET, (tag_count, after, 0, 0))
+    fragment.merge(inner)
+    fragment.instruction(OpCode.RETURN, 1)
+    fragment.instruction(OpCode.LABEL, after)
 
 
 @builtin("compile/shift")
@@ -254,18 +256,17 @@ def special_shift(compiler, called_by, k, body):
 @special("compile/reset-at", patterns=_TAG_BODY_PATTERNS, unpack="kwargs")
 def special_reset_at(compiler, called_by, tag, body):
     """
-    Compile (compile/reset-at TAG EXPR...). Evaluates TAG, then calls
-    the body, a function of no arguments, with a prompt carrying TAG
-    under it. A compile/shift-at seeking the same tag, by identity,
-    captures up to this prompt. A TAG of None is the default tag, the
-    one compile/reset uses
+    Compile (compile/reset-at TAG EXPR...). Evaluates TAG, then runs
+    the body in a frame of its own above a prompt carrying TAG. A
+    compile/shift-at seeking the same tag, by identity, captures up to
+    this prompt. A TAG of None is the default tag, the one
+    compile/reset uses
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.merge(compiler.full_compile(tag.datum))
-    spec = helper_reset_body(compiler, called_by, body, fragment)
-    fragment.instruction(OpCode.RESET, (1, spec, 0, 0))
+    helper_reset_body(compiler, called_by, body, fragment, 1)
 
     return fragment
 

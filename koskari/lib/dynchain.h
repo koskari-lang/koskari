@@ -1077,6 +1077,10 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
     KosCode *code,
     PyObject *ns);
 
+/* Push a frame over the live frame's code and the live namespace,
+   starting at entry; see dynchain/dyn_frame.c. */
+KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry);
+
 
 /**
    Push a placeholder frame with code=NULL and ns=NULL for INSTALL to configure.

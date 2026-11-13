@@ -22,12 +22,15 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 :license: GNU General Public License v3
 """
 
+import itertools
+
 import pytest
 
 from koskari.exceptions import KoskariPromptNotFound
 from koskari.lib import Code, FormalsSpec, NamespaceSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, _op, build_code, build_expr
+from tests.lib import opcode as opcode_tests
+from tests.lib.opcode import CevalTest, _op
 
 
 pytestmark = pytest.mark.phase_lib
@@ -46,6 +49,58 @@ _APPLY_K_5 = [
 ]
 
 
+class ResetBody(list):
+    """
+    The rows of a reset's body, which expand_resets lays out after the
+    RESET row that names them
+    """
+
+
+_reset_labels = itertools.count()
+
+
+def expand_resets(code):
+    """
+    Lay each reset's body out the way the instruction takes it: a RESET
+    row carrying the label where its frame goes on, the body's rows
+    ending in their RETURN, then that label. A body may hold further
+    RESET rows written the same way
+
+    :param code: Sequence of [op, arg], a RESET row's second field being
+        a ResetBody
+    :return: the rows with every body laid out in place
+    """
+
+    rows = []
+    for op, arg in code:
+        if op == "RESET" and isinstance(arg[1], ResetBody):
+            label = f"reset.end.{next(_reset_labels)}"
+            rows.append(["RESET", (arg[0], label, arg[2], arg[3])])
+            rows.extend(expand_resets(arg[1]))
+            rows.append(["LABEL", label])
+        else:
+            rows.append([op, arg])
+    return rows
+
+
+def build_code(code, *args, **kwds):
+    """
+    tests.lib.opcode.build_code over rows with their reset bodies laid
+    out
+    """
+
+    return opcode_tests.build_code(expand_resets(code), *args, **kwds)
+
+
+def build_expr(code, *args, **kwds):
+    """
+    tests.lib.opcode.build_expr over rows with their reset bodies laid
+    out
+    """
+
+    return opcode_tests.build_expr(expand_resets(code), *args, **kwds)
+
+
 def handler_spec(code, local_syms=("k",)):
     """
     The FunctionSpec of a shift handler, a function of the one
@@ -62,21 +117,21 @@ def handler_spec(code, local_syms=("k",)):
 
 def body_spec(code):
     """
-    The FunctionSpec of a reset's body, a function of no arguments
-    whose body is code
+    The rows of a reset's body, for the second field of a RESET row:
+    they run in a frame of their own over the code and namespace the
+    RESET is in, and end in a RETURN
 
     :param code: Sequence of [op, arg] as in build_code
-    :return: FunctionSpec
+    :return: ResetBody
     """
 
-    body = build_code(code, name="body")
-    return body.function_spec(FormalsSpec())
+    return ResetBody(code)
 
 
 class TestReset(CevalTest):
     """
-    Tests for RESET: the body is a function called above its prompt,
-    and its return, or the return of a shift's handler called above the
+    Tests for RESET: the body runs in a frame above its prompt, and
+    its return, or the return of a shift's handler called above the
     same prompt, is the value of the RESET
     """
 

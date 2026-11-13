@@ -421,7 +421,7 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(RESET, 0, EXTRA, COUNT, CONST, NOARG, NOARG)  // tag count (0, or 1 popped), body FunctionSpec; push the prompt, call the body above it
+OP(RESET, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)  // tag count (0, or 1 popped), where this frame goes on; push the prompt, run the body that follows in a frame above it
 OP(SHIFT, 0, EXTRA, COUNT, CONST, NOARG, NOARG)  // tag count (0, or 1 popped), handler FunctionSpec; abort, then call the handler with k
 
 // undelimited continuation (call/cc) block

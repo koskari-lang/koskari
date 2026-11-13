@@ -785,66 +785,20 @@ static PyObject *make_apply_k_5_spec(void) {
 }
 
 
-/*
-  The FunctionSpec of the reset's body (+ 1 (shift k (k 5))): a function
-  of no arguments. Returns a new reference, or NULL with PyErr set.
-*/
-static PyObject *make_reset_body_spec(void) {
-
-    PyObject *name = PyUnicode_FromString("body");
-    PyObject *none = PyTuple_New(0);
-    PyObject *one = PyLong_FromLong(1);
-    PyObject *handler = make_apply_k_5_spec();
-    PyObject *row = NULL;
-    PyObject *nspec = NULL;
-    PyObject *instr = NULL;
-    PyObject *code = NULL;
-    PyObject *formals = NULL;
-    PyObject *spec = NULL;
-
-    if (! name || ! none || ! one || ! handler)
-        goto done;
-
-    row = Py_BuildValue("(iOii)", 0, handler, 0, 0);
-    nspec = KosNamespaceSpec_New(name, none, none, NULL);
-    instr = PyList_New(4);
-    if (! row || ! nspec || ! instr)
-        goto done;
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
-    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_SHIFT, row));
-    PyList_SET_ITEM(instr, 2, make_instr_int(
-        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
-
-    code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
-    formals = KosFormalsSpec_New(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
-    if (code && formals)
-        spec = KosFunctionSpec_New(NULL, formals, code);
-
- done:
-    Py_XDECREF(name);
-    Py_XDECREF(none);
-    Py_XDECREF(one);
-    Py_XDECREF(handler);
-    Py_XDECREF(row);
-    Py_XDECREF(nspec);
-    Py_XDECREF(instr);
-    Py_XDECREF(code);
-    Py_XDECREF(formals);
-    return spec;
-}
-
-
 static int test_eval_reset_body_shift(void) {
     /*
-      Bytecode: RESET (0, body, 0, 0), RETURN 1, with the body
-      CONST 1, SHIFT (0, handler, 0, 0), OBJECT_ADD 2, RETURN 1.
-      The handler applies k to 5; the copy of the body returns 6 to
-      that call, and the handler's 6 is the RESET's.
+      Bytecode: RESET (0, "after", 0, 0), then the body CONST 1,
+      SHIFT (0, handler, 0, 0), OBJECT_ADD 2, RETURN 1, then
+      LABEL "after", RETURN 1. The body runs in a frame of its own over
+      this code. The handler applies k to 5; the copy of the body
+      returns 6 to that call, and the handler's 6 is the RESET's.
     */
     PyObject *nspec = NULL;
-    PyObject *body = NULL;
-    PyObject *row = NULL;
+    PyObject *after = NULL;
+    PyObject *one = NULL;
+    PyObject *handler = NULL;
+    PyObject *reset_row = NULL;
+    PyObject *shift_row = NULL;
     PyObject *instr = NULL;
     PyObject *code_obj = NULL;
     PyObject *empty = NULL;
@@ -858,28 +812,41 @@ static int test_eval_reset_body_shift(void) {
     if (! nspec)
         return -1;
 
-    body = make_reset_body_spec();
-    row = body ? Py_BuildValue("(iOii)", 0, body, 0, 0) : NULL;
-    instr = PyList_New(2);
-    if (! row || ! instr) {
-        Py_XDECREF(body);
-        Py_XDECREF(row);
-        Py_XDECREF(instr);
-        Py_DECREF(nspec);
+    after = PyUnicode_FromString("after");
+    one = PyLong_FromLong(1);
+    handler = make_apply_k_5_spec();
+    if (after && handler) {
+        reset_row = Py_BuildValue("(iOii)", 0, after, 0, 0);
+        shift_row = Py_BuildValue("(iOii)", 0, handler, 0, 0);
+    }
+    instr = PyList_New(7);
+    if (one && reset_row && shift_row && instr) {
+        PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_RESET, reset_row));
+        PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
+        PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_SHIFT, shift_row));
+        PyList_SET_ITEM(instr, 3, make_instr_int(
+            KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
+        PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
+        PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, after));
+        PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
+
+        code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    }
+    Py_XDECREF(after);
+    Py_XDECREF(one);
+    Py_XDECREF(handler);
+    Py_XDECREF(reset_row);
+    Py_XDECREF(shift_row);
+    Py_XDECREF(instr);
+    Py_DECREF(nspec);
+    if (! code_obj) {
+        if (PyErr_Occurred())
+            PyErr_Print();
+        fprintf(stderr, "  FAIL: could not build the code\n");
         return -1;
     }
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_RESET, row));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
-    Py_DECREF(body);
-    Py_DECREF(row);
-    Py_DECREF(instr);
-    Py_DECREF(nspec);
-    if (! code_obj)
-        return -1;
-
-    /* the body is built over the frame's namespace */
+    /* the body's frame shares the frame's namespace */
     empty = PyTuple_New(0);
     if (! empty)
         goto cleanup;
