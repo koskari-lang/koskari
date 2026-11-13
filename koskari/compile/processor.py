@@ -368,6 +368,10 @@ def build_var_to_fast():
 VAR_TO_FAST = build_var_to_fast()
 
 
+# the scope of an aside that names nothing, which carries no spec
+NO_NAMES = NamespaceSpec("aside", (), (), ())
+
+
 # Name-derived relabel pairs: every TAIL_CALL* opcode twins the CALL*
 # opcode named by stripping the TAIL_ prefix, carrying the same operand
 # schema and stack contract.
@@ -410,10 +414,16 @@ EXTENT_DISCARDABLE = {
 
 EXTENT_POPS = frozenset(op for op in OpCode if op.push is not None)
 
+# extents whose instructions run in a frame of their own: a tail call
+# inside one replaces that frame, so the extents open around it are not
+# in its way, and its POP row belongs to the frame below
+EXTENT_OWN_FRAME = frozenset(op for op in OpCode if op.own_frame)
+
 
 # rows the tail-call route reads through on its way to RETURN 1
 ROUTE_TRANSPARENT = frozenset((
-    OpCode.LABEL, OpCode.POSITION, OpCode.NOOP)) | EXTENT_POPS
+    OpCode.LABEL, OpCode.POSITION, OpCode.NOOP)) | frozenset(
+        op for op in EXTENT_POPS if op.push not in EXTENT_OWN_FRAME)
 
 # rows a join-point edge reads past between its last real row and the
 # label: they push nothing and transfer nowhere
@@ -540,7 +550,8 @@ def stringify_namespace_spec(nspec):
         nspec.name,
         tuple(map(str, nspec.local_syms)),
         tuple(map(str, nspec.closure_syms)),
-        tuple(map(str, nspec.global_syms)))
+        tuple(map(str, nspec.global_syms)),
+        nspec.closure_slots)
 
 
 def stringify_operands(rows):
@@ -563,6 +574,10 @@ def stringify_operands(rows):
 
         elif op == OpCode.PUSH_COLLECT:
             arg = stringify_namespace_spec(arg)
+
+        elif op == OpCode.PUSH_ASIDE:
+            if arg is not None:
+                arg = stringify_namespace_spec(arg)
 
         elif op.style == OpStyle.VAR:
             arg = str(arg)
@@ -1396,8 +1411,8 @@ class ByteCodeProcessor:
     def convert_fast(self, base_nspec):
         """
         Lower VAR-family rows to their FAST twins where the name has a
-        fast slot in the active namespace scope, tracking PUSH_NS /
-        PUSH_COLLECT scope entries through the stream
+        fast slot in the active namespace scope, tracking PUSH_NS,
+        PUSH_COLLECT and PUSH_ASIDE scope entries through the stream
 
         :param base_nspec: NamespaceSpec seeding the base scope, or
             None for a stream with no base scope (only inner PUSH_NS /
@@ -1420,6 +1435,19 @@ class ByteCodeProcessor:
             nstack.append(n)
             reload_findex()
 
+        def with_closure_slots(n):
+            # the inline scope's spec with the slot each of its closure
+            # names has in the scope open around it, which is where its
+            # namespace is built: -1 for a name that scope holds in no
+            # slot, or n itself when no scope is open
+            if not nstack or not n.closure_syms:
+                return n
+            slots = tuple(
+                findex.index(name) if name in findex else -1
+                for name in n.closure_syms)
+            return NamespaceSpec(
+                n.name, n.local_syms, n.closure_syms, n.global_syms, slots)
+
         def pop_nspec():
             nstack.pop()
             reload_findex()
@@ -1438,12 +1466,21 @@ class ByteCodeProcessor:
 
         for op, arg in self.instructions:
             if op == OpCode.PUSH_NS:
+                arg = (with_closure_slots(arg[0]), *arg[1:])
                 push_nspec(arg[0])
 
             elif op == OpCode.PUSH_COLLECT:
+                arg = with_closure_slots(arg)
                 push_nspec(arg)
 
-            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+            elif op == OpCode.PUSH_ASIDE:
+                # None is an aside that names nothing: no slot lowers
+                if arg is not None:
+                    arg = with_closure_slots(arg)
+                push_nspec(arg if arg is not None else NO_NAMES)
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT,
+                        OpCode.POP_ASIDE):
                 pop_nspec()
 
             elif nstack and op == OpCode.CHECK_COMPARE_VAR:
@@ -1757,7 +1794,9 @@ class ByteCodeProcessor:
         pop rows. At a promotable call, promotion is denied if any
         open extent is not discardable -- an extent whose uninstall
         behavior must run after the call cannot be tail-called
-        through. Otherwise the route reads forward: extent pops,
+        through. Only the extents opened since the innermost one that
+        runs in a frame of its own count: that frame is the one the
+        call replaces. Otherwise the route reads forward: extent pops,
         LABEL, POSITION, and NOOP rows pass; unconditional JUMPs are
         followed through the label index with a seen set guarding
         cycles; arrival at RETURN 1 promotes, and any other arrival
@@ -1795,18 +1834,31 @@ class ByteCodeProcessor:
                 return False
             return False
 
+        def open_extents_discard(extents):
+            # the extents a tail call here would pass through: those
+            # opened since the innermost frame of its own, marked None
+            for discard in reversed(extents):
+                if discard is None:
+                    return True
+                if not discard:
+                    return False
+            return True
+
         result = []
         extents = []
         for i, (op, arg) in enumerate(instr):
             discard = EXTENT_DISCARDABLE.get(op)
-            if discard is not None:
+            if op in EXTENT_OWN_FRAME:
+                extents.append(None)
+            elif discard is not None:
                 extents.append(discard)
             elif op in EXTENT_POPS:
                 if extents:
                     extents.pop()
 
             elif (op in CALL_TO_TAIL_CALL
-                  and all(extents) and clear_route(i + 1)):
+                  and open_extents_discard(extents)
+                  and clear_route(i + 1)):
                 op = CALL_TO_TAIL_CALL[op]
 
             result.append((op, arg))

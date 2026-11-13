@@ -37,7 +37,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (RESET/ABORT/SHIFT_*; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
+   POP_*), continuations (PUSH_RESET, PUSH_ASIDE, ABORT, SHIFT_*; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first
@@ -421,10 +421,13 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(RESET, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)  // tag count (0, or 1 popped), where this frame goes on; push the prompt, run the body that follows in a frame above it
-OP(ABORT, 0, COUNT)  // tag count (0, or 1 popped); abort to the prompt, then run the handler that follows above it
-OP(SHIFT_VAR, 0, EXTRA, COUNT, LABEL, VAR, NOARG)  // tag count, where the shift goes on when k is called, k's name; capture and bind k, then as ABORT
-OP(SHIFT_FAST, 0, EXTRA, COUNT, LABEL, FASTVAR, NOARG)  // SHIFT_VAR with k in a fast slot
+OP(PUSH_RESET, 1, COUNT)  // tag count (0, or 1 popped); push the prompt, run the body that follows in a frame above it; cache: extent close pc
+OP(POP_RESET, 0, NOARG)   // where the frame under a reset goes on with the reset's value
+OP(PUSH_ASIDE, 1, CONST)  // a NamespaceSpec or None; run what follows in a frame of its own over a namespace built from the spec; cache: extent close pc
+OP(POP_ASIDE, 0, NOARG)   // where the frame under an aside goes on with the aside's value
+OP(ABORT, 0, COUNT)  // tag count (0, or 1 popped from the frame below); the running aside leaves everything up to the prompt and goes on above it
+OP(SHIFT_VAR, 0, EXTRA, COUNT, VAR, NOARG, NOARG)  // tag count, k's name; capture up to the prompt and bind k, then as ABORT
+OP(SHIFT_FAST, 0, EXTRA, COUNT, FASTVAR, NOARG, NOARG)  // SHIFT_VAR with k in a fast slot
 
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, 1, NOARG)             // cache: extent close pc

@@ -945,21 +945,21 @@ static KosOpResult process_raise(KosContext *ctx) {
 
 
 /**
-   The prompt tag a RESET, ABORT or SHIFT names by its count: 0 for the
-   default tag, or 1 for a tag the instruction pops from the stack;
+   The prompt tag a PUSH_RESET, ABORT or SHIFT names by its count: 0
+   for the default tag, or 1 for a tag the instruction pops from block;
    Code construction refuses any other count. The default tag is NULL,
    and a popped None names it too. Returns -1 with an exception set, or
    0 with *out_tag a new reference or NULL.
 */
 static int pop_prompt_tag(
-    KosContext *ctx,
+    KosSegment **block,
     unsigned count,
     PyObject **out_tag) {
 
   PyObject *tag = NULL;
 
   if (count) {
-    tag = KosContext_StackPopRef(ctx);
+    tag = block ? KosStack_PopRef(block) : NULL;
     if (! tag) {
       if (! PyErr_Occurred())
         PyErr_SetString(PyExc_RuntimeError, "prompt tag pop underrun");
@@ -975,14 +975,33 @@ static int pop_prompt_tag(
 
 
 /**
-   The capture a SHIFT_VAR or SHIFT_FAST makes: the continuation from
-   the row's label up to the prompt its tag count names. Returns the
+   The prompt tag an ABORT or a SHIFT names, popped from the stack of
+   the frame below the running aside: the slot the aside's own segment
+   displaced when it was pushed. The tag is an operand of the frame
+   the form is written in, and comes off before a capture so that it
+   is no part of the continuation. Returns as pop_prompt_tag does.
+*/
+static int pop_prompt_tag_below(
+    KosContext *ctx,
+    unsigned count,
+    PyObject **out_tag) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  KosSegment *seg = frame ? KosDynNode_STACK((KosDynNode *) frame) : NULL;
+
+  return pop_prompt_tag(seg ? KosSegment_BACK(seg) : NULL, count, out_tag);
+}
+
+
+/**
+   The capture a SHIFT_VAR or SHIFT_FAST makes, from the frame below
+   the running aside up to the prompt its tag count names. Returns the
    continuation object, a new reference, with *out_prompt the prompt
    it stops at, borrowed; or NULL with an exception set.
 */
 static PyObject *shift_capture(
     KosContext *ctx,
-    const KosExtra *row,
+    unsigned count,
     KosDynPrompt **out_prompt) {
 
   PyObject *tag;
@@ -990,11 +1009,10 @@ static PyObject *shift_capture(
   KosContinuation *k = NULL;
   int failed;
 
-  if (pop_prompt_tag(ctx, (unsigned) KosExtra_IMM(row, 0), &tag) < 0)
+  if (pop_prompt_tag_below(ctx, count, &tag) < 0)
     return NULL;
 
-  failed = kos_shift_capture(
-      ctx, tag, KosExtra_TARGET(row, 1), &k, out_prompt);
+  failed = kos_shift_capture(ctx, tag, &k, out_prompt);
   Py_XDECREF(tag);
   if (failed < 0)
     return NULL;
@@ -1374,7 +1392,8 @@ static PyObject *kos_import_module(
    CHECK_* - comparison / jump
    OBJECT_* - object protocol
    PUSH_*, POP_* - blocks, regions, NS
-   RESET, ABORT, SHIFT_*, CALL on DelimitedContinuation - continuations
+   PUSH_RESET, PUSH_ASIDE, ABORT, SHIFT_*, CALL on
+   DelimitedContinuation - continuations
  */
 
 

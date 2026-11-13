@@ -780,6 +780,7 @@ def intern_for_pool(pb, obj):
         intern_for_pool(pb, tuple(obj.local_syms))
         intern_for_pool(pb, tuple(obj.closure_syms))
         intern_for_pool(pb, tuple(obj.global_syms))
+        intern_for_pool(pb, obj.closure_slots)
         return pb.add(obj)
 
     if isinstance(obj, FormalsSpec):
@@ -1023,7 +1024,9 @@ def encode_pool_record_value(val, index_of, pb=None):
         li = index_of(tuple(val.local_syms))
         ci = index_of(tuple(val.closure_syms))
         gi = index_of(tuple(val.global_syms))
-        return struct.pack('<BIIII', PoolKind.NAMESPACE_SPEC, ni, li, ci, gi)
+        si = index_of(val.closure_slots)
+        return struct.pack(
+            '<BIIIII', PoolKind.NAMESPACE_SPEC, ni, li, ci, gi, si)
 
     if isinstance(val, FormalsSpec):
         idxs = (
@@ -1223,9 +1226,10 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
         return slice(prior[si], prior[ei], prior[ti]), off
 
     if kind == PoolKind.NAMESPACE_SPEC:
-        ni, li, ci, gi = struct.unpack_from('<IIII', buf, off)
-        off += 16
-        return NamespaceSpec(prior[ni], prior[li], prior[ci], prior[gi]), off
+        ni, li, ci, gi, si = struct.unpack_from('<IIIII', buf, off)
+        off += 20
+        return NamespaceSpec(
+            prior[ni], prior[li], prior[ci], prior[gi], prior[si]), off
 
     if kind == PoolKind.FORMALS_SPEC:
         idxs = struct.unpack_from('<IIIIIII', buf, off)

@@ -438,6 +438,8 @@ typedef enum KosExtentKind {
   KOS_EXT_NS,
   KOS_EXT_COLLECT,
   KOS_EXT_PARAM,
+  KOS_EXT_RESET,
+  KOS_EXT_ASIDE,
 } KosExtentKind;
 
 

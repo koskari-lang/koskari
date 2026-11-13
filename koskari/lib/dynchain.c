@@ -2710,27 +2710,31 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag) {
 int kos_shift_capture(
     KosContext *ctx,
     PyObject *tag,
-    KosOp *resume_pc,
     KosContinuation **out_k,
     KosDynPrompt **out_prompt) {
+
+  KosDynNode *aside = KosContext_DYN_TOP(ctx);
 
   KosDynPrompt *prompt = kos_prompt_seek(ctx, tag, "shift");
 
   if (! prompt)
     return -1;
 
-  /* The template is whole frames from dyn_top down through the prompt:
-     the reset's body frame sits on the prompt, so the region's code,
-     namespace, operands and mid-region pc all come with it, and the
-     prompt's copy ends the copy of the body as the prompt ends the
-     body. A prompt of another tag the shift crossed is region content
-     and ends its own body's copy the same way. */
+  /* The template is whole frames from below the running aside down
+     through the prompt: the reset's body frame sits on the prompt, so
+     the region's code, namespace, operands and mid-region pc all come
+     with it, and the prompt's copy ends the copy of the body as the
+     prompt ends the body. A prompt of another tag the shift crossed is
+     region content and ends its own body's copy the same way. The
+     aside is not part of it: it is the handler, which the abort moves.
+     The frame below it stands at the close of the aside's extent, the
+     position its copy resumes from, so no resume pc is recorded. */
   {
     KosContinuation *k = kos_continuation_capture_segment(
         ctx,
-        KosContext_DYN_TOP(ctx),
+        KosDynNode_PARENT(aside),
         KosDynNode_PARENT((KosDynNode *) prompt),
-        resume_pc,
+        NULL,
         1,
         tag,
         "SHIFT: no frame in captured chain");

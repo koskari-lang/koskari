@@ -37,11 +37,23 @@ typedef struct KosNamespaceSpec {
   PyObject *closure_syms;
   PyObject *global_syms;
 
+  /* Where each closure sym lives in the namespace of the scope this
+     spec's scope is written in: a tuple of slot indices parallel to
+     closure_syms, -1 for a name that scope holds in no slot, or NULL
+     when nothing was recorded. A record, checked at use: a namespace
+     built from another spec is searched by name instead. */
+  PyObject *closure_slots;
+
   /* Cached at construction time, shared across all calls via incref. */
   PyObject *fast_names;      // tuple of local+closure+global syms, every name
   uint64_t fast_raw[2];      // initial raw-flag bits for slots 0-127: locals set
   uint64_t *fast_raw_more;   // bits for slots 128 and up, PyMem-owned, or NULL
+  uint16_t *closure_slot;    // closure_slots as numbers, PyMem-owned, or NULL
 } KosNamespaceSpec;
+
+
+/* a closure sym with no recorded slot */
+#define KOS_NS_NO_SLOT 0xFFFFu
 
 
 PyObject *KosNamespaceSpec_New(
@@ -62,6 +74,12 @@ PyObject *KosNamespaceSpec_New(
 
 #define KosNamespaceSpec_GLOBAL_SYMS(nspec)     \
   (((KosNamespaceSpec *) nspec)->global_syms)
+
+#define KosNamespaceSpec_CLOSURE_SLOTS(nspec)   \
+  (((KosNamespaceSpec *) nspec)->closure_slots)
+
+#define KosNamespaceSpec_CLOSURE_SLOT(nspec)    \
+  (((KosNamespaceSpec *) nspec)->closure_slot)
 
 #define KosNamespaceSpec_FAST_NAMES(nspec)      \
   (((KosNamespaceSpec *) nspec)->fast_names)

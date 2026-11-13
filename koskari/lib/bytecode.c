@@ -1773,8 +1773,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
           /* a prompt instruction's tag count names no tag or the one
              tag */
-          if ((op == KOS_OP_SHIFT_VAR || op == KOS_OP_SHIFT_FAST
-               || op == KOS_OP_RESET)
+          if ((op == KOS_OP_SHIFT_VAR || op == KOS_OP_SHIFT_FAST)
               && slot == 0 && val > 1) {
             PyErr_Format(PyExc_ValueError, "Code instruction %zd EXTRA"
                          " field %d %R is not 0 or 1", i, slot, elem);
@@ -1883,8 +1882,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         goto failure;
       }
 
-      /* an abort's tag count names no tag or the one tag */
-      if (op == KOS_OP_ABORT && val > 1) {
+      /* a prompt instruction's tag count names no tag or the one
+         tag */
+      if ((op == KOS_OP_ABORT || op == KOS_OP_PUSH_RESET) && val > 1) {
         PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
                      " is not 0 or 1", i, b);
         goto failure;
@@ -2266,6 +2266,10 @@ typedef struct {
   int discardable;   /* a tail call may pass through the extent: its
                         uninstall is a pure release, so frame handoff
                         drops it without running its POP_* row */
+  int own_frame;     /* the extent's instructions run in a frame of
+                        their own: a tail call inside it replaces that
+                        frame, and the extents open around it belong
+                        to the frame below */
 } ExtentOpPair;
 
 
@@ -2275,17 +2279,21 @@ typedef struct {
    this one. The runtime teardown (kos_dyn_teardown_extents_to_frame)
    holds the discardable set once more, keyed by node kind. */
 static const ExtentOpPair extent_pairs[] = {
-  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
-  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
-  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
-  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
-  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
-  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },
-  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS,       1 },
-  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT,  0 },
-  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0 },
-  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1 },
-  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0 },
+  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0, 0 },
+  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1, 0 },
+  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0, 0 },
+  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0, 0 },
+  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0, 0 },
+  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0, 0 },
+  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS,       1, 0 },
+  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT,  0, 0 },
+  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0, 0 },
+  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1, 0 },
+  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0, 0 },
+  /* the POP row of these two belongs to the frame below and is not
+     run by the extent's own frame */
+  { KOS_OP_PUSH_RESET,    KOS_OP_POP_RESET,    KOS_EXT_RESET,    0, 1 },
+  { KOS_OP_PUSH_ASIDE,    KOS_OP_POP_ASIDE,    KOS_EXT_ASIDE,    0, 1 },
 };
 
 
@@ -2348,6 +2356,17 @@ static inline int discardable_for_push(KosOpCode push_op) {
 }
 
 
+static inline int own_frame_for_push(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].own_frame;
+    }
+  }
+  return 0;
+}
+
+
 static inline KosExtentKind kind_for_push(KosOpCode push_op) {
 
   for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
@@ -2374,7 +2393,9 @@ typedef struct {
    release, every other kind has uninstall behavior that must run, so
    the compiler's promoter never puts a tail call inside one and a
    hand-assembled stream that does is refused here, the same set the
-   runtime teardown holds.
+   runtime teardown holds. An extent whose instructions run in a frame
+   of their own ends the search: that frame is the one handed off, and
+   the extents around it are the frame below's.
 
    :return: 0 when pc is not a tail call or sits only in discardable
      extents, -1 with ValueError set otherwise
@@ -2386,8 +2407,10 @@ static int validate_tail_call_extents(
   if (op < KOS_OP_TAIL_CALL || op > KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
     return 0;
 
-  for (uint32_t i = 0; i < stack_top; i++) {
+  for (uint32_t i = stack_top; i-- > 0;) {
     KosOpCode push = stack[i].push_op;
+    if (own_frame_for_push(push))
+      break;
     if (discardable_for_push(push))
       continue;
     PyErr_Format(PyExc_ValueError,
@@ -2437,6 +2460,18 @@ static int derive_extents_fill(
 
     if (validate_tail_call_extents(op, pc, stack, stack_top))
       return -1;
+
+    /* An abort or a shift moves the frame that runs it, which only an
+       aside's frame can be, with no block of its own open. */
+    if ((op == KOS_OP_ABORT || op == KOS_OP_SHIFT_VAR
+         || op == KOS_OP_SHIFT_FAST)
+        && (stack_top == 0
+            || stack[stack_top - 1].push_op != KOS_OP_PUSH_ASIDE)) {
+      PyErr_Format(PyExc_ValueError,
+                   "instruction %u aborts outside an aside, or inside a"
+                   " block of one", pc);
+      return -1;
+    }
 
     if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
@@ -2867,7 +2902,7 @@ static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
    (CALL_FAST-style operands). Mirrors ``Compiler.convert_fast``: walk the
    instruction stream in order, read the ``PUSH_NS`` nspec from the EXTRA row
    and the ``PUSH_COLLECT`` nspec from its operand, push/pop slot limits on
-   ``PUSH_NS`` / ``PUSH_COLLECT`` / ``POP_NS`` / ``POP_COLLECT``. The active
+   ``PUSH_NS`` / ``PUSH_COLLECT`` / ``PUSH_ASIDE`` and their POP rows. The active
    limit is the root ``Code`` NamespaceSpec when the namespace stack is
    empty, else the innermost pushed extent.
 
@@ -3008,7 +3043,33 @@ static int validate_fast_slots(
         return -1;
       }
       ns_stack[depth++] = lim;
-    } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
+    } else if (op == KOS_OP_PUSH_ASIDE) {
+      /* an aside's instructions index the namespace built from its
+         spec; None is the empty namespace, with no slot */
+      PyObject *ns = cpool[code[i].arg];
+      uint32_t lim = 0;
+
+      if (ns != Py_None) {
+        if (! KosNamespaceSpec_CheckExact(ns)) {
+          PyErr_Format(
+              PyExc_TypeError,
+              "PUSH_ASIDE at pc %u spec must be a NamespaceSpec or None,"
+              " not %.100s",
+              i, Py_TYPE(ns)->tp_name);
+          return -1;
+        }
+        if (namespace_spec_fast_slot_limit(ns, &lim)) {
+          return -1;
+        }
+      }
+      if (depth >= DERIVE_EXTENT_STACK_MAX) {
+        PyErr_Format(PyExc_ValueError, "namespace stack overflow (limit %u)",
+                     (unsigned) DERIVE_EXTENT_STACK_MAX);
+        return -1;
+      }
+      ns_stack[depth++] = lim;
+    } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT
+               || op == KOS_OP_POP_ASIDE) {
       /* Do not error on underflow; extent validation reports POP without PUSH */
       if (depth > 0) {
         depth--;
@@ -4012,7 +4073,9 @@ static int set_opcode_attr(PyObject *member, const char *name,
    object a generator; ``pop`` is the paired POP_* member of a PUSH_*
    row and ``push`` the paired PUSH_* member of a POP_* row, None
    otherwise; ``discardable`` says whether a tail call may pass through
-   the extent a PUSH_* row opens, False for every other row. The extent
+   the extent a PUSH_* row opens, False for every other row;
+   ``own_frame`` says whether the extent a PUSH_* row opens runs in a
+   frame of its own, False for every other row. The extent
    facts come from extent_pairs, so the compiler's tables derive from
    the one classification the validator and extent derivation use.
 
@@ -4045,8 +4108,11 @@ static int decorate_opcode(PyObject *member, PyObject *opcodes,
   if (set_opcode_attr(member, "push",
                       opcode_member_or_none(opcodes, push_for_pop(op))))
     return -1;
-  return set_opcode_attr(member, "discardable",
-                         PyBool_FromLong(discardable_for_push(op)));
+  if (set_opcode_attr(member, "discardable",
+                      PyBool_FromLong(discardable_for_push(op))))
+    return -1;
+  return set_opcode_attr(member, "own_frame",
+                         PyBool_FromLong(own_frame_for_push(op)));
 }
 
 

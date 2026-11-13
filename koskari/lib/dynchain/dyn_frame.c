@@ -338,17 +338,21 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
 /**
    Allocate an aside: a frame that takes no arguments and runs code
-   over ns from entry, an instruction of code, both belonging to the
-   frame the aside's form was written in. It introduces no namespace:
-   it holds ns as its fill, as a native frame does, so it does not
-   carry KOS_DYN_CAP_OWNS_NS and ns is not measured against code again.
+   over ns from entry, an instruction of code, which belongs to the
+   frame the aside's form was written in. With owns_ns zero, ns is
+   that frame's own namespace, or the empty one, and the aside holds it
+   as its fill, as a native frame does. With owns_ns set, ns was built
+   for the aside from a spec the code's validation checked the aside's
+   instructions against: the aside introduces it and carries
+   KOS_DYN_CAP_OWNS_NS, so the collector learns what an unrevealed one
+   holds through this frame. Either way ns is not measured against
+   code again.
    Its return is any frame's. Every frame field is written, since the
    general free and clone read them all. base is the frame the aside
    stands above once linked, the source of its depth and demand flag,
    or NULL when it will stand on a prompt at the root of a context;
    parent is the node it is linked on, or NULL for one linked later.
-   code and ns are borrowed. Callers: kos_dyn_push_aside,
-   kos_abort_to_prompt.
+   code and ns are borrowed. Callers: kos_dyn_push_aside.
    Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *kos_dynframe_new_aside(
@@ -356,6 +360,7 @@ KosDynFrame *kos_dynframe_new_aside(
     KosDynFrame *base,
     KosCode *code,
     PyObject *ns,
+    int owns_ns,
     KosOp *entry) {
 
   KosDynFrame *frame = kos_dynnode_alloc();
@@ -363,7 +368,8 @@ KosDynFrame *kos_dynframe_new_aside(
   if (! frame)
     return NULL;
 
-  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
+                   owns_ns ? KOS_DYN_CAP_OWNS_NS : 0);
   Py_INCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = entry;
@@ -385,22 +391,32 @@ KosDynFrame *kos_dynframe_new_aside(
 
 
 /**
-   Push an aside over the live frame's code and the live namespace,
-   starting at entry, as dyn_top and the live frame. Callers: opcode
-   RESET, for the body it runs above its prompt. Returns the frame, or
-   NULL with PyErr set.
+   Push an aside over the live frame's code, starting at entry, as
+   dyn_top and the live frame. Its namespace is ns, borrowed, which
+   the aside introduces when owns_ns is set, or the live namespace
+   when ns is NULL. Callers: opcode PUSH_RESET, for the body it runs
+   above its prompt over the live namespace, and opcode PUSH_ASIDE,
+   with a namespace built for the aside or the empty one. Returns the
+   frame, or NULL with PyErr set.
 */
-KosDynFrame *kos_dyn_push_aside(KosContext *ctx, KosOp *entry) {
+KosDynFrame *kos_dyn_push_aside(
+    KosContext *ctx,
+    KosOp *entry,
+    PyObject *ns,
+    int owns_ns) {
 
   KosDynFrame *cur = KosContext_FRAME(ctx);
-  PyObject *ns = KosContext_NAMESPACE(ctx);
   KosDynFrame *frame;
+
+  if (! ns)
+    ns = KosContext_NAMESPACE(ctx);
 
   if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
     return NULL;
 
   frame = kos_dynframe_new_aside(
-      KosContext_DYN_TOP(ctx), cur, KosDynFrame_CODE(cur), ns, entry);
+      KosContext_DYN_TOP(ctx), cur, KosDynFrame_CODE(cur), ns, owns_ns,
+      entry);
   if (! frame)
     return NULL;
 

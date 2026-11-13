@@ -176,15 +176,15 @@ def refuse_yield(called_by, instructions, refusal):
 def helper_handler(
         compiler, called_by, body, fragment, tag_count, k=None):
     """
-    Emit the row that aborts to a prompt and the handler it runs into
-    fragment: an ABORT row, or with k a SHIFT_VAR row, which captures
-    the continuation and binds it to K first. The handler is compiled
-    in the scope the form is written in, so K and every other name in
-    it are that scope's, and is laid out after the row: the row starts
-    a frame over this code at the handler's first instruction and the
-    handler ends in a RETURN. A SHIFT_VAR row's label follows it, where
-    the frame the shift is written in goes on when the continuation is
-    called; an ABORT has none, since nothing comes back to it. A yield written in the handler is refused, since the
+    Emit the aside that aborts to a prompt and then runs the handler
+    into fragment: PUSH_ASIDE, an ABORT row or with k a SHIFT_VAR row,
+    which captures the continuation and binds it to K first, the
+    handler's instructions and its RETURN, and POP_ASIDE. The handler
+    is compiled in a scope of its own that owns K alone: every other
+    name it declares is the enclosing scope's, reached from the handler
+    as a closure name. The tag, when there is one, is already on the
+    stack of the frame the form is written in, where the row takes it
+    from. A yield written in the handler is refused, since the
     handler's frame is not the generator's; one in a function defined
     within it belongs to that function
 
@@ -197,37 +197,27 @@ def helper_handler(
     :param k: the K capture of a shift, or None for an abort
     """
 
-    inner = compiler.fragment("<handler>")
-    if k is not None:
-        inner.declare_var(k.datum, position=k.position)
-    inner = helper_begin(inner, body.datum)
-    refuse_yield(called_by, inner.instructions, "handler cannot yield")
-
-    if k is None:
-        # nothing comes back to an abort: what follows the handler in
-        # the enclosing form is never reached
-        fragment.instruction(OpCode.ABORT, tag_count)
-        fragment.merge(inner)
-        fragment.instruction(OpCode.RETURN, 1)
-        return
-
-    after = compiler.gen_label("shift.end")
-    fragment.instruction(OpCode.SHIFT_VAR, (tag_count, after, k.datum, 0))
-    fragment.merge(inner)
-    fragment.instruction(OpCode.RETURN, 1)
-    fragment.instruction(OpCode.LABEL, after)
+    own = () if k is None else (k.datum,)
+    with fragment.aside("<handler>", own) as inner:
+        if k is None:
+            inner.instruction(OpCode.ABORT, tag_count)
+        else:
+            inner.declare_var(k.datum, position=k.position)
+            inner.instruction(OpCode.SHIFT_VAR, (tag_count, k.datum, 0, 0))
+        helper_begin(inner, body.datum)
+        refuse_yield(called_by, inner.instructions, "handler cannot yield")
 
 
 def helper_reset_body(compiler, called_by, body, fragment, tag_count):
     """
-    Emit a RESET row and the body it runs into fragment. The body is
-    compiled in the scope the reset is written in, so its names are
-    that scope's, and is laid out after the row: the RESET starts a
+    Emit a PUSH_RESET row and the body it runs into fragment. The body
+    is compiled in the scope the reset is written in, so its names are
+    that scope's, and is laid out after the row: PUSH_RESET starts a
     frame over this code at the body's first instruction, the body
-    ends in a RETURN, and the RESET's label is where the frame the
-    reset is written in goes on. A yield written in the body is
-    refused, since the body's frame is not the generator's; one in a
-    function defined within it belongs to that function
+    ends in a RETURN, and POP_RESET is where the frame the reset is
+    written in goes on. A yield written in the body is refused, since
+    the body's frame is not the generator's; one in a function defined
+    within it belongs to that function
 
     :param compiler: the Compiler
     :param called_by: the special's called-by capture
@@ -240,11 +230,10 @@ def helper_reset_body(compiler, called_by, body, fragment, tag_count):
     inner = helper_begin(compiler.fragment("<reset>"), body.datum)
     refuse_yield(called_by, inner.instructions, "body cannot yield")
 
-    after = compiler.gen_label("reset.end")
-    fragment.instruction(OpCode.RESET, (tag_count, after, 0, 0))
+    fragment.instruction(OpCode.PUSH_RESET, tag_count)
     fragment.merge(inner)
     fragment.instruction(OpCode.RETURN, 1)
-    fragment.instruction(OpCode.LABEL, after)
+    fragment.instruction(OpCode.POP_RESET, 0)
 
 
 @builtin("compile/shift")

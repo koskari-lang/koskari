@@ -15,28 +15,32 @@
 
 
 /**
-   RESET: arg = extra index. Schema COUNT (0 for the default prompt
-   tag, or 1 for a tag popped from the stack, where a popped None is
-   the default tag again), LABEL (where this frame goes on once the
-   body has returned).
+   PUSH_RESET: arg = 0 for the default prompt tag, or 1 for a tag
+   popped from the stack, where a popped None is the default tag again.
+   Cache: the extent's close.
 
    The body is the instructions from the next one up to its RETURN,
    compiled into this code against this namespace. Push a prompt
-   carrying the tag, and above it a frame over this frame's code and
-   the live namespace that starts at the body. The body's return, or
-   the return of a shift's handler called above the same prompt, takes
-   the prompt with it and is this instruction's value, as any callee's
-   return is; this frame goes on at the label with that value pushed.
+   carrying the tag, and above it an aside over this frame's code and
+   the live namespace that starts at the body. This frame is left
+   standing at the POP_RESET that closes the extent: the body's return,
+   or the return of a handler that aborted to the prompt, takes the
+   prompt with it and pushes its value here as any callee's return
+   does, and this frame goes on from the POP_RESET.
 */
 
-KOS_OP_HANDLER(RESET) {
+KOS_OP_HANDLER(PUSH_RESET) {
   KOS_SYNC_PC(ctx, insn);
-  const KosExtra *row = KosOp_ROW(insn);
   KosOp *body = KosContext_PC(ctx);
+  KosOp *pop;
   PyObject *tag;
   KosDynPrompt *prompt;
 
-  if (pop_prompt_tag(ctx, (unsigned) KosExtra_IMM(row, 0), &tag) < 0)
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_RESET, "PUSH_RESET", &pop) < 0)
+    RESULT_RAISE();
+
+  if (pop_prompt_tag(KosContext_BLOCK(ctx), (unsigned) KosOp_ARG(insn),
+                     &tag) < 0)
     RESULT_RAISE();
 
   /* the prompt takes its own reference; NULL is the default tag */
@@ -47,9 +51,9 @@ KOS_OP_HANDLER(RESET) {
 
   /* the position this frame keeps while the body runs: the push below
      stores it, and the body's return continues from it */
-  KosContext_SET_PC(ctx, KosExtra_TARGET(row, 1));
+  KosContext_SET_PC(ctx, pop);
 
-  if (! kos_dyn_push_aside(ctx, body))
+  if (! kos_dyn_push_aside(ctx, body, NULL, 0))
     RESULT_RAISE();
 
   RESULT_CONTINUE(ctx);

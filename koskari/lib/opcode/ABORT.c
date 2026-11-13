@@ -16,23 +16,22 @@
 
 /**
    ABORT: arg = 0 for the default prompt tag, or 1 for a tag popped
-   from the stack, where a popped None is the default tag again.
+   from the stack of the frame below, where a popped None is the
+   default tag again.
 
-   The handler is the instructions that follow, up to a RETURN. Find
-   the prompt and abort to it: the transfer leaves everything above
-   it, then attaches an aside above the prompt, a frame over this code
-   and the live namespace standing at the next instruction. Nothing is
-   captured. The handler's return ends the prompt and is the reset's
-   return.
+   Runs in an aside, with no block of the aside's own open. Find the
+   prompt and move this frame onto it: the transfer leaves everything
+   between, then attaches this frame above the prompt, where it goes on
+   at the next instruction. Nothing is captured. The frame's return
+   ends the prompt and is the reset's return.
 */
 
 KOS_OP_HANDLER(ABORT) {
   KOS_SYNC_PC(ctx, insn);
-  KosOp *entry = KosContext_PC(ctx);
   PyObject *tag;
   KosDynPrompt *prompt;
 
-  if (pop_prompt_tag(ctx, (unsigned) KosOp_ARG(insn), &tag) < 0)
+  if (pop_prompt_tag_below(ctx, (unsigned) KosOp_ARG(insn), &tag) < 0)
     RESULT_RAISE();
 
   prompt = kos_abort_prompt(ctx, tag);
@@ -40,7 +39,7 @@ KOS_OP_HANDLER(ABORT) {
   if (! prompt)
     RESULT_RAISE();
 
-  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt, entry));
+  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt));
 }
 
 

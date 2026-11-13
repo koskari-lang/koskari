@@ -16,36 +16,36 @@
 
 /**
    SHIFT_VAR: arg = extra index. Schema COUNT (0 for the default
-   prompt tag, or 1 for a tag popped from the stack, where a popped
-   None is the default tag again), LABEL (where the shift's own frame
-   goes on when the continuation is called), VAR (the name the
+   prompt tag, or 1 for a tag popped from the stack of the frame below,
+   where a popped None is the default tag again), VAR (the name the
    continuation is bound to).
 
-   The handler is the instructions that follow, up to a RETURN. Capture
-   the continuation from the label up to the prompt, whole frames up
-   to and including the reset's body, store it under the name in the
-   frame namespace, and abort to the prompt as ABORT does. The
-   pre-lowering twin of SHIFT_FAST, which every site with a fast slot
-   takes instead.
+   Runs in an aside, with no block of the aside's own open. Capture
+   the continuation from the frame below this one up to the prompt,
+   whole frames up to and including the reset's body, store it under
+   the name in this frame's namespace, and move this frame onto the
+   prompt as ABORT does. The frame below stands at the POP_ASIDE that
+   closes this aside, so a call of the continuation goes on from there.
+   The pre-lowering twin of SHIFT_FAST, which every site with a fast
+   slot takes instead.
 */
 
 KOS_OP_HANDLER(SHIFT_VAR) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosOp *entry = KosContext_PC(ctx);
   KosDynPrompt *prompt;
-  PyObject *k = shift_capture(ctx, row, &prompt);
+  PyObject *k = shift_capture(ctx, (unsigned) KosExtra_IMM(row, 0), &prompt);
   int res;
 
   if (! k)
     RESULT_RAISE();
 
-  res = frame_ns_store(ctx, KosExtra_OBJ(row, 2), k);
+  res = frame_ns_store(ctx, KosExtra_OBJ(row, 1), k);
   Py_DECREF(k);
   if (res < 0)
     RESULT_RAISE();
 
-  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt, entry));
+  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt));
 }
 
 

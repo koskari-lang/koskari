@@ -332,8 +332,9 @@ class ByteCodeFragment:
             return {str(n) for n in nspec.local_syms} | {
                 str(n) for n in nspec.global_syms}
 
-        # the stream is the compiler's own emission: PUSH_NS and
-        # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
+        # the stream is the compiler's own emission: PUSH_NS,
+        # PUSH_COLLECT and PUSH_ASIDE carry their NamespaceSpec as the
+        # operand, and the
         # fused rows the processor mints later are not here yet
         scopes = []
         out = []
@@ -347,7 +348,16 @@ class ByteCodeFragment:
                 arg = rebuild_nspec(arg, scopes)
                 scopes.insert(0, scope_names(arg))
 
-            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+            elif op == OpCode.PUSH_ASIDE:
+                # None is an aside that names nothing
+                if arg is None:
+                    scopes.insert(0, set())
+                else:
+                    arg = rebuild_nspec(arg, scopes)
+                    scopes.insert(0, scope_names(arg))
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT,
+                        OpCode.POP_ASIDE):
                 scopes.pop(0)
 
             elif op.style == OpStyle.VAR:
@@ -461,6 +471,78 @@ class ByteCodeFragment:
                 self.holds_deferred = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
+
+
+    @contextmanager
+    def aside(self, ns_name, own=()):
+        """
+        Context manager that compiles an aside: instructions that run
+        in a frame of their own over a namespace of their own. On
+        entry, yields a fragment for the aside's instructions. On exit,
+        emits PUSH_ASIDE with the aside's NamespaceSpec, the
+        instructions, RETURN 1, and POP_ASIDE.
+
+        The aside's namespace owns only the names in own. Every other
+        name declared at the aside's level is declared in this
+        fragment's scope instead and reached from the aside as a
+        closure name, so it is the enclosing scope's name and outlives
+        the aside. An aside that neither owns nor requests any name
+        carries None in place of a spec, and runs over the empty
+        namespace.
+
+        :param ns_name: name for the aside's namespace
+        :param own: the symbols the aside's namespace declares
+        """
+
+        compiler = self.compiler
+        own = tuple(own)
+
+        child = compiler.fragment(str(ns_name))
+        with compiler.resolution_scope(child):
+            for name in own:
+                child.declare_var(name)
+
+            yield child
+
+            # a declare made at the aside's level is the enclosing
+            # scope's, written from the aside through a closure name
+            for name in tuple(child.declares):
+                if name in own:
+                    continue
+                position = child.declare_positions.get(name)
+                child.declares.remove(name)
+                self.declare_var(name, position=position)
+                child.request_var(name, position=position)
+                child.request_for_write(name, position=position)
+            self.annotation_bindings.extend(child.annotation_bindings)
+
+            # a function built inside the aside closes over its names
+            # through the aside's namespace, so the aside must capture
+            # them before its spec is built
+            merge_function_constant_needs(child, child.instructions)
+            nspec = child.as_namespace_spec()
+            child.resolution.register_scope_fragment(
+                child, tuple(f for f in compiler.lexical_stack if f is not child))
+
+            # as for a child namespace: what the aside closes over, the
+            # enclosing scope must hold for PUSH_ASIDE to resolve
+            for name in child.resolution.closure_names(child):
+                if name not in self.declares:
+                    self.request_var(
+                        name, position=child.request_positions.get(name))
+
+            if not (nspec.local_syms or nspec.closure_syms
+                    or nspec.global_syms):
+                nspec = None
+
+            self.instruction(OpCode.PUSH_ASIDE, nspec)
+            if child.marked:
+                self.marked = True
+            if child.holds_deferred:
+                self.holds_deferred = True
+            self.instructions.extend(child.instructions)
+            self.instruction(OpCode.RETURN, 1)
+            self.instruction(OpCode.POP_ASIDE, 0)
 
 
     @contextmanager

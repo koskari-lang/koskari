@@ -22,7 +22,6 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 :license: GNU General Public License v3
 """
 
-import itertools
 
 import pytest
 
@@ -51,15 +50,16 @@ _APPLY_K_5 = [
 
 class ResetBody(list):
     """
-    The rows of a reset's body, which expand_asides lays out after the
-    RESET row that names them
+    The rows of a reset's body, which expand_asides lays out between
+    the PUSH_RESET and POP_RESET of the RESET row that names them
     """
 
 
 class ShiftHandler(list):
     """
-    The rows of a shift's handler, which expand_asides lays out after
-    the SHIFT_VAR row that names them, with the names the handler binds
+    The rows of a shift's handler, which expand_asides lays out in the
+    aside of the SHIFT_VAR row that names them, with the names of the
+    aside's own namespace
     """
 
     def __init__(self, rows, local_syms):
@@ -67,44 +67,42 @@ class ShiftHandler(list):
         self.local_syms = tuple(local_syms)
 
 
-_aside_labels = itertools.count()
-
-
 def expand_asides(code, local_syms):
     """
     Lay each reset's body and each shift's handler out the way the
-    instruction takes it: the RESET or SHIFT_VAR row carrying a label, the
-    body's or handler's rows ending in their RETURN, then that label.
-    A body or a handler may hold further rows written the same way
+    instructions take them. A RESET row carrying a ResetBody becomes
+    PUSH_RESET, the body's rows ending in their RETURN, and POP_RESET.
+    A SHIFT_VAR row carrying a ShiftHandler becomes PUSH_ASIDE with a
+    namespace of the handler's names, SHIFT_VAR, the handler's rows
+    ending in their RETURN, and POP_ASIDE. A body or a handler may hold
+    further rows written the same way
 
     :param code: Sequence of [op, arg], a RESET row's second field being
         a ResetBody and a SHIFT_VAR row's a ShiftHandler
-    :param local_syms: list that takes the names the handlers bind,
-        which are names of the code they are laid out in
+    :param local_syms: unused; the handlers' names are their asides'
     :return: the rows with every body and handler laid out in place
     """
 
     rows = []
     for op, arg in code:
         if op == "RESET" and isinstance(arg[1], ResetBody):
-            label = f"reset.end.{next(_aside_labels)}"
+            rows.append(["PUSH_RESET", arg[0]])
+            rows.extend(expand_asides(arg[1], local_syms))
+            rows.append(["POP_RESET", 0])
         elif op == "SHIFT_VAR" and isinstance(arg[1], ShiftHandler):
-            label = f"shift.end.{next(_aside_labels)}"
-            for sym in arg[1].local_syms:
-                if sym not in local_syms:
-                    local_syms.append(sym)
+            nspec = NamespaceSpec("handler", arg[1].local_syms, ())
+            rows.append(["PUSH_ASIDE", nspec])
+            rows.append(["SHIFT_VAR", (arg[0], arg[2], 0, 0)])
+            rows.extend(expand_asides(arg[1], local_syms))
+            rows.append(["POP_ASIDE", 0])
         else:
             rows.append([op, arg])
-            continue
-        rows.append([op, (arg[0], label, arg[2], arg[3])])
-        rows.extend(expand_asides(arg[1], local_syms))
-        rows.append(["LABEL", label])
     return rows
 
 
 def expand_with_syms(code, local_syms):
     """
-    expand_asides, with the names the handlers bind added to local_syms
+    expand_asides, with local_syms as a tuple or None
 
     :param code: Sequence of [op, arg] as in expand_asides
     :param local_syms: None, a name, or a sequence of names
@@ -144,12 +142,12 @@ def build_expr(code, local_syms=None, **kwds):
 def handler_spec(code, local_syms=("k",)):
     """
     The rows of a shift's handler, for the second field of a SHIFT_VAR
-    row: they run in a frame of their own over the code and namespace
-    the SHIFT_VAR is in, which binds the continuation to k, and end in
-    a RETURN
+    row: they run in an aside over the code the row is in, with a
+    namespace of their own in which SHIFT_VAR binds the continuation
+    to k, and end in a RETURN
 
     :param code: Sequence of [op, arg] as in build_code
-    :param local_syms: the names the handler binds, k first
+    :param local_syms: the names of the aside's namespace, k first
     :return: ShiftHandler
     """
 
