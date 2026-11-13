@@ -181,10 +181,10 @@ def helper_handler(
     the continuation and binds it to K first. The handler is compiled
     in the scope the form is written in, so K and every other name in
     it are that scope's, and is laid out after the row: the row starts
-    a frame over this code at the handler's first instruction, the
-    handler ends in a RETURN, and the row's label follows it, where
-    the frame a shift is written in goes on when the continuation is
-    called. A yield written in the handler is refused, since the
+    a frame over this code at the handler's first instruction and the
+    handler ends in a RETURN. A SHIFT_VAR row's label follows it, where
+    the frame the shift is written in goes on when the continuation is
+    called; an ABORT has none, since nothing comes back to it. A yield written in the handler is refused, since the
     handler's frame is not the generator's; one in a function defined
     within it belongs to that function
 
@@ -203,12 +203,16 @@ def helper_handler(
     inner = helper_begin(inner, body.datum)
     refuse_yield(called_by, inner.instructions, "handler cannot yield")
 
-    after = compiler.gen_label("handler.end")
     if k is None:
-        fragment.instruction(OpCode.ABORT, (tag_count, after, 0, 0))
-    else:
-        fragment.instruction(
-            OpCode.SHIFT_VAR, (tag_count, after, k.datum, 0))
+        # nothing comes back to an abort: what follows the handler in
+        # the enclosing form is never reached
+        fragment.instruction(OpCode.ABORT, tag_count)
+        fragment.merge(inner)
+        fragment.instruction(OpCode.RETURN, 1)
+        return
+
+    after = compiler.gen_label("shift.end")
+    fragment.instruction(OpCode.SHIFT_VAR, (tag_count, after, k.datum, 0))
     fragment.merge(inner)
     fragment.instruction(OpCode.RETURN, 1)
     fragment.instruction(OpCode.LABEL, after)

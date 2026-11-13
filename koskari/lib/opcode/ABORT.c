@@ -15,9 +15,8 @@
 
 
 /**
-   ABORT: arg = extra index. Schema COUNT (0 for the default prompt
-   tag, or 1 for a tag popped from the stack, where a popped None is
-   the default tag again), LABEL (the end of the handler).
+   ABORT: arg = 0 for the default prompt tag, or 1 for a tag popped
+   from the stack, where a popped None is the default tag again.
 
    The handler is the instructions that follow, up to a RETURN. Find
    the prompt and abort to it: the transfer leaves everything above
@@ -29,12 +28,11 @@
 
 KOS_OP_HANDLER(ABORT) {
   KOS_SYNC_PC(ctx, insn);
-  const KosExtra *row = KosOp_ROW(insn);
   KosOp *entry = KosContext_PC(ctx);
   PyObject *tag;
   KosDynPrompt *prompt;
 
-  if (pop_prompt_tag(ctx, (unsigned) KosExtra_IMM(row, 0), &tag) < 0)
+  if (pop_prompt_tag(ctx, (unsigned) KosOp_ARG(insn), &tag) < 0)
     RESULT_RAISE();
 
   prompt = kos_abort_prompt(ctx, tag);

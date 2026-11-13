@@ -1773,8 +1773,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
           /* a prompt instruction's tag count names no tag or the one
              tag */
-          if ((op == KOS_OP_ABORT || op == KOS_OP_SHIFT_VAR
-               || op == KOS_OP_SHIFT_FAST || op == KOS_OP_RESET)
+          if ((op == KOS_OP_SHIFT_VAR || op == KOS_OP_SHIFT_FAST
+               || op == KOS_OP_RESET)
               && slot == 0 && val > 1) {
             PyErr_Format(PyExc_ValueError, "Code instruction %zd EXTRA"
                          " field %d %R is not 0 or 1", i, slot, elem);
@@ -1880,6 +1880,13 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           && KosCmpCount_SEL((uint16_t) val) >= KOS_COMPARE_COUNT) {
         PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
                      " names no comparison", i, b);
+        goto failure;
+      }
+
+      /* an abort's tag count names no tag or the one tag */
+      if (op == KOS_OP_ABORT && val > 1) {
+        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
+                     " is not 0 or 1", i, b);
         goto failure;
       }
 
