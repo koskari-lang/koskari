@@ -2152,3 +2152,51 @@ tags:
   - special
   - continuation
 notes: the reset's body is a function of its own; (call k 5) resumes a copy of it, and the return there gives the copy's value, 99, to the call, which the handler returns as the reset's value
+---
+id: special-abort-basic-001
+feature: special/compile/abort
+source: (reset (+ 1 (abort 5)))
+verify:
+  read: (reset (+ 1 (abort 5)))
+  expand: (reset (+ 1 (abort 5)))
+  eval: "5"
+references:
+  - reference/specials/compile-abort.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: abort leaves the region and its value is the reset's; the pending (+ 1 ...) is discarded and no continuation is captured
+---
+id: special-abort-outside-operands-002
+feature: special/compile/abort
+source: (* 3 (reset (+ 1 (abort 4))))
+verify:
+  read: (* 3 (reset (+ 1 (abort 4))))
+  expand: (* 3 (reset (+ 1 (abort 4))))
+  eval: "12"
+references:
+  - reference/specials/compile-abort.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: only the region inside the reset is discarded; the (* 3 ...) around the reset goes on with the handler's value
+---
+id: special-abort-at-crosses-reset-001
+feature: special/compile/abort-at
+source: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (abort-at t 7))))))
+verify:
+  read: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (abort-at t 7))))))
+  expand: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (abort-at t 7))))))
+  eval: "7"
+references:
+  - reference/specials/compile-abort-at.md
+  - reference/specials/compile-reset-at.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: abort-at goes to the delimiter carrying its tag; the plain reset on the way is left with the rest of the region

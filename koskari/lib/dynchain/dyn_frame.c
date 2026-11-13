@@ -337,31 +337,33 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
 
 /**
-   Push a frame that runs the live frame's own code over the live
-   namespace, starting at entry, an instruction of that code. The frame
-   introduces no namespace: it holds the live one as its fill, as a
-   native frame does, so it does not carry KOS_DYN_CAP_OWNS_NS and the
-   namespace is not measured against the code again. Its return is any
-   frame's. The node is built and linked in one pass: every frame
-   field is written, since the general free and clone read them all.
-   Callers: opcode RESET, for the body it runs above its prompt.
+   Allocate an aside: a frame that takes no arguments and runs code
+   over ns from entry, an instruction of code, both belonging to the
+   frame the aside's form was written in. It introduces no namespace:
+   it holds ns as its fill, as a native frame does, so it does not
+   carry KOS_DYN_CAP_OWNS_NS and ns is not measured against code again.
+   Its return is any frame's. Every frame field is written, since the
+   general free and clone read them all. base is the frame the aside
+   stands above once linked, the source of its depth and demand flag,
+   or NULL when it will stand on a prompt at the root of a context;
+   parent is the node it is linked on, or NULL for one linked later.
+   code and ns are borrowed. Callers: kos_dyn_push_aside,
+   kos_abort_to_prompt.
    Returns the frame, or NULL with PyErr set.
 */
-KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry) {
+KosDynFrame *kos_dynframe_new_aside(
+    KosDynNode *parent,
+    KosDynFrame *base,
+    KosCode *code,
+    PyObject *ns,
+    KosOp *entry) {
 
-  KosDynFrame *cur = KosContext_FRAME(ctx);
-  KosCode *code = KosDynFrame_CODE(cur);
-  PyObject *ns = KosContext_NAMESPACE(ctx);
-  KosDynFrame *frame;
+  KosDynFrame *frame = kos_dynnode_alloc();
 
-  if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
-    return NULL;
-
-  frame = kos_dynnode_alloc();
   if (! frame)
     return NULL;
 
-  kos_dynnode_init(frame, KOS_DYN_FRAME, KosContext_DYN_TOP(ctx), 0);
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
   Py_INCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = entry;
@@ -369,14 +371,38 @@ KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry) {
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
   Py_INCREF(ns);
   KosDynFrame_NS(frame) = ns;  /* owned fill */
-  KosDynFrame_FLAGS(frame) = KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND;
+  KosDynFrame_FLAGS(frame) =
+      base ? KosDynFrame_FLAGS(base) & KOS_FRAME_DEMAND : 0;
   kos_dynframe_note_parent(frame);
-  KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
+  KosDynFrame_DEPTH(frame) = base ? KosDynFrame_DEPTH(base) + 1 : 1;
   KosDynFrame_CACHE_SLOT(frame) = NULL;
   KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
-  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) cur;
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) base;
+  return frame;
+}
+
+
+/**
+   Push an aside over the live frame's code and the live namespace,
+   starting at entry, as dyn_top and the live frame. Callers: opcode
+   RESET, for the body it runs above its prompt. Returns the frame, or
+   NULL with PyErr set.
+*/
+KosDynFrame *kos_dyn_push_aside(KosContext *ctx, KosOp *entry) {
+
+  KosDynFrame *cur = KosContext_FRAME(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+  KosDynFrame *frame;
+
+  if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
+    return NULL;
+
+  frame = kos_dynframe_new_aside(
+      KosContext_DYN_TOP(ctx), cur, KosDynFrame_CODE(cur), ns, entry);
+  if (! frame)
+    return NULL;
 
   /* the outgoing frame keeps the pc its caller set for it */
   KosContext_FlushLiveRegsToFrame(ctx);

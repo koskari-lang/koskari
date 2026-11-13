@@ -736,122 +736,96 @@ static int test_eval_try_finally_rerase(void) {
 /* === Test: reset (+ 1 (shift k (k 5))) => 6 === */
 
 
-/*
-  The FunctionSpec of the handler (k 5): a function of the one
-  parameter k. Returns a new reference, or NULL with PyErr set.
-*/
-static PyObject *make_apply_k_5_spec(void) {
-
-    PyObject *name = PyUnicode_FromString("handler");
-    PyObject *locals = Py_BuildValue("(s)", "k");
-    PyObject *closures = PyTuple_New(0);
-    PyObject *k_name = PyUnicode_FromString("k");
-    PyObject *five = PyLong_FromLong(5);
-    PyObject *nspec = NULL;
-    PyObject *instr = NULL;
-    PyObject *code = NULL;
-    PyObject *formals = NULL;
-    PyObject *spec = NULL;
-
-    if (! name || ! locals || ! closures || ! k_name || ! five)
-        goto done;
-
-    nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
-    instr = PyList_New(4);
-    if (! nspec || ! instr)
-        goto done;
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, k_name));
-    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
-    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CALL, 1));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
-
-    code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
-    formals = KosFormalsSpec_New(locals, NULL, NULL, NULL, NULL, NULL,
-                                 NULL);
-    if (code && formals)
-        spec = KosFunctionSpec_New(NULL, formals, code);
-
- done:
-    Py_XDECREF(name);
-    Py_XDECREF(locals);
-    Py_XDECREF(closures);
-    Py_XDECREF(k_name);
-    Py_XDECREF(five);
-    Py_XDECREF(nspec);
-    Py_XDECREF(instr);
-    Py_XDECREF(code);
-    Py_XDECREF(formals);
-    return spec;
-}
-
-
 static int test_eval_reset_body_shift(void) {
     /*
       Bytecode: RESET (0, "after", 0, 0), then the body CONST 1,
-      SHIFT (0, handler, 0, 0), OBJECT_ADD 2, RETURN 1, then
-      LABEL "after", RETURN 1. The body runs in a frame of its own over
-      this code. The handler applies k to 5; the copy of the body
-      returns 6 to that call, and the handler's 6 is the RESET's.
+      SHIFT_VAR (0, "resume", "k", 0), the handler VAR k, CONST 5,
+      CALL 1, RETURN 1, then LABEL "resume", OBJECT_ADD 2,
+      RETURN 1, then LABEL "after", RETURN 1. The body and the handler
+      each run in a frame of their own over this code. The handler
+      applies k to 5; the copy of the body returns 6 to that call, and
+      the handler's 6 is the RESET's.
     */
+    PyObject *name = NULL;
+    PyObject *locals = NULL;
+    PyObject *closures = NULL;
     PyObject *nspec = NULL;
     PyObject *after = NULL;
+    PyObject *resume = NULL;
+    PyObject *k_name = NULL;
     PyObject *one = NULL;
-    PyObject *handler = NULL;
+    PyObject *five = NULL;
     PyObject *reset_row = NULL;
     PyObject *shift_row = NULL;
     PyObject *instr = NULL;
     PyObject *code_obj = NULL;
-    PyObject *empty = NULL;
     PyObject *ns = NULL;
     KosDynFrame *frame = NULL;
     KosContext *ctx = NULL;
     KosOpResult ev = {0};
     int result = 0;
 
-    nspec = create_test_nspec();
-    if (! nspec)
+    name = PyUnicode_FromString("test");
+    locals = Py_BuildValue("(s)", "k");
+    closures = PyTuple_New(0);
+    if (name && locals && closures)
+        nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
+    Py_XDECREF(name);
+    Py_XDECREF(closures);
+    if (! nspec) {
+        Py_XDECREF(locals);
         return -1;
+    }
 
     after = PyUnicode_FromString("after");
+    resume = PyUnicode_FromString("resume");
+    k_name = PyUnicode_FromString("k");
     one = PyLong_FromLong(1);
-    handler = make_apply_k_5_spec();
-    if (after && handler) {
+    five = PyLong_FromLong(5);
+    if (after && resume && k_name) {
         reset_row = Py_BuildValue("(iOii)", 0, after, 0, 0);
-        shift_row = Py_BuildValue("(iOii)", 0, handler, 0, 0);
+        shift_row = Py_BuildValue("(iOOi)", 0, resume, k_name, 0);
     }
-    instr = PyList_New(7);
-    if (one && reset_row && shift_row && instr) {
+    instr = PyList_New(12);
+    if (k_name && one && five && reset_row && shift_row && instr) {
         PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_RESET, reset_row));
         PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
-        PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_SHIFT, shift_row));
-        PyList_SET_ITEM(instr, 3, make_instr_int(
-            KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
-        PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
-        PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, after));
+        PyList_SET_ITEM(
+            instr, 2, make_instr(KOS_OP_SHIFT_VAR, shift_row));
+        PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_VAR, k_name));
+        PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_CONST, five));
+        PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_CALL, 1));
         PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
+        PyList_SET_ITEM(instr, 7, make_instr(KOS_OP_LABEL, resume));
+        PyList_SET_ITEM(instr, 8, make_instr_int(
+            KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
+        PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_RETURN, 1));
+        PyList_SET_ITEM(instr, 10, make_instr(KOS_OP_LABEL, after));
+        PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_RETURN, 1));
 
         code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     }
     Py_XDECREF(after);
+    Py_XDECREF(resume);
+    Py_XDECREF(k_name);
     Py_XDECREF(one);
-    Py_XDECREF(handler);
+    Py_XDECREF(five);
     Py_XDECREF(reset_row);
     Py_XDECREF(shift_row);
     Py_XDECREF(instr);
     Py_DECREF(nspec);
     if (! code_obj) {
+        Py_DECREF(locals);
         if (PyErr_Occurred())
             PyErr_Print();
         fprintf(stderr, "  FAIL: could not build the code\n");
         return -1;
     }
 
-    /* the body's frame shares the frame's namespace */
-    empty = PyTuple_New(0);
-    if (! empty)
-        goto cleanup;
-    ns = KosNamespace_NewFull(NULL, NULL, empty, NULL, NULL);
-    Py_DECREF(empty);
+    /* the body's frame and the handler's share the frame's namespace,
+       where the handler binds k */
+    ns = KosNamespace_NewFull(NULL, NULL, locals, NULL, NULL);
+    Py_DECREF(locals);
     if (! ns)
         goto cleanup;
 

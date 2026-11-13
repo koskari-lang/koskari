@@ -34,6 +34,8 @@ Block heads: `NAME ...:` followed by an indented body.
 
 Handled by the compiler when the name heads a form.
 
+- [`abort`](../reference/specials/compile-abort.md)
+- [`abort-at`](../reference/specials/compile-abort-at.md)
 - [`and`](../reference/specials/compile-and.md)
 - [`apply-fence`](../reference/specials/compile-apply-fence.md)
 - [`attr`](../reference/specials/compile-attr.md)

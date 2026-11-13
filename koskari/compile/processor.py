@@ -356,6 +356,7 @@ def build_var_to_fast():
     var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
     var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
     var_to_fast[OpCode.ITER_NEXT_STORE_VAR] = OpCode.ITER_NEXT_STORE_FAST
+    var_to_fast[OpCode.SHIFT_VAR] = OpCode.SHIFT_FAST
     var_to_fast[OpCode.JUMP_FALSE_VAR] = OpCode.JUMP_FALSE_FAST
     var_to_fast[OpCode.JUMP_TRUE_VAR] = OpCode.JUMP_TRUE_FAST
     var_to_fast[OpCode.JUMP_AND_VAR] = OpCode.JUMP_AND_FAST
@@ -510,18 +511,13 @@ def merge_function_constant_needs(fragment, instructions):
     """
     Merge the closure and write needs of every completed function
     constant in instructions into fragment, so a scope that encloses
-    the function captures what it closes over. A function constant is
-    a CONST row's or the handler a SHIFT row carries. One whose Code is
-    not yet complete has nothing to merge
+    the function captures what it closes over. A function constant
+    whose Code is not yet complete has nothing to merge
     """
 
     reso = fragment.resolution
     for op, arg in instructions:
-        if op == OpCode.SHIFT:
-            arg = arg[1]
-        elif op != OpCode.CONST:
-            continue
-        if isinstance(arg, FunctionSpec):
+        if op == OpCode.CONST and isinstance(arg, FunctionSpec):
             code = arg.code
             if code is None:
                 continue

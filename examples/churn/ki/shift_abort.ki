@@ -1,12 +1,12 @@
 ;; churn_shift_abort -- one reset per step whose body calls a function
-;; that shifts and drops the continuation, so the capture and the abort
-;; through one call dominate.  The continuation is never called.
+;; that aborts to it, so the abort through one call dominates.  No
+;; continuation is captured.
 
 (var MASK32 0xffffffff)
 
 
 def escape [x]:
-    shift k:
+    abort:
         (& (+ (* x 1664525) 1013904223) MASK32)
 
 

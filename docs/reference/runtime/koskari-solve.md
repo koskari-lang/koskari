@@ -33,7 +33,9 @@ contributes no solutions; the search continues with the next choice.
 **Syntax:** `(fail)`
 
 Abandon the current branch unconditionally. `(require test)` is
-`(unless test (fail))`.
+`(unless test (fail))`. The branch is left with an
+[`abort-at`](../specials/compile-abort-at.md), so a failure captures
+nothing.
 
 ## solve
 

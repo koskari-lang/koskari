@@ -33,7 +33,10 @@ names, so:
 - A `var` in the body is a name of the enclosing function: it is visible
   after the `reset`, and it rebinds a name the function already has. A
   `set!` of a local of the enclosing function writes that local. Every
-  copy of the region a `shift`'s `K` resumes shares these names.
+  copy of the region a `shift`'s `K` resumes shares these names; see
+  [Names the handler binds](compile-shift.md#names-the-handler-binds) for
+  what that means for a continuation called more than once, and how a
+  `let` keeps a binding private.
 
 The body's frame appears in a traceback under the name of the enclosing
 function, on the line of the body it was running.

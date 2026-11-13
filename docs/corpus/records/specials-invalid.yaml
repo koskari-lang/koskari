@@ -178,7 +178,7 @@ tags:
   - continuation
   - invalid
   - pitfall
-notes: "compile error: the yield is written in the reset's body, a function the reset calls, so it is refused wherever k is called from. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
+notes: "compile error: the yield is written in the reset's body, which runs in a frame of its own, so it is refused wherever k is called from. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
 ---
 id: special-shift-handler-yield-invalid-005
 feature: special/compile/shift
@@ -187,7 +187,7 @@ source: |-
 
 verify:
   read: (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))
-  error: "SpecialError: shift handler cannot yield: it is a function of its continuation, not a generator"
+  error: "SpecialError: shift handler cannot yield"
 references:
   - reference/specials/compile-shift.md
   - reference/specials/compile-yield.md
@@ -197,4 +197,21 @@ tags:
   - continuation
   - invalid
   - pitfall
-notes: "compile error: the handler is a function of k, not part of the generator the reset is in. A generator defined inside the handler may yield. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
+notes: "compile error: the handler runs in a frame of its own, not in the generator the reset is in. A generator defined inside the handler may yield. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
+---
+id: special-abort-handler-yield-invalid-001
+feature: special/compile/abort
+source: (list ((lambda [] (reset (+ 100 (abort (yield 1)))))))
+verify:
+  read: (list ((lambda [] (reset (+ 100 (abort (yield 1)))))))
+  error: "SpecialError: abort handler cannot yield"
+references:
+  - reference/specials/compile-abort.md
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "compile error: the handler runs in a frame of its own, not in the generator the reset is in. corrective: (list ((lambda [] (yield (reset (+ 100 (abort 1)))))))"

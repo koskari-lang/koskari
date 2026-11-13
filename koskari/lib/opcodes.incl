@@ -37,7 +37,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (RESET/SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
+   POP_*), continuations (RESET/ABORT/SHIFT_*; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first
@@ -422,7 +422,9 @@ OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
 OP(RESET, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)  // tag count (0, or 1 popped), where this frame goes on; push the prompt, run the body that follows in a frame above it
-OP(SHIFT, 0, EXTRA, COUNT, CONST, NOARG, NOARG)  // tag count (0, or 1 popped), handler FunctionSpec; abort, then call the handler with k
+OP(ABORT, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)  // tag count (0, or 1 popped), the end of the handler; abort to the prompt, then run the handler that follows above it
+OP(SHIFT_VAR, 0, EXTRA, COUNT, LABEL, VAR, NOARG)  // tag count, where the shift goes on when k is called, k's name; capture and bind k, then as ABORT
+OP(SHIFT_FAST, 0, EXTRA, COUNT, LABEL, FASTVAR, NOARG)  // SHIFT_VAR with k in a fast slot
 
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, 1, NOARG)             // cache: extent close pc

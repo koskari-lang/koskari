@@ -26,8 +26,7 @@ compile/yield-from.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...hygiene import function_constant
-from ...lib import FormalsSpec, OpCode, cons, nil, symbol
+from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_keyword
@@ -174,34 +173,45 @@ def refuse_yield(called_by, instructions, refusal):
             called_by.datum, position=called_by.position)
 
 
-def helper_shift_handler(compiler, called_by, k, body, fragment):
+def helper_handler(
+        compiler, called_by, body, fragment, tag_count, k=None):
     """
-    The handler of a shift: a function of the one parameter K, whose
-    body is BODY, compiled as its own fragment. A yield written in the
-    body itself is refused, since the function is no generator; one in
-    a function defined within it belongs to that function
+    Emit the row that aborts to a prompt and the handler it runs into
+    fragment: an ABORT row, or with k a SHIFT_VAR row, which captures
+    the continuation and binds it to K first. The handler is compiled
+    in the scope the form is written in, so K and every other name in
+    it are that scope's, and is laid out after the row: the row starts
+    a frame over this code at the handler's first instruction, the
+    handler ends in a RETURN, and the row's label follows it, where
+    the frame a shift is written in goes on when the continuation is
+    called. A yield written in the handler is refused, since the
+    handler's frame is not the generator's; one in a function defined
+    within it belongs to that function
 
     :param compiler: the Compiler
     :param called_by: the special's called-by capture
-    :param k: the K capture
     :param body: the BODY capture
-    :param fragment: the fragment the SHIFT row is emitted into
-    :return: the FunctionSpec, or the Deferred standing in for it
+    :param fragment: the fragment to emit into
+    :param tag_count: 0 for the default tag, 1 for a tag the fragment
+        has already pushed
+    :param k: the K capture of a shift, or None for an abort
     """
 
-    func = compiler.fragment("<shift>")
-    func.declare_var(k.datum, position=k.position)
-    with compiler.resolution_scope(func, function=True):
-        func = helper_begin(func, body.datum)
+    inner = compiler.fragment("<handler>")
+    if k is not None:
+        inner.declare_var(k.datum, position=k.position)
+    inner = helper_begin(inner, body.datum)
+    refuse_yield(called_by, inner.instructions, "handler cannot yield")
 
-    refuse_yield(
-        called_by, func.instructions,
-        "handler cannot yield: it is a function of its continuation,"
-        " not a generator")
-
-    return function_constant(
-        compiler, fragment, func, None,
-        FormalsSpec((str(k.datum),), (), (), (), None, None))
+    after = compiler.gen_label("handler.end")
+    if k is None:
+        fragment.instruction(OpCode.ABORT, (tag_count, after, 0, 0))
+    else:
+        fragment.instruction(
+            OpCode.SHIFT_VAR, (tag_count, after, k.datum, 0))
+    fragment.merge(inner)
+    fragment.instruction(OpCode.RETURN, 1)
+    fragment.instruction(OpCode.LABEL, after)
 
 
 def helper_reset_body(compiler, called_by, body, fragment, tag_count):
@@ -239,15 +249,14 @@ def special_shift(compiler, called_by, k, body):
     """
     Compile (compile/shift K EXPR...). Captures the continuation up to
     the nearest prompt of the default tag, aborts to that prompt, and
-    calls the handler, a function of K whose body is EXPR..., with the
-    continuation there. The handler's value is the reset's. K must be a
-    symbol
+    runs the handler EXPR... there in a frame of its own, with K bound
+    to the continuation in the scope the shift is written in. The
+    handler's value is the reset's. K must be a symbol
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
-    spec = helper_shift_handler(compiler, called_by, k, body, fragment)
-    fragment.instruction(OpCode.SHIFT, (0, spec, 0, 0))
+    helper_handler(compiler, called_by, body, fragment, 0, k)
 
     return fragment
 
@@ -277,16 +286,51 @@ def special_shift_at(compiler, called_by, tag, k, body):
     """
     Compile (compile/shift-at TAG K EXPR...). Evaluates TAG, captures the
     continuation up to the nearest prompt carrying it, aborts to that
-    prompt, and calls the handler, a function of K whose body is
-    EXPR..., with the continuation there. K must be a symbol. Prompts of
-    other tags between are crossed and become part of the continuation
+    prompt, and runs the handler EXPR... there in a frame of its own,
+    with K bound to the continuation in the scope the shift is written
+    in. K must be a symbol. Prompts of other tags between are crossed
+    and become part of the continuation
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.merge(compiler.full_compile(tag.datum))
-    spec = helper_shift_handler(compiler, called_by, k, body, fragment)
-    fragment.instruction(OpCode.SHIFT, (1, spec, 0, 0))
+    helper_handler(compiler, called_by, body, fragment, 1, k)
+
+    return fragment
+
+
+@builtin("compile/abort")
+@special("compile/abort", patterns=_BODY_PATTERNS, unpack="kwargs")
+def special_abort(compiler, called_by, body):
+    """
+    Compile (compile/abort EXPR...). Aborts to the nearest prompt of
+    the default tag and runs the handler EXPR... there in a frame of
+    its own. The handler's value is the reset's. No continuation is
+    captured
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    helper_handler(compiler, called_by, body, fragment, 0)
+
+    return fragment
+
+
+@builtin("compile/abort-at")
+@special("compile/abort-at", patterns=_TAG_BODY_PATTERNS, unpack="kwargs")
+def special_abort_at(compiler, called_by, tag, body):
+    """
+    Compile (compile/abort-at TAG EXPR...). Evaluates TAG, aborts to
+    the nearest prompt carrying it, and runs the handler EXPR... there
+    in a frame of its own. The handler's value is the reset-at's. No
+    continuation is captured
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    fragment.merge(compiler.full_compile(tag.datum))
+    helper_handler(compiler, called_by, body, fragment, 1)
 
     return fragment
 

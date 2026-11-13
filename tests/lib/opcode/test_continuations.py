@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for delimited and undelimited continuations (RESET, SHIFT, CALL
+Tests for delimited and undelimited continuations (RESET, SHIFT_VAR, CALL
 on DelimitedContinuation, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator
 token.
 Includes cross-context continuation pass-through tests verifying the
@@ -51,68 +51,109 @@ _APPLY_K_5 = [
 
 class ResetBody(list):
     """
-    The rows of a reset's body, which expand_resets lays out after the
+    The rows of a reset's body, which expand_asides lays out after the
     RESET row that names them
     """
 
 
-_reset_labels = itertools.count()
-
-
-def expand_resets(code):
+class ShiftHandler(list):
     """
-    Lay each reset's body out the way the instruction takes it: a RESET
-    row carrying the label where its frame goes on, the body's rows
-    ending in their RETURN, then that label. A body may hold further
-    RESET rows written the same way
+    The rows of a shift's handler, which expand_asides lays out after
+    the SHIFT_VAR row that names them, with the names the handler binds
+    """
+
+    def __init__(self, rows, local_syms):
+        super().__init__(rows)
+        self.local_syms = tuple(local_syms)
+
+
+_aside_labels = itertools.count()
+
+
+def expand_asides(code, local_syms):
+    """
+    Lay each reset's body and each shift's handler out the way the
+    instruction takes it: the RESET or SHIFT_VAR row carrying a label, the
+    body's or handler's rows ending in their RETURN, then that label.
+    A body or a handler may hold further rows written the same way
 
     :param code: Sequence of [op, arg], a RESET row's second field being
-        a ResetBody
-    :return: the rows with every body laid out in place
+        a ResetBody and a SHIFT_VAR row's a ShiftHandler
+    :param local_syms: list that takes the names the handlers bind,
+        which are names of the code they are laid out in
+    :return: the rows with every body and handler laid out in place
     """
 
     rows = []
     for op, arg in code:
         if op == "RESET" and isinstance(arg[1], ResetBody):
-            label = f"reset.end.{next(_reset_labels)}"
-            rows.append(["RESET", (arg[0], label, arg[2], arg[3])])
-            rows.extend(expand_resets(arg[1]))
-            rows.append(["LABEL", label])
+            label = f"reset.end.{next(_aside_labels)}"
+        elif op == "SHIFT_VAR" and isinstance(arg[1], ShiftHandler):
+            label = f"shift.end.{next(_aside_labels)}"
+            for sym in arg[1].local_syms:
+                if sym not in local_syms:
+                    local_syms.append(sym)
         else:
             rows.append([op, arg])
+            continue
+        rows.append([op, (arg[0], label, arg[2], arg[3])])
+        rows.extend(expand_asides(arg[1], local_syms))
+        rows.append(["LABEL", label])
     return rows
 
 
-def build_code(code, *args, **kwds):
+def expand_with_syms(code, local_syms):
     """
-    tests.lib.opcode.build_code over rows with their reset bodies laid
-    out
-    """
+    expand_asides, with the names the handlers bind added to local_syms
 
-    return opcode_tests.build_code(expand_resets(code), *args, **kwds)
-
-
-def build_expr(code, *args, **kwds):
-    """
-    tests.lib.opcode.build_expr over rows with their reset bodies laid
-    out
+    :param code: Sequence of [op, arg] as in expand_asides
+    :param local_syms: None, a name, or a sequence of names
+    :return: the rows, and the local names as a tuple or None
     """
 
-    return opcode_tests.build_expr(expand_resets(code), *args, **kwds)
+    if local_syms is None:
+        syms = []
+    elif isinstance(local_syms, (tuple, list)):
+        syms = list(local_syms)
+    else:
+        syms = [local_syms]
+    rows = expand_asides(code, syms)
+    return rows, (tuple(syms) if syms else None)
+
+
+def build_code(code, local_syms=None, **kwds):
+    """
+    tests.lib.opcode.build_code over rows with their reset bodies and
+    shift handlers laid out
+    """
+
+    rows, local_syms = expand_with_syms(code, local_syms)
+    return opcode_tests.build_code(rows, local_syms=local_syms, **kwds)
+
+
+def build_expr(code, local_syms=None, **kwds):
+    """
+    tests.lib.opcode.build_expr over rows with their reset bodies and
+    shift handlers laid out
+    """
+
+    rows, local_syms = expand_with_syms(code, local_syms)
+    return opcode_tests.build_expr(rows, local_syms=local_syms, **kwds)
 
 
 def handler_spec(code, local_syms=("k",)):
     """
-    The FunctionSpec of a shift handler, a function of the one
-    parameter k, whose body is code
+    The rows of a shift's handler, for the second field of a SHIFT_VAR
+    row: they run in a frame of their own over the code and namespace
+    the SHIFT_VAR is in, which binds the continuation to k, and end in
+    a RETURN
 
     :param code: Sequence of [op, arg] as in build_code
-    :param local_syms: the handler's local names, k first
-    :return: FunctionSpec
+    :param local_syms: the names the handler binds, k first
+    :return: ShiftHandler
     """
 
-    handler = build_code(code, local_syms=local_syms, name="handler")
-    return handler.function_spec(FormalsSpec(("k",)))
+    return ShiftHandler(code, local_syms)
 
 
 def body_spec(code):
@@ -172,7 +213,7 @@ class TestReset(CevalTest):
 
         body = body_spec([
             ["CONST", 1],
-            ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
+            ["SHIFT_VAR", (0, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -191,7 +232,7 @@ class TestReset(CevalTest):
         """
 
         body = body_spec([
-            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -236,7 +277,7 @@ class TestReset(CevalTest):
 
 class TestDelimitedContinuations(CevalTest):
     """
-    Tests for SHIFT and CALL on a DelimitedContinuation, under RESET
+    Tests for SHIFT_VAR and CALL on a DelimitedContinuation, under RESET
     """
 
     async def test_delimited_continuation_cannot_be_called_from_python(self):
@@ -245,7 +286,7 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         body = body_spec([
-            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -277,7 +318,7 @@ class TestDelimitedContinuations(CevalTest):
         ], local_syms=("k", "j"))
         body = body_spec([
             ["CONST", 1],
-            ["SHIFT", (0, stored, 0, 0)],
+            ["SHIFT_VAR", (0, stored, "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -298,7 +339,7 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         body = body_spec([
-            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -319,12 +360,12 @@ class TestDelimitedContinuations(CevalTest):
         """
         (reset (shift k k)) then (k 99) => 99. When invoking from outside
         the handler, the continuation's first op is the body's RETURN
-        after SHIFT, which takes the value; the copy of the body returns
+        after SHIFT_VAR, which takes the value; the copy of the body returns
         99 to the call site.
         """
 
         body = body_spec([
-            ["SHIFT", (0, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -355,7 +396,7 @@ class TestDelimitedContinuations(CevalTest):
         inner = body_spec([
             ["CONST", 1],
             ["CONST", tag_a],
-            ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (1, handler_spec(_RETURN_K), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -391,7 +432,7 @@ class TestDelimitedContinuations(CevalTest):
         inner = body_spec([
             ["CONST", 1],
             ["CONST", tag_a],
-            ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
+            ["SHIFT_VAR", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -432,9 +473,9 @@ class TestDelimitedContinuations(CevalTest):
         inner = body_spec([
             ["CONST", 10],
             ["CONST", tag_a],
-            ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
+            ["SHIFT_VAR", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
-            ["SHIFT", (0, apply_k_100, 0, 0)],
+            ["SHIFT_VAR", (0, apply_k_100, "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -466,7 +507,7 @@ class TestDelimitedContinuations(CevalTest):
         tag_b = [1]
         body = body_spec([
             ["CONST", tag_b],
-            ["SHIFT", (1, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (1, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -492,7 +533,7 @@ class TestDelimitedContinuations(CevalTest):
         body = body_spec([
             ["CONST", 1],
             ["CONST", None],
-            ["SHIFT", (1, handler_spec(_APPLY_K_5), 0, 0)],
+            ["SHIFT_VAR", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -515,7 +556,7 @@ class TestDelimitedContinuations(CevalTest):
 
         body = body_spec([
             ["CONST", 1],
-            ["SHIFT", (0, handler_spec(_APPLY_K_5), 0, 0)],
+            ["SHIFT_VAR", (0, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -537,7 +578,7 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         code = [
-            ["SHIFT", (2, handler_spec(_RETURN_K), 0, 0)],
+            ["SHIFT_VAR", (2, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 0],
         ]
         with self.assertRaises(ValueError) as caught:

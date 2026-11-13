@@ -414,20 +414,26 @@ static int kos_load_capture_excs(void) {
 /**
    Raise KoskariPromptNotFound for a capture walk that exhausted the
    chain without meeting a prompt tagged tag. A NULL tag is the default
-   tag, which the exception reports as None, and is what a shift seeks;
-   any other is a shift-at's, which seeks a reset-at carrying it.
+   tag, which the exception reports as None, and is what a shift or an
+   abort seeks; any other is a shift-at's or an abort-at's, which seeks
+   a reset-at carrying it. operation is "shift" or "abort".
 */
-static int kos_raise_prompt_not_found(PyObject *tag) {
+static int kos_raise_prompt_not_found(PyObject *tag, const char *operation) {
+  PyObject *msg;
   PyObject *exc;
 
   if (kos_load_capture_excs())
     return -1;
 
+  msg = PyUnicode_FromFormat(
+      tag ? "%s-at has no enclosing reset-at carrying its tag"
+          : "%s has no enclosing reset",
+      operation);
+  if (! msg)
+    return -1;
+
   exc = PyObject_CallFunction(
-      exc_prompt_not_found, "sOs",
-      tag ? "shift-at has no enclosing reset-at carrying its tag"
-          : "shift has no enclosing reset",
-      tag ? tag : Py_None, "shift");
+      exc_prompt_not_found, "NOs", msg, tag ? tag : Py_None, operation);
   if (! exc)
     return -1;
   PyErr_SetObject(exc_prompt_not_found, exc);
@@ -438,7 +444,7 @@ static int kos_raise_prompt_not_found(PyObject *tag) {
 
 /**
    Raise KoskariPromptUnreachable at a node that refused a capture: a
-   node that denied handle(SHIFT), or one whose clone
+   node that denied handle(ABORT), or one whose clone
    refused because its call is in flight. fmt takes the boundary word
    once. A capture's refuse
    site does not know which prompt the walk was seeking, and a clone
@@ -2353,17 +2359,17 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
       if (event == KOS_XFER_EVENT_RETURN
           || event == KOS_XFER_EVENT_RAISE)
         return KOS_HANDLE_CONSUMED;
-      if (event == KOS_XFER_EVENT_SHIFT) {
+      if (event == KOS_XFER_EVENT_ABORT) {
+        /* kos_prompt_seek names the operation */
         kos_raise_prompt_unreachable(
-            "shift", "generator",
-            "shift cannot capture across a %s boundary");
+            NULL, "generator", "cannot abort across a %s boundary");
         return KOS_HANDLE_ERROR;
       }
       return KOS_HANDLE_PASS;
     case KOS_DYN_PROMPT:
-      /* every prompt consumes a shift; kos_shift_capture's walk judges
-         the tag and crosses a prompt whose tag differs */
-      if (event == KOS_XFER_EVENT_SHIFT)
+      /* every prompt consumes an abort; kos_prompt_seek judges the
+         tag and crosses a prompt whose tag differs */
+      if (event == KOS_XFER_EVENT_ABORT)
         return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
     default:
@@ -2646,9 +2652,60 @@ static KosContinuation *kos_continuation_capture_segment(
 
 
 /**
-   Delimited shift: locate the prompt and offer handle(SHIFT) en route in
-   one walk, clone the chain segment for the invoke template, build the
-   KosContinuation. Callers: opcode SHIFT.
+   The nearest prompt carrying tag, for an abort or the abort a shift
+   makes. One walk from dyn_top offers handle(ABORT) to every node
+   crossed: GEN denies (no abort crosses a generator node), a PROMPT
+   consumes -- the match
+   when its tag agrees, crossed when it does not, so the walk goes on
+   to the parent. A consumer of any other kind is a topology error.
+   Reachability is implied by the walk itself. Returns NULL with an
+   exception set.
+*/
+static KosDynPrompt *kos_prompt_seek(
+    KosContext *ctx,
+    PyObject *tag,
+    const char *operation) {
+
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
+
+  while (node) {
+    KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_ABORT);
+
+    if (hr == KOS_HANDLE_ERROR) {
+      kos_capture_note(tag, operation);
+      return NULL;
+    }
+    if (hr == KOS_HANDLE_CONSUMED) {
+      if (! KosDynNode_IS_PROMPT(node)) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "%s consumed before reaching prompt", operation);
+        return NULL;
+      }
+      if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag)
+        return (KosDynPrompt *) node;
+    }
+    node = KosDynNode_PARENT(node);
+  }
+
+  kos_raise_prompt_not_found(tag, operation);
+  return NULL;
+}
+
+
+/**
+   The prompt an abort goes to. See dynchain.h for the contract.
+   Callers: opcode ABORT.
+*/
+KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag) {
+  return kos_prompt_seek(ctx, tag, "abort");
+}
+
+
+/**
+   Delimited shift: locate the prompt, clone the chain segment for the
+   invoke template, build the KosContinuation. A prompt of another tag
+   the walk crossed rides in the template as region content. Callers:
+   opcodes SHIFT_VAR, SHIFT_FAST.
 */
 int kos_shift_capture(
     KosContext *ctx,
@@ -2657,40 +2714,10 @@ int kos_shift_capture(
     KosContinuation **out_k,
     KosDynPrompt **out_prompt) {
 
-  /* One walk from dyn_top locates the nearest matching prompt while
-     offering handle(SHIFT) to every node crossed: GEN denies (a shift
-     cannot cross a generator node), a PROMPT consumes -- the match
-     when its tag agrees, crossed when it does not, so the walk goes
-     on to the parent and the prompt rides in the template as region
-     content. A consumer of any other kind is a topology error.
-     Reachability is implied by the walk itself. */
-  KosDynPrompt *prompt = NULL;
-  {
-    KosDynNode *node = KosContext_DYN_TOP(ctx);
+  KosDynPrompt *prompt = kos_prompt_seek(ctx, tag, "shift");
 
-    while (node) {
-      KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_SHIFT);
-
-      if (hr == KOS_HANDLE_ERROR) {
-        kos_capture_note(tag, "shift");
-        return -1;
-      }
-      if (hr == KOS_HANDLE_CONSUMED) {
-        if (! KosDynNode_IS_PROMPT(node)) {
-          PyErr_SetString(PyExc_RuntimeError,
-                          "handle(SHIFT) consumed before reaching prompt");
-          return -1;
-        }
-        if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag) {
-          prompt = (KosDynPrompt *) node;
-          break;
-        }
-      }
-      node = KosDynNode_PARENT(node);
-    }
-  }
   if (! prompt)
-    return kos_raise_prompt_not_found(tag);
+    return -1;
 
   /* The template is whole frames from dyn_top down through the prompt:
      the reset's body frame sits on the prompt, so the region's code,

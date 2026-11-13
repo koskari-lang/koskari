@@ -49,7 +49,7 @@ KOS_OP_HANDLER(RESET) {
      stores it, and the body's return continues from it */
   KosContext_SET_PC(ctx, KosExtra_TARGET(row, 1));
 
-  if (! kos_dyn_push_frame_shared(ctx, body))
+  if (! kos_dyn_push_aside(ctx, body))
     RESULT_RAISE();
 
   RESULT_CONTINUE(ctx);

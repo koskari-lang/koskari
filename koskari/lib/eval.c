@@ -945,7 +945,7 @@ static KosOpResult process_raise(KosContext *ctx) {
 
 
 /**
-   The prompt tag a RESET or SHIFT names by its count: 0 for the
+   The prompt tag a RESET, ABORT or SHIFT names by its count: 0 for the
    default tag, or 1 for a tag the instruction pops from the stack;
    Code construction refuses any other count. The default tag is NULL,
    and a popped None names it too. Returns -1 with an exception set, or
@@ -975,8 +975,40 @@ static int pop_prompt_tag(
 
 
 /**
-   Build a function from fspec over parent_ns, for BUILD_FUNCTION and
-   SHIFT. defaults and annotations are dicts or NULL, borrowed.
+   The capture a SHIFT_VAR or SHIFT_FAST makes: the continuation from
+   the row's label up to the prompt its tag count names. Returns the
+   continuation object, a new reference, with *out_prompt the prompt
+   it stops at, borrowed; or NULL with an exception set.
+*/
+static PyObject *shift_capture(
+    KosContext *ctx,
+    const KosExtra *row,
+    KosDynPrompt **out_prompt) {
+
+  PyObject *tag;
+  PyObject *wrapper;
+  KosContinuation *k = NULL;
+  int failed;
+
+  if (pop_prompt_tag(ctx, (unsigned) KosExtra_IMM(row, 0), &tag) < 0)
+    return NULL;
+
+  failed = kos_shift_capture(
+      ctx, tag, KosExtra_TARGET(row, 1), &k, out_prompt);
+  Py_XDECREF(tag);
+  if (failed < 0)
+    return NULL;
+
+  wrapper = KosPyDelimitedContinuation_New(k);
+  if (! wrapper)
+    kos_continuation_free(k);
+  return wrapper;
+}
+
+
+/**
+   Build a function from fspec over parent_ns, for BUILD_FUNCTION.
+   defaults and annotations are dicts or NULL, borrowed.
 
    __module__ is the name of the module the function is built in,
    recorded here as CPython records a function's globals' __name__: the
@@ -1342,7 +1374,7 @@ static PyObject *kos_import_module(
    CHECK_* - comparison / jump
    OBJECT_* - object protocol
    PUSH_*, POP_* - blocks, regions, NS
-   RESET, SHIFT, CALL on DelimitedContinuation - continuations
+   RESET, ABORT, SHIFT_*, CALL on DelimitedContinuation - continuations
  */
 
 

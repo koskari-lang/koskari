@@ -35,9 +35,9 @@
    point with the registers live there (KosCloneShape); the first
    ATTACHING completes it from the registers at the seam, and every
    ATTACHING is a relink and a register load, with no walk. DELIVERING
-   pushes the payload, or sets the pending throw, and retires the goal;
-   a shift's abort, which has no target, instead calls its handler with
-   k above the prompt, its seam.
+   pushes the payload, or sets the pending throw, and retires the goal.
+   An abort to a prompt is the same four: its seam is the prompt, its
+   target the handler's one frame, and it has no payload.
 
    A leave or enter that hands control to a thunk frame or an awaitable
    makes the goal wait on that node: the thunk's frame installs directly
@@ -120,7 +120,7 @@ struct KosXferGoal {
   size_t piece_next;           /* the entry the next ATTACHING splits at */
   size_t piece_entered;        /* entries whose node ENTERING has run */
 
-  /* owned: the value, the exception, or a shift abort's handler */
+  /* owned: the value or the exception; NULL for an abort to a prompt */
   PyObject *payload;
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
   KosOp *resume_pc;            /* NULL when unset */
@@ -132,9 +132,6 @@ struct KosXferGoal {
   /* LEAVING unlinked an outer's frontier; ATTACHING retires the voided
      outers */
   uint8_t voided_outer;
-  /* a shift's abort: DELIVERING calls the handler in payload with the
-     continuation in continuation_ref, above the seam, the prompt */
-  uint8_t shift_abort;
 };
 
 

@@ -67,7 +67,6 @@ KosXferGoal *kos_xfer_goal_new(
   goal->phase = KOS_GOAL_LEAVING;
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
   goal->voided_outer = 0;
-  goal->shift_abort = 0;
   return goal;
 }
 
@@ -638,47 +637,11 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
-   DELIVERING for a shift's abort: retire the goal and call the handler
-   with the continuation, as a transfer fires a dyn-wind thunk, but
-   keeping its value. The prompt is at dyn_top, so the handler's frame
-   installs above it, and its return ends the prompt and is the reset's
-   return, as the body's would have been. A value in hand ends the
-   prompt here and goes where the reset's value goes.
-*/
-static KosOpResult goal_call_handler(KosContext *ctx, KosXferGoal *goal) {
-
-  PyObject *handler = goal->payload;
-  PyObject *k = goal->continuation_ref;
-  KosDynPrompt *prompt = (KosDynPrompt *) goal->seam;
-  KosOpResult r;
-
-  goal->payload = NULL;
-  goal->continuation_ref = NULL;
-  kos_xfer_goal_pop(ctx);
-
-  r = KosContext_Call(ctx, handler, &k, 1, NULL, 0, NULL, NULL);
-  Py_DECREF(handler);
-  Py_DECREF(k);
-
-  if (r.kind == KOS_RES_RETURN) {
-    if (kos_dyn_pop_prompt(ctx, prompt) < 0) {
-      Py_DECREF(r.val);
-      return EVAL_RAISE();
-    }
-    return KosContext_PushOrAwait(ctx, r.val);
-  }
-  if (r.kind == KOS_RES_RAISE || r.kind == KOS_RES_AWAIT
-      || r.kind == KOS_RES_FATAL)
-    return r;
-  return EVAL_REPROLOGUE();
-}
-
-
-/**
    DELIVERING: push the payload, stage it for the receiving frame's
    resume, set it as a pending throw, or raise it at the boundary; then
-   retire the goal. A shift's abort calls its handler instead
-   (goal_call_handler). A receiving frame that carries a resume the goal
+   retire the goal. An abort to a prompt has no payload: its target is
+   the handler's frame, which takes nothing, and the goal only retires.
+   A receiving frame that carries a resume the goal
    installed, through a restore record or an attached copy, was
    waiting on a delivery when it was captured: the payload is that
    delivery, staged in the pending slot for the prologue pass that
@@ -710,10 +673,9 @@ static KosOpResult goal_deliver(
   if (! goal->target && ! goal->restore)
     kos_dynframe_clear_resume(KosContext_FRAME(ctx));
 
-  if (goal->shift_abort)
-    return goal_call_handler(ctx, goal);
-
-  if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
+  if (! goal->payload) {
+    /* an abort to a prompt: the handler's frame takes nothing */
+  } else if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
 #if KOS_EVAL_SAFETYNET
     if (KosContext_PENDING_VALUE(ctx)) {
       PyErr_SetString(PyExc_SystemError,

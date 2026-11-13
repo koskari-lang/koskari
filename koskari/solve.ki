@@ -99,7 +99,7 @@ def fail []:
   """
 
   try:
-    shift-at search-prompt-tag k #()
+    abort-at search-prompt-tag #()
   except [e KoskariPromptNotFound]:
     if (is? e.tag search-prompt-tag):
       raise (NoActiveSearch "fail requires an enclosing solve or solve-first")

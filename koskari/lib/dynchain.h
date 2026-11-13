@@ -61,7 +61,7 @@
   KOS_DYN_WITH     - Context manager (with / dyn-with); a dyn-with carries
                      KOS_DYN_CAP_WINDS, not a second kind
   KOS_DYN_GEN      - Generator node; intercepts handle(RETURN/RAISE),
-                     denies handle(SHIFT)
+                     denies handle(ABORT)
   KOS_DYN_UNKNOWN  - Sentinel value for unknown node kind
 */
 typedef enum KosDynKind {
@@ -356,7 +356,7 @@ typedef enum KosXferEvent {
   KOS_XFER_EVENT_RAISE,
   KOS_XFER_EVENT_BREAK,
   KOS_XFER_EVENT_CONTINUE,
-  KOS_XFER_EVENT_SHIFT,
+  KOS_XFER_EVENT_ABORT,      /* an abort seeking its prompt */
   KOS_XFER_EVENT_TRANSFER,   /* a transfer is tearing the node down */
 } KosXferEvent;
 
@@ -1077,9 +1077,17 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
     KosCode *code,
     PyObject *ns);
 
-/* Push a frame over the live frame's code and the live namespace,
-   starting at entry; see dynchain/dyn_frame.c. */
-KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry);
+/* An aside: a frame of no arguments over another frame's code and
+   namespace, starting at entry; see dynchain/dyn_frame.c. */
+KosDynFrame *kos_dynframe_new_aside(
+    KosDynNode *parent,
+    KosDynFrame *base,
+    KosCode *code,
+    PyObject *ns,
+    KosOp *entry);
+
+/* Push an aside over the live frame's code and the live namespace. */
+KosDynFrame *kos_dyn_push_aside(KosContext *ctx, KosOp *entry);
 
 
 /**
@@ -1364,31 +1372,46 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
 
 /**
-   Abort a shift to its prompt, then call its handler with k there.
+   The nearest prompt carrying tag that an abort can reach.
+
+   :param ctx: execution context
+   :param tag: the tag sought, matched by identity, or NULL for the
+     default tag (never None); borrowed
+
+   :return: the prompt, borrowed, or NULL with KoskariPromptNotFound or
+     KoskariPromptUnreachable set
+*/
+KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
+
+
+/**
+   Abort to a prompt, then run a handler there.
 
    The transfer leaves everything above the prompt, the reset's body
    frame included, which holds the region's operands until the abort
    can no longer be cancelled: a dyn-wind after thunk or a with's
    __exit__ that raises on the way out abandons the transfer, and the
    region carries on where the raise is caught. Once the prompt is at
-   dyn_top the handler is called above it; the handler's return takes
-   the prompt with it and is the reset's return. A shift in the handler
-   finds the same prompt.
+   dyn_top an aside over the running frame's code and namespace,
+   standing at entry, is attached above it and runs; nothing is
+   delivered to it. The handler's return takes the prompt with it
+   and is the reset's return. A shift or an abort in the handler finds
+   the same prompt.
 
-   Pushes a transfer goal; the caller answers REPROLOGUE.
+   Pushes a transfer goal whose target is the aside; the caller answers
+   REPROLOGUE.
 
    :param ctx: execution context
-   :param prompt: the prompt the shift captured up to
-   :param handler: the handler, a function of one parameter; borrowed
-   :param k: the continuation object the handler receives; borrowed
+   :param prompt: the prompt to abort to
+   :param entry: the handler's first instruction, in the running
+     frame's code
 
    :return: 0 on success, -1 with an exception set
 */
-int kos_shift_abort(
+int kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
-    PyObject *handler,
-    PyObject *k);
+    KosOp *entry);
 
 
 /**

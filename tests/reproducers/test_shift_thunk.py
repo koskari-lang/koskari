@@ -15,13 +15,14 @@
 """
 tests.reproducers.test_shift_thunk
 
-A shift's handler is a function of its continuation, closed over the
-scope the shift was written in. The shift aborts to its prompt, then
-calls the handler with the continuation while the prompt is still in
-place, and the handler's value is the reset's. A return in the handler
-returns that value; a shift in the handler finds the same prompt. The
-continuation is the handler's parameter and nothing outside it binds
-the name.
+A shift's handler runs in a frame of its own over the code and names
+of the function the shift was written in. The shift aborts to its
+prompt, then runs the handler with the continuation bound to its name
+while the prompt is still in place, and the handler's value is the
+reset's. A return in the handler returns that value; a shift in the
+handler finds the same prompt. The continuation's name and a var in
+the handler are names of the enclosing function, shared by every entry
+of the handler; a let in the handler keeps a binding of its own.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -32,6 +33,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import SpecialError
+from koskari.lib import DelimitedContinuation
 from koskari.module import load_module_source_async, new_module
 
 
@@ -112,6 +114,17 @@ def var_in_handler []:
             var x 2
             x
     x
+
+def let_keeps_k []:
+    var seen #[]
+    reset:
+        for-each [x #[1 2]]:
+            shift k:
+                let [[kept k]]:
+                    (seen.append (is kept k))
+                    (kept None)
+                    (seen.append (is kept k))
+    seen
 
 def break_outer_loop []:
     try:
@@ -220,15 +233,23 @@ class TestShiftThunk(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(6, await mod["multi_shot"]())
 
 
-    async def test_k_is_not_bound_after_the_form(self):
+    async def test_k_is_a_name_of_the_enclosing_function(self):
         mod = await self.load()
-        with self.assertRaises(NameError):
-            await mod["k_after_the_form"]()
+        self.assertIsInstance(
+            await mod["k_after_the_form"](), DelimitedContinuation)
 
 
-    async def test_var_in_a_handler_is_local_to_it(self):
+    async def test_var_in_a_handler_is_the_enclosing_function_name(self):
         mod = await self.load()
-        self.assertEqual(1, await mod["var_in_handler"]())
+        self.assertEqual(2, await mod["var_in_handler"]())
+
+
+    async def test_let_in_a_handler_keeps_its_own_binding(self):
+        # the loop reaches the shift again inside the first (kept None)
+        # and rebinds k; each entry's kept is still its own continuation
+        mod = await self.load()
+        self.assertEqual(
+            [True, True, True, False], await mod["let_keeps_k"]())
 
 
     async def test_break_does_not_reach_a_loop_around_the_reset(self):

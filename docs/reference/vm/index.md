@@ -299,7 +299,7 @@ The opcodes by family, each linking to its section.
 - [18. Block control](#18-block-control) -- PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) -- PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) -- OBJECT_* (comparisons, predicates, numeric, general)
-- [20. Delimited continuations](#20-delimited-continuations) -- RESET, SHIFT
+- [20. Delimited continuations](#20-delimited-continuations) -- RESET, ABORT, SHIFT_VAR, SHIFT_FAST
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) -- PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) -- PUSH_WIND, POP_WIND
 - [23. Parameterize extent](#23-parameterize-extent-and-parameter-reads) -- PUSH_PARAM, PARAM, POP_PARAM
@@ -655,7 +655,9 @@ The opcodes by family, each linking to its section.
 | OBJECT_TYPE | NOARG | Pop TOS, push `type(TOS)` | [section 19](opcodes/kos-op-object-type.md) |
 | OBJECT_VARS | NOARG | Pop TOS, push its `__dict__` | [section 19](opcodes/kos-op-object-vars.md) |
 | RESET | EXTRA | Push a prompt and run the reset's body in a frame above it | [section 20](opcodes/kos-op-reset.md) |
-| SHIFT | EXTRA | Capture continuation, abort to the prompt, call the handler with it | [section 20](opcodes/kos-op-shift.md) |
+| ABORT | EXTRA | Abort to the prompt, run the handler above it | [section 20](opcodes/kos-op-abort.md) |
+| SHIFT_VAR | EXTRA | Capture continuation, bind it to a name, then as ABORT | [section 20](opcodes/kos-op-shift-var.md) |
+| SHIFT_FAST | EXTRA | SHIFT_VAR with the continuation in a fast slot | [section 20](opcodes/kos-op-shift-fast.md) |
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [section 21](opcodes/kos-op-push-cc.md) |
 | CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [section 21](opcodes/kos-op-capture-cc.md) |
 | POP_CC | NOARG | Pop the CC block; also the arrival point when a captured continuation is invoked | [section 21](opcodes/kos-op-pop-cc.md) |
@@ -4362,49 +4364,89 @@ A reset is one instruction, RESET, followed by the body: RESET pushes a
 prompt and a frame above it that runs the body over the enclosing
 function's code and names. A frame returning onto a prompt
 ends it: the frame and the prompt both go, and the value is delivered below
-as any callee's return is. SHIFT is one instruction: it captures the
-continuation from the instruction after it up to the prompt, aborts to the
-prompt, and calls the handler, a function of the continuation, there; the
-handler's return ends the prompt as the body's would have.
+as any callee's return is. ABORT is one instruction, followed by the
+handler: it aborts to the prompt and runs the handler there in a frame
+over the same code and names; the handler's return ends the prompt as the
+body's would have. SHIFT_VAR and its lowering SHIFT_FAST first capture the
+continuation from their label up to the prompt and bind it to a name,
+then do as ABORT does.
 
 ### KOS_OP_RESET
 
 - **Style**: EXTRA (`COUNT`, `LABEL`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = the instruction where the frame goes on after the body. Any other count is refused when the code is built. Tags match by identity.
 - **Stack**: Pushes a prompt carrying the tag, sets the frame's resume position to `a1`, and pushes a frame above the prompt that runs the instructions following RESET. That frame runs the same code object over the same namespace as the frame RESET ran in, so the body reads and binds the enclosing function's names. The body ends in a RETURN. The body's return, or the return of a shift's handler called above the same prompt, unlinks the prompt and pushes the value on the stack of the frame below, as a call's return does; that frame goes on at `a1`.
 - **Pushes:** KOS_DYN_PROMPT, then the body's KOS_DYN_FRAME above it. The prompt owns no operand segment: the region's operands are in the frames above it.
-- **Invariants**: SHIFT captures up to this prompt. A prompt at the root of a context ends the context when the frame on it returns. An exception unwinding past a PROMPT unlinks it.
+- **Invariants**: A shift captures up to this prompt, and an ABORT aborts to it. A prompt at the root of a context ends the context when the frame on it returns. An exception unwinding past a PROMPT unlinks it.
 - **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, label, 0, 0)`; `NOARG` slots are ignored by the assembler. The compiler emits RESET, the body, `RETURN 1`, then the label. `reset` emits count `0`; `reset-at` compiles its tag first and emits count `1`.
 
-**Example:** `(reset (+ 1 (shift k (k 5))))` as a function's whole body. The extra row: `(0, -> 5, 0, 0)`.
+**Example:** `(+ 1 (reset (* x 2)))` as the body of a function of `x`. The extra row: `(0, -> 4, 0, 0)`.
 
-| index | opcode         | arg | arg view                | comment |
-|------:|----------------|-----|-------------------------|---------|
-| 0     | RESET          | 0   | 0 (0, -> 5)             | push prompt; run 1 onward in a frame above it |
-| 1     | CONST          | 0   | 0 (1)                   | body |
-| 2     | SHIFT          | 1   | 1 (0, handler fspec)    | |
-| 3     | OBJECT_OPERAND | 2   | ADD x2                  | |
-| 4     | RETURN         | 1   | 1                       | the body's value; ends the prompt |
-| 5     | RETURN         | 1   | 1                       | the function's value, the reset's |
+| index | opcode             | arg | arg view                  | comment |
+|------:|--------------------|-----|---------------------------|---------|
+| 0     | CONST              | 0   | 0 (1)                     | stack: [1] |
+| 1     | RESET              | 0   | 0 (0, -> 4)               | push prompt; run 2 onward in a frame above it |
+| 2     | FAST_OPERAND_CONST | 1   | MULTIPLY, fast 0 ("x"), 2 | body, reading the function's `x` |
+| 3     | RETURN             | 1   | 1                         | the body's value; ends the prompt |
+| 4     | OBJECT_OPERAND     | 2   | ADD x2                    | the function goes on with the reset's value |
+| 5     | RETURN             | 1   | 1                         | |
 
 ---
 
-### KOS_OP_SHIFT
+### KOS_OP_ABORT
 
-- **Style**: EXTRA (`COUNT`, `CONST`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = constant pool index of the handler's **function spec**, a function of one parameter, the continuation. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: Builds the handler from its spec against the current frame namespace, as BUILD_FUNCTION does. Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole, resuming at the instruction after SHIFT -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. The shift then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit). When an after thunk or exit raises, the abort is abandoned and the raise propagates from where it ran, with the region's operands still in place. Once the prompt is at the top of the chain, the handler is called with the continuation above the prompt. The handler's return ends the prompt and is the RESET's value, as the body's return would have been.
-- **Pushes:** Nothing on the dynamic chain; the handler's frame is a call above the prompt, so a SHIFT in the handler finds the same prompt.
-- **Invariants**: The continuation holds whole frames up to and including the reset's body, and the prompt. Invoking it re-delimits: each invocation attaches a copy of them above the caller, so a shift inside that run aborts only to that copy's prompt, and the copy's body returns to the caller as a callee does; its value, or the value of a handler called above the copy's prompt, is the value of that invocation.
-- **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary), or a `with`, `dyn-with` or dyn-wind node whose enter, exit, before or after call is running, raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`.
-- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, function_spec, 0, 0)`; `NOARG` slots are ignored by the assembler. `shift` emits count `0`; `shift-at` compiles its tag first and emits count `1`.
+- **Style**: EXTRA (`COUNT`, `LABEL`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = the instruction after the handler, which nothing at run time reads. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: The handler is the instructions that follow ABORT, up to a RETURN. One walk from the top of the dynamic chain locates the nearest matching prompt (a generator boundary denies). ABORT then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit). When an after thunk or exit raises, the abort is abandoned and the raise propagates from where it ran, with the region's operands still in place. Once the prompt is at the top of the chain, a frame is attached above it that runs the same code object over the namespace live at the ABORT, standing at the instruction after ABORT with an empty stack. The handler's return ends the prompt and is the RESET's value, as the body's return would have been. Nothing is captured.
+- **Pushes:** The handler's KOS_DYN_FRAME above the prompt, once the abort has left the region, so an ABORT or a shift in the handler finds the same prompt. The frame holds the code and the namespace itself, since the frame the ABORT ran in is gone by then.
+- **Invariants**: The handler shares its names with the function the ABORT is in.
+- **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a generator boundary on the way raises `KoskariPromptUnreachable` with the boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`, `abort`.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, label, 0, 0)`; `NOARG` slots are ignored by the assembler. The compiler emits ABORT, the handler body, `RETURN 1`, then the label. `abort` emits count `0`; `abort-at` compiles its tag first and emits count `1`.
 
-**Example:** the body of `(reset (+ 1 (shift k (k 5))))`. Pool: 0 = 1, 1 = the handler's function spec; extra row: `(0, fspec, 0, 0)`.
+**Example:** `(reset (+ 1 (abort 5)))` as a function's whole body. The ABORT's extra row: `(0, -> 4, 0, 0)`.
 
-| index | opcode      | arg | arg view     | comment |
-|------:|-------------|-----|--------------|---------|
-| 0     | CONST       | 0   | 0 (1)        | region operand; stack: [1] |
-| 1     | SHIFT       | 0   | 0 (0, fspec) | capture k; abort to the prompt; call the handler with k |
-| 2     | OBJECT_ADD  | 2   | 2            | the continuation resumes here with the hole's value |
-| 3     | RETURN      | 1   | 1            | the body's value, or a copy's, ends its prompt |
+| index | opcode         | arg | arg view              | comment |
+|------:|----------------|-----|-----------------------|---------|
+| 0     | RESET          | 0   | 0 (0, -> 6)           | push prompt; run 1 onward in a frame above it |
+| 1     | CONST          | 0   | 0 (1)                 | region operand; stack: [1] |
+| 2     | ABORT          | 1   | 1 (0, -> 4)           | abort to the prompt; run 3 onward above it |
+| 3     | RETURN_CONST   | 1   | 1 (5)                 | the handler's value; ends the prompt |
+| 4     | OBJECT_OPERAND | 2   | ADD x2                | never reached |
+| 5     | RETURN         | 1   | 1                     | |
+| 6     | RETURN         | 1   | 1                     | the function's value, the reset's |
+
+---
+
+### KOS_OP_SHIFT_VAR
+
+- **Style**: EXTRA (`COUNT`, `LABEL`, `VAR`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, `a1` = the instruction where the shift's own frame goes on when the continuation is called, and `a2` = the name the continuation is bound to. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: The handler is the instructions that follow SHIFT_VAR, up to a RETURN. SHIFT_VAR captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole, resuming at `a1` -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. It stores the continuation under the name in the frame namespace, then aborts to the prompt and runs the handler above it as [ABORT](#kos_op_abort) does. The handler's return ends the prompt and is the RESET's value, as the body's return would have been.
+- **Pushes:** The handler's KOS_DYN_FRAME above the prompt, once the abort has left the region, so a shift in the handler finds the same prompt. The frame holds the code and the namespace itself, since the frame the SHIFT_VAR ran in is gone by then.
+- **Invariants**: The continuation holds whole frames up to and including the reset's body, and the prompt. Invoking it re-delimits: each invocation attaches a copy of them above the caller, so a shift inside that run aborts only to that copy's prompt, and the copy's body returns to the caller as a callee does; its value, or the value of a handler run above the copy's prompt, is the value of that invocation. The handler shares its names with the function the SHIFT_VAR is in, the continuation's name among them. The continuation is bound before the abort, so it stays bound when a raising after thunk or exit abandons the abort.
+- **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a generator boundary on the way, or a `with`, `dyn-with` or dyn-wind node whose enter, exit, before or after call is running, raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`, `shift`.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, label, name, 0)`; `NOARG` slots are ignored by the assembler. The compiler emits SHIFT_VAR, the handler body, `RETURN 1`, then the label. `shift` emits count `0`; `shift-at` compiles its tag first and emits count `1`. A name with a fast slot lowers the opcode to [SHIFT_FAST](#kos_op_shift_fast); this form remains where the name has none, such as a module-level shift.
+
+---
+
+### KOS_OP_SHIFT_FAST
+
+- **Style**: EXTRA (`COUNT`, `LABEL`, `FASTVAR`, `NOARG`). As [SHIFT_VAR](#kos_op_shift_var), with `a2` = the fast slot the continuation is bound to.
+- **Stack**: As SHIFT_VAR: captures the continuation up to the prompt, stores it into the fast slot, aborts to the prompt, and runs the handler that follows in a frame above it.
+- **Invariants**: As SHIFT_VAR. The slot must be a fast slot of the current frame namespace.
+- **Errors**: As SHIFT_VAR.
+- **Compiler form:** Lowered from `SHIFT_VAR` when the continuation's name has a fast slot.
+
+**Example:** `(reset (+ 1 (shift k (k 5))))` as a function's whole body, with `k` its fast variable 0. The SHIFT_FAST's extra row: `(0, -> 6, 0, 0)`.
+
+| index | opcode         | arg | arg view                      | comment |
+|------:|----------------|-----|-------------------------------|---------|
+| 0     | RESET          | 0   | 0 (0, -> 8)                   | push prompt; run 1 onward in a frame above it |
+| 1     | CONST          | 0   | 0 (1)                         | region operand; stack: [1] |
+| 2     | SHIFT_FAST     | 1   | 1 (0, -> 6, fast 0 ("k"))     | capture and bind k; abort to the prompt; run 3 onward above it |
+| 3     | CONST          | 1   | 1 (5)                         | |
+| 4     | TAIL_CALL_FAST | 2   | fast 0 ("k"), 1               | (k 5) |
+| 5     | RETURN         | 1   | 1                             | the handler's value; ends the prompt |
+| 6     | OBJECT_OPERAND | 2   | ADD x2                        | the continuation resumes here with the hole's value |
+| 7     | RETURN         | 1   | 1                             | the body's value, or a copy's, ends its prompt |
+| 8     | RETURN         | 1   | 1                             | the function's value, the reset's |
 
 ---
 
