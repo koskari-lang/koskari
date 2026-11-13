@@ -179,10 +179,12 @@ def helper_handler(
     Emit the aside that aborts to a prompt and then runs the handler
     into fragment: PUSH_ASIDE, an ABORT row or with k a SHIFT_VAR row,
     which captures the continuation and binds it to K first, the
-    handler's instructions and its RETURN, and POP_ASIDE. The handler
-    is compiled in a scope of its own that owns K alone: every other
-    name it declares is the enclosing scope's, reached from the handler
-    as a closure name. The tag, when there is one, is already on the
+    handler's instructions and its RETURN, and POP_ASIDE. A shift's
+    handler is compiled in a scope of its own that owns K alone: every
+    other name it declares is the enclosing scope's, reached from the
+    handler as a closure name. An abort's handler owns no name and is
+    compiled in the enclosing scope. The tag, when there is one, is
+    already on the
     stack of the frame the form is written in, where the row takes it
     from. A yield written in the handler is refused, since the
     handler's frame is not the generator's; one in a function defined

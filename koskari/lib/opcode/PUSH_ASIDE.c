@@ -19,11 +19,11 @@
    None. Cache: the extent's close.
 
    The instructions from the next one up to their RETURN run in an
-   aside: a frame of its own over this frame's code. Its namespace is
-   built from the spec, whose closure names are resolved from the live
-   namespace, or is the empty namespace when the constant is None,
-   which is what the compiler writes for an aside that names nothing.
-   The live namespace is not held. This frame is left standing at the
+   aside: a frame of its own over this frame's code. With a spec, its
+   namespace is built from the spec, whose closure names are resolved
+   from the live namespace, and the live namespace is not held. With
+   None, which is what the compiler writes for an aside that owns no
+   name, it runs over the live namespace. This frame is left standing at the
    POP_ASIDE that closes the extent, and goes on from there with the
    aside's value when the aside returns to it. An aside that aborts
    (ABORT, SHIFT_VAR, SHIFT_FAST) returns to the frame under the
@@ -42,25 +42,29 @@ KOS_OP_HANDLER(PUSH_ASIDE) {
     RESULT_RAISE();
 
   if (nspec == Py_None) {
-    ns = Py_NewRef(KosNamespace_Empty());
-  } else {
-    if (unlikely(! KosNamespaceSpec_CheckExact(nspec))) {
-      PyErr_Format(PyExc_RuntimeError,
-                   "PUSH_ASIDE spec must be a NamespaceSpec or None, not %R",
-                   nspec);
+    /* the position this frame keeps while the aside runs */
+    KosContext_SET_PC(ctx, pop);
+
+    if (! kos_dyn_push_aside(ctx, entry, NULL, 0))
       RESULT_RAISE();
-    }
-    ns = KosNamespace_FromSpec(nspec, CURRENT_NS());
-    if (unlikely(! ns))
-      RESULT_RAISE();
+    RESULT_CONTINUE(ctx);
   }
 
-  /* the position this frame keeps while the aside runs */
+  if (unlikely(! KosNamespaceSpec_CheckExact(nspec))) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "PUSH_ASIDE spec must be a NamespaceSpec or None, not %R",
+                 nspec);
+    RESULT_RAISE();
+  }
+
+  ns = KosNamespace_FromSpec(nspec, CURRENT_NS());
+  if (unlikely(! ns))
+    RESULT_RAISE();
+
   KosContext_SET_PC(ctx, pop);
 
-  /* a namespace built here is the aside's to report to the collector;
-     the empty one is nobody's */
-  aside = kos_dyn_push_aside(ctx, entry, ns, nspec != Py_None);
+  /* a namespace built here is the aside's to report to the collector */
+  aside = kos_dyn_push_aside(ctx, entry, ns, 1);
   Py_DECREF(ns);
   if (! aside)
     RESULT_RAISE();

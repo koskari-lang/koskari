@@ -337,6 +337,7 @@ class ByteCodeFragment:
         # operand, and the
         # fused rows the processor mints later are not here yet
         scopes = []
+        asides = []
         out = []
         for op, arg in self.instructions:
             if op == OpCode.PUSH_NS:
@@ -349,15 +350,17 @@ class ByteCodeFragment:
                 scopes.insert(0, scope_names(arg))
 
             elif op == OpCode.PUSH_ASIDE:
-                # None is an aside that names nothing
-                if arg is None:
-                    scopes.insert(0, set())
-                else:
+                # None is an aside over the scope it is written in
+                asides.append(arg is not None)
+                if arg is not None:
                     arg = rebuild_nspec(arg, scopes)
                     scopes.insert(0, scope_names(arg))
 
-            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT,
-                        OpCode.POP_ASIDE):
+            elif op == OpCode.POP_ASIDE:
+                if asides.pop():
+                    scopes.pop(0)
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 scopes.pop(0)
 
             elif op.style == OpStyle.VAR:
@@ -486,9 +489,10 @@ class ByteCodeFragment:
         name declared at the aside's level is declared in this
         fragment's scope instead and reached from the aside as a
         closure name, so it is the enclosing scope's name and outlives
-        the aside. An aside that neither owns nor requests any name
-        carries None in place of a spec, and runs over the empty
-        namespace.
+        the aside. An aside that owns no name has no namespace of its
+        own: it carries None in place of a spec, runs over the
+        namespace it is written in, and its instructions are compiled
+        in this fragment's scope.
 
         :param ns_name: name for the aside's namespace
         :param own: the symbols the aside's namespace declares
@@ -496,6 +500,15 @@ class ByteCodeFragment:
 
         compiler = self.compiler
         own = tuple(own)
+
+        if not own:
+            child = compiler.fragment(str(ns_name))
+            yield child
+            self.instruction(OpCode.PUSH_ASIDE, None)
+            self.merge(child)
+            self.instruction(OpCode.RETURN, 1)
+            self.instruction(OpCode.POP_ASIDE, 0)
+            return
 
         child = compiler.fragment(str(ns_name))
         with compiler.resolution_scope(child):
@@ -530,10 +543,6 @@ class ByteCodeFragment:
                 if name not in self.declares:
                     self.request_var(
                         name, position=child.request_positions.get(name))
-
-            if not (nspec.local_syms or nspec.closure_syms
-                    or nspec.global_syms):
-                nspec = None
 
             self.instruction(OpCode.PUSH_ASIDE, nspec)
             if child.marked:

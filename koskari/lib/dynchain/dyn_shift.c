@@ -49,6 +49,12 @@ KosOpResult kos_abort_to_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   kos_dynnode_note_parent(aside);
   KosSegment_BACK(KosDynNode_STACK(aside)) = NULL;
 
+  /* An aside that introduced no namespace runs over the one of the
+     frame it was pushed on, which the abort may leave: the namespace is
+     revealed, so that frame's release does not reclaim it. */
+  if (! KosDynNode_HAS_CAP(aside, KOS_DYN_CAP_OWNS_NS))
+    KosNamespace_TrackChain(KosDynNode_NS(aside));
+
   /* it will stand above the frame under the prompt */
   base = KosDynNode_PARENT((KosDynNode *) prompt);
   while (base && ! KosDynNode_IS_FRAME(base))

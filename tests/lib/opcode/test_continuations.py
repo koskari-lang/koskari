@@ -269,7 +269,7 @@ class TestReset(CevalTest):
         with self.assertRaises(ValueError) as caught:
             build_expr(code)
         self.assertEqual(
-            "Code instruction 0 EXTRA field 0 2 is not 0 or 1",
+            "Code instruction 0 argument 2 is not 0 or 1",
             str(caught.exception))
 
 
@@ -582,7 +582,7 @@ class TestDelimitedContinuations(CevalTest):
         with self.assertRaises(ValueError) as caught:
             build_expr(code)
         self.assertEqual(
-            "Code instruction 0 EXTRA field 0 2 is not 0 or 1",
+            "Code instruction 1 EXTRA field 0 2 is not 0 or 1",
             str(caught.exception))
 
 

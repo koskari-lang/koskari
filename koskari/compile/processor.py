@@ -368,10 +368,6 @@ def build_var_to_fast():
 VAR_TO_FAST = build_var_to_fast()
 
 
-# the scope of an aside that names nothing, which carries no spec
-NO_NAMES = NamespaceSpec("aside", (), (), ())
-
-
 # Name-derived relabel pairs: every TAIL_CALL* opcode twins the CALL*
 # opcode named by stripping the TAIL_ prefix, carrying the same operand
 # schema and stack contract.
@@ -1421,6 +1417,7 @@ class ByteCodeProcessor:
 
         result = []
         nstack = []
+        asides = []
         findex = []
 
         def reload_findex():
@@ -1474,13 +1471,17 @@ class ByteCodeProcessor:
                 push_nspec(arg)
 
             elif op == OpCode.PUSH_ASIDE:
-                # None is an aside that names nothing: no slot lowers
+                # None is an aside over the scope it is written in
+                asides.append(arg is not None)
                 if arg is not None:
                     arg = with_closure_slots(arg)
-                push_nspec(arg if arg is not None else NO_NAMES)
+                    push_nspec(arg)
 
-            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT,
-                        OpCode.POP_ASIDE):
+            elif op == OpCode.POP_ASIDE:
+                if asides.pop():
+                    pop_nspec()
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 pop_nspec()
 
             elif nstack and op == OpCode.CHECK_COMPARE_VAR:

@@ -20,9 +20,10 @@ of the function the shift was written in. The shift aborts to its
 prompt, then runs the handler with the continuation bound to its name
 while the prompt is still in place, and the handler's value is the
 reset's. A return in the handler returns that value; a shift in the
-handler finds the same prompt. The continuation's name and a var in
-the handler are names of the enclosing function, shared by every entry
-of the handler; a let in the handler keeps a binding of its own.
+handler finds the same prompt. The continuation's name is the
+handler's alone, bound afresh on each entry; a var in the handler is a
+name of the enclosing function, shared by every entry; a let in the
+handler keeps a binding of its own.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -33,7 +34,6 @@ import unittest
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import DelimitedContinuation
 from koskari.module import load_module_source_async, new_module
 
 
@@ -233,10 +233,11 @@ class TestShiftThunk(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(6, await mod["multi_shot"]())
 
 
-    async def test_k_is_a_name_of_the_enclosing_function(self):
+    async def test_k_is_the_handler_name_alone(self):
         mod = await self.load()
-        self.assertIsInstance(
-            await mod["k_after_the_form"](), DelimitedContinuation)
+        with self.assertRaises(NameError) as caught:
+            await mod["k_after_the_form"]()
+        self.assertEqual("Empty reference: k", str(caught.exception))
 
 
     async def test_var_in_a_handler_is_the_enclosing_function_name(self):
@@ -245,11 +246,11 @@ class TestShiftThunk(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_let_in_a_handler_keeps_its_own_binding(self):
-        # the loop reaches the shift again inside the first (kept None)
-        # and rebinds k; each entry's kept is still its own continuation
+        # the loop reaches the shift again inside the first (kept None);
+        # each entry of the handler has a k and a kept of its own
         mod = await self.load()
         self.assertEqual(
-            [True, True, True, False], await mod["let_keeps_k"]())
+            [True, True, True, True], await mod["let_keeps_k"]())
 
 
     async def test_break_does_not_reach_a_loop_around_the_reset(self):

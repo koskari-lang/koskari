@@ -2933,6 +2933,9 @@ static int validate_fast_slots(
 
   uint32_t ns_stack[DERIVE_EXTENT_STACK_MAX];
   int depth = 0;
+  /* per open PUSH_ASIDE: whether it opened a namespace of its own */
+  uint8_t aside_owns[DERIVE_EXTENT_STACK_MAX];
+  int asides = 0;
 
   for (uint32_t i = 0; i < code_len; i++) {
     KosOpCode op = (KosOpCode) code[i].op;
@@ -3045,10 +3048,18 @@ static int validate_fast_slots(
       ns_stack[depth++] = lim;
     } else if (op == KOS_OP_PUSH_ASIDE) {
       /* an aside's instructions index the namespace built from its
-         spec; None is the empty namespace, with no slot */
+         spec; None is the namespace the aside is written in */
       PyObject *ns = cpool[code[i].arg];
       uint32_t lim = 0;
 
+      if (asides >= DERIVE_EXTENT_STACK_MAX
+          || depth >= DERIVE_EXTENT_STACK_MAX) {
+        PyErr_Format(PyExc_ValueError, "namespace stack overflow (limit %u)",
+                     (unsigned) DERIVE_EXTENT_STACK_MAX);
+        return -1;
+      }
+
+      aside_owns[asides++] = (ns != Py_None);
       if (ns != Py_None) {
         if (! KosNamespaceSpec_CheckExact(ns)) {
           PyErr_Format(
@@ -3061,15 +3072,13 @@ static int validate_fast_slots(
         if (namespace_spec_fast_slot_limit(ns, &lim)) {
           return -1;
         }
+        ns_stack[depth++] = lim;
       }
-      if (depth >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_Format(PyExc_ValueError, "namespace stack overflow (limit %u)",
-                     (unsigned) DERIVE_EXTENT_STACK_MAX);
-        return -1;
-      }
-      ns_stack[depth++] = lim;
-    } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT
-               || op == KOS_OP_POP_ASIDE) {
+    } else if (op == KOS_OP_POP_ASIDE) {
+      /* as below, underflow is the extent validation's to report */
+      if (asides > 0 && aside_owns[--asides] && depth > 0)
+        depth--;
+    } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
       /* Do not error on underflow; extent validation reports POP without PUSH */
       if (depth > 0) {
         depth--;
