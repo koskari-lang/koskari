@@ -546,8 +546,7 @@ def stringify_namespace_spec(nspec):
         nspec.name,
         tuple(map(str, nspec.local_syms)),
         tuple(map(str, nspec.closure_syms)),
-        tuple(map(str, nspec.global_syms)),
-        nspec.closure_slots)
+        tuple(map(str, nspec.global_syms)))
 
 
 def stringify_operands(rows):
@@ -1432,19 +1431,6 @@ class ByteCodeProcessor:
             nstack.append(n)
             reload_findex()
 
-        def with_closure_slots(n):
-            # the inline scope's spec with the slot each of its closure
-            # names has in the scope open around it, which is where its
-            # namespace is built: -1 for a name that scope holds in no
-            # slot, or n itself when no scope is open
-            if not nstack or not n.closure_syms:
-                return n
-            slots = tuple(
-                findex.index(name) if name in findex else -1
-                for name in n.closure_syms)
-            return NamespaceSpec(
-                n.name, n.local_syms, n.closure_syms, n.global_syms, slots)
-
         def pop_nspec():
             nstack.pop()
             reload_findex()
@@ -1463,18 +1449,15 @@ class ByteCodeProcessor:
 
         for op, arg in self.instructions:
             if op == OpCode.PUSH_NS:
-                arg = (with_closure_slots(arg[0]), *arg[1:])
                 push_nspec(arg[0])
 
             elif op == OpCode.PUSH_COLLECT:
-                arg = with_closure_slots(arg)
                 push_nspec(arg)
 
             elif op == OpCode.PUSH_ASIDE:
                 # None is an aside over the scope it is written in
                 asides.append(arg is not None)
                 if arg is not None:
-                    arg = with_closure_slots(arg)
                     push_nspec(arg)
 
             elif op == OpCode.POP_ASIDE:

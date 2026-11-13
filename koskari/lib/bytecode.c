@@ -2895,7 +2895,57 @@ static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
 
 
 /**
-   Reject FASTVAR operands outside the active NamespaceSpec slot range.
+   Open an inline scope in the fast slot walk: push its spec and slot
+   limit, and record on the spec where its closure names live in the
+   scope open around it, the root spec when none is. The caller has
+   checked the stack has room. Callers: validate_fast_slots.
+
+   :return: 0, or -1 with PyErr set
+*/
+static int push_scope_spec(
+    PyObject *self,
+    uint32_t *ns_stack,
+    PyObject **spec_stack,
+    int *depth,
+    PyObject *nspec,
+    uint32_t limit) {
+
+  PyObject *enclosing =
+      *depth ? spec_stack[*depth - 1] : KosCode_NSPEC(self);
+
+  if (KosNamespaceSpec_RecordClosureSlots(nspec, enclosing) < 0)
+    return -1;
+
+  ns_stack[*depth] = limit;
+  spec_stack[*depth] = nspec;
+  (*depth)++;
+  return 0;
+}
+
+
+/**
+   A function constant met in the fast slot walk: record on its code's
+   spec where the function's closure names live in scope, the spec of
+   the scope the constant is written in, which is the namespace a
+   function built from it there closes over. Any other constant, NULL
+   included, is passed over. Callers: validate_fast_slots.
+
+   :return: 0, or -1 with PyErr set
+*/
+static int record_function_slots(PyObject *constant, PyObject *scope) {
+
+  if (! KosFunctionSpec_CheckExact(constant))
+    return 0;
+
+  return KosNamespaceSpec_RecordClosureSlots(
+      KosCode_NSPEC(KosFunctionSpec_CODE(constant)), scope);
+}
+
+
+/**
+   Reject FASTVAR operands outside the active NamespaceSpec slot range,
+   and record each inline scope's and each function constant's closure
+   slots.
 
    Called after emit when ``code`` and ``extra`` are fully materialized so we
    can validate both scalar FAST opcodes and FAST slots embedded in EXTRA rows
@@ -2932,6 +2982,8 @@ static int validate_fast_slots(
   }
 
   uint32_t ns_stack[DERIVE_EXTENT_STACK_MAX];
+  /* the spec behind each limit, borrowed from the pool */
+  PyObject *spec_stack[DERIVE_EXTENT_STACK_MAX];
   int depth = 0;
   /* per open PUSH_ASIDE: whether it opened a namespace of its own */
   uint8_t aside_owns[DERIVE_EXTENT_STACK_MAX];
@@ -2948,8 +3000,13 @@ static int validate_fast_slots(
     KosOpStyle st = opcode_styles[op].style;
 
     uint32_t active = (depth == 0) ? root_limit : (uint32_t) ns_stack[depth - 1];
+    PyObject *scope = depth ? spec_stack[depth - 1] : KosCode_NSPEC(self);
 
-    if (st == KOSTYLE_FASTVAR) {
+    if (st == KOSTYLE_CONST) {
+      if (code[i].arg < cpool_len
+          && record_function_slots(cpool[code[i].arg], scope))
+        return -1;
+    } else if (st == KOSTYLE_FASTVAR) {
       /* op.arg is the fast slot index */
       if (active == 0 || code[i].arg >= active) {
         PyErr_Format(PyExc_ValueError,
@@ -2978,6 +3035,10 @@ static int validate_fast_slots(
 
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = schema_field(schema, slot);
+
+        if (fk == KOSTYLE_CONST
+            && record_function_slots(KosExtra_OBJ(row, slot), scope))
+          return -1;
 
         if (fk != KOSTYLE_FASTVAR) {
           continue;
@@ -3026,7 +3087,8 @@ static int validate_fast_slots(
                      (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
-      ns_stack[depth++] = lim;
+      if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
+        return -1;
     } else if (op == KOS_OP_PUSH_COLLECT) {
       PyObject *ns = cpool[code[i].arg];
       if (! KosNamespaceSpec_CheckExact(ns)) {
@@ -3045,7 +3107,8 @@ static int validate_fast_slots(
                      (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
-      ns_stack[depth++] = lim;
+      if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
+        return -1;
     } else if (op == KOS_OP_PUSH_ASIDE) {
       /* an aside's instructions index the namespace built from its
          spec; None is the namespace the aside is written in */
@@ -3072,7 +3135,8 @@ static int validate_fast_slots(
         if (namespace_spec_fast_slot_limit(ns, &lim)) {
           return -1;
         }
-        ns_stack[depth++] = lim;
+        if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
+          return -1;
       }
     } else if (op == KOS_OP_POP_ASIDE) {
       /* as below, underflow is the extent validation's to report */

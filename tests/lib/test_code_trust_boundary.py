@@ -195,14 +195,15 @@ class TestOperandRanges(unittest.TestCase):
 
 class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
 
-    async def test_formals_that_dedup_leave_too_few_slots(self):
+    async def test_repeated_locals_keep_every_slot(self):
+        # a function's frame is laid out by its code's own spec, so a
+        # repeated local name still has the slot the code indexes
         spec = NamespaceSpec(None, ("x",) + ("a",) * 2000, ())
         code = Code(spec, [[OpCode.CONST, "x"], [OpCode.FAST_STORE, 2000],
                            [OpCode.CONST, 1], [OpCode.RETURN, 1]], "t")
         fn = Function(code, NamespaceSpec(None, (), ()).get_namespace(None),
                       FormalsSpec(("x",)))
-        with self.assertRaises(RuntimeError):
-            await fn(1)
+        self.assertEqual(1, await fn(1))
 
     async def test_expression_over_a_smaller_namespace(self):
         spec = NamespaceSpec(None, ("a", "b", "c"), ())
@@ -213,7 +214,7 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
             await Expression(code, small)()
         self.assertEqual(1, await Expression(code, spec.get_namespace(None))())
 
-    async def test_dedup_formals_in_tail_position_raise_cleanly(self):
+    async def test_repeated_locals_in_tail_position(self):
         spec = NamespaceSpec(None, ("x",) + ("a",) * 2000, ())
         code = Code(spec, [[OpCode.CONST, "x"], [OpCode.FAST_STORE, 2000],
                            [OpCode.CONST, 1], [OpCode.RETURN, 1]], "t")
@@ -225,11 +226,7 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
                                    [OpCode.TAIL_CALL, 1]], "caller")
         ns = outer.get_namespace(None)
         ns.bind("f", Ref("f", callee))
-        with self.assertRaises(RuntimeError):
-            await Expression(caller_code, ns)()
-        self.assertEqual(1, await Expression(
-            Code(outer, [[OpCode.CONST, 1], [OpCode.RETURN, 1]], "ok"),
-            ns)())
+        self.assertEqual(1, await Expression(caller_code, ns)())
 
     async def test_expression_over_a_module_namespace(self):
         spec = NamespaceSpec(None, ("a",), ())

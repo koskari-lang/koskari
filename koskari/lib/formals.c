@@ -330,6 +330,52 @@ PyObject *KosFormalsSpec_New(
   } while (0)
 
 
+/* Compare the names of src against names from offset on, advancing
+   offset; same becomes 0 at a difference and -1 when a comparison
+   raised. */
+#define MATCH_OVER(names, src, offset, same)                            \
+  do {                                                                  \
+    PyObject *_src = (src);                                             \
+    size_t l = SAFE_SIZE(_src);                                         \
+    for (size_t i = 0; same > 0 && i < l; i++) {                        \
+      PyObject *_v = PySequence_Fast_GET_ITEM(_src, i);                 \
+      PyObject *_n = PyTuple_GET_ITEM(names, offset++);                 \
+      same = Py_EQUALS(_v, _n);                                         \
+    }                                                                   \
+  } while (0)
+
+
+/* Whether the c formal names, in their slot order, are the leading
+   locals of nspec: 1 or 0, or -1 with an error set when a comparison
+   raised. */
+static int formals_lead_nspec(PyObject *pos, PyObject *pos_only,
+                              PyObject *kwd, PyObject *kwd_only,
+                              PyObject *star, PyObject *starstar,
+                              size_t c, PyObject *nspec) {
+
+  PyObject *names = KosNamespaceSpec_LOCAL_SYMS(nspec);
+  size_t offset = 0;
+  int same = 1;
+
+  if ((size_t) PyTuple_GET_SIZE(names) < c)
+    return 0;
+
+  MATCH_OVER(names, pos, offset, same);
+  MATCH_OVER(names, pos_only, offset, same);
+  MATCH_OVER(names, kwd, offset, same);
+  if (same > 0 && star) {
+    PyObject *name = PyTuple_GET_ITEM(names, offset++);
+    same = Py_EQUALS(star, name);
+  }
+  MATCH_OVER(names, kwd_only, offset, same);
+  if (same > 0 && starstar) {
+    PyObject *name = PyTuple_GET_ITEM(names, offset++);
+    same = Py_EQUALS(starstar, name);
+  }
+  return same;
+}
+
+
 /* Append each item of seq that dst does not already hold. 0, or -1
    with an error set when a comparison raised or the append failed. */
 static int list_unique_extend(PyObject *dst, PyObject *seq) {
@@ -375,6 +421,19 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
       return base_nspec;
     }
     return KosNamespaceSpec_New(NULL, NULL, NULL, NULL);
+  }
+
+  /* a code's own spec lists its function's formals first, and is then
+     the function's layout as it stands */
+  if (base_nspec) {
+    int leads = formals_lead_nspec(pos, pos_only, kwd, kwd_only,
+                                   star, starstar, c, base_nspec);
+    if (leads < 0)
+      return NULL;
+    if (leads) {
+      Py_INCREF(base_nspec);
+      return base_nspec;
+    }
   }
 
   PyObject *lcls = PyList_New(c);
@@ -424,6 +483,11 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
 
   PyObject *result = KosNamespaceSpec_New(name, lcls, clsr, glbl);
   Py_DECREF(lcls);
+
+  /* the closure syms are the base's own, so its recorded slots hold */
+  if (result && base_nspec
+      && KosNamespaceSpec_CopyClosureSlots(result, base_nspec) < 0)
+    Py_CLEAR(result);
   return result;
 }
 
