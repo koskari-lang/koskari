@@ -52,7 +52,7 @@ KOS_OP_HANDLER(RESET) {
   if (! kos_dyn_push_frame_shared(ctx, body))
     RESULT_RAISE();
 
-  RESULT_NEXT_POLL(ctx);
+  RESULT_CONTINUE(ctx);
 }
 
 

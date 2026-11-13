@@ -2917,6 +2917,38 @@ static KosOpResult eval_event_return_at_frame(
      to whatever is below as any callee's return is. A prompt at the
      root of a context ends the context, as a root generator does. */
   if (parent && KosDynNode_IS_PROMPT(parent)) {
+    KosDynNode *below = KosDynNode_PARENT(parent);
+    KosDynFrame *ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
+
+    /* Frame and prompt go in one step when every retarget fact is
+       recorded: the frame live when the returning one was installed,
+       the slot its segment displaced (a prompt owns no segment, so
+       that is the slot live under the prompt), and the namespace the
+       node under the prompt carries. A missing fact takes the two
+       general pops below. */
+    if (likely(below
+               && ft
+               && KosDynNode_STACK(child)
+               && KosSegment_BACK(KosDynNode_STACK(child))
+               && KosDynNode_NS(below))) {
+      KosContext_DYN_TOP(ctx) = below;
+      KosContext_LoadFrame(ctx, ft, KosSegment_BACK(KosDynNode_STACK(child)),
+                           KosDynNode_NS(below));
+      kos_dynframe_free_fast((KosDynFrame *) child);
+      kos_dynprompt_free((KosDynPrompt *) parent);
+
+      /* a bytecode frame with no resume takes the value on its stack,
+         and a node that hooks no control return has nothing to run */
+      if (likely(KosDynFrame_CODE(ft)
+                 && ! KosDynFrame_RESUME_KIND(ft)
+                 && ! KosDynNode_HAS_CAP(below, KOS_DYN_CAP_CONTROL_HOOK))) {
+        if (KosContext_StackPUSH(ctx, val) < 0)
+          return EVAL_FATAL();
+        return kos_eval_delivery_done(ctx);
+      }
+      return eval_parent_return_deliver(ctx, val);
+    }
+
     if (unlikely(kos_dyn_pop_frame(ctx) < 0
                  || kos_dyn_pop_prompt(ctx, (KosDynPrompt *) parent) < 0)) {
       Py_DECREF(val);

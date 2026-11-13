@@ -342,8 +342,10 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
    introduces no namespace: it holds the live one as its fill, as a
    native frame does, so it does not carry KOS_DYN_CAP_OWNS_NS and the
    namespace is not measured against the code again. Its return is any
-   frame's. Callers: opcode RESET, for the body it runs above its
-   prompt. Returns the frame, or NULL with PyErr set.
+   frame's. The node is built and linked in one pass: every frame
+   field is written, since the general free and clone read them all.
+   Callers: opcode RESET, for the body it runs above its prompt.
+   Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry) {
 
@@ -355,17 +357,34 @@ KosDynFrame *kos_dyn_push_frame_shared(KosContext *ctx, KosOp *entry) {
   if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
     return NULL;
 
-  Py_INCREF(ns);
-  frame = kos_dyn_push_frame_unchecked(ctx, NULL, ns);
+  frame = kos_dynnode_alloc();
   if (! frame)
     return NULL;
 
+  kos_dynnode_init(frame, KOS_DYN_FRAME, KosContext_DYN_TOP(ctx), 0);
   Py_INCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = entry;
   KosDynFrame_ACTING_PC(frame) = entry;
-  KosContext_SET_PC(ctx, entry);
-  KosContext_ACTING_PC(ctx) = entry;
+  kos_dynnode_use_inline_segment((KosDynNode *) frame);
+  Py_INCREF(ns);
+  KosDynFrame_NS(frame) = ns;  /* owned fill */
+  KosDynFrame_FLAGS(frame) = KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND;
+  kos_dynframe_note_parent(frame);
+  KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_FN(frame) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) cur;
+
+  /* the outgoing frame keeps the pc its caller set for it */
+  KosContext_FlushLiveRegsToFrame(ctx);
+  kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
+                                  KosContext_BLOCK(ctx));
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_LoadFrame(ctx, frame, &KosDynNode_STACK((KosDynNode *) frame),
+                       ns);
   return frame;
 }
 
