@@ -638,6 +638,10 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
     kos_dynnode_note_parent(bottom);
     kos_live_regs_apply(ctx, regs);
 
+    /* a region captured while handling an exception handles it again */
+    if (shape->frozen)
+      kos_dyn_install_regions(ctx, regs->top, base);
+
 #if KOS_EVAL_SAFETYNET
     if (! kos_dyn_live_regs_derived(ctx)) {
       PyErr_SetString(PyExc_SystemError,

@@ -16,9 +16,12 @@
 tests.reproducers.test_shift_in_regions
 
 A continuation captured from inside a region that holds state of its
-own resumes with that state: an except body still has its exception
-bound and the exception it displaced comes back when the shift leaves
-it, and a for-each whose step made the shift takes the value the
+own resumes with that state. An except body still has its exception
+bound, and is handling it again: a bare raise raises it and
+sys.exc_info shows it, as in a generator resumed inside an except
+body. The exception it displaced comes back when the shift leaves it,
+and the one the caller was handling comes back when a resumed body
+ends. A for-each whose step made the shift takes the value the
 continuation is called with as that step's element and goes on with
 the iteration.
 
@@ -78,6 +81,65 @@ def stored_from_handler []:
                 var v (shift k (begin (set! saved[0] k) 0))
                 #[v (str e)]
     #[r (saved[0] 7) (saved[0] 8)]
+
+def reraise_after_resume []:
+    try:
+        reset:
+            try:
+                (raise (ValueError "inner"))
+            except [e ValueError]:
+                (shift k (k 1))
+                (raise)
+    except [e ValueError]:
+        (str e)
+
+def info_after_resume []:
+    reset:
+        try:
+            (raise (ValueError "inner"))
+        except [e ValueError]:
+            (shift k (k 1))
+            var info (sys.exc_info)
+            (repr info[1])
+
+def info_resumed_twice []:
+    reset:
+        try:
+            (raise (ValueError "inner"))
+        except [e ValueError]:
+            (shift k #[(k 1) (k 2)])
+            var info (sys.exc_info)
+            (repr info[1])
+
+def caller_handling_nothing []:
+    var saved #[None]
+    try:
+        (raise (KeyError "outer"))
+    except [o KeyError]:
+        reset:
+            try:
+                (raise (ValueError "inner"))
+            except [e ValueError]:
+                (shift k (begin (set! saved[0] k) 0))
+                1
+    (saved[0] None)
+    var after (sys.exc_info)
+    (repr after[1])
+
+def caller_handling_its_own []:
+    var saved #[None]
+    reset:
+        try:
+            (raise (ValueError "inner"))
+        except [e ValueError]:
+            (shift k (begin (set! saved[0] k) 0))
+            1
+    try:
+        (raise (KeyError "caller"))
+    except [c KeyError]:
+        (saved[0] None)
+        var after (sys.exc_info)
+        (repr after[1])
 
 def stepper [x]:
     (shift k (k (* x 10)))
@@ -145,6 +207,36 @@ class TestShiftInRegions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [0, [7, "inner"], [8, "inner"]],
             await mod["stored_from_handler"]())
+
+
+    async def test_bare_raise_in_a_resumed_except_body(self):
+        mod = await self.load()
+        self.assertEqual("inner", await mod["reraise_after_resume"]())
+
+
+    async def test_resumed_except_body_is_handling_its_exception(self):
+        mod = await self.load()
+        self.assertEqual(
+            "ValueError('inner')", await mod["info_after_resume"]())
+
+
+    async def test_each_resume_is_handling_the_exception(self):
+        mod = await self.load()
+        self.assertEqual(
+            ["ValueError('inner')", "ValueError('inner')"],
+            await mod["info_resumed_twice"]())
+
+
+    async def test_resumed_body_ends_with_no_exception_handled(self):
+        # the exception handled around the capture is not the caller's
+        mod = await self.load()
+        self.assertEqual("None", await mod["caller_handling_nothing"]())
+
+
+    async def test_resumed_body_ends_with_the_callers_exception(self):
+        mod = await self.load()
+        self.assertEqual(
+            "KeyError('caller')", await mod["caller_handling_its_own"]())
 
 
     async def test_for_each_step_takes_the_resumed_value(self):

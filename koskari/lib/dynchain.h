@@ -234,6 +234,9 @@ typedef struct KosCloneShape {
   struct KosDynNode *ns_open;
   KosXferPiece *pieces;        /* outermost first; owned */
   size_t piece_count;
+  /* a TRY or FINALLY holding its handled exception was met, which
+     the attach puts back on the thread (kos_dyn_install_regions) */
+  int frozen;
 } KosCloneShape;
 
 
@@ -1685,12 +1688,14 @@ KosOpResult kos_dyn_unlink_top(
 
    The node leaves as it does under a transfer, and what its leave
    does outside itself still happens: a wind's after thunk and a
-   dyn-with's __exit__ run, a PARAM puts the outer cells back, a TRY
-   or FINALLY puts back the handler-visible exception it displaced, a
-   FOREACH finishes the request of a step in flight. What a clone
-   would have recorded stays on the node: a TRY's or FINALLY's saved
-   exception and its flag, and the resume a FOREACH's step left on the
-   frame below, which is kept in its turn. A frame gives up a
+   dyn-with's __exit__ run, a PARAM puts the outer cells back, a
+   FOREACH finishes the request of a step in flight. A TRY or FINALLY
+   that is handling an exception takes it off the thread into itself
+   and puts back the one it displaced, as when a generator's span is
+   frozen, so a copy of it attached later is handling that exception
+   again. What a clone would have recorded stays on the node: the
+   resume a FOREACH's step left on the frame below, which is kept in
+   its turn. A frame gives up a
    holder's cache slot it was to return to and has its namespace
    revealed, as a frame's clone does.
 
@@ -1705,6 +1710,22 @@ KosOpResult kos_dyn_unlink_top(
      chain; EVAL_RAISE
 */
 KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept);
+
+
+/**
+   Put the handled exception of each frozen TRY or FINALLY from top
+   down to stop (not included) back on the thread, outermost first:
+   the region's exception becomes handler-visible and the region
+   records what was visible before it, which it gives back when it
+   leaves. Run on each piece of a continuation's copy as it is
+   attached, when the clone met such a region, so a body resumed
+   inside a handler is handling its exception again, as a generator
+   resumed there is.
+*/
+void kos_dyn_install_regions(
+    KosContext *ctx,
+    KosDynNode *top,
+    const KosDynNode *stop);
 
 
 /**

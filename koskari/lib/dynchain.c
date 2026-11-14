@@ -767,35 +767,6 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 }
 
 
-/**
-   A TRY or FINALLY region kept for a continuation gives the displaced
-   exception back to the thread as kos_dyn_region_leave_exc does, and
-   keeps its own record of it: the flag and the saved state are what a
-   clone of the region copies, so a copy of the kept node leaves as a
-   copy made before this leave would.
-*/
-static void kos_dyn_region_keep_exc(KosDynNode *node) {
-  uint8_t saved_flag;
-  KosExcState *saved;
-  KosExcState back;
-
-  if (KosDynNode_IS_TRY(node)) {
-    saved_flag = KosDynTry_EXC_SAVED((KosDynTry *) node);
-    saved = KosDynTry_SAVED((KosDynTry *) node);
-  } else {
-    saved_flag = KosDynFinally_EXC_SAVED((KosDynFinally *) node);
-    saved = KosDynFinally_SAVED((KosDynFinally *) node);
-  }
-
-  if (! saved_flag)
-    return;
-
-  KosExc_Init(&back);
-  KosExc_Copy(&back, saved);
-  KosExc_Install(&back);
-}
-
-
 #include "dynchain/dyn_try.c"
 #include "dynchain/dyn_finally.c"
 #include "dynchain/dyn_loop.c"
@@ -1093,6 +1064,35 @@ static void kos_dyn_region_exc_install(KosContext *ctx, KosDynNode *node) {
 }
 
 
+/**
+   Whether node is a TRY or FINALLY region holding its own handled
+   exception off the thread: frozen with a generator's span, or kept
+   for a continuation.
+*/
+static int kos_dyn_region_frozen(KosDynNode *node) {
+
+  if (KosDynNode_IS_TRY(node))
+    return KosDynTry_EXC_FROZEN((KosDynTry *) node);
+  if (KosDynNode_IS_FINALLY(node))
+    return KosDynFinally_EXC_FROZEN((KosDynFinally *) node);
+  return 0;
+}
+
+
+void kos_dyn_install_regions(
+    KosContext *ctx,
+    KosDynNode *top,
+    const KosDynNode *stop) {
+
+  if (! top || top == stop)
+    return;
+
+  kos_dyn_install_regions(ctx, KosDynNode_PARENT(top), stop);
+  if (kos_dyn_region_frozen(top))
+    kos_dyn_region_exc_install(ctx, top);
+}
+
+
 int kos_dyn_extent_freeze(KosContext *ctx, KosDynNode *node) {
 
   /* A yield moves the node intact, so a kind whose effect is the node
@@ -1384,6 +1384,9 @@ KosDynNode *kos_dyn_clone_segment(
     /* a new instance: the clone base took the source's id */
     if (fresh_ids)
       KosDynNode_NODE_ID(cloned) = 0;
+    /* a region holding its handled exception: the attach installs it */
+    if (for_attach && kos_dyn_region_frozen(cloned))
+      shape->frozen = 1;
     if (prev) {
       KosDynNode_PARENT(prev) = cloned;
       kos_dynnode_note_parent(prev);
@@ -2295,11 +2298,14 @@ static KosOpResult kos_dyn_uninstall_handler(
 
 /**
    What a kept node's leaving does outside itself, by kind, run while
-   it is still dyn_top: a PARAM puts the outer cells back, a TRY or
-   FINALLY gives back the handler-visible exception it displaced, a
-   FOREACH finishes the request of a step in flight. Each leaves on the
-   node what its clone would have copied. A GEN never comes here: the
-   capture refused it. Callers: kos_dyn_unlink_top_keep.
+   it is still dyn_top: a PARAM puts the outer cells back, a FOREACH
+   finishes the request of a step in flight, and a TRY or FINALLY that
+   is handling an exception freezes as it does with a generator's
+   span, taking its own exception off the thread into itself and
+   giving back the one it displaced. A copy of the region is handling
+   that exception again once it is attached
+   (kos_dyn_install_regions). A GEN never comes here: the capture
+   refused it. Callers: kos_dyn_unlink_top_keep.
 */
 static void kos_dyn_keep_leave(KosContext *ctx, KosDynNode *node) {
 
@@ -2312,7 +2318,7 @@ static void kos_dyn_keep_leave(KosContext *ctx, KosDynNode *node) {
       break;
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
-      kos_dyn_region_keep_exc(node);
+      (void) kos_dyn_region_exc_freeze(node);
       break;
     default:
       break;
