@@ -128,6 +128,13 @@ struct KosXferGoal {
   size_t piece_next;           /* the entry the next ATTACHING splits at */
   size_t piece_entered;        /* entries whose node ENTERING has run */
 
+  /* A shift's abort: the continuation LEAVING keeps the nodes it
+     unlinks into, top first, and the last node kept, which rests on
+     the template's bottom. Borrowed: payload is the continuation's
+     wrapper. NULL for every other goal, whose LEAVING frees. */
+  KosContinuation *keep;
+  KosDynNode *keep_tail;
+
   /* owned: the value or the exception; NULL for an abort to a prompt */
   PyObject *payload;
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */

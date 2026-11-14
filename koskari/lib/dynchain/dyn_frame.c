@@ -97,6 +97,48 @@ KosDynFrame *kos_dynframe_new(
 
 
 /**
+   Whether a frame can be part of a continuation's template: one with
+   a resume whose kind cannot clone its state (a provider step, whose
+   state is the step's own) cannot. Returns 0, or -1 with the refusal
+   set, naming the frame.
+*/
+static int kos_dynframe_capturable(KosDynFrame *frame) {
+
+  if (KosDynFrame_RESUME_KIND(frame)
+      && ! KosDynFrame_RESUME_KIND(frame)->clone) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "cannot capture a continuation across native"
+                 " frame '%s'",
+                 KosDynFrame_RESUME_NAME(frame)
+                     ? KosDynFrame_RESUME_NAME(frame) : "?");
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+   What a frame kept for a continuation gives up as it leaves the
+   chain: a holder's cache slot it was to return to, which may be gone
+   by the time the template is freed, and the links to the frame and
+   segment below it. Its namespace is revealed, since the continuation
+   can be stored back into scope. Its function reference stays, so the
+   frame is offered to the function's frame cache when the template is
+   freed, as it would have been had the abort freed it. Callers:
+   kos_dyn_keep_node.
+*/
+static void kos_dynframe_keep(KosDynFrame *frame) {
+
+  KosNamespace_TrackChain(KosDynFrame_NS(frame));
+  KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_RETURN_TO_CACHE;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
+  if (KosDynNode_STACK((KosDynNode *) frame))
+    KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) = NULL;
+}
+
+
+/**
    Clone a frame with its operand segment (continuation capture).
    Callers: kos_dyn_clone and kos_frame_clone; the segment copy happens
    here so a direct caller stays faithful without the dispatcher.
@@ -104,6 +146,9 @@ KosDynFrame *kos_dynframe_new(
 KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   if (! frame)
+    return NULL;
+
+  if (kos_dynframe_capturable(frame) < 0)
     return NULL;
 
   KosDynFrame *clone = kos_dynnode_clone_base(frame);
@@ -136,26 +181,14 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
 
-  /* A resume whose kind can clone its state copies; one whose kind
-     cannot (a provider step, whose state is the step's own) refuses
-     the capture by name. The clone's resume starts empty so the
-     refusal's free finds nothing to clear. */
+  /* a resume copies through its kind, which kos_dynframe_capturable
+     found able to */
   KosDynFrame_RESUME_KIND(clone) = NULL;
   KosDynFrame_RESUME_STATE(clone) = NULL;
-  if (KosDynFrame_RESUME_KIND(frame) && KosDynFrame_RESUME_KIND(frame)->clone) {
+  if (KosDynFrame_RESUME_KIND(frame)) {
     KosDynFrame_RESUME_KIND(clone) = KosDynFrame_RESUME_KIND(frame);
     KosDynFrame_RESUME_STATE(clone) =
         KosDynFrame_RESUME_KIND(frame)->clone(KosDynFrame_RESUME_STATE(frame));
-    return clone;
-  }
-  if (KosDynFrame_RESUME_KIND(frame)) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "cannot capture a continuation across native"
-                 " frame '%s'",
-                 KosDynFrame_RESUME_NAME(frame)
-                     ? KosDynFrame_RESUME_NAME(frame) : "?");
-    kos_dynframe_free(clone);
-    return NULL;
   }
 
   return clone;

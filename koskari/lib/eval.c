@@ -975,11 +975,12 @@ static int pop_prompt_tag(
 
 
 /**
-   The capture a SHIFT makes, from the running frame down to the
+   The capture a SHIFT begins, from the running frame down to the
    prompt its tag count names. The tag comes off the stack first, so
    that it is no part of the continuation. Returns the continuation
-   object, a new reference, with *out_prompt the prompt it stops at,
-   borrowed; or NULL with an exception set.
+   object, a new reference, whose template the abort to *out_prompt
+   fills, with *out_prompt the prompt it stops at, borrowed; or NULL
+   with an exception set.
 */
 static PyObject *shift_capture(
     KosContext *ctx,

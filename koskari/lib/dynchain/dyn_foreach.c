@@ -160,6 +160,21 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
 }
 
 
+/**
+   The region leaves the chain kept for a continuation. A step still
+   in flight has its request finished, as kos_dyn_foreach_unwind does,
+   since the iterator is told the step is over either way. The resume
+   it left on the loop's frame stays: that frame is kept next, and the
+   step in flight is what its copies resume.
+*/
+static void kos_dyn_foreach_keep(KosContext *ctx, KosDynForeach *node) {
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  if (frame && KosDynFrame_RESUME_KIND(frame))
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(node), 0);
+}
+
+
 /* === GC traversal === */
 
 

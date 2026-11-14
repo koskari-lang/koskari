@@ -20,11 +20,13 @@
    the default tag again), ASIDE (the handler).
 
    Capture the continuation from this frame down to the prompt, whole
-   frames up to and including the reset's body, then go to the prompt
-   as ABORT does and run the aside there with the continuation pushed
-   on its stack, where the handler's first instruction stores it. This
-   frame's copy stands at the next instruction, so a call of the
-   continuation goes on from there with the value it is called with.
+   frames up to and including the reset's body, and go to the prompt
+   as ABORT does: the nodes the abort leaves are the continuation's
+   template, kept as they come off the chain. The aside runs at the
+   prompt with the continuation pushed on its stack, where the
+   handler's first instruction stores it. This frame stands at the
+   next instruction, so a call of the continuation goes on from there
+   with the value it is called with.
 */
 
 KOS_OP_HANDLER(SHIFT) {
@@ -37,7 +39,8 @@ KOS_OP_HANDLER(SHIFT) {
   if (! k)
     RESULT_RAISE();
 
-  res = kos_abort_to_prompt(ctx, prompt, KosExtra_ASIDE(row, 1), k);
+  res = kos_abort_to_prompt(ctx, prompt, KosExtra_ASIDE(row, 1), k,
+                            KosPyDelimitedContinuation_CAPTURED(k));
   Py_DECREF(k);
   RESULT_RELAY(ctx, res);
 }

@@ -41,7 +41,7 @@ KOS_OP_HANDLER(ABORT) {
     RESULT_RAISE();
 
   RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt, KosExtra_ASIDE(row, 1),
-                                        NULL));
+                                        NULL, NULL));
 }
 
 

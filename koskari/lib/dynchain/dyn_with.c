@@ -70,21 +70,33 @@ static KosDynWith *kos_dyn_with_allocate(
 
 
 /**
-   Clone mgr/enter/exit/name for continuation segment (not in pending await).
+   Whether a with can be part of a continuation's template. A pending
+   node has an __enter__ or __exit__ in flight, which no template can
+   carry; nor can what was stored for its completion. Returns 0, or -1
+   with the refusal set.
 */
-KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
-  if (! src)
-    return NULL;
-  /* A pending node has an __enter__ or __exit__ in flight, which no
-     template can carry; nor can what was stored for its completion. */
+static int kos_dyn_with_capturable(KosDynWith *src) {
+
   if (KosDynWith_ENTER_PENDING(src) || KosDynWith_EXIT_PENDING(src)
       || KosDynWith_OB(src)->kind != KOS_OB_NONE) {
     kos_raise_prompt_unreachable(
         NULL, KosDynWith_ENTER_PENDING(src) ? "enter" : "exit",
         "cannot capture a continuation from inside a with whose %s is"
         " in flight");
-    return NULL;
+    return -1;
   }
+  return 0;
+}
+
+
+/**
+   Clone mgr/enter/exit/name for continuation segment (not in pending await).
+*/
+KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
+  if (! src)
+    return NULL;
+  if (kos_dyn_with_capturable(src) < 0)
+    return NULL;
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_clone_base(
       (KosDynNode *) src);

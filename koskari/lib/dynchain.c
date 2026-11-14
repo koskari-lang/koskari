@@ -767,6 +767,35 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 }
 
 
+/**
+   A TRY or FINALLY region kept for a continuation gives the displaced
+   exception back to the thread as kos_dyn_region_leave_exc does, and
+   keeps its own record of it: the flag and the saved state are what a
+   clone of the region copies, so a copy of the kept node leaves as a
+   copy made before this leave would.
+*/
+static void kos_dyn_region_keep_exc(KosDynNode *node) {
+  uint8_t saved_flag;
+  KosExcState *saved;
+  KosExcState back;
+
+  if (KosDynNode_IS_TRY(node)) {
+    saved_flag = KosDynTry_EXC_SAVED((KosDynTry *) node);
+    saved = KosDynTry_SAVED((KosDynTry *) node);
+  } else {
+    saved_flag = KosDynFinally_EXC_SAVED((KosDynFinally *) node);
+    saved = KosDynFinally_SAVED((KosDynFinally *) node);
+  }
+
+  if (! saved_flag)
+    return;
+
+  KosExc_Init(&back);
+  KosExc_Copy(&back, saved);
+  KosExc_Install(&back);
+}
+
+
 #include "dynchain/dyn_try.c"
 #include "dynchain/dyn_finally.c"
 #include "dynchain/dyn_loop.c"
@@ -2261,6 +2290,131 @@ static KosOpResult kos_dyn_uninstall_handler(
 }
 
 
+/* === Keeping a node for a continuation === */
+
+
+/**
+   What a kept node's leaving does outside itself, by kind, run while
+   it is still dyn_top: a PARAM puts the outer cells back, a TRY or
+   FINALLY gives back the handler-visible exception it displaced, a
+   FOREACH finishes the request of a step in flight. Each leaves on the
+   node what its clone would have copied. A GEN never comes here: the
+   capture refused it. Callers: kos_dyn_unlink_top_keep.
+*/
+static void kos_dyn_keep_leave(KosContext *ctx, KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
+      break;
+    case KOS_DYN_FOREACH:
+      kos_dyn_foreach_keep(ctx, (KosDynForeach *) node);
+      break;
+    case KOS_DYN_TRY:
+    case KOS_DYN_FINALLY:
+      kos_dyn_region_keep_exc(node);
+      break;
+    default:
+      break;
+  }
+}
+
+
+/**
+   What a node kept for a continuation gives up once it is off the
+   chain, by kind: what its clone would not have carried. A goal's wait
+   on the node ended with its leave. A frame gives up a holder's
+   cache slot and the links below it; a node that introduces a
+   namespace has it revealed, as the clone that shares it would.
+   Callers: kos_dyn_unlink_top_keep.
+*/
+static void kos_dyn_keep_node(KosDynNode *node) {
+
+  KosDynNode_FLAGS(node) &= ~KOS_DYNF_GOAL_WAIT;
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_FRAME:
+      kos_dynframe_keep((KosDynFrame *) node);
+      break;
+    case KOS_DYN_NS:
+    case KOS_DYN_COLLECT:
+      KosNamespace_TrackChain(KosDynNode_NS(node));
+      break;
+    default:
+      break;
+  }
+}
+
+
+/**
+   Unlink dyn_top and hand it to the caller. See dynchain.h. A node
+   with a thunk of its own (KOS_DYN_CAP_WINDS) runs it and stays on
+   the chain until it is done; a local one (a plain with) discharges a
+   call in flight; either way what it stored for its completion is
+   detached and, once the node is off the chain, discarded, as a
+   transfer discards it. Any other kind does what its leaving does
+   outside itself. Then the parent becomes dyn_top and the node is the
+   caller's.
+*/
+KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept) {
+
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
+  KosObligation ob;
+
+  ob.kind = KOS_OB_NONE;
+
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
+    return EVAL_RAISE();
+  }
+
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
+      KosOpResult r = kos_dyn_extent_leave(ctx, node, KOS_XFER_EVENT_TRANSFER);
+      if (r.kind != KOS_RES_NORMAL)
+        return r;
+    } else {
+      kos_dyn_extent_abort(node);
+    }
+    {
+      KosObligation *slot = kos_dyn_node_ob(node);
+
+      ob = *slot;
+      slot->kind = KOS_OB_NONE;
+    }
+  } else {
+    kos_dyn_keep_leave(ctx, node);
+  }
+
+  kos_dyn_commit_dyn_top(ctx, KosDynNode_PARENT(node));
+  KosDynNode_PARENT(node) = NULL;
+  kos_dyn_keep_node(node);
+  *out_kept = node;
+  kos_dyn_ob_clear(&ob);
+  return EVAL_NORMAL();
+}
+
+
+int kos_dyn_node_capturable(KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_FRAME:
+      return kos_dynframe_capturable((KosDynFrame *) node);
+    case KOS_DYN_WIND:
+      return kos_dynwind_capturable((KosDynWind *) node);
+    case KOS_DYN_WITH:
+      return kos_dyn_with_capturable((KosDynWith *) node);
+    case KOS_DYN_GEN:
+      kos_raise_prompt_unreachable(
+          NULL, "generator",
+          "cannot capture a continuation across a %s boundary");
+      return -1;
+    default:
+      return 0;
+  }
+}
+
+
 /**
    Whether a live node is still in the phase its template clone
    recorded at capture. Identity says the two are one region; phase
@@ -2659,12 +2813,15 @@ static KosContinuation *kos_continuation_capture_segment(
    when its tag agrees, crossed when it does not, so the walk goes on
    to the parent. A consumer of any other kind is a topology error.
    Reachability is implied by the walk itself. Returns NULL with an
-   exception set.
+   exception set. With capturing set, for a shift, each node crossed
+   before the prompt is also one the continuation will hold, and one
+   that cannot be (kos_dyn_node_capturable) fails the seek.
 */
 static KosDynPrompt *kos_prompt_seek(
     KosContext *ctx,
     PyObject *tag,
-    const char *operation) {
+    const char *operation,
+    int capturing) {
 
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -2684,6 +2841,12 @@ static KosDynPrompt *kos_prompt_seek(
       if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag)
         return (KosDynPrompt *) node;
     }
+    /* a node the capture will keep: what its clone would refuse is
+       refused here, while every node is still on the chain */
+    if (capturing && kos_dyn_node_capturable(node) < 0) {
+      kos_capture_note(tag, operation);
+      return NULL;
+    }
     node = KosDynNode_PARENT(node);
   }
 
@@ -2697,15 +2860,14 @@ static KosDynPrompt *kos_prompt_seek(
    Callers: opcode ABORT.
 */
 KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag) {
-  return kos_prompt_seek(ctx, tag, "abort");
+  return kos_prompt_seek(ctx, tag, "abort", 0);
 }
 
 
 /**
-   Delimited shift: locate the prompt, clone the chain segment for the
-   invoke template, build the KosContinuation. A prompt of another tag
-   the walk crossed rides in the template as region content. Callers:
-   opcode SHIFT.
+   Delimited shift: locate the prompt, check that every node up to it
+   can be captured, and build the KosContinuation the abort fills. See
+   dynchain.h. Callers: opcode SHIFT.
 */
 int kos_shift_capture(
     KosContext *ctx,
@@ -2713,7 +2875,10 @@ int kos_shift_capture(
     KosContinuation **out_k,
     KosDynPrompt **out_prompt) {
 
-  KosDynPrompt *prompt = kos_prompt_seek(ctx, tag, "shift");
+  KosDynPrompt *prompt = kos_prompt_seek(ctx, tag, "shift", 1);
+  KosDynNode *bottom;
+  KosContinuation *k;
+  PyObject *token;
 
   if (! prompt)
     return -1;
@@ -2723,26 +2888,30 @@ int kos_shift_capture(
      region's code, namespace, operands and mid-region pc all come
      with it, and the prompt's copy ends the copy of the body as the
      prompt ends the body. A prompt of another tag the shift crossed is
-     region content and ends its own body's copy the same way. The
-     running frame stands after the SHIFT, the position its copy
-     resumes from once its pc is in the frame, so no resume pc is
-     recorded. */
-  KosContext_FlushLiveRegsToFrame(ctx);
-  {
-    KosContinuation *k = kos_continuation_capture_segment(
-        ctx,
-        KosContext_DYN_TOP(ctx),
-        KosDynNode_PARENT((KosDynNode *) prompt),
-        NULL,
-        1,
-        tag,
-        "SHIFT: no frame in captured chain");
+     region content and ends its own body's copy the same way.
 
-    if (! k)
-      return -1;
-    *out_k = k;
-    *out_prompt = prompt;
+     The nodes above the prompt are the ones the abort leaves, and it
+     keeps them into the template as it goes; the prompt stays, for the
+     handler to run above, so the template starts as its copy alone, a
+     new instance as every template node is. The running frame stands
+     after the SHIFT, the position its copy resumes from once its pc is
+     in the frame, so no resume pc is recorded. */
+  KosContext_FlushLiveRegsToFrame(ctx);
+
+  bottom = kos_dyn_clone((KosDynNode *) prompt);
+  if (! bottom)
+    return -1;
+  KosDynNode_NODE_ID(bottom) = 0;
+
+  token = (PyObject *) KosContext_EnsureToken(ctx);
+  k = token ? kos_continuation_create(bottom, NULL, 1, token) : NULL;
+  if (! k) {
+    kos_dynchain_free(bottom, NULL);
+    return -1;
   }
+
+  *out_k = k;
+  *out_prompt = prompt;
   return 0;
 }
 

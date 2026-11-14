@@ -32,7 +32,8 @@ KosOpResult kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
     const KosExtentDesc *aside,
-    PyObject *payload) {
+    PyObject *payload,
+    KosContinuation *keep) {
 
   KosDynNode *base;
   KosDynNode *frame;
@@ -76,6 +77,7 @@ KosOpResult kos_abort_to_prompt(
      pauses or fails. */
   kos_xfer_goal_init(&goal, frame, (KosDynNode *) prompt, payload, NULL, NULL,
                      0);
+  goal.keep = keep;
 
   /* what a clone for an attach records, for a copy of one frame */
   goal.shape.bottom = frame;

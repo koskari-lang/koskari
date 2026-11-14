@@ -1419,6 +1419,9 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
    :param prompt: the prompt to abort to
    :param aside: the aside to run above it
    :param payload: a value for the aside's stack, borrowed, or NULL
+   :param keep: the continuation kos_shift_capture began, which the
+     nodes the transfer leaves are kept into, or NULL to free them;
+     borrowed, and kept alive by payload
 
    :return: EVAL_NORMAL when the aside's frame is live above the
      prompt and the evaluator threads on in it; otherwise the result
@@ -1429,7 +1432,8 @@ KosOpResult kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
     const KosExtentDesc *aside,
-    PyObject *payload);
+    PyObject *payload,
+    KosContinuation *keep);
 
 
 /**
@@ -1662,6 +1666,57 @@ KosOpResult kos_dyn_unlink_top(
     KosContext *ctx,
     KosXferEvent ev,
     int allow_barrier);
+
+
+/**
+   Unlink dyn_top and keep it: the node leaves the chain as a transfer
+   has it leave, and is handed to the caller instead of freed. It
+   shares nothing with kos_dyn_unlink_top, whose callers pay nothing
+   for it.
+
+   This is how a delimited continuation is captured. A shift leaves
+   every node between itself and its prompt, and those same nodes are
+   what the continuation is a template of, so the transfer that leaves
+   them keeps each one as it comes off the chain and links it into the
+   continuation, in place of cloning the run first and freeing it
+   after. A kept node is never linked on a chain again: each call of
+   the continuation clones the template, so a kept node only has to be
+   what a clone taken before the leave would have been.
+
+   The node leaves as it does under a transfer, and what its leave
+   does outside itself still happens: a wind's after thunk and a
+   dyn-with's __exit__ run, a PARAM puts the outer cells back, a TRY
+   or FINALLY puts back the handler-visible exception it displaced, a
+   FOREACH finishes the request of a step in flight. What a clone
+   would have recorded stays on the node: a TRY's or FINALLY's saved
+   exception and its flag, and the resume a FOREACH's step left on the
+   frame below, which is kept in its turn. A frame gives up a
+   holder's cache slot it was to return to and has its namespace
+   revealed, as a frame's clone does.
+
+   The caller has checked every node it will keep with
+   kos_dyn_node_capturable, before the first one left.
+
+   :param ctx: execution context
+   :param out_kept: receives the node, owned by the caller, with no
+     parent; written only on EVAL_NORMAL
+   :return: EVAL_NORMAL when the node is the caller's; EVAL_REPROLOGUE
+     or EVAL_AWAIT when its leave is in flight and it stays on the
+     chain; EVAL_RAISE
+*/
+KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept);
+
+
+/**
+   Whether node can be part of a continuation's template: what its
+   clone refuses, kos_dyn_unlink_top_keep's caller refuses here, before
+   any node leaves. A wind or a with whose thunk is in flight, or that
+   holds something stored for its completion, cannot; nor can a frame
+   whose resume is of a kind that cannot clone its state.
+
+   :return: 0, or -1 with the clone's exception set
+*/
+int kos_dyn_node_capturable(KosDynNode *node);
 
 
 /**
@@ -1944,10 +1999,13 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx);
 
 
 /**
-  Capture a delimited continuation.
+  Begin the capture of a delimited continuation.
 
-  Finds the prompt, validates capture, clones the chain segment,
-  and creates a KosContinuation.
+  Finds the prompt, checks that every node between dyn_top and it can
+  be captured, and creates a KosContinuation whose template holds the
+  prompt's copy alone. The transfer that aborts to the prompt keeps
+  the nodes it leaves into the template (kos_abort_to_prompt), so the
+  continuation is whole once the handler's frame is live.
 
   :param ctx: context
   :param tag: the tag of the prompt to capture up to, nearest first,

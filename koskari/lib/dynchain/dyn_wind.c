@@ -54,14 +54,13 @@ KosDynWind *kos_dynwind_new(
 
 
 /**
-   Clone thunks and phase for continuation segments.
+   Whether a wind can be part of a continuation's template. A thunk in
+   flight, or a value, exception or return stored for its completion,
+   belongs to this node's one run and to no template. Returns 0, or -1
+   with the refusal set.
 */
-KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
-  if (! wind)
-    return NULL;
+static int kos_dynwind_capturable(KosDynWind *wind) {
 
-  /* A thunk in flight, or a value, exception or return stored for its
-     completion, belongs to this node's one run and to no template. */
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
       || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER
       || KosDynWind_OB(wind)->kind != KOS_OB_NONE) {
@@ -70,8 +69,21 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
                   ? "before" : "after",
         "cannot capture a continuation from inside a dyn-wind whose %s"
         " thunk is in flight");
-    return NULL;
+    return -1;
   }
+  return 0;
+}
+
+
+/**
+   Clone thunks and phase for continuation segments.
+*/
+KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
+  if (! wind)
+    return NULL;
+
+  if (kos_dynwind_capturable(wind) < 0)
+    return NULL;
 
   KosDynWind *clone = kos_dynnode_clone_base(wind);
   if (! clone)

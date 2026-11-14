@@ -51,6 +51,8 @@ void kos_xfer_goal_init(
   memset(&goal->shape, 0, sizeof(goal->shape));
   goal->piece_next = 0;
   goal->piece_entered = 0;
+  goal->keep = NULL;
+  goal->keep_tail = NULL;
   goal->payload = Py_XNewRef(payload);
   goal->continuation_ref = Py_XNewRef(continuation_ref);
   goal->resume_pc = resume_pc;
@@ -453,6 +455,31 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
 
 /**
+   Link a node LEAVING kept into the goal's continuation: under the
+   node kept before it, or as the template's top, and onto the
+   template's bottom.
+*/
+static void goal_keep_node(KosXferGoal *goal, KosDynNode *node) {
+
+  KosContinuation *k = goal->keep;
+  KosDynNode *tail = goal->keep_tail;
+
+  if (tail) {
+    KosDynNode_PARENT(node) = KosDynNode_PARENT(tail);
+    KosDynNode_PARENT(tail) = node;
+    kos_dynnode_note_parent(tail);
+  } else {
+    KosDynNode_PARENT(node) = KosContinuation_CAPTURED_CHAIN(k);
+    KosContinuation_CAPTURED_CHAIN(k) = node;
+  }
+  kos_dynnode_note_parent(node);
+  goal->keep_tail = node;
+  if (KosDynNode_IS_FRAME(node))
+    KosContinuation_FRAMES(k)++;
+}
+
+
+/**
    LEAVING: unlink from dyn_top down to the seam, every node through the
    same unlink. What leaving a node does is the node's own: a flattened
    generator's span boundary finishes its generator as it goes, and the
@@ -490,6 +517,56 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
         ? kos_dynnode_id(top) : 0;
     r = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_TRANSFER, 1);
     if (r.kind == KOS_RES_NORMAL) {
+      if (waited_id)
+        goal_void_outers_on(goal, top, waited_id);
+      continue;
+    }
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
+      goal_wait(goal, top);
+    return r;
+  }
+  return EVAL_NORMAL();
+}
+
+
+/**
+   LEAVING for a goal with a continuation to fill, a shift's abort:
+   goal_leave, with each node kept instead of freed
+   (kos_dyn_unlink_top_keep). The nodes come off top first, so each
+   goes under the one kept before it and onto the template's bottom,
+   and the template is a whole chain after every step. The capture
+   checked every node down to the seam before the transfer began.
+*/
+static KosOpResult goal_leave_keep(KosContext *ctx, KosXferGoal *goal) {
+
+#if KOS_EVAL_SAFETYNET
+  if (goal->seam
+      && (! kos_dyn_reaches(ctx, goal->seam)
+      || kos_dynnode_id(goal->seam) != goal->seam_id)) {
+    PyErr_SetString(PyExc_SystemError,
+        "transfer: the seam is not on the chain");
+    return EVAL_RAISE();
+  }
+#endif
+
+  while (KosContext_DYN_TOP(ctx) != goal->seam) {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+    KosDynNode *kept = NULL;
+    uint32_t waited_id;
+    KosOpResult r;
+
+    if (! top) {
+      PyErr_SetString(PyExc_SystemError,
+          "transfer: the seam is not on the chain");
+      return EVAL_RAISE();
+    }
+
+    /* read now: keeping the node takes the mark off it */
+    waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)
+        ? kos_dynnode_id(top) : 0;
+    r = kos_dyn_unlink_top_keep(ctx, &kept);
+    if (r.kind == KOS_RES_NORMAL) {
+      goal_keep_node(goal, kept);
       if (waited_id)
         goal_void_outers_on(goal, top, waited_id);
       continue;
@@ -752,7 +829,7 @@ static KosOpResult goal_drive(
 
     switch (goal->phase) {
       case KOS_GOAL_LEAVING:
-        r = goal_leave(ctx, goal);
+        r = goal->keep ? goal_leave_keep(ctx, goal) : goal_leave(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
           return r;
         goal->phase = KOS_GOAL_ATTACHING;
