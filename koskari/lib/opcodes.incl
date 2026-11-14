@@ -37,7 +37,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (PUSH_RESET, PUSH_ASIDE, ABORT, SHIFT_*; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
+   POP_*), continuations (PUSH_ASIDE, RESET, ABORT, SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first
@@ -421,13 +421,11 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(PUSH_RESET, 1, COUNT)  // tag count (0, or 1 popped); push the prompt, run the body that follows in a frame above it; cache: extent close pc
-OP(POP_RESET, 0, NOARG)   // where the frame under a reset goes on with the reset's value
-OP(PUSH_ASIDE, 1, CONST)  // a NamespaceSpec or None; run what follows in a frame of its own over a namespace built from the spec; cache: extent close pc
-OP(POP_ASIDE, 0, NOARG)   // where the frame under an aside goes on with the aside's value
-OP(ABORT, 0, COUNT)  // tag count (0, or 1 popped from the frame below); the running aside leaves everything up to the prompt and goes on above it
-OP(SHIFT_VAR, 0, EXTRA, COUNT, VAR, NOARG, NOARG)  // tag count, k's name; capture up to the prompt and bind k, then as ABORT
-OP(SHIFT_FAST, 0, EXTRA, COUNT, FASTVAR, NOARG, NOARG)  // SHIFT_VAR with k in a fast slot
+OP(PUSH_ASIDE, 0, EXTRA, CONST, ASIDE, NOARG, NOARG)  // a NamespaceSpec or None, the aside's name; declare the aside the instructions up to POP_ASIDE make, and pass over it
+OP(POP_ASIDE, 0, NOARG)   // closes an aside's instructions; never run
+OP(RESET, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count (0, or 1 popped), the body; push the prompt and run the aside above it
+OP(ABORT, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count, the handler; leave everything up to the prompt and run the aside above it
+OP(SHIFT, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count, the handler; capture up to the prompt, then as ABORT with the continuation on the aside's stack
 
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, 1, NOARG)             // cache: extent close pc

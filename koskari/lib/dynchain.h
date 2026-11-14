@@ -1087,14 +1087,18 @@ KosDynFrame *kos_dynframe_new_aside(
     int owns_ns,
     KosOp *entry);
 
-/* Push an aside over the live frame's code and ns, which it
-   introduces when owns_ns is set, or the live namespace when ns is
-   NULL. */
+/* The namespace a frame made here for aside runs over: a new
+   reference with *owns_ns set, or the live namespace, borrowed, with
+   it clear. */
+PyObject *kos_aside_namespace(
+    KosContext *ctx,
+    const KosExtentDesc *aside,
+    int *owns_ns);
+
+/* Push a frame that runs aside, an aside of the live frame's code. */
 KosDynFrame *kos_dyn_push_aside(
     KosContext *ctx,
-    KosOp *entry,
-    PyObject *ns,
-    int owns_ns);
+    const KosExtentDesc *aside);
 
 
 /**
@@ -1392,31 +1396,40 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
 
 
 /**
-   Move the running aside onto a prompt, leaving what was between.
+   Leave everything up to a prompt and run an aside above it.
 
-   The live frame is an aside at dyn_top, standing after the
-   instruction that aborts. It is taken off the chain, and the transfer
-   leaves everything from the frame it stood on down to the prompt,
-   the reset's body frame included, which holds the region's operands
-   until the abort can no longer be cancelled: a dyn-wind after thunk
-   or a with's __exit__ that raises on the way out abandons the
-   transfer, the aside is released, and the region carries on where
-   the raise is caught. Once the prompt is at dyn_top the aside is
-   attached above it and goes on; nothing is delivered to it. Its
-   return takes the prompt with it and is the reset's return. A shift
-   or an abort made later in the aside finds the same prompt.
+   The live frame stands after the instruction that aborts. A frame is
+   made for aside, an aside of the live frame's code, over the
+   namespace kos_aside_namespace gives, linked to nothing. The
+   transfer leaves everything from dyn_top down to the prompt, the
+   live frame and the reset's body frame included, which holds the
+   region's operands until the abort can no longer be cancelled: a
+   dyn-wind after thunk or a with's __exit__ that raises on the way
+   out abandons the transfer, the aside's frame is released, and the
+   region carries on where the raise is caught. Once the prompt is at
+   dyn_top the frame is attached above it and runs the aside, with
+   payload, when there is one, pushed on its stack. Its return takes
+   the prompt with it and is the reset's return. A shift or an abort
+   made in the aside finds the same prompt.
 
-   Runs the transfer at once (kos_xfer_goal_run), its target the aside;
-   the caller relays the result.
+   Runs the transfer at once (kos_xfer_goal_run), its target the new
+   frame; the caller relays the result.
 
    :param ctx: execution context
    :param prompt: the prompt to abort to
+   :param aside: the aside to run above it
+   :param payload: a value for the aside's stack, borrowed, or NULL
 
-   :return: EVAL_NORMAL when the aside is live above the prompt and
-     the evaluator threads on in it; otherwise the result to relay:
-     EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE with an exception set
+   :return: EVAL_NORMAL when the aside's frame is live above the
+     prompt and the evaluator threads on in it; otherwise the result
+     to relay: EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE with an
+     exception set
 */
-KosOpResult kos_abort_to_prompt(KosContext *ctx, KosDynPrompt *prompt);
+KosOpResult kos_abort_to_prompt(
+    KosContext *ctx,
+    KosDynPrompt *prompt,
+    const KosExtentDesc *aside,
+    PyObject *payload);
 
 
 /**

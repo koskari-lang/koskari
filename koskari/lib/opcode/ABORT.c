@@ -15,23 +15,24 @@
 
 
 /**
-   ABORT: arg = 0 for the default prompt tag, or 1 for a tag popped
-   from the stack of the frame below, where a popped None is the
-   default tag again.
+   ABORT: arg = extra index. Schema COUNT (0 for the default prompt
+   tag, or 1 for a tag popped from the stack, where a popped None is
+   the default tag again), ASIDE (the handler).
 
-   Runs in an aside, with no block of the aside's own open. Find the
-   prompt and move this frame onto it: the transfer leaves everything
-   between, then attaches this frame above the prompt, where it goes on
-   at the next instruction. Nothing is captured. The frame's return
-   ends the prompt and is the reset's return.
+   Find the prompt, leave everything between this frame and it, this
+   frame included, and run the aside in a frame above the prompt.
+   Nothing is captured. The handler's return ends the prompt and is
+   the reset's return.
 */
 
 KOS_OP_HANDLER(ABORT) {
   KOS_SYNC_PC(ctx, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *tag;
   KosDynPrompt *prompt;
 
-  if (pop_prompt_tag_below(ctx, (unsigned) KosOp_ARG(insn), &tag) < 0)
+  if (pop_prompt_tag(KosContext_BLOCK(ctx), (unsigned) KosExtra_IMM(row, 0),
+                     &tag) < 0)
     RESULT_RAISE();
 
   prompt = kos_abort_prompt(ctx, tag);
@@ -39,7 +40,8 @@ KOS_OP_HANDLER(ABORT) {
   if (! prompt)
     RESULT_RAISE();
 
-  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt));
+  RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt, KosExtra_ASIDE(row, 1),
+                                        NULL));
 }
 
 

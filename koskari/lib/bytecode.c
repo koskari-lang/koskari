@@ -300,9 +300,10 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 /**
   Build a 4-tuple of Python soften arguments for one EXTRA opcode row.
 
-  A resolved row holds pool objects, immediates, and label pcs. This
-  reverses emit: CONST/VAR are the pool objects themselves; LABEL slots
-  look up the destination PC in ``label_map``; other slots stay as integers
+  A resolved row holds pool objects, immediates, label pcs and aside
+  descriptors. This reverses emit: CONST/VAR are the pool objects
+  themselves; LABEL slots look up the destination PC in ``label_map``;
+  ASIDE slots are named for their extent; other slots stay as integers
   (FAST,
   COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
   phase default.
@@ -355,6 +356,11 @@ static PyObject *soften_extra_tuple(
       }
       Py_INCREF(lab);
       items[slot] = lab;
+
+    } else if (fk == KOSTYLE_ASIDE) {
+      items[slot] = PyUnicode_FromFormat(
+          KosCode_SOFTEN_ASIDE_PREFIX "%u",
+          (unsigned) (KosExtra_ASIDE(row, slot) - KosCode_EXTENTS(self)));
 
     } else {
       items[slot] = PyLong_FromLong((long) KosExtra_IMM(row, slot));
@@ -997,6 +1003,9 @@ static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
       out[slot] = (uint16_t) ci;
     } else if (fk == KOSTYLE_LABEL) {
       out[slot] = KosExtra_TARGET(row, slot)->pc;
+    } else if (fk == KOSTYLE_ASIDE) {
+      out[slot] =
+          (uint16_t) (KosExtra_ASIDE(row, slot) - KosCode_EXTENTS(self));
     } else {
       out[slot] = (uint16_t) KosExtra_IMM(row, slot);
     }
@@ -1283,6 +1292,9 @@ typedef struct {
   uint16_t last_col;
   /* LABEL slots in EXTRA rows deferred until emit: (extra_idx, slot, label_name) */
   PyObject *pending_labels;
+  /* ASIDE slots in EXTRA rows deferred until the extents are derived:
+     (extra_idx, slot, aside_name, pc) */
+  PyObject *pending_asides;
 } CodeCollect;
 
 
@@ -1346,6 +1358,7 @@ static void code_collect_clear(CodeCollect *coll) {
   Py_CLEAR(coll->cpool_list);
   Py_CLEAR(coll->labels);
   Py_CLEAR(coll->pending_labels);
+  Py_CLEAR(coll->pending_asides);
   PyMem_Del(coll->pos_entries);
   coll->pos_entries = NULL;
   PyMem_Del(coll->extra_rows);
@@ -1477,10 +1490,13 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   coll->cpool_list = PyList_New(0);
   coll->labels = PyDict_New();
   coll->pending_labels = PyList_New(0);
-  if (! coll->cpool_list || ! coll->labels || ! coll->pending_labels) {
+  coll->pending_asides = PyList_New(0);
+  if (! coll->cpool_list || ! coll->labels || ! coll->pending_labels
+      || ! coll->pending_asides) {
     Py_CLEAR(coll->cpool_list);
     Py_CLEAR(coll->labels);
     Py_CLEAR(coll->pending_labels);
+    Py_CLEAR(coll->pending_asides);
     return -1;
   }
 
@@ -1717,6 +1733,24 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
+        /* ASIDE: a name, resolved to the aside's extent descriptor
+           once the extents are derived; defer */
+        if (fk == KOSTYLE_ASIDE) {
+          if (! PyUnicode_CheckExact(elem)) {
+            PyErr_Format(PyExc_TypeError, "Code instruction %zd aside name"
+                         " must be a str, not %.100s",
+                         i, Py_TYPE(elem)->tp_name);
+            goto failure;
+          }
+          PyObject *pending = Py_BuildValue(
+              "(IiOI)", (unsigned) extra_idx, slot, elem, (unsigned) di);
+          if (! pending || PyList_Append(coll->pending_asides, pending) < 0) {
+            Py_XDECREF(pending);
+            goto failure;
+          }
+          Py_DECREF(pending);
+          continue;
+        }
         /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC,
            OPERAND, RAW: store raw integer (slot, argc, bitflags, packed
            op-type+count, comparison selector, packed
@@ -1773,7 +1807,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
           /* a prompt instruction's tag count names no tag or the one
              tag */
-          if ((op == KOS_OP_SHIFT_VAR || op == KOS_OP_SHIFT_FAST)
+          if ((op == KOS_OP_RESET || op == KOS_OP_ABORT
+               || op == KOS_OP_SHIFT)
               && slot == 0 && val > 1) {
             PyErr_Format(PyExc_ValueError, "Code instruction %zd EXTRA"
                          " field %d %R is not 0 or 1", i, slot, elem);
@@ -1879,14 +1914,6 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           && KosCmpCount_SEL((uint16_t) val) >= KOS_COMPARE_COUNT) {
         PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
                      " names no comparison", i, b);
-        goto failure;
-      }
-
-      /* a prompt instruction's tag count names no tag or the one
-         tag */
-      if ((op == KOS_OP_ABORT || op == KOS_OP_PUSH_RESET) && val > 1) {
-        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
-                     " is not 0 or 1", i, b);
         goto failure;
       }
 
@@ -2290,9 +2317,9 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0, 0 },
   { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1, 0 },
   { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0, 0 },
-  /* the POP row of these two belongs to the frame below and is not
-     run by the extent's own frame */
-  { KOS_OP_PUSH_RESET,    KOS_OP_POP_RESET,    KOS_EXT_RESET,    0, 1 },
+  /* an aside's instructions run in a frame of their own, made by the
+     instruction that names the aside; the frame the aside is written
+     in passes over them */
   { KOS_OP_PUSH_ASIDE,    KOS_OP_POP_ASIDE,    KOS_EXT_ASIDE,    0, 1 },
 };
 
@@ -2461,18 +2488,6 @@ static int derive_extents_fill(
     if (validate_tail_call_extents(op, pc, stack, stack_top))
       return -1;
 
-    /* An abort or a shift moves the frame that runs it, which only an
-       aside's frame can be, with no block of its own open. */
-    if ((op == KOS_OP_ABORT || op == KOS_OP_SHIFT_VAR
-         || op == KOS_OP_SHIFT_FAST)
-        && (stack_top == 0
-            || stack[stack_top - 1].push_op != KOS_OP_PUSH_ASIDE)) {
-      PyErr_Format(PyExc_ValueError,
-                   "instruction %u aborts outside an aside, or inside a"
-                   " block of one", pc);
-      return -1;
-    }
-
     if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
         PyErr_Format(PyExc_ValueError, "extent nesting too deep (limit %u)",
@@ -2496,6 +2511,9 @@ static int derive_extents_fill(
         e->push_pc = pc;
         e->pop_pc = 0;
         e->parent_extent_id = parent_id;
+        /* the stream ends in THEEND, so both positions are records */
+        e->entry = &code[pc + 1];
+        e->after = NULL;
         top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
       }
 
@@ -2523,6 +2541,7 @@ static int derive_extents_fill(
       if (extents_out) {
         uint32_t eid = stack[stack_top - 1].extent_id;
         extents_out[eid].pop_pc = pc;
+        extents_out[eid].after = &code[pc + 1];
 
         /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
         uint32_t enter_pc = extents_out[eid].push_pc + 1;
@@ -3112,8 +3131,15 @@ static int validate_fast_slots(
     } else if (op == KOS_OP_PUSH_ASIDE) {
       /* an aside's instructions index the namespace built from its
          spec; None is the namespace the aside is written in */
-      PyObject *ns = cpool[code[i].arg];
+      uint16_t eidx = code[i].arg;
+      PyObject *ns;
       uint32_t lim = 0;
+
+      if (eidx >= extra_len) {
+        PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
+        return -1;
+      }
+      ns = KosExtra_OBJ(&extra[eidx], 0);
 
       if (asides >= DERIVE_EXTENT_STACK_MAX
           || depth >= DERIVE_EXTENT_STACK_MAX) {
@@ -3151,6 +3177,99 @@ static int validate_fast_slots(
   }
 
   return 0;
+}
+
+
+/**
+   Resolve the ASIDE fields collect deferred, now that the extents are
+   derived: each becomes the extent descriptor of the aside its name
+   declares. A PUSH_ASIDE declares the name its field carries, for its
+   own extent. Any other instruction names an aside to run, and sits in
+   the block the aside is declared in, so the namespace it runs the
+   aside over is the one the aside's instructions were written against.
+   A name declared twice, a name no PUSH_ASIDE declares and an
+   instruction outside its aside's block are refused.
+
+   :return: 0, or -1 with ValueError set
+*/
+static int resolve_asides(
+    CodeCollect *coll,
+    const KosOp *code,
+    KosExtra *extra,
+    const KosExtentDesc *extents,
+    const uint16_t *top_extent_id) {
+
+  Py_ssize_t n_pending = PyList_GET_SIZE(coll->pending_asides);
+  PyObject *declared;
+  int res = -1;
+
+  if (! n_pending)
+    return 0;
+
+  declared = PyDict_New();
+  if (! declared)
+    return -1;
+
+  /* the declarations: a push's pc carries its own extent's id */
+  for (Py_ssize_t k = 0; k < n_pending; k++) {
+    PyObject *pending = PyList_GET_ITEM(coll->pending_asides, k);
+    PyObject *name = PyTuple_GET_ITEM(pending, 2);
+    uint32_t pc = (uint32_t) PyLong_AsLong(PyTuple_GET_ITEM(pending, 3));
+    PyObject *eid;
+    int known;
+
+    if (code[pc].op != KOS_OP_PUSH_ASIDE)
+      continue;
+
+    known = PyDict_Contains(declared, name);
+    if (known < 0)
+      goto done;
+    if (known) {
+      PyErr_Format(PyExc_ValueError,
+                   "instruction %u declares aside %R again", pc, name);
+      goto done;
+    }
+
+    eid = PyLong_FromUnsignedLong(top_extent_id[pc]);
+    if (! eid || PyDict_SetItem(declared, name, eid) < 0) {
+      Py_XDECREF(eid);
+      goto done;
+    }
+    Py_DECREF(eid);
+  }
+
+  for (Py_ssize_t k = 0; k < n_pending; k++) {
+    PyObject *pending = PyList_GET_ITEM(coll->pending_asides, k);
+    long eidx = PyLong_AsLong(PyTuple_GET_ITEM(pending, 0));
+    long slot = PyLong_AsLong(PyTuple_GET_ITEM(pending, 1));
+    PyObject *name = PyTuple_GET_ITEM(pending, 2);
+    uint32_t pc = (uint32_t) PyLong_AsLong(PyTuple_GET_ITEM(pending, 3));
+    PyObject *eid = PyDict_GetItemWithError(declared, name);
+    const KosExtentDesc *aside;
+
+    if (! eid) {
+      if (! PyErr_Occurred())
+        PyErr_Format(PyExc_ValueError,
+                     "instruction %u names aside %R, which no PUSH_ASIDE"
+                     " declares", pc, name);
+      goto done;
+    }
+
+    aside = &extents[PyLong_AsLong(eid)];
+    if (code[pc].op != KOS_OP_PUSH_ASIDE
+        && aside->parent_extent_id != top_extent_id[pc]) {
+      PyErr_Format(PyExc_ValueError,
+                   "instruction %u names aside %R from outside the block"
+                   " it is declared in", pc, name);
+      goto done;
+    }
+    extra[eidx].f[slot].aside = aside;
+  }
+  res = 0;
+
+ done:
+  Py_DECREF(declared);
+  return res;
 }
 
 
@@ -3262,15 +3381,18 @@ static int code_instr_init(
     goto reject;
   }
 
-  code_collect_clear(&coll);
   Py_DECREF(instr_fast);
 
   /* Phase 4: Finalize — fill extent table, validate, seal. The
      buffers are NULL when no PUSH_* was counted, and the walk then
      validates alone, refusing a stray POP_*. */
   if (derive_extents_fill(code, code_len, extents, extent_count,
-                          top_extent_id))
+                          top_extent_id)
+      || resolve_asides(&coll, code, extra, extents, top_extent_id)) {
+    code_collect_clear(&coll);
     goto reject;
+  }
+  code_collect_clear(&coll);
 
   if (extents && top_extent_id &&
       validate_jump_locality(code, code_len, extra, extra_len, extents,
@@ -4054,6 +4176,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, CMPSRC);
   int_enum(enum_dict, KOSTYLE_, OPERAND);
   int_enum(enum_dict, KOSTYLE_, RAW);
+  int_enum(enum_dict, KOSTYLE_, ASIDE);
 
   return create_int_enum("OpStyle", enum_dict);
 

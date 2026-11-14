@@ -340,7 +340,7 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
    Allocate an aside: a frame that takes no arguments and runs code
    over ns from entry, an instruction of code, which belongs to the
    frame the aside's form was written in. With owns_ns zero, ns is
-   that frame's own namespace, or the empty one, and the aside holds it
+   the namespace live where the aside was named, and the aside holds it
    as its fill, as a native frame does. With owns_ns set, ns was built
    for the aside from a spec the code's validation checked the aside's
    instructions against: the aside introduces it and carries
@@ -352,7 +352,8 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
    stands above once linked, the source of its depth and demand flag,
    or NULL when it will stand on a prompt at the root of a context;
    parent is the node it is linked on, or NULL for one linked later.
-   code and ns are borrowed. Callers: kos_dyn_push_aside.
+   code and ns are borrowed. Callers: kos_dyn_push_aside,
+   kos_abort_to_prompt.
    Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *kos_dynframe_new_aside(
@@ -391,32 +392,58 @@ KosDynFrame *kos_dynframe_new_aside(
 
 
 /**
-   Push an aside over the live frame's code, starting at entry, as
-   dyn_top and the live frame. Its namespace is ns, borrowed, which
-   the aside introduces when owns_ns is set, or the live namespace
-   when ns is NULL. Callers: opcode PUSH_RESET, for the body it runs
-   above its prompt over the live namespace, and opcode PUSH_ASIDE,
-   with a namespace built for the aside or the empty one. Returns the
-   frame, or NULL with PyErr set.
+   The namespace a frame made here for aside runs over. An aside whose
+   PUSH_ASIDE carries a spec introduces a namespace built from it,
+   whose closure names are resolved from the live namespace: a new
+   reference, with *owns_ns set. One that carries None runs over the
+   live namespace itself: borrowed, with *owns_ns clear. The live
+   frame's code is the one aside was derived for, which Code
+   construction checked by holding each instruction that names an
+   aside to the block the aside is declared in. Callers:
+   kos_dyn_push_aside, kos_abort_to_prompt. Returns NULL with PyErr
+   set.
+*/
+PyObject *kos_aside_namespace(
+    KosContext *ctx,
+    const KosExtentDesc *aside,
+    int *owns_ns) {
+
+  KosCode *code = KosDynFrame_CODE(KosContext_FRAME(ctx));
+  PyObject *spec =
+      KosExtra_OBJ(KosOp_ROW(&KosCode_CODE(code)[aside->push_pc]), 0);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+
+  *owns_ns = (spec != Py_None);
+  return *owns_ns ? KosNamespace_FromSpec(spec, ns) : ns;
+}
+
+
+/**
+   Push a frame that runs aside, an aside of the live frame's code, as
+   dyn_top and the live frame. Callers: opcode RESET, for the body it
+   runs above its prompt. Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *kos_dyn_push_aside(
     KosContext *ctx,
-    KosOp *entry,
-    PyObject *ns,
-    int owns_ns) {
+    const KosExtentDesc *aside) {
 
   KosDynFrame *cur = KosContext_FRAME(ctx);
   KosDynFrame *frame;
-
-  if (! ns)
-    ns = KosContext_NAMESPACE(ctx);
+  PyObject *ns;
+  int owns_ns;
 
   if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
     return NULL;
 
+  ns = kos_aside_namespace(ctx, aside, &owns_ns);
+  if (! ns)
+    return NULL;
+
   frame = kos_dynframe_new_aside(
       KosContext_DYN_TOP(ctx), cur, KosDynFrame_CODE(cur), ns, owns_ns,
-      entry);
+      aside->entry);
+  if (owns_ns)
+    Py_DECREF(ns);
   if (! frame)
     return NULL;
 

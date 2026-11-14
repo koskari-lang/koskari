@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for delimited and undelimited continuations (RESET, SHIFT_VAR, CALL
+Tests for delimited and undelimited continuations (RESET, SHIFT, CALL
 on DelimitedContinuation, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator
 token.
 Includes cross-context continuation pass-through tests verifying the
@@ -26,7 +26,7 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 import pytest
 
 from koskari.exceptions import KoskariPromptNotFound
-from koskari.lib import Code, FormalsSpec, NamespaceSpec
+from koskari.lib import Code, FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 from tests.lib import opcode as opcode_tests
 from tests.lib.opcode import CevalTest, _op
@@ -50,16 +50,16 @@ _APPLY_K_5 = [
 
 class ResetBody(list):
     """
-    The rows of a reset's body, which expand_asides lays out between
-    the PUSH_RESET and POP_RESET of the RESET row that names them
+    The rows of a reset's body, which expand_asides lays out as the
+    aside the RESET row names
     """
 
 
 class ShiftHandler(list):
     """
-    The rows of a shift's handler, which expand_asides lays out in the
-    aside of the SHIFT_VAR row that names them, with the names of the
-    aside's own namespace
+    The rows of a shift's handler, which expand_asides lays out as the
+    aside the SHIFT row names, with the names of the aside's own
+    namespace
     """
 
     def __init__(self, rows, local_syms):
@@ -67,34 +67,44 @@ class ShiftHandler(list):
         self.local_syms = tuple(local_syms)
 
 
-def expand_asides(code, local_syms):
+def expand_asides(code, local_syms, names=None):
     """
     Lay each reset's body and each shift's handler out the way the
     instructions take them. A RESET row carrying a ResetBody becomes
-    PUSH_RESET, the body's rows ending in their RETURN, and POP_RESET.
-    A SHIFT_VAR row carrying a ShiftHandler becomes PUSH_ASIDE with a
-    namespace of the handler's names, SHIFT_VAR, the handler's rows
-    ending in their RETURN, and POP_ASIDE. A body or a handler may hold
+    an aside over the namespace it is written in, PUSH_ASIDE, the
+    body's rows ending in their RETURN, and POP_ASIDE, then the RESET
+    row naming it. A SHIFT row carrying a ShiftHandler and the name the
+    continuation is bound to becomes an aside with a namespace of the
+    handler's names, whose first row stores the continuation to that
+    name, then the SHIFT row naming it. A body or a handler may hold
     further rows written the same way
 
     :param code: Sequence of [op, arg], a RESET row's second field being
-        a ResetBody and a SHIFT_VAR row's a ShiftHandler
+        a ResetBody and a SHIFT row's a ShiftHandler
     :param local_syms: unused; the handlers' names are their asides'
+    :param names: the aside names given out so far
     :return: the rows with every body and handler laid out in place
     """
 
+    names = [] if names is None else names
     rows = []
     for op, arg in code:
         if op == "RESET" and isinstance(arg[1], ResetBody):
-            rows.append(["PUSH_RESET", arg[0]])
-            rows.extend(expand_asides(arg[1], local_syms))
-            rows.append(["POP_RESET", 0])
-        elif op == "SHIFT_VAR" and isinstance(arg[1], ShiftHandler):
-            nspec = NamespaceSpec("handler", arg[1].local_syms, ())
-            rows.append(["PUSH_ASIDE", nspec])
-            rows.append(["SHIFT_VAR", (arg[0], arg[2], 0, 0)])
-            rows.extend(expand_asides(arg[1], local_syms))
+            name = f"aside_{len(names)}"
+            names.append(name)
+            rows.append(["PUSH_ASIDE", (None, name, 0, 0)])
+            rows.extend(expand_asides(arg[1], local_syms, names))
             rows.append(["POP_ASIDE", 0])
+            rows.append(["RESET", (arg[0], name, 0, 0)])
+        elif op == "SHIFT" and isinstance(arg[1], ShiftHandler):
+            name = f"aside_{len(names)}"
+            names.append(name)
+            nspec = NamespaceSpec("handler", arg[1].local_syms, ())
+            rows.append(["PUSH_ASIDE", (nspec, name, 0, 0)])
+            rows.append(["VAR_STORE", arg[2]])
+            rows.extend(expand_asides(arg[1], local_syms, names))
+            rows.append(["POP_ASIDE", 0])
+            rows.append(["SHIFT", (arg[0], name, 0, 0)])
         else:
             rows.append([op, arg])
     return rows
@@ -141,10 +151,10 @@ def build_expr(code, local_syms=None, **kwds):
 
 def handler_spec(code, local_syms=("k",)):
     """
-    The rows of a shift's handler, for the second field of a SHIFT_VAR
+    The rows of a shift's handler, for the second field of a SHIFT
     row: they run in an aside over the code the row is in, with a
-    namespace of their own in which SHIFT_VAR binds the continuation
-    to k, and end in a RETURN
+    namespace of their own in which the continuation is stored to k,
+    and end in a RETURN
 
     :param code: Sequence of [op, arg] as in build_code
     :param local_syms: the names of the aside's namespace, k first
@@ -211,7 +221,7 @@ class TestReset(CevalTest):
 
         body = body_spec([
             ["CONST", 1],
-            ["SHIFT_VAR", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -230,7 +240,7 @@ class TestReset(CevalTest):
         """
 
         body = body_spec([
-            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -269,13 +279,13 @@ class TestReset(CevalTest):
         with self.assertRaises(ValueError) as caught:
             build_expr(code)
         self.assertEqual(
-            "Code instruction 0 argument 2 is not 0 or 1",
+            "Code instruction 4 EXTRA field 0 2 is not 0 or 1",
             str(caught.exception))
 
 
 class TestDelimitedContinuations(CevalTest):
     """
-    Tests for SHIFT_VAR and CALL on a DelimitedContinuation, under RESET
+    Tests for SHIFT and CALL on a DelimitedContinuation, under RESET
     """
 
     async def test_delimited_continuation_cannot_be_called_from_python(self):
@@ -284,7 +294,7 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         body = body_spec([
-            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -316,7 +326,7 @@ class TestDelimitedContinuations(CevalTest):
         ], local_syms=("k", "j"))
         body = body_spec([
             ["CONST", 1],
-            ["SHIFT_VAR", (0, stored, "k", 0)],
+            ["SHIFT", (0, stored, "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -337,7 +347,7 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         body = body_spec([
-            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -358,12 +368,12 @@ class TestDelimitedContinuations(CevalTest):
         """
         (reset (shift k k)) then (k 99) => 99. When invoking from outside
         the handler, the continuation's first op is the body's RETURN
-        after SHIFT_VAR, which takes the value; the copy of the body returns
+        after SHIFT, which takes the value; the copy of the body returns
         99 to the call site.
         """
 
         body = body_spec([
-            ["SHIFT_VAR", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -394,7 +404,7 @@ class TestDelimitedContinuations(CevalTest):
         inner = body_spec([
             ["CONST", 1],
             ["CONST", tag_a],
-            ["SHIFT_VAR", (1, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (1, handler_spec(_RETURN_K), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -430,7 +440,7 @@ class TestDelimitedContinuations(CevalTest):
         inner = body_spec([
             ["CONST", 1],
             ["CONST", tag_a],
-            ["SHIFT_VAR", (1, handler_spec(_APPLY_K_5), "k", 0)],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -471,9 +481,9 @@ class TestDelimitedContinuations(CevalTest):
         inner = body_spec([
             ["CONST", 10],
             ["CONST", tag_a],
-            ["SHIFT_VAR", (1, handler_spec(_APPLY_K_5), "k", 0)],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
-            ["SHIFT_VAR", (0, apply_k_100, "k", 0)],
+            ["SHIFT", (0, apply_k_100, "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -505,7 +515,7 @@ class TestDelimitedContinuations(CevalTest):
         tag_b = [1]
         body = body_spec([
             ["CONST", tag_b],
-            ["SHIFT_VAR", (1, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (1, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 1],
         ])
         code = [
@@ -531,7 +541,7 @@ class TestDelimitedContinuations(CevalTest):
         body = body_spec([
             ["CONST", 1],
             ["CONST", None],
-            ["SHIFT_VAR", (1, handler_spec(_APPLY_K_5), "k", 0)],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -554,7 +564,7 @@ class TestDelimitedContinuations(CevalTest):
 
         body = body_spec([
             ["CONST", 1],
-            ["SHIFT_VAR", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
@@ -576,13 +586,215 @@ class TestDelimitedContinuations(CevalTest):
         """
 
         code = [
-            ["SHIFT_VAR", (2, handler_spec(_RETURN_K), "k", 0)],
+            ["SHIFT", (2, handler_spec(_RETURN_K), "k", 0)],
             ["RETURN", 0],
         ]
         with self.assertRaises(ValueError) as caught:
             build_expr(code)
         self.assertEqual(
-            "Code instruction 1 EXTRA field 0 2 is not 0 or 1",
+            "Code instruction 5 EXTRA field 0 2 is not 0 or 1",
+            str(caught.exception))
+
+
+class TestAsides(CevalTest):
+    """
+    Tests for PUSH_ASIDE and the ASIDE field: an aside is declared
+    under a name, the frame it is written in passes over it, and a
+    RESET, ABORT or SHIFT in the same block runs it by that name
+    """
+
+    async def test_frame_passes_over_an_aside(self):
+        """
+        The frame an aside is written in runs none of its rows
+        """
+
+        code = [
+            ["PUSH_ASIDE", (None, "a", 0, 0)],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["POP_ASIDE", 0],
+            ["CONST", 2],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        self.assertEqual(2, await make_callable(code_obj, ns)())
+
+
+    async def test_one_aside_run_by_two_rows(self):
+        """
+        Two RESET rows name the same body: 7 and 7 are 14
+        """
+
+        code = [
+            ["PUSH_ASIDE", (None, "a", 0, 0)],
+            ["CONST", 7],
+            ["RETURN", 1],
+            ["POP_ASIDE", 0],
+            ["RESET", (0, "a", 0, 0)],
+            ["RESET", (0, "a", 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        self.assertEqual(14, await make_callable(code_obj, ns)())
+
+
+    async def test_abort_inside_a_try_block(self):
+        """
+        An ABORT with a try block of its own frame open around it: the
+        abort leaves the block, and the handler's 5 is the reset's
+        """
+
+        code = [
+            ["PUSH_ASIDE", (None, "body", 0, 0)],
+            ["PUSH_TRY", "except"],
+            ["PUSH_ASIDE", (None, "found", 0, 0)],
+            ["CONST", 5],
+            ["RETURN", 1],
+            ["POP_ASIDE", 0],
+            ["ABORT", (0, "found", 0, 0)],
+            ["LABEL", "except"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 42],
+            ["POP_TRY", 0],
+            ["RETURN", 1],
+            ["POP_ASIDE", 0],
+            ["RESET", (0, "body", 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        self.assertEqual(5, await make_callable(code_obj, ns)())
+
+
+    async def test_softened_asides_build_again(self):
+        """
+        Code.soften names each aside for its extent, on the row that
+        declares it and on the rows that run it, and the softened rows
+        build a Code that runs the same
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code_obj, ns = build_expr([
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ])
+        soft = code_obj.soften()
+        named = [
+            (OpCode(op).name, arg[1]) for op, arg in soft
+            if OpCode(op).name in ("PUSH_ASIDE", "RESET", "SHIFT")]
+        self.assertEqual([
+            ("PUSH_ASIDE", "ASIDE_0"),
+            ("PUSH_ASIDE", "ASIDE_1"),
+            ("SHIFT", "ASIDE_1"),
+            ("RESET", "ASIDE_0"),
+        ], named)
+
+        again = Code(code_obj.namespace_spec, soft, "again")
+        self.assertEqual(6, await make_callable(again, ns)())
+
+
+    async def test_aside_run_past_its_end_raises(self):
+        """
+        An aside whose rows do not end in a RETURN reaches its
+        POP_ASIDE, which raises
+        """
+
+        code = [
+            ["PUSH_ASIDE", (None, "a", 0, 0)],
+            ["CONST", 1],
+            ["POP", 1],
+            ["POP_ASIDE", 0],
+            ["RESET", (0, "a", 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        with self.assertRaises(RuntimeError) as caught:
+            await make_callable(code_obj, ns)()
+        self.assertEqual(
+            "POP_ASIDE: an aside ran past its end", str(caught.exception))
+
+
+    async def test_aside_declared_twice_refused_at_build(self):
+        code = [
+            ["PUSH_ASIDE", (None, "a", 0, 0)],
+            ["RETURN", 0],
+            ["POP_ASIDE", 0],
+            ["PUSH_ASIDE", (None, "a", 0, 0)],
+            ["RETURN", 0],
+            ["POP_ASIDE", 0],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            opcode_tests.build_expr(code)
+        self.assertEqual(
+            "instruction 3 declares aside 'a' again", str(caught.exception))
+
+
+    async def test_undeclared_aside_refused_at_build(self):
+        code = [
+            ["RESET", (0, "nope", 0, 0)],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            opcode_tests.build_expr(code)
+        self.assertEqual(
+            "instruction 0 names aside 'nope', which no PUSH_ASIDE declares",
+            str(caught.exception))
+
+
+    async def test_aside_named_outside_its_block_refused_at_build(self):
+        """
+        An aside is run from the block it is declared in: not from
+        around that block, and not from inside the aside itself
+        """
+
+        around = [
+            ["PUSH_ASIDE", (None, "outer", 0, 0)],
+            ["PUSH_ASIDE", (None, "inner", 0, 0)],
+            ["RETURN", 0],
+            ["POP_ASIDE", 0],
+            ["RETURN", 0],
+            ["POP_ASIDE", 0],
+            ["RESET", (0, "inner", 0, 0)],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            opcode_tests.build_expr(around)
+        self.assertEqual(
+            "instruction 6 names aside 'inner' from outside the block it is"
+            " declared in", str(caught.exception))
+
+        within = [
+            ["PUSH_ASIDE", (None, "a", 0, 0)],
+            ["RESET", (0, "a", 0, 0)],
+            ["RETURN", 1],
+            ["POP_ASIDE", 0],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            opcode_tests.build_expr(within)
+        self.assertEqual(
+            "instruction 1 names aside 'a' from outside the block it is"
+            " declared in", str(caught.exception))
+
+
+    async def test_aside_name_must_be_str(self):
+        code = [
+            ["PUSH_ASIDE", (None, 3, 0, 0)],
+            ["RETURN", 0],
+            ["POP_ASIDE", 0],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(TypeError) as caught:
+            opcode_tests.build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 aside name must be a str, not int",
             str(caught.exception))
 
 

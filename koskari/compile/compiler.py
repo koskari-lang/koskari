@@ -148,6 +148,10 @@ class ByteCodeFragment:
         # only when it completes, so this one cannot complete early
         self.holds_deferred = False
 
+        # set once an aside is emitted into this fragment, so the
+        # processor reads the stream for one only where one can be
+        self.holds_aside = False
+
 
     def as_namespace_spec(self):
         """
@@ -332,10 +336,10 @@ class ByteCodeFragment:
             return {str(n) for n in nspec.local_syms} | {
                 str(n) for n in nspec.global_syms}
 
-        # the stream is the compiler's own emission: PUSH_NS,
-        # PUSH_COLLECT and PUSH_ASIDE carry their NamespaceSpec as the
-        # operand, and the
-        # fused rows the processor mints later are not here yet
+        # the stream is the compiler's own emission: PUSH_NS and
+        # PUSH_ASIDE carry their NamespaceSpec as the first field,
+        # PUSH_COLLECT as the operand, and the fused rows the processor
+        # mints later are not here yet
         scopes = []
         asides = []
         out = []
@@ -351,10 +355,12 @@ class ByteCodeFragment:
 
             elif op == OpCode.PUSH_ASIDE:
                 # None is an aside over the scope it is written in
-                asides.append(arg is not None)
-                if arg is not None:
-                    arg = rebuild_nspec(arg, scopes)
-                    scopes.insert(0, scope_names(arg))
+                nspec = arg[0]
+                asides.append(nspec is not None)
+                if nspec is not None:
+                    nspec = rebuild_nspec(nspec, scopes)
+                    arg = (nspec,) + tuple(arg[1:])
+                    scopes.insert(0, scope_names(nspec))
 
             elif op == OpCode.POP_ASIDE:
                 if asides.pop():
@@ -404,6 +410,8 @@ class ByteCodeFragment:
             self.marked = True
         if other.holds_deferred:
             self.holds_deferred = True
+        if other.holds_aside:
+            self.holds_aside = True
         self.instructions.extend(other.instructions)
 
 
@@ -472,18 +480,22 @@ class ByteCodeFragment:
                 self.marked = True
             if child.holds_deferred:
                 self.holds_deferred = True
+            if child.holds_aside:
+                self.holds_aside = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
 
 
     @contextmanager
-    def aside(self, ns_name, own=()):
+    def aside(self, name, ns_name, own=()):
         """
         Context manager that compiles an aside: instructions that run
-        in a frame of their own over a namespace of their own. On
-        entry, yields a fragment for the aside's instructions. On exit,
-        emits PUSH_ASIDE with the aside's NamespaceSpec, the
-        instructions, RETURN 1, and POP_ASIDE.
+        in a frame of their own, made by the instruction that names the
+        aside. On entry, yields a fragment for the aside's
+        instructions. On exit, emits PUSH_ASIDE with the aside's
+        NamespaceSpec and name, the instructions, RETURN 1, and
+        POP_ASIDE. The caller emits the instruction that runs the
+        aside, after it and in the same block.
 
         The aside's namespace owns only the names in own. Every other
         name declared at the aside's level is declared in this
@@ -494,17 +506,20 @@ class ByteCodeFragment:
         namespace it is written in, and its instructions are compiled
         in this fragment's scope.
 
+        :param name: the name the aside is declared under, one the
+            compiler's label generator made
         :param ns_name: name for the aside's namespace
         :param own: the symbols the aside's namespace declares
         """
 
         compiler = self.compiler
         own = tuple(own)
+        self.holds_aside = True
 
         if not own:
             child = compiler.fragment(str(ns_name))
             yield child
-            self.instruction(OpCode.PUSH_ASIDE, None)
+            self.instruction(OpCode.PUSH_ASIDE, (None, name, 0, 0))
             self.merge(child)
             self.instruction(OpCode.RETURN, 1)
             self.instruction(OpCode.POP_ASIDE, 0)
@@ -512,21 +527,21 @@ class ByteCodeFragment:
 
         child = compiler.fragment(str(ns_name))
         with compiler.resolution_scope(child):
-            for name in own:
-                child.declare_var(name)
+            for sym in own:
+                child.declare_var(sym)
 
             yield child
 
             # a declare made at the aside's level is the enclosing
             # scope's, written from the aside through a closure name
-            for name in tuple(child.declares):
-                if name in own:
+            for sym in tuple(child.declares):
+                if sym in own:
                     continue
-                position = child.declare_positions.get(name)
-                child.declares.remove(name)
-                self.declare_var(name, position=position)
-                child.request_var(name, position=position)
-                child.request_for_write(name, position=position)
+                position = child.declare_positions.get(sym)
+                child.declares.remove(sym)
+                self.declare_var(sym, position=position)
+                child.request_var(sym, position=position)
+                child.request_for_write(sym, position=position)
             self.annotation_bindings.extend(child.annotation_bindings)
 
             # a function built inside the aside closes over its names
@@ -538,17 +553,20 @@ class ByteCodeFragment:
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
 
             # as for a child namespace: what the aside closes over, the
-            # enclosing scope must hold for PUSH_ASIDE to resolve
-            for name in child.resolution.closure_names(child):
-                if name not in self.declares:
+            # enclosing scope must hold for the aside's namespace to
+            # resolve
+            for sym in child.resolution.closure_names(child):
+                if sym not in self.declares:
                     self.request_var(
-                        name, position=child.request_positions.get(name))
+                        sym, position=child.request_positions.get(sym))
 
-            self.instruction(OpCode.PUSH_ASIDE, nspec)
+            self.instruction(OpCode.PUSH_ASIDE, (nspec, name, 0, 0))
             if child.marked:
                 self.marked = True
             if child.holds_deferred:
                 self.holds_deferred = True
+            if child.holds_aside:
+                self.holds_aside = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.RETURN, 1)
             self.instruction(OpCode.POP_ASIDE, 0)
@@ -586,6 +604,8 @@ class ByteCodeFragment:
                 self.marked = True
             if child.holds_deferred:
                 self.holds_deferred = True
+            if child.holds_aside:
+                self.holds_aside = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_COLLECT, 0)
 

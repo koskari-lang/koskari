@@ -389,6 +389,8 @@ def _format_arg [code op_style arg cpool local_names closure_names
                 (_format_opcount val)
               case [OpStyle.LABEL]:
                 f"-> {val}"
+              case [OpStyle.ASIDE]:
+                f"aside {val}"
               else:
                 (str val)
 

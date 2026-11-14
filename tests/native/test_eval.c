@@ -738,13 +738,14 @@ static int test_eval_try_finally_rerase(void) {
 
 static int test_eval_reset_body_shift(void) {
     /*
-      Bytecode: PUSH_RESET 0, then the body CONST 1, PUSH_ASIDE with a
-      namespace of k, SHIFT_VAR (0, "k", 0, 0), the handler VAR k,
-      CONST 5, CALL 1, RETURN 1, then POP_ASIDE, OBJECT_ADD 2,
-      RETURN 1, then POP_RESET, RETURN 1. The body and the handler
-      each run in a frame of their own over this code. The handler
-      applies k to 5; the copy of the body returns 6 to that call, and
-      the handler's 6 is the reset's.
+      Bytecode: the body, an aside over the frame's namespace: CONST 1,
+      then the handler, an aside with a namespace of k: VAR_STORE k,
+      VAR k, CONST 5, CALL 1, RETURN 1; then SHIFT (0, handler),
+      OBJECT_ADD 2, RETURN 1. After the body, RESET (0, body) and
+      RETURN 1. The body and the handler each run in a frame of their
+      own over this code. The handler applies k to 5; the copy of the
+      body returns 6 to that call, and the handler's 6 is the
+      reset's.
     */
     PyObject *name = NULL;
     PyObject *locals = NULL;
@@ -753,7 +754,10 @@ static int test_eval_reset_body_shift(void) {
     PyObject *k_name = NULL;
     PyObject *one = NULL;
     PyObject *five = NULL;
+    PyObject *body_row = NULL;
+    PyObject *handler_row = NULL;
     PyObject *shift_row = NULL;
+    PyObject *reset_row = NULL;
     PyObject *instr = NULL;
     PyObject *code_obj = NULL;
     PyObject *ns = NULL;
@@ -777,33 +781,41 @@ static int test_eval_reset_body_shift(void) {
     k_name = PyUnicode_FromString("k");
     one = PyLong_FromLong(1);
     five = PyLong_FromLong(5);
-    if (k_name)
-        shift_row = Py_BuildValue("(iOii)", 0, k_name, 0, 0);
-    instr = PyList_New(13);
-    if (k_name && one && five && shift_row && instr) {
+    body_row = Py_BuildValue("(Osii)", Py_None, "body", 0, 0);
+    handler_row = Py_BuildValue("(Osii)", nspec, "handler", 0, 0);
+    shift_row = Py_BuildValue("(isii)", 0, "handler", 0, 0);
+    reset_row = Py_BuildValue("(isii)", 0, "body", 0, 0);
+    instr = PyList_New(15);
+    if (k_name && one && five && body_row && handler_row && shift_row
+        && reset_row && instr) {
         /* the handler's namespace holds k alone, as the code's does */
-        PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_RESET, 0));
+        PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_PUSH_ASIDE, body_row));
         PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
-        PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_PUSH_ASIDE, nspec));
         PyList_SET_ITEM(
-            instr, 3, make_instr(KOS_OP_SHIFT_VAR, shift_row));
+            instr, 2, make_instr(KOS_OP_PUSH_ASIDE, handler_row));
+        PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_VAR_STORE, k_name));
         PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_VAR, k_name));
         PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_CONST, five));
         PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_CALL, 1));
         PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_RETURN, 1));
         PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_POP_ASIDE, 0));
-        PyList_SET_ITEM(instr, 9, make_instr_int(
+        PyList_SET_ITEM(instr, 9, make_instr(KOS_OP_SHIFT, shift_row));
+        PyList_SET_ITEM(instr, 10, make_instr_int(
             KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
-        PyList_SET_ITEM(instr, 10, make_instr_int(KOS_OP_RETURN, 1));
-        PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_POP_RESET, 0));
-        PyList_SET_ITEM(instr, 12, make_instr_int(KOS_OP_RETURN, 1));
+        PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_RETURN, 1));
+        PyList_SET_ITEM(instr, 12, make_instr_int(KOS_OP_POP_ASIDE, 0));
+        PyList_SET_ITEM(instr, 13, make_instr(KOS_OP_RESET, reset_row));
+        PyList_SET_ITEM(instr, 14, make_instr_int(KOS_OP_RETURN, 1));
 
         code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     }
     Py_XDECREF(k_name);
     Py_XDECREF(one);
     Py_XDECREF(five);
+    Py_XDECREF(body_row);
+    Py_XDECREF(handler_row);
     Py_XDECREF(shift_row);
+    Py_XDECREF(reset_row);
     Py_XDECREF(instr);
     Py_DECREF(nspec);
     if (! code_obj) {

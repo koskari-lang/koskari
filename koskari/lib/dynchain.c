@@ -2705,7 +2705,7 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag) {
    Delimited shift: locate the prompt, clone the chain segment for the
    invoke template, build the KosContinuation. A prompt of another tag
    the walk crossed rides in the template as region content. Callers:
-   opcodes SHIFT_VAR, SHIFT_FAST.
+   opcode SHIFT.
 */
 int kos_shift_capture(
     KosContext *ctx,
@@ -2713,26 +2713,25 @@ int kos_shift_capture(
     KosContinuation **out_k,
     KosDynPrompt **out_prompt) {
 
-  KosDynNode *aside = KosContext_DYN_TOP(ctx);
-
   KosDynPrompt *prompt = kos_prompt_seek(ctx, tag, "shift");
 
   if (! prompt)
     return -1;
 
-  /* The template is whole frames from below the running aside down
-     through the prompt: the reset's body frame sits on the prompt, so
-     the region's code, namespace, operands and mid-region pc all come
+  /* The template is whole frames from the running one down through
+     the prompt: the reset's body frame sits on the prompt, so the
+     region's code, namespace, operands and mid-region pc all come
      with it, and the prompt's copy ends the copy of the body as the
      prompt ends the body. A prompt of another tag the shift crossed is
      region content and ends its own body's copy the same way. The
-     aside is not part of it: it is the handler, which the abort moves.
-     The frame below it stands at the close of the aside's extent, the
-     position its copy resumes from, so no resume pc is recorded. */
+     running frame stands after the SHIFT, the position its copy
+     resumes from once its pc is in the frame, so no resume pc is
+     recorded. */
+  KosContext_FlushLiveRegsToFrame(ctx);
   {
     KosContinuation *k = kos_continuation_capture_segment(
         ctx,
-        KosDynNode_PARENT(aside),
+        KosContext_DYN_TOP(ctx),
         KosDynNode_PARENT((KosDynNode *) prompt),
         NULL,
         1,

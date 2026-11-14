@@ -659,6 +659,8 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
    resume, set it as a pending throw, or raise it at the boundary; then
    retire the goal. An abort to a prompt has no payload: its target is
    the handler's frame, which takes nothing, and the goal only retires.
+   A shift's abort carries the continuation, pushed for the handler's
+   first instruction to store.
    A receiving frame that carries a resume the goal
    installed, through a restore record or an attached copy, was
    waiting on a delivery when it was captured: the payload is that

@@ -15,15 +15,17 @@
 
 
 /**
-   POP_ASIDE: arg unused. Closes a PUSH_ASIDE extent. The frame the
-   aside is written in stands here while the aside runs, and goes on
-   from here once a value has been pushed on its stack: the aside's
-   return, or the value a continuation captured from inside the aside
-   is called with. The aside's own frame never reaches it.
+   POP_ASIDE: arg unused. Closes the instructions of an aside. The
+   frame the aside is written in passes from the PUSH_ASIDE to the
+   instruction after this one, and the aside's own frame leaves by its
+   RETURN, so no frame runs it: one that does ran an aside past its
+   end.
 */
 
 KOS_OP_HANDLER(POP_ASIDE) {
-  RESULT_NEXT(ctx);
+  KOS_SYNC_PC(ctx, insn);
+  PyErr_SetString(PyExc_RuntimeError, "POP_ASIDE: an aside ran past its end");
+  RESULT_RAISE();
 }
 
 

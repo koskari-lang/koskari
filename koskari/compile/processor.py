@@ -356,7 +356,6 @@ def build_var_to_fast():
     var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
     var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
     var_to_fast[OpCode.ITER_NEXT_STORE_VAR] = OpCode.ITER_NEXT_STORE_FAST
-    var_to_fast[OpCode.SHIFT_VAR] = OpCode.SHIFT_FAST
     var_to_fast[OpCode.JUMP_FALSE_VAR] = OpCode.JUMP_FALSE_FAST
     var_to_fast[OpCode.JUMP_TRUE_VAR] = OpCode.JUMP_TRUE_FAST
     var_to_fast[OpCode.JUMP_AND_VAR] = OpCode.JUMP_AND_FAST
@@ -571,8 +570,8 @@ def stringify_operands(rows):
             arg = stringify_namespace_spec(arg)
 
         elif op == OpCode.PUSH_ASIDE:
-            if arg is not None:
-                arg = stringify_namespace_spec(arg)
+            if arg[0] is not None:
+                arg = (stringify_namespace_spec(arg[0]), *arg[1:])
 
         elif op.style == OpStyle.VAR:
             arg = str(arg)
@@ -1456,9 +1455,9 @@ class ByteCodeProcessor:
 
             elif op == OpCode.PUSH_ASIDE:
                 # None is an aside over the scope it is written in
-                asides.append(arg is not None)
-                if arg is not None:
-                    push_nspec(arg)
+                asides.append(arg[0] is not None)
+                if arg[0] is not None:
+                    push_nspec(arg[0])
 
             elif op == OpCode.POP_ASIDE:
                 if asides.pop():
@@ -1568,6 +1567,46 @@ class ByteCodeProcessor:
             result.append((op, arg))
 
         flush()
+        self.instructions = result
+
+
+    def pass_labels_over_asides(self):
+        """
+        Move each LABEL that leads to a PUSH_ASIDE to after the aside's
+        POP_ASIDE. In the frame an aside is written in, PUSH_ASIDE only
+        passes over the aside's instructions, so a jump to the label
+        goes where the PUSH_ASIDE would have taken it. A label leads to
+        a PUSH_ASIDE when only POSITION, NOOP and LABEL rows lie
+        between them; one moved after an aside that another directly
+        follows moves again.
+        """
+
+        instr = self.instructions
+        if not self.fragment.holds_aside:
+            return
+
+        result = []
+        leading = []
+        moved = []
+        for op, arg in instr:
+            if op == OpCode.PUSH_ASIDE:
+                moved.append([result.pop(i) for i in reversed(leading)])
+                leading = []
+                result.append((op, arg))
+            elif op == OpCode.POP_ASIDE:
+                result.append((op, arg))
+                leading = []
+                for row in reversed(moved.pop()):
+                    leading.append(len(result))
+                    result.append(row)
+            elif op == OpCode.LABEL:
+                leading.append(len(result))
+                result.append((op, arg))
+            else:
+                if op not in (OpCode.POSITION, OpCode.NOOP):
+                    leading = []
+                result.append((op, arg))
+
         self.instructions = result
 
 
@@ -1912,6 +1951,9 @@ class ByteCodeProcessor:
         """
 
         compiler = self.fragment.compiler
+
+        # a jump to a PUSH_ASIDE goes to where it leads instead
+        self.pass_labels_over_asides()
 
         # a short-circuit jump leading to a conditional jump becomes
         # that jump, so the clause's predicate and the branch sit
