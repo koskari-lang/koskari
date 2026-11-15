@@ -8,9 +8,9 @@
 the handler `BODY` there with `K` bound to the continuation. It is
 [`shift`](compile-shift.md) with the delimiter chosen by tag.
 
-**Behaviour:** Evaluates `TAG` and emits `SHIFT_VAR 1` (the tag is taken from
-the stack before the capture, so it is not part of the continuation), then
-the handler inline. The
+**Behaviour:** Evaluates `TAG`, then emits the handler apart from the
+code around it and `SHIFT 1` naming it (the tag is taken from the stack
+before the capture, so it is not part of the continuation). The
 handler runs with the `reset-at`'s prompt still in place, so a
 `shift-at` of the same tag in `BODY` captures up to the same `reset-at`.
 

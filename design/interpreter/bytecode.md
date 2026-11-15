@@ -266,8 +266,10 @@ quick lookup.
 - `KOS_OP_POP_WITH`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_FOREACH`, `KOS_OP_POP_NS`, `KOS_OP_POP_COLLECT` (POP_NS, POP_LOOP, POP_FOREACH, POP_COLLECT implemented), etc.
 
 ### Delimited Continuations
-- `KOS_OP_RESET`: EXTRA row (tag count, body FunctionSpec). Pop the tag when the count is 1, build the body (a function of no arguments), push a KOS_DYN_PROMPT, and call the body above it; the return of the frame on the prompt pops both and is the instruction's value
-- `KOS_OP_SHIFT`: EXTRA row (tag count, handler FunctionSpec). Pop the tag when the count is 1, build the handler (a function of k), capture whole frames up to the prompt, abort to the prompt, and call the handler with k there; its return pops the prompt and is the reset's value
+- `KOS_OP_PUSH_ASIDE` / `KOS_OP_POP_ASIDE`: declare an aside, the instructions between them, under a name (EXTRA row: a NamespaceSpec or None, the name). The frame they are written in jumps from the push to the instruction after the pop; the pop is never run
+- `KOS_OP_RESET`: EXTRA row (tag count, aside). Pop the tag when the count is 1, push a KOS_DYN_PROMPT, and run the body's aside in a frame above it; the return of the frame on the prompt pops both and is the instruction's value
+- `KOS_OP_ABORT`: EXTRA row (tag count, aside). Pop the tag when the count is 1, leave everything up to the prompt, and run the handler's aside in a frame above it; its return pops the prompt and is the reset's value
+- `KOS_OP_SHIFT`: EXTRA row (tag count, aside). As ABORT, keeping the nodes it leaves as the continuation, whole frames up to the prompt, which is pushed on the handler's stack
 
 ### Dynamic Wind
 - `KOS_OP_PUSH_WIND`: Push wind extent (arg = COUNT: 1 = before only, 2 = both thunks)

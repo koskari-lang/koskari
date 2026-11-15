@@ -229,8 +229,8 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
 **Rationale**: Python call frames cannot be cloned or resumed. Including them
 would create non-resumable continuations.
 
-**Implementation**: `kos_shift_capture` finds the prompt by one walk from
-`dyn_top` on the chain, and `kos_validate_capture_cc` checks a call/cc
+**Implementation**: `kos_shift_capture` and `kos_abort_prompt` find the
+prompt by one walk from `dyn_top` on the chain, and `kos_validate_capture_cc` checks a call/cc
 capture. Context/token identity and type-level blocking enforce the boundary
 constraint.
 
@@ -249,7 +249,7 @@ constraint.
 
 **Node types**:
 * `KOS_DYN_FRAME` — function activation record
-* `KOS_DYN_PROMPT` -- reset/shift delimiter (RESET); carries the tag and no stack block; the frame on it (the reset's body or a shift's handler) ends it by returning; BARRIER
+* `KOS_DYN_PROMPT` -- reset/shift delimiter (RESET); carries the tag and no stack block; the frame on it (the reset's body or a shift's or an abort's handler) ends it by returning; BARRIER
 * `KOS_DYN_WIND` — dynamic-wind extent (before/after hooks)
 * `KOS_DYN_TRY` — try block (handler_pc, enabled; owns stack block)
 * `KOS_DYN_FINALLY` — finally block (handler_pc, enabled, handling_raise; owns stack block)
@@ -302,10 +302,11 @@ continuation capture and avoids special hook machinery.
   owning context state does not permit invocation. Attempting to invoke an
   unusable continuation (delimited or full) raises an exception at the
   invocation site.
-* A reset's body and a shift's handler are functions called above the
-  prompt. A delimited continuation is whole frames from the shift down
-  through the nearest matching prompt, the reset's body frame on it
-  included; the shift aborts to the prompt before its handler runs.
+* A reset's body and a shift's or an abort's handler are asides run in
+  frames above the prompt. A delimited continuation is whole frames from
+  the shift down through the nearest matching prompt, the reset's body
+  frame on it included; the shift aborts to the prompt before its handler
+  runs, and the nodes it leaves are the continuation.
 * Captured continuations are **multi-shot**.
 * Continuation invocation runs the leaves and enters of the
   `KOS_DYN_CAP_WINDS` nodes it crosses: leaves innermost first, enters

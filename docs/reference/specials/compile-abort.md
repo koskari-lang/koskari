@@ -11,8 +11,9 @@ region is discarded, and nothing is captured, so it costs less than a
 function calls, a dead branch of a search, and an effect whose handler
 does not resume.
 
-**Behaviour:** Emits `ABORT 0`, then the handler `BODY` inline, ending in
-a return. The region between the `abort` and the `reset` is left first,
+**Behaviour:** Emits the handler, `BODY` and a return, apart from the
+code around it, then `ABORT 0` naming it. The region between the `abort`
+and the `reset` is left first,
 and the handler then runs in a frame of its own, with the `reset`'s prompt
 still in place, over the names of the scope the `abort` is written in. Its
 value is the value of the `reset`.

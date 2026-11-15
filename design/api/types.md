@@ -283,15 +283,16 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
   - Kinds: FRAME, PROMPT, WIND, TRY, FINALLY, LOOP, FOREACH, NS, COLLECT, CC, PARAM, WITH, GEN
   - TRY, FINALLY, LOOP, FOREACH are the region kinds; each has only its own `KosDynNode_IS_*` test
 - `KosDynFrame`: Function activation record (code, pc, stack, namespace)
-- `KosDynPrompt`: Delimiter for delimited continuations (tag, matched by identity; NULL is the default tag); the frame on it, a reset's body or a shift's handler, ends it by returning
+- `KosDynPrompt`: Delimiter for delimited continuations (tag, matched by identity; NULL is the default tag); the frame on it, a reset's body or a shift's or an abort's handler, ends it by returning
 - `KosDynWind`: Dynamic-wind extent (before/after thunk callables, obligation slot)
 - Region kinds (formerly `KosDynRegion` with `KosRegionStyle`; now separate kinds):
   - `KOS_DYN_TRY`: try block (handler_pc, enabled)
   - `KOS_DYN_FINALLY`: finally block (handler_pc, enabled, handling_raise)
   - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, result; enabled is the `KOS_DYN_CAP_LOOP_REGION` capability)
   - `KOS_DYN_FOREACH`: for-each loop (the LOOP record plus its `KosIterRequest`: iter, islots, kind)
-- `KosXferGoal` (`xfer_goal.h`): where a continuation transfer or a shift's
-  abort is going (seam, target clone, payload, resume pc, the frontier it
+- `KosXferGoal` (`xfer_goal.h`): where a continuation transfer or an
+  abort is going (seam, target, payload, resume pc, the continuation a
+  shift's abort keeps the nodes it leaves into, the frontier it
   waits on, outer goal); the evaluator's prologue drives it, re-deriving each
   step from the live chain.
 - `KosObligation`: the slot a WIND or WITH owes at unlink (value, stored

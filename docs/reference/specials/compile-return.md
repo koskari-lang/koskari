@@ -35,8 +35,9 @@ value to the caller. A `return` in a `finally:` replaces the pending value.
 In a generator, `return` ends the generator.
 
 The body of a [`reset`](compile-reset.md) and the handler of a
-[`shift`](compile-shift.md) are functions of their own: a `return` in
-either gives the `reset` its value, and the function the `reset` is
+[`shift`](compile-shift.md) or an [`abort`](compile-abort.md) each run in
+a frame of their own: a `return` in
+any of them gives the `reset` its value, and the function the `reset` is
 written in carries on after it. In a resumed delimited continuation, a
 `return` in the `reset`'s body gives that copy's value to the `(k ...)`
 call.

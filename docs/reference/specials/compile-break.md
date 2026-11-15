@@ -16,8 +16,8 @@ bare symbol always expands, `break` can never name a variable.
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
 The target is the innermost loop of the same function. The body of a
 [`reset`](compile-reset.md) and the handler of a
-[`shift`](compile-shift.md) are functions of their own, so each has only
-the loops written inside it: a `break` there with no loop of its own
+[`shift`](compile-shift.md) or an [`abort`](compile-abort.md) each run in
+a frame of their own, so each has only the loops written inside it: a `break` there with no loop of its own
 raises `RuntimeError("break outside loop")`, whatever loop surrounds the
 `reset` or the `shift`. The same holds in a resumed delimited
 continuation, whose slice ends with the `reset`'s body.

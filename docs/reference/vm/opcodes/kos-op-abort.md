@@ -1,19 +1,23 @@
 # KOS_OP_ABORT
-- **Style**: COUNT. Instruction arg = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag. Any other count is refused when the code is built. Tags match by identity.
-- **Stack**: The handler is the instructions that follow ABORT, up to a RETURN. One walk from the top of the dynamic chain locates the nearest matching prompt (a generator boundary denies). ABORT then aborts to that prompt: every node above it is left (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit). When an after thunk or exit raises, the abort is abandoned and the raise propagates from where it ran, with the region's operands still in place. Once the prompt is at the top of the chain, a frame is attached above it that runs the same code object over the namespace live at the ABORT, standing at the instruction after ABORT with an empty stack. The handler's return ends the prompt and is the RESET's value, as the body's return would have been. Nothing is captured.
-- **Pushes:** The handler's KOS_DYN_FRAME above the prompt, once the abort has left the region, so an ABORT or a shift in the handler finds the same prompt. The frame holds the code and the namespace itself, since the frame the ABORT ran in is gone by then.
-- **Invariants**: The handler shares its names with the function the ABORT is in.
+- **Style**: EXTRA (`COUNT`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = the aside that is the handler. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: Pops the tag when the count is `1`. One walk from the top of the dynamic chain locates the nearest matching prompt (a generator boundary denies). ABORT then aborts to that prompt: every node above it is left, the frame ABORT ran in among them (a dyn-wind after thunk and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit). When an after thunk or exit raises, the abort is abandoned and the raise propagates from where it ran, with the region's operands still in place. Once the prompt is at the top of the chain, a frame that runs the aside (see [PUSH_ASIDE](kos-op-push-aside.md)) is attached above it with an empty stack. The handler's return ends the prompt and is the RESET's value, as the body's return would have been. Nothing is captured.
+- **Pushes:** The handler's KOS_DYN_FRAME above the prompt, once the abort has left the region, so an ABORT or a SHIFT in the handler finds the same prompt. The frame holds the code and its namespace itself, since the frame the ABORT ran in is gone by then.
+- **Invariants**: The compiler declares an abort's handler with `None` for its spec: the handler shares its names with the function the abort is written in.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a generator boundary on the way raises `KoskariPromptUnreachable` with the boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`, `abort`.
-- **Compiler form:** The compiler emits ABORT, the handler body, then `RETURN 1`. `abort` emits count `0`; `abort-at` compiles its tag first and emits count `1`. Nothing comes back to an ABORT, so whatever the enclosing form emits after the handler is never reached.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, name, 0, 0)`, the name that of the handler's aside; `NOARG` slots are ignored by the assembler. The compiler emits the handler as an aside, then ABORT. `abort` emits count `0`; `abort-at` compiles its tag first, ahead of the aside, and emits count `1`. Nothing comes back to an ABORT, so whatever the enclosing form emits after it is never reached.
 
-**Example:** `(reset (+ 1 (abort 5)))` as a function's whole body.
+**Example:** `(reset (+ 1 (abort 5)))` as a function's whole body. The ABORT's extra row: `(0, aside 1, 0, 0)`.
 
 | index | opcode         | arg | arg view              | comment |
 |------:|----------------|-----|-----------------------|---------|
-| 0     | RESET          | 0   | 0 (0, -> 6)           | push prompt; run 1 onward in a frame above it |
-| 1     | CONST          | 0   | 0 (1)                 | region operand; stack: [1] |
-| 2     | ABORT          | 0   | 0                     | abort to the prompt; run 3 onward above it |
-| 3     | RETURN_CONST   | 1   | 1 (5)                 | the handler's value; ends the prompt |
-| 4     | OBJECT_OPERAND | 2   | ADD x2                | never reached |
-| 5     | RETURN         | 1   | 1                     | |
-| 6     | RETURN         | 1   | 1                     | the function's value, the reset's |
+| 0     | PUSH_ASIDE     | 0   | 0 (None, aside 0)     | declare the reset's body; go on at 9 |
+| 1     | CONST          | 1   | 1 (1)                 | region operand; stack: [1] |
+| 2     | PUSH_ASIDE     | 1   | 1 (None, aside 1)     | declare the handler; go on at 5 |
+| 3     | RETURN_CONST   | 2   | 2 (5)                 | the handler's value; ends the prompt |
+| 4     | POP_ASIDE      | 0   | 0                     | never run |
+| 5     | ABORT          | 2   | 2 (0, aside 1)        | abort to the prompt; run aside 1 above it |
+| 6     | OBJECT_OPERAND | 2   | ADD x2                | never reached |
+| 7     | RETURN         | 1   | 1                     | |
+| 8     | POP_ASIDE      | 0   | 0                     | never run |
+| 9     | RESET          | 3   | 3 (0, aside 0)        | push prompt; run aside 0 above it |
+| 10    | RETURN         | 1   | 1                     | the function's value, the reset's |

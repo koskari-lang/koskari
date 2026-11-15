@@ -2965,22 +2965,24 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 **Syntax:** `(reset BODY ...)`
 
 **Use-case:** Establish a prompt delimiter for delimited continuations
-(`compile/shift`). The body runs with a prompt on the dynamic chain under
-it; `compile/shift` in the body, or in a function it calls, captures the
-continuation up to this prompt.
+(`compile/shift`, `compile/abort`). The body runs with a prompt on the
+dynamic chain under it; a `compile/shift` in the body, or in a function it
+calls, captures the continuation up to this prompt.
 
-**Behaviour:** Compiles `BODY` as its own function of no parameters (a
-fragment named `<reset>`, compiled with `helper_begin` in a function
-resolution scope) and emits one `RESET` instruction, an EXTRA row of the
-tag count 0 (the default tag) and the body's FunctionSpec. At run time
-RESET builds the body over the live namespace, pushes the prompt, and
-calls the body above it; the body's return ends the prompt and is the
-form's value.
+**Behaviour:** `helper_reset_body` compiles `BODY` as an aside (JARGON.md)
+through `Fragment.aside` with no names of its own: the body is compiled
+with `helper_begin` into the enclosing fragment's scope and emitted as
+`PUSH_ASIDE (None, name)`, the body, `RETURN 1`, `POP_ASIDE`. One `RESET`
+instruction follows, an EXTRA row of the tag count 0 (the default tag) and
+the aside's name. At run time the enclosing frame passes over the aside;
+RESET pushes the prompt and a frame above it that runs the aside over the
+live namespace; the body's return ends the prompt and is the form's value.
 
-The body is a function: `return` in it returns from the body and gives the
-reset its value; `break` and `continue` reach only loops opened inside it;
-a `var` declared in it is local to it. A `yield` written in the body is a
-`SpecialError` at compile time.
+The body runs in a frame of its own: `return` in it returns from the body
+and gives the reset its value; `break` and `continue` reach only loops
+opened inside it. Its names are the enclosing function's: a `var` in it is
+visible after the form. A `yield` written in the body is a `SpecialError`
+at compile time.
 
 **Examples:**
 
@@ -3003,35 +3005,46 @@ a `var` declared in it is local to it. A `yield` written in the body is a
 **Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
-`compile/reset` prompt, abort to that prompt, and call the handler, a
-function of `K` whose body is `BODY`, there. The handler's value is the
+`compile/reset` prompt, abort to that prompt, and run the handler `BODY`
+there with `K` bound to the continuation. The handler's value is the
 reset's. `K` is a `DelimitedContinuation` that cannot be called from
 Python (only from within a Koskari eval loop, through CALL).
 
-**Behaviour:** Compiles the handler as its own function of the one
-parameter `K` (a fragment named `<shift>`, compiled with `helper_begin` in
-a function resolution scope) and emits one `SHIFT` instruction, an EXTRA
-row of the tag count 0 (the default tag) and the handler's FunctionSpec.
+**Behaviour:** `helper_handler` compiles the handler as an aside that owns
+one name, `K`: `Fragment.aside` opens a resolution scope declaring `K`,
+and every other name the handler declares is moved to the enclosing
+fragment and reached from the handler as a closure name. The aside is
+emitted as `PUSH_ASIDE (spec, name)`, a `VAR_STORE K`, the handler,
+`RETURN 1`, `POP_ASIDE`, the spec being the aside's NamespaceSpec (local
+`K`, closures the enclosing names it uses). One `SHIFT` instruction
+follows, an EXTRA row of the tag count 0 (the default tag) and the aside's
+name.
 
-At runtime SHIFT builds the handler over the live namespace, captures the
-continuation -- whole frames from the shift up to the prompt, the reset's
-body frame included, resuming at the instruction after the SHIFT -- and
-aborts to the prompt. A transfer goal leaves every node above the prompt:
-a node carrying `KOS_DYN_CAP_WINDS` runs its leave (a dyn-wind after thunk,
-a dyn-with exit, a parameterize restore), and a plain `with`, `try` or
-`finally` is unlinked without running anything of its own. The prompt
-stays, and the handler is called with `K` above it. The handler is outside
-the region's extents: a `try` in the region does not catch its raises, and
-a `parameterize` in the region is not bound for it. Each call of `K`
-attaches a fresh copy of the captured frames, prompt included, on the
-caller, enters the copy's extents outermost first, and returns the copy's
-value to the caller as a call does.
+At run time SHIFT captures the continuation -- whole frames from the shift
+down to the prompt, the reset's body frame included, with the shift's own
+frame standing at the instruction after the SHIFT -- and aborts to the
+prompt. The nodes the abort leaves are kept as the continuation's template
+instead of being cloned and freed. A node carrying `KOS_DYN_CAP_WINDS`
+runs its leave (a dyn-wind after thunk, a dyn-with exit, a parameterize
+restore), and a plain `with`, `try` or `finally` leaves without running
+anything of its own. The prompt stays, and a frame that runs the aside is
+attached above it over a namespace built from the spec, with the
+continuation pushed on its stack for the `VAR_STORE`. The handler is
+outside the region's extents: a `try` in the region does not catch its
+raises, and a `parameterize` in the region is not bound for it. Each call
+of `K` attaches a fresh copy of the captured frames, prompt included, on
+the caller, enters the copy's extents outermost first, and returns the
+copy's value to the caller as a call does. A copy of an except body the
+shift was written in is handling its exception again.
 
-The handler is a function: `return` in it returns from the handler and
-gives the reset its value; `break` and `continue` reach only loops opened
-inside it; a `var` declared in it is local to it. A `yield` written in the
-handler is a `SpecialError` at compile time. A `shift` in the handler finds
-the same prompt.
+The handler runs in a frame of its own: `return` in it returns from the
+handler and gives the reset its value; `break` and `continue` reach only
+loops opened inside it. `K` is the handler's own name, a new one for each
+run of the handler, and is not visible in the enclosing scope, so the
+continuation is not held by the enclosing function's namespace. Every
+other name is the enclosing function's: a `var` in the handler is visible
+after the form. A `yield` written in the handler is a `SpecialError` at
+compile time. A `shift` in the handler finds the same prompt.
 
 **Examples:**
 
@@ -3043,7 +3056,40 @@ the same prompt.
 ```
 
 **Tests:** `tests/compile/specials/test_reset_shift.py`,
-`tests/reproducers/test_shift_abort_first.py`
+`tests/reproducers/test_shift_abort_first.py`,
+`tests/reproducers/test_shift_thunk.py`,
+`tests/reproducers/test_shift_in_regions.py`
+
+## compile/abort
+
+**Symbol:** `compile/abort`
+
+**Syntax:** `(abort BODY ...)`
+
+**Use-case:** Leave everything up to the nearest `compile/reset` prompt and
+give the reset a value, capturing nothing: a `compile/shift` whose
+continuation would go unused.
+
+**Behaviour:** `helper_handler` with no `K` compiles the handler as an
+aside with no names of its own, as a reset's body is, and emits one
+`ABORT` instruction, an EXTRA row of the tag count 0 and the aside's name.
+At run time ABORT finds the prompt, leaves every node above it as a shift's
+abort does, and runs the aside in a frame above the prompt over the
+namespace live at the ABORT, which is revealed first since the frame that
+owns it is released. The handler's return ends the prompt and is the
+reset's value.
+
+The handler's names are all the enclosing function's. `return`, `break`,
+`continue` and `yield` in it follow the rules of a shift's handler.
+
+**Examples:**
+
+```scheme
+;; the rest of the region is discarded => 5
+(reset (call + 1 (abort 5)))
+```
+
+**Tests:** `tests/reproducers/test_abort.py`
 
 ## compile/reset-at
 
@@ -3052,10 +3098,11 @@ the same prompt.
 **Syntax:** `(reset-at TAG BODY ...)`
 
 **Use-case:** Establish a prompt delimiter carrying `TAG`, for a
-`compile/shift-at` seeking the same tag.
+`compile/shift-at` or `compile/abort-at` seeking the same tag.
 
 **Behaviour:** Compiles `TAG`, then the body as `compile/reset` does, and
-emits `RESET` with tag count 1 (the tag is popped from the stack). A tag is
+emits `RESET` with tag count 1 (the tag is popped from the stack). The tag
+is on the stack while the enclosing frame passes over the aside. A tag is
 any object, matched by identity. `None` is the
 default tag: `(reset-at None BODY ...)` is `(reset BODY ...)`. `gensym`
 makes a tag no other code can name.
@@ -3097,6 +3144,29 @@ as `compile/shift`.
 
 **Tests:** `tests/compile/specials/test_reset_shift.py`,
 `tests/reproducers/test_reset_at_layout.py`
+
+## compile/abort-at
+
+**Symbol:** `compile/abort-at`
+
+**Syntax:** `(abort-at TAG BODY ...)`
+
+**Use-case:** `compile/abort` with the delimiter chosen by tag.
+
+**Behaviour:** Compiles `TAG`, then the handler as `compile/abort` does, and
+emits `ABORT` with tag count 1. Prompts of other tags between the abort and
+its prompt are left with the rest of the region. Everything else is as
+`compile/abort`.
+
+**Examples:**
+
+```scheme
+;; the inner reset is left with the rest of the region => 7
+(let [[a (gensym "a")]]
+  (reset-at a (+ 100 (reset (+ 10 (abort-at a 7))))))
+```
+
+**Tests:** `tests/reproducers/test_abort.py`
 
 ## import
 

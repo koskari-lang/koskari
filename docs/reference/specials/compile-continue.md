@@ -16,8 +16,8 @@ bare symbol always expands, `continue` can never name a variable.
 count 0 or 1. Runtime jumps to the loop's continue target (loop head for while,
 ITER_NEXT for for-each). The target is the innermost loop of the same
 function. The body of a [`reset`](compile-reset.md) and the handler of a
-[`shift`](compile-shift.md) are functions of their own, so each has only
-the loops written inside it: a `continue` there with no loop of its own
+[`shift`](compile-shift.md) or an [`abort`](compile-abort.md) each run in
+a frame of their own, so each has only the loops written inside it: a `continue` there with no loop of its own
 raises `RuntimeError("continue outside loop")`, whatever loop surrounds
 the `reset` or the `shift`. The same holds in a resumed delimited
 continuation, whose slice ends with the `reset`'s body.

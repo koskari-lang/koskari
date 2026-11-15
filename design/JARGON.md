@@ -29,6 +29,32 @@ caller. Futures and Tasks are exempt at implicit sites (they are
 handles by convention; only explicit await drives them), as are Defer
 objects. Contrast: the demand path.
 
+## aside
+
+A run of a function's instructions that the function's own frame never
+executes. It is written inline between `PUSH_ASIDE` and `POP_ASIDE` and
+declared under a name; the frame it is written in jumps over it. An
+instruction that names the aside (`RESET`, `ABORT`, `SHIFT`) runs it in
+a frame of its own over the same code object, and that frame leaves by
+its `RETURN` like a callee. A reset's body and a shift's or an abort's
+handler are asides.
+
+An aside is not a function and not a value: there is no object for it,
+nothing is built when control passes its declaration, and it cannot be
+stored or passed. It is an entry in the code's extent table, and the
+instructions that run it hold that entry. What a lambda would give the
+same code is a closure built on every pass and a call through the
+general call path; an aside gives a frame at the moment it is needed
+and nothing before.
+
+An aside runs over one of two namespaces. Declared with a spec, it gets
+a namespace built from the spec when it is run, whose closure names
+come from the namespace live at the instruction that runs it (a shift's
+handler, whose one local is the continuation's name). Declared with
+`None`, it runs over that live namespace itself (a reset's body, an
+abort's handler), so its names are the enclosing function's.
+Reference: OPCODES.md, EVALUATOR.md §6.
+
 ## await frame
 
 The native frame an await of a Koskari awaitable runs on: pushed above
@@ -145,7 +171,9 @@ site re-elects on an interval. "Elect" is the one-time choice,
 A dynamic extent: the span of execution during which a construct is
 active, represented by a node on the chain (a with body, a wind, a
 parameterize, a loop). "Discardable extents" (NS, LOOP, FOREACH) are
-those whose removal is pure reference release.
+those whose removal is pure reference release. The code object's
+extent table describes each `PUSH_*`/`POP_*` pair statically; an aside
+is the one kind of entry there with no node on the chain.
 
 ## flatten (flattened)
 
@@ -161,7 +189,11 @@ awaits pass through invisibly.
 What a koskari generator does at every yield: its frame chain detaches
 from the running context into the generator node's own storage
 (`GEN.active`). The next step re-splices (installs) it. Nothing may
-assume a yielded generator is still on any chain.
+assume a yielded generator is still on any chain. A try or finally
+region freezes with the span it is in: it takes the exception it is
+handling off the thread and holds it until it is installed again. A
+region kept for a continuation freezes the same way, and each copy of
+it is installed when it is attached.
 
 ## graft
 
@@ -187,6 +219,16 @@ a generator install (`kos_dyn_gen_install`) re-splices a frozen chain;
 a resume-frame install (`KosResumeFrame_Install`) pushes a code-less
 frame for a resume to be set on. "Installed work" is work now runnable
 on the chain, as opposed to work completed synchronously.
+
+## keep (kept)
+
+What a shift's abort does with the nodes it leaves: each one comes off
+the chain as a transfer has it leave (a wind's after thunk runs, a
+param puts the outer cells back) and is linked into the continuation
+as its template instead of being freed. A kept node never runs again;
+each call of the continuation clones the template. Contrast: clone
+(copy a node that stays where it is), freeze (a generator's span
+detached to be installed again). Reference: EVALUATOR.md §6.
 
 ## layout
 
@@ -284,8 +326,8 @@ or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 The node a transfer goal leaves down to and attaches its target to: the
 caller's `dyn_top` for a delimited invoke (nothing leaves), the prompt
-for a shift's abort (which attaches nothing and calls the handler above
-it), the root GEN for a foreign cc-unwind, an undelimited invoke's
+for an abort or a shift's abort (which attaches the handler's frame
+above it), the root GEN for a foreign cc-unwind, an undelimited invoke's
 lowest common ancestor with the template (matched by node id and
 phase), or NULL when an undelimited invoke's chains share no node and
 the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.

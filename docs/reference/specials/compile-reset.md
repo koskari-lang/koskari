@@ -8,7 +8,8 @@
 `compile/shift` inside the body can capture the continuation up to (but not
 including) this prompt.
 
-**Behaviour:** Emits `RESET 0`, then the body inline, ending in a return.
+**Behaviour:** Emits the body, ending in a return, apart from the code
+around it, then `RESET 0` naming it.
 `RESET` pushes a prompt and runs the body in a frame of its own above it,
 over the names of the function the `reset` is written in; the body's
 return ends the prompt, and its value is the value of the `reset`. The

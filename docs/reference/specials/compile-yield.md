@@ -36,9 +36,10 @@ to the generator's consumer: a `for-each`, a `next`, a delegating
 an exception thrown in is raised at the `yield`.
 
 The body of a [`reset`](compile-reset.md) and the handler of a
-[`shift`](compile-shift.md) are functions of their own and not part of a
-generator around them: a `yield` written in either is refused at compile
-time with `SpecialError`. A generator defined inside one is its own
+[`shift`](compile-shift.md) or an [`abort`](compile-abort.md) each run in
+a frame of their own and are not part of a
+generator around them: a `yield` written in any of them is refused at
+compile time with `SpecialError`. A generator defined inside one is its own
 function and yields as usual.
 
 A `StopIteration` or `StopAsyncIteration` that escapes a generator's

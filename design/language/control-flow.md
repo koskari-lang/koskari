@@ -108,16 +108,16 @@
 
 **`reset`**: Establish continuation delimiter
 - Syntax: `(reset EXPR ...)`, or `(reset-at TAG EXPR ...)` for a tagged prompt
-- The body is a function of no arguments; reset pushes a prompt marker onto
-  the dynamic chain and calls the body above it
+- reset pushes a prompt marker onto the dynamic chain and runs the body
+  in a frame of its own above it
 - The body's return pops the prompt, and its value is the reset's
 - TAG is any object; `None` names the default tag, the one `reset` uses
 
 **Semantics**:
 - The prompt is a marker node; the body runs in a frame of its own on it
 - In the body, `return` gives the reset its value, `break` and `continue`
-  reach only loops opened in the body, `var` is local, and `yield` is a
-  compile error
+  reach only loops opened in the body, `var` is a name of the enclosing
+  function, and `yield` is a compile error
 - Multiple prompts with different tags can be active simultaneously
 - Prompts are matched by tag identity
 
@@ -129,8 +129,10 @@
 - Captures the continuation from the current point to the prompt: whole
   frames, the reset's body included
 - Aborts to the prompt: the extents in between leave
-- Calls the handler, a function of K whose body is EXPR ..., above the
-  prompt; its value is the reset's
+- Runs the handler EXPR ... in a frame of its own above the prompt, with
+  K bound to the continuation; its value is the reset's
+- `(abort EXPR ...)` and `(abort-at TAG EXPR ...)` do the same and capture
+  nothing
 
 **Semantics**:
 - Captured continuation K is a callable object
@@ -138,8 +140,11 @@
   returns the value the resumed body returns
 - Continuations are multi-shot: can be called multiple times
 - Each call attaches a fresh copy of the captured frames on the caller
-- The handler is a function as the reset body is: `return`, `break`,
-  `continue`, `var` and `yield` follow the same rules
+- The handler runs in a frame of its own as the reset body does: `return`,
+  `break`, `continue`, `var` and `yield` follow the same rules. K is the
+  handler's own name, a new one for each run of the handler
+- A continuation captured inside an except body resumes handling the
+  exception it was captured with
 - Capture fails if a generator boundary lies between the shift and the
   prompt; a prompt beyond a Python/C call is on another chain and is not
   found

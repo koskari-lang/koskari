@@ -29,7 +29,7 @@ Highlights (not an exhaustive list):
 | Values | `define-values`, `setq-values` |
 | Collections | `#tuple`, `#list`, `#list-append`, `bracket-cons`, `bracket-proper` |
 | Import | `import`, `import-from`, `import-all-from`, `use` |
-| Continuations | `call/cc`, `let/cc`, `capture/cc`, `reset`, `shift`, `reset-at`, `shift-at` |
+| Continuations | `call/cc`, `let/cc`, `capture/cc`, `reset`, `shift`, `abort`, `reset-at`, `shift-at`, `abort-at` |
 | Macros (lowering) | `syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`, `special-rules`, `special-match` |
 | Operators | `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `divmod`, comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not-in`, `is`, `is-not`, aliased `equal?`, `not-equal?`, `lt?`, `le?`, `gt?`, `ge?`, `in?`, `not-in?`, `is?`, `is-not?`), **`instance?`**, **`subclass?`**, `not`, `repr`, `truth`, `iter`, `next`, `#str`, `format`, `len`, `type`, `dir`, `vars` (zero operands: the frame namespace) |
 | Fences | `apply-fence` (see § Fenced foreign literals) |
@@ -229,20 +229,23 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 
 ### Continuations (summary)
 
-- **Delimited**: `reset`, `shift`, and `reset-at` / `shift-at`, which take
-  an evaluated tag matched by identity (`None` is the default tag). A reset
-  compiles to one **RESET**, which pushes a prompt and calls the body, a
-  function, above it; a shift compiles to one **SHIFT**, which captures
-  whole frames through the prompt and aborts to the prompt before calling
-  its handler, a function of k, above it. The handler's return is the
-  reset's value. Each call of the continuation, through the **CALL**
+- **Delimited**: `reset`, `shift`, `abort`, and `reset-at` / `shift-at` /
+  `abort-at`, which take an evaluated tag matched by identity (`None` is
+  the default tag). A reset's body and a shift's or an abort's handler
+  are asides ([JARGON.md](JARGON.md)): instructions declared inline that
+  the enclosing frame passes over and that run in a frame of their own.
+  **RESET** pushes a prompt and runs the body above it. **ABORT** leaves
+  everything up to the prompt and runs its handler above it. **SHIFT**
+  does the same and keeps the nodes it leaves, whole frames through the
+  prompt, as the continuation it hands the handler. The handler's return
+  is the reset's value. Each call of the continuation, through the **CALL**
   family, attaches a fresh copy of the captured frames and prompt on the
   caller's chain, and the copy's return is the call's value. Extents
   inside the region are left at the shift and entered again per call. A
   delimited continuation cannot be called from Python
   ([EVALUATOR.md](EVALUATOR.md) §6.4).
 - **Transfers at a continuation boundary**: a `break` or `continue` in a
-  reset body or shift handler reaches only a loop inside it, and one aimed
+  reset body or a shift or abort handler reaches only a loop inside it, and one aimed
   at an outer loop raises `RuntimeError` ("break outside loop") at run
   time. A `return` returns from the body or handler, so its value is the
   reset's. A `yield` written in either is a compile-time `SpecialError`
@@ -252,8 +255,8 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 - **`koskari.solve`**: `amb`, `fail`, `require`, `solve`, `solve-first`,
   delimited by a gensym tag of the module's own, so a `reset` in the thunk
   being solved is not a search delimiter.
-- **Transfer goals (done):** a continuation invoke and a shift's abort
-  each push a goal recording where control is going; the prologue
+- **Transfer goals (done):** a continuation invoke and an abort
+  each use a goal recording where control is going; the prologue
   re-derives each step from the live chain, waits while a thunk or
   `__exit__` runs, nests when a thunk invokes another continuation, and
   on a raise frees every goal not waiting on a live thunk before the
@@ -285,7 +288,7 @@ wrappers, GC hooks.
 
 **Bytecode** — `Code`, full opcode surface per [OPCODES.md](OPCODES.md) §1.6 (runtime implementations for all shipped opcodes except compile-time labels and **THEEND**).
 
-**Continuation opcodes** — RESET, SHIFT, PUSH/POP CC, CAPTURE_CC, PUSH/POP WIND; continuations invoke through CALL.
+**Continuation opcodes** — PUSH/POP ASIDE, RESET, ABORT, SHIFT, PUSH/POP CC, CAPTURE_CC, PUSH/POP WIND; continuations invoke through CALL.
 
 **Namespace opcodes** — PUSH_NS / POP_NS; **VAR_STORE**.
 
