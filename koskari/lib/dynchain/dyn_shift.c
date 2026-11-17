@@ -41,7 +41,8 @@ KosOpResult kos_abort_to_prompt(
   PyObject *ns;
   int owns_ns;
 
-  ns = kos_aside_namespace(ctx, aside, &owns_ns);
+  ns = kos_aside_namespace(KosDynFrame_CODE(KosContext_FRAME(ctx)),
+                           KosContext_NAMESPACE(ctx), aside, &owns_ns);
   if (! ns)
     return EVAL_RAISE();
 

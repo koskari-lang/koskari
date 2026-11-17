@@ -14,16 +14,32 @@
 """
 Tests for PUSH_WIND, POP_WIND opcodes.
 
-Dynamic wind runs before/after thunks on extent entry and exit.
+Dynamic wind runs its before and after asides on extent entry and
+exit. Either field of PUSH_WIND may be None, for no aside.
 """
 
 import pytest
 
+from koskari.lib import Code, OpCode
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
 
 pytestmark = pytest.mark.phase_lib
+
+
+def aside(name, *rows):
+    """
+    The rows declaring an aside under name: PUSH_ASIDE over the
+    namespace it is written in, rows, RETURN 1 and POP_ASIDE
+    """
+
+    return [
+        ["PUSH_ASIDE", (None, name, 0, 0)],
+        *rows,
+        ["RETURN", 1],
+        ["POP_ASIDE", 0],
+    ]
 
 
 class TestWindOpcodes(CevalTest):
@@ -33,27 +49,19 @@ class TestWindOpcodes(CevalTest):
 
     async def test_wind_return_from_nested_call_delivers_value_and_runs_after(self):
         """
-        When body calls a helper that returns, unwind runs after-thunk and
-        delivers the return value to the wind's caller.
+        When body calls a helper that returns, unwind runs the after
+        aside and delivers the return value to the wind's caller.
 
-        Builds: PUSH_WIND 2 (before=nil, after=thunk), CALL ret99, RETURN 1.
-        ret99 does CONST 99; RETURN 1. The ret99 frame is a direct child of
-        the wind; when it returns, unwind suspends, after-thunk runs, then
-        99 must be delivered.
+        Builds: an after aside calling record, PUSH_WIND (None, after),
+        CALL ret99, RETURN 1. ret99 does CONST 99; RETURN 1. The ret99
+        frame is a direct child of the wind; when it returns, unwind
+        suspends, the after aside runs, then 99 must be delivered.
         """
 
         log = []
 
         def record_after():
             log.append('after')
-
-        after_code, after_ns = build_expr([
-            ['VAR', 'record'],
-            ['CALL', 0],
-            ['CONST', None],
-            ['RETURN', 1],
-        ], values={'record': record_after}, name='after_thunk')
-        after_thunk = make_callable(after_code, after_ns)
 
         ret99_code, ret99_ns = build_expr([
             ['CONST', 99],
@@ -62,15 +70,14 @@ class TestWindOpcodes(CevalTest):
         ret99 = make_callable(ret99_code, ret99_ns)
 
         code, ns = build_expr([
-            ['CONST', None],
-            ['VAR', 'after_thunk'],
-            ['PUSH_WIND', 2],
+            *aside('after', ['VAR', 'record'], ['CALL', 0]),
+            ['PUSH_WIND', (None, 'after', 0, 0)],
             ['VAR', 'ret99'],
             ['CALL', 0],
             ['POP_WIND', 0],
             ['RETURN', 1],
         ], values={
-            'after_thunk': after_thunk,
+            'record': record_after,
             'ret99': ret99,
         })
 
@@ -81,7 +88,7 @@ class TestWindOpcodes(CevalTest):
 
     async def test_pop_wind_releases_body_result_when_after_thunk_raises(self):
         """
-        An after thunk whose call raises synchronously, a partial over a
+        An after aside whose call raises synchronously, a partial over a
         Python function here, leaves the wind's body result released
         once the exception propagates
         """
@@ -95,9 +102,8 @@ class TestWindOpcodes(CevalTest):
 
         marker = object()
         code, ns = build_expr([
-            ['CONST', None],
-            ['VAR', 'boom'],
-            ['PUSH_WIND', 2],
+            *aside('after', ['VAR', 'boom'], ['CALL', 0]),
+            ['PUSH_WIND', (None, 'after', 0, 0)],
             ['VAR', 'marker'],
             ['POP_WIND', 0],
             ['RETURN', 1],
@@ -126,17 +132,16 @@ class TestWindOpcodes(CevalTest):
 
     async def test_push_wind_drains_a_transfer_before_the_body(self):
         """
-        A before thunk that is a continuation pushes a transfer goal and
-        leaves the frame as it was. The transfer runs before the wind
-        body
+        A before aside that calls a continuation runs the transfer it
+        makes before the wind body
         """
 
         log = []
         k = await self.capture_continuation(log)
 
         code, ns = build_expr([
-            ['VAR', 'k'],
-            ['PUSH_WIND', 1],
+            *aside('before', ['VAR', 'k'], ['CALL', 0]),
+            ['PUSH_WIND', ('before', None, 0, 0)],
             ['VAR', 'record'],
             ['CONST', "body"],
             ['CALL', 1],
@@ -149,18 +154,16 @@ class TestWindOpcodes(CevalTest):
 
     async def test_pop_wind_drains_a_transfer_before_continuing(self):
         """
-        An after thunk that is a continuation pushes a transfer goal and
-        leaves the frame as it was. The transfer runs before the code
-        after the wind
+        An after aside that calls a continuation runs the transfer it
+        makes before the code after the wind
         """
 
         log = []
         k = await self.capture_continuation(log)
 
         code, ns = build_expr([
-            ['CONST', None],
-            ['VAR', 'k'],
-            ['PUSH_WIND', 2],
+            *aside('after', ['VAR', 'k'], ['CALL', 0]),
+            ['PUSH_WIND', (None, 'after', 0, 0)],
             ['CONST', None],
             ['POP_WIND', 0],
             ['VAR', 'record'],
@@ -171,6 +174,95 @@ class TestWindOpcodes(CevalTest):
 
         await make_callable(code, ns)()
         self.assertEqual(log, ["region", "after"])
+
+    async def test_segments_run_over_the_namespace_live_at_the_push(self):
+        """
+        The before and after asides read and write the namespace the
+        PUSH_WIND is written in: the before aside's store is seen by
+        the body, whose 1 is added to the 11 the after aside leaves
+        """
+
+        code, ns = build_expr([
+            *aside('before',
+                   ['CONST', 1], ['VAR_STORE', 'x'], ['CONST', None]),
+            *aside('after',
+                   ['VAR', 'x'], ['CONST', 10], ['OBJECT_ADD', 2],
+                   ['VAR_STORE', 'x'], ['CONST', None]),
+            ['PUSH_WIND', ('before', 'after', 0, 0)],
+            ['VAR', 'x'],
+            ['POP_WIND', 0],
+            ['VAR', 'x'],
+            ['OBJECT_ADD', 2],
+            ['RETURN', 1],
+        ], values={'x': 0})
+
+        self.assertEqual(12, await make_callable(code, ns)())
+
+    async def test_wind_with_neither_aside_runs_its_body(self):
+        code, ns = build_expr([
+            ['PUSH_WIND', (None, None, 0, 0)],
+            ['CONST', 5],
+            ['POP_WIND', 0],
+            ['RETURN', 1],
+        ])
+        self.assertEqual(5, await make_callable(code, ns)())
+
+    async def test_soften_reports_an_absent_aside_as_none(self):
+        """
+        Code.soften gives None for a field that names no aside, and the
+        softened rows build a Code that runs the same
+        """
+
+        log = []
+        code, ns = build_expr([
+            *aside('before', ['VAR', 'record'], ['CONST', 'before'],
+                   ['CALL', 1]),
+            ['PUSH_WIND', ('before', None, 0, 0)],
+            ['CONST', 3],
+            ['POP_WIND', 0],
+            ['RETURN', 1],
+        ], values={'record': log.append})
+
+        soft = code.soften()
+        pushes = [
+            arg[:2] for op, arg in soft
+            if OpCode(op).name == "PUSH_WIND"]
+        self.assertEqual([("ASIDE_0", None)], pushes)
+
+        again = Code(code.namespace_spec, soft, "again")
+        self.assertEqual(3, await make_callable(again, ns)())
+        self.assertEqual(["before"], log)
+
+    async def test_absent_aside_refused_outside_push_wind(self):
+        code = [
+            ["RESET", (0, None, 0, 0)],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(TypeError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 aside name must be a str, not NoneType",
+            str(caught.exception))
+
+    async def test_push_wind_names_asides_of_its_own_block(self):
+        """
+        PUSH_WIND opens the wind's extent, and names asides declared in
+        the block it opens in; an aside declared inside the wind's body
+        is outside that block
+        """
+
+        code = [
+            ["PUSH_WIND", (None, "inner", 0, 0)],
+            *aside("inner", ["CONST", None]),
+            ["CONST", 1],
+            ["POP_WIND", 0],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "instruction 0 names aside 'inner' from outside the block it is"
+            " declared in", str(caught.exception))
 
 
 # The end.

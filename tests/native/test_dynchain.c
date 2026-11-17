@@ -113,8 +113,8 @@ static int test_dynwind_new_free(void) {
     TEST_ASSERT_NOT_NULL(wind, "create wind");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(wind), KOS_DYN_WIND, "wind kind is WIND");
-    TEST_ASSERT(KosDynWind_BEFORE_THUNK(wind) == NULL, "wind before_thunk is NULL");
-    TEST_ASSERT(KosDynWind_AFTER_THUNK(wind) == NULL, "wind after_thunk is NULL");
+    TEST_ASSERT(KosDynWind_CODE(wind) == NULL, "wind code is NULL");
+    TEST_ASSERT(KosDynWind_ROW(wind) == NULL, "wind row is NULL");
     TEST_ASSERT_EQ(KosDynWind_ENTERED(wind), 0, "wind entered is 0");
 
     kos_dynwind_free(wind);

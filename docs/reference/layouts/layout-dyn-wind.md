@@ -3,7 +3,7 @@
 
 **Use-case:** Block syntax for a dynamic-wind extent. Lowers to the
 positional form of [`compile/dyn-wind`](../specials/compile-dyn-wind.md):
-a before thunk, the body, and an after thunk.
+a before segment, the body, and an after segment.
 
 **Behaviour:** Accepts peer blocks `before` and `after`. The primary
 `dyn-wind:` block carries the body; the peers follow it in either order.

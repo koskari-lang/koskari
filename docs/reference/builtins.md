@@ -128,7 +128,7 @@ lists each of those with all its pages.
 | [`await`](specials/compile-await.md) | Await a held awaitable; bare `(await)` is a cooperative suspend |
 | [`yield`](specials/compile-yield.md), [`yield-from`](specials/compile-yield-from.md) | Generator and coroutine suspension; delegation |
 | [`with`](specials/with.md), [`dyn-with`](specials/dyn-with.md) | Context managers, lexical and dynamic-extent |
-| [`dyn-wind`](specials/compile-dyn-wind.md) | Before and after thunks around a body, rerun across continuation jumps |
+| [`dyn-wind`](specials/compile-dyn-wind.md) | Before and after segments around a body, rerun across continuation jumps |
 | [`reset`](specials/compile-reset.md), [`shift`](specials/compile-shift.md) | Delimited continuations |
 | [`reset-at`](specials/compile-reset-at.md), [`shift-at`](specials/compile-shift-at.md) | Delimited continuations with a delimiter chosen by tag |
 | [`abort`](specials/compile-abort.md), [`abort-at`](specials/compile-abort-at.md) | Leave everything up to a `reset` or `reset-at` and give it a value, capturing nothing |

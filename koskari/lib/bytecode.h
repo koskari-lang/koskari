@@ -121,7 +121,9 @@ typedef enum KosOpStyle {
 
   /** field names an aside of this code: the name the aside's
       PUSH_ASIDE declares it under, there and in each instruction that
-      runs it. Hardened, it is the aside's extent descriptor. */
+      runs it. Hardened, it is the aside's extent descriptor. A field
+      of PUSH_WIND may carry None instead, for no aside: hardened, it
+      is NULL. */
   KOSTYLE_ASIDE,
 
 } KosOpStyle;

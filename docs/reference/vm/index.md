@@ -81,11 +81,13 @@ exception is an ordinary raise, which a Koskari `try` can catch.
   core type ordinal. Finalize leaves it unchanged.
 - **ASIDE** (field kind): an EXTRA row field naming an aside of the
   code object: a str in the pre-compile stream, the aside's entry in
-  the extent table after finalize.
+  the extent table after finalize. A field of `PUSH_WIND` may carry
+  `None` instead, for no aside.
 - **aside**: a run of a code object's instructions, set between
   `PUSH_ASIDE` and `POP_ASIDE` and declared under a name, that the
-  frame it is written in passes over and that a `RESET`, `ABORT` or
-  `SHIFT` naming it runs in a frame of its own. See section 20.
+  frame it is written in passes over and that a `RESET`, `ABORT`,
+  `SHIFT` or wind node naming it runs in a frame of its own. See
+  sections 20 and 22.
 - **extent**: a statically described block in the code object's extent
   table, with a kind (`KOS_EXT_TRY`, `KOS_EXT_LOOP`, `KOS_EXT_FOREACH`,
   `KOS_EXT_NS`, `KOS_EXT_COLLECT`, `KOS_EXT_ASIDE`, and others), enter
@@ -181,8 +183,9 @@ mean something different by their argument in each form.
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| str or int label name  | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
-| str aside name         | the aside's extent      | PUSH_ASIDE, RESET, ABORT, SHIFT |
+| str or int label name  | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY |
+| str aside name         | the aside's extent      | PUSH_ASIDE, RESET, ABORT, SHIFT, PUSH_WIND |
+| `None` in an ASIDE field | no aside              | PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, ITEM_CONST* (key) |
 | `(name, value, ...)`     | Extra-table index       | VAR_STORE_CONST (section 12); may lower to FAST_STORE_CONST (section 13) |
@@ -670,8 +673,8 @@ The opcodes by family, each linking to its section.
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [section 21](opcodes/kos-op-push-cc.md) |
 | CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [section 21](opcodes/kos-op-capture-cc.md) |
 | POP_CC | NOARG | Pop the CC block; also the arrival point when a captured continuation is invoked | [section 21](opcodes/kos-op-pop-cc.md) |
-| PUSH_WIND | COUNT | Pop the before (and after) thunks, push the wind extent, run before | [section 22](opcodes/kos-op-push-wind.md) |
-| POP_WIND | NOARG | Pop the body result and the wind node, run the after thunk, deliver the result | [section 22](opcodes/kos-op-pop-wind.md) |
+| PUSH_WIND | EXTRA | Push the wind extent naming its before and after asides, run before | [section 22](opcodes/kos-op-push-wind.md) |
+| POP_WIND | NOARG | Pop the body result and the wind node, run the after aside, deliver the result | [section 22](opcodes/kos-op-pop-wind.md) |
 | PUSH_PARAM | CONST | Pop N values, bind them to the pooled names, enter the parameterize extent | [section 23](opcodes/kos-op-push-param.md) |
 | POP_PARAM | NOARG | Pop the param extent and restore the cells it displaced | [section 23](opcodes/kos-op-pop-param.md) |
 | PARAM | EXTRA | Read a parameter by name; count 1 supplies a stacked default, count 0 raises NameError on a miss | [section 23](opcodes/kos-op-param.md) |
@@ -4384,9 +4387,9 @@ handler.
 ### KOS_OP_PUSH_ASIDE
 
 - **Style**: EXTRA (`CONST`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = a NamespaceSpec, or `None`, and `a1` = the aside this instruction declares.
-- **Stack**: Unchanged. PUSH_ASIDE declares an aside: the instructions from the next one up to their RETURN, closed by the matching [POP_ASIDE](#kos_op_pop_aside). The frame PUSH_ASIDE runs in runs none of them and goes on at the instruction after the POP_ASIDE. A [RESET](#kos_op_reset), [ABORT](#kos_op_abort) or [SHIFT](#kos_op_shift) that names the aside runs it in a frame of its own over the same code object. With a spec in `a0`, that frame's namespace is built from the spec, its closure names resolved from the namespace live at the instruction that runs the aside. With `None`, the frame runs over that live namespace itself.
+- **Stack**: Unchanged. PUSH_ASIDE declares an aside: the instructions from the next one up to their RETURN, closed by the matching [POP_ASIDE](#kos_op_pop_aside). The frame PUSH_ASIDE runs in runs none of them and goes on at the instruction after the POP_ASIDE. A [RESET](#kos_op_reset), [ABORT](#kos_op_abort) or [SHIFT](#kos_op_shift) that names the aside runs it in a frame of its own over the same code object, as does the wind node a [PUSH_WIND](#kos_op_push_wind) naming it pushes. With a spec in `a0`, that frame's namespace is built from the spec, its closure names resolved from the namespace live at the instruction that runs the aside. With `None`, the frame runs over that live namespace itself.
 - **Pushes:** Nothing. PUSH_ASIDE and POP_ASIDE delimit a static extent of kind KOS_EXT_ASIDE, which has no node on the dynamic chain.
-- **Invariants**: An aside is declared once in its code object. An instruction that names an aside sits in the block the aside is declared in: not in a block around it, and not inside the aside. The namespace live at that instruction is then the one the aside's instructions were compiled against. Inside an aside with a spec, a FAST operand indexes the namespace built from that spec. A jump neither enters nor leaves an aside. A tail call inside an aside replaces the aside's frame.
+- **Invariants**: An aside is declared once in its code object. An instruction that names an aside sits in the block the aside is declared in: not in a block around it, and not inside the aside. For PUSH_WIND, which opens an extent of its own, that is the block the extent opens in. The namespace live at that instruction is then the one the aside's instructions were compiled against. Inside an aside with a spec, a FAST operand indexes the namespace built from that spec. A jump neither enters nor leaves an aside. A tail call inside an aside replaces the aside's frame.
 - **Errors**: Refused when the code is built: an aside name that is not a str (`TypeError`); a name declared twice, a name no PUSH_ASIDE declares, and an instruction that names an aside from outside the block it is declared in (`ValueError`).
 - **Compiler form:** Pre-compile extra operand is a 4-tuple `(spec, name, 0, 0)`, the name a str; `NOARG` slots are ignored by the assembler. Finalize resolves the name, here and in each instruction that names the aside, to the aside's entry in the extent table. `Code.soften` names each aside `ASIDE_<n>`, `n` being the index of its extent. The peephole pass moves a label that leads to a PUSH_ASIDE to after its POP_ASIDE, so a jump to it does not run the PUSH_ASIDE.
 
@@ -4559,23 +4562,27 @@ PUSH_CC resume target).
 
 ## 22. Dynamic wind
 
-Unified extent wind/unwind uses `kos_extent_run_wind` and `kos_extent_run_unwind`,
-which dispatch by dynamic-chain node kind. See [compile/capture-cc](../specials/compile-capture-cc.md)
-and [compile/dyn-wind](../specials/compile-dyn-wind.md).
+A dyn-wind's before and after segments are each compiled as an aside
+(see [section 20](#20-delimited-continuations)). PUSH_WIND names them,
+either one `None`, and the wind node runs them in frames of their own
+above it when the extent is entered and left, continuation transfers
+included. See [compile/dyn-wind](../specials/compile-dyn-wind.md).
 
 ### KOS_OP_PUSH_WIND
 
-- **Style**: COUNT. Arg = 1 (before only) or 2 (both before and after).
-- **Stack**: For arg=2: `[..., before, after]` (before below, after above). Pops thunks; each must be callable or nil. For arg=1: `[..., before]`. Pushes KOS_DYN_WIND extent; runs before thunk on entry (via normal call path; may return KOS_DYN_UNWIND_ASYNC_STARTED).
+- **Style**: EXTRA (`ASIDE`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the before aside, or `None` for none, and `a1` = the after aside, or `None` for none. These two fields are the only ASIDE fields that accept `None`.
+- **Stack**: Unchanged. Pushes a wind node that records this code object and row, then enters it. With a before aside, a frame that runs it (see [PUSH_ASIDE](#kos_op_push_aside)) is pushed above the node, over the namespace live at PUSH_WIND; its return value is dropped and the body starts at the next instruction. With `None`, the node is entered at once.
 - **Pushes:** KOS_DYN_WIND (static extent KOS_EXT_WIND).
-- **Example:** See extent-wind-unwind.md; thunks are invoked via kos_callable_call.
+- **Invariants**: An entered node runs its after aside once when it is left: by [POP_WIND](#kos_op_pop_wind), an exception, a return, break or continue across it, an abort, or a continuation transfer out. A transfer back into the extent runs the before aside again. Both asides run over the namespace recorded at PUSH_WIND, in a frame above the node, so a name either one binds is the enclosing function's. A node whose before aside raised was never entered, and its after aside does not run.
+- **Errors**: Refused when the code is built: an aside named from outside the block PUSH_WIND opens in (`ValueError`). PUSH_WIND opens the wind's extent, so its asides are declared ahead of it in the same block.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(before, after, 0, 0)`, each an aside name or `None`. `compile/dyn-wind` emits each segment it has as an aside declared with `None` for its spec, then PUSH_WIND, the body, and POP_WIND.
 
 ---
 
 ### KOS_OP_POP_WIND
 
 - **Style**: NOARG.
-- **Stack**: Pops TOS (the body result) into the wind node, pops wind from the dynamic chain, and runs the after thunk (if entered and non-null) via kos_dyn_wind_unwind; the body result is delivered to the revealed segment when the thunk completes (or immediately when there is none). May return KOS_DYN_UNWIND_ASYNC_STARTED when the thunk pushes a frame.
+- **Stack**: Pops the body result into the wind node and leaves the node. An entered node with an after aside pushes a frame that runs it above the node; when that frame returns, its value is dropped, the node unlinks, and the body result is pushed on the stack of the frame POP_WIND ran in. Otherwise the node unlinks at once and the body result is pushed.
 - **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
 
 ## 23. Parameterize extent and parameter reads

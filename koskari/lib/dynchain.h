@@ -601,8 +601,11 @@ struct KosDynNode {
       KosOp *resume_pc;  /* the instruction after POP_CC */
     } cc;
     struct {
-      PyObject *before_thunk;  /* callable (owned) or NULL */
-      PyObject *after_thunk;   /* callable (owned) or NULL */
+      /* the code the PUSH_WIND is in (owned), and its row (borrowed,
+         kept alive by the code), whose fields are the before and after
+         asides, each NULL for none */
+      KosCode *code;
+      const KosExtra *row;
       /* the body result at POP_WIND, or what a walk stored while the
          after-thunk runs */
       KosObligation ob;
@@ -845,15 +848,17 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
    Allocate a new wind node.
 
    :param parent: parent node in dynamic chain
-   :param before_thunk: before hook callable (new ref, or NULL)
-   :param after_thunk: after hook callable (new ref, or NULL)
+   :param code: the code holding the PUSH_WIND (borrowed; the node
+     takes its own reference), or NULL with row
+   :param row: the PUSH_WIND's row, naming the before and after asides,
+     or NULL for a wind with neither
 
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dynwind_new(
    KosDynNode *parent,
-   PyObject *before_thunk,
-   PyObject *after_thunk);
+   KosCode *code,
+   const KosExtra *row);
 
 
 /**
@@ -1090,17 +1095,20 @@ KosDynFrame *kos_dynframe_new_aside(
     int owns_ns,
     KosOp *entry);
 
-/* The namespace a frame made here for aside runs over: a new
-   reference with *owns_ns set, or the live namespace, borrowed, with
-   it clear. */
+/* The namespace a frame made for aside, an aside of code, runs over
+   when ns is the namespace the aside is written in: a new reference
+   with *owns_ns set, or ns, borrowed, with it clear. */
 PyObject *kos_aside_namespace(
-    KosContext *ctx,
+    KosCode *code,
+    PyObject *ns,
     const KosExtentDesc *aside,
     int *owns_ns);
 
-/* Push a frame that runs aside, an aside of the live frame's code. */
+/* Push a frame that runs aside, an aside of code written in ns. */
 KosDynFrame *kos_dyn_push_aside(
     KosContext *ctx,
+    KosCode *code,
+    PyObject *ns,
     const KosExtentDesc *aside);
 
 
@@ -1443,15 +1451,15 @@ KosOpResult kos_abort_to_prompt(
    Push a wind extent onto the dynamic chain.
 
    :param ctx: execution context
-   :param before_thunk: before hook callable (new ref, or NULL)
-   :param after_thunk: after hook callable (new ref, or NULL)
+   :param code: the code holding the PUSH_WIND (borrowed)
+   :param row: the PUSH_WIND's row, naming the before and after asides
 
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dyn_push_wind(
    KosContext *ctx,
-   PyObject *before_thunk,
-   PyObject *after_thunk);
+   KosCode *code,
+   const KosExtra *row);
 
 
 /**
@@ -2356,8 +2364,10 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 
-#define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
-#define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)
+#define KosDynWind_CODE(w)         (((KosDynNode *)(w))->u.wind.code)
+#define KosDynWind_ROW(w)          (((KosDynNode *)(w))->u.wind.row)
+#define KosDynWind_BEFORE(w)       KosExtra_ASIDE(KosDynWind_ROW(w), 0)
+#define KosDynWind_AFTER(w)        KosExtra_ASIDE(KosDynWind_ROW(w), 1)
 #define KosDynWind_OB(w)           (&((KosDynNode *)(w))->u.wind.ob)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)

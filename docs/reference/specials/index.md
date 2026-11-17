@@ -100,7 +100,7 @@ special, a macro, and a call is in
 | [`await`](compile-await.md) | Await a held awaitable; bare `(await)` is a cooperative suspend |
 | [`yield`](compile-yield.md), [`yield-from`](compile-yield-from.md) | Generator and coroutine suspension; delegation |
 | [`with`](with.md), [`dyn-with`](dyn-with.md) | Context managers, lexical and dynamic-extent |
-| [`dyn-wind`](compile-dyn-wind.md) | Before and after thunks around a body, rerun across continuation jumps |
+| [`dyn-wind`](compile-dyn-wind.md) | Before and after segments around a body, rerun across continuation jumps |
 | [`reset`](compile-reset.md), [`shift`](compile-shift.md) | Delimited continuations |
 | [`reset-at`](compile-reset-at.md), [`shift-at`](compile-shift-at.md) | Delimited continuations with a delimiter chosen by tag |
 | [`abort`](compile-abort.md), [`abort-at`](compile-abort-at.md) | Leave everything up to a `reset` or `reset-at` and give it a value, capturing nothing |

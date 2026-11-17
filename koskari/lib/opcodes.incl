@@ -433,7 +433,7 @@ OP(POP_CC, 0, NOARG)              // pop CC block from dynamic chain
 OP(CAPTURE_CC, 0, COUNT)          // capture undelimited continuation, push on stack; 1 = set the callee on TOS aside first
 
 // dynamic wind control
-OP(PUSH_WIND, 0, COUNT)           // arg = 1 (before only) or 2 (both); stack: [..., before, after]
+OP(PUSH_WIND, 0, EXTRA, ASIDE, ASIDE, NOARG, NOARG)  // the before and after asides, either one None; push a wind node that runs them
 OP(POP_WIND, 0, NOARG)            // pop wind from dynamic chain
 
 // parameterize extent and parameter reads

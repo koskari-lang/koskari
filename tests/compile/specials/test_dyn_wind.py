@@ -14,12 +14,13 @@
 """
 Tests for koskari.compile dyn-wind special form.
 
-Dynamic-wind runs before/after thunks on extent entry and exit.
+Dynamic-wind runs before/after segments on extent entry and exit.
 """
 
 
 import pytest
 
+from koskari.exceptions import SpecialError
 from koskari.lib import OpCode
 from tests.dis.dis import dis
 
@@ -220,16 +221,46 @@ class TestDynWindSpecial(SpecialsTestCase):
         self.assertEqual(log, ["before", "body", "after"])
 
 
-    async def test_falsy_before_is_a_thunk_not_an_absence(self):
+    async def test_falsy_before_is_a_segment_not_an_absence(self):
         """
         A falsy literal in the before position is an expression the
-        thunk returns, so both thunks are pushed
+        segment returns, so both segments are declared
         """
 
         code = self.compile_to_code("(dyn-wind 0 (b) (c))")
         ops = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertEqual(ops.count(OpCode.BUILD_FUNCTION), 2)
+        self.assertEqual(ops.count(OpCode.PUSH_ASIDE), 2)
         self.assertEqual(ops.count(OpCode.PUSH_WIND), 1)
+
+
+    async def test_segment_var_is_the_enclosing_scope_name(self):
+        """
+        A var written in a segment declares a name of the scope the
+        dyn-wind is written in, so the code after the wind reads it
+        """
+
+        expr, mod = self.compile_expr(
+            "(begin (dyn-wind (var seen 1) 0 []) seen)")
+        self.assertEqual(1, await expr())
+
+
+    async def test_return_in_a_segment_ends_the_segment(self):
+        expr, mod = self.compile_expr("(dyn-wind (return 5) 1 nil)")
+        self.assertEqual(1, await expr())
+
+
+    async def test_break_in_a_segment_does_not_reach_a_loop(self):
+        expr, mod = self.compile_expr(
+            "(while True (dyn-wind (break 9) 0 nil))")
+        with self.assertRaises(RuntimeError) as caught:
+            await expr()
+        self.assertEqual("break outside loop", str(caught.exception))
+
+
+    async def test_yield_in_a_segment_is_refused(self):
+        with self.assertRaises(SpecialError) as caught:
+            self.compile_expr("(lambda [] (dyn-wind (yield 1) 0 []))")
+        self.assertIn("before cannot yield", str(caught.exception))
 
 
     async def test_dyn_wind_body_value_is_expression_result(self):

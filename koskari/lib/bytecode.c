@@ -303,9 +303,8 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
   A resolved row holds pool objects, immediates, label pcs and aside
   descriptors. This reverses emit: CONST/VAR are the pool objects
   themselves; LABEL slots look up the destination PC in ``label_map``;
-  ASIDE slots are named for their extent; other slots stay as integers
-  (FAST,
-  COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
+  ASIDE slots are named for their extent, or None for no aside; other
+  slots stay as integers (FAST, COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
   phase default.
 
   :param self: KosCode (for constant pool lookup)
@@ -356,6 +355,10 @@ static PyObject *soften_extra_tuple(
       }
       Py_INCREF(lab);
       items[slot] = lab;
+
+    } else if (fk == KOSTYLE_ASIDE && ! KosExtra_ASIDE(row, slot)) {
+      Py_INCREF(Py_None);
+      items[slot] = Py_None;
 
     } else if (fk == KOSTYLE_ASIDE) {
       items[slot] = PyUnicode_FromFormat(
@@ -961,10 +964,17 @@ static PyObject *code_m_function_spec(PyObject *self, PyObject *formals_spec) {
    The index view of a resolved row, for introspection and soften's
    callers: a CONST or VAR field reports its pool index, recovered by
    identity against the identity-deduplicated pool; every other field
-   reports its immediate. The owning instruction supplies the schema;
-   rows are one per instruction.
+   reports its immediate. An ASIDE field that names no aside reports 0
+   and sets its bit in *absent. The owning instruction supplies the
+   schema; rows are one per instruction.
 */
-static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
+static int extra_row_indices(
+    PyObject *self,
+    uint32_t eidx,
+    uint16_t out[4],
+    unsigned *absent) {
+
+  *absent = 0;
 
   KosOp *code = KosCode_CODE(self);
   uint32_t code_len = KosCode_CODE_LEN(self);
@@ -1003,6 +1013,9 @@ static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
       out[slot] = (uint16_t) ci;
     } else if (fk == KOSTYLE_LABEL) {
       out[slot] = KosExtra_TARGET(row, slot)->pc;
+    } else if (fk == KOSTYLE_ASIDE && ! KosExtra_ASIDE(row, slot)) {
+      out[slot] = 0;
+      *absent |= 1u << slot;
     } else if (fk == KOSTYLE_ASIDE) {
       out[slot] =
           (uint16_t) (KosExtra_ASIDE(row, slot) - KosCode_EXTENTS(self));
@@ -1032,12 +1045,32 @@ static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
   }
 
   uint16_t view[4];
-  if (extra_row_indices(self, (uint32_t) i, view))
+  unsigned absent;
+  PyObject *result;
+
+  if (extra_row_indices(self, (uint32_t) i, view, &absent))
     return NULL;
-  return Py_BuildValue("(HHHH)", (unsigned short) view[0],
-                       (unsigned short) view[1],
-                       (unsigned short) view[2],
-                       (unsigned short) view[3]);
+
+  /* an ASIDE field that names no aside reports None */
+  result = PyTuple_New(4);
+  if (! result)
+    return NULL;
+  for (int slot = 0; slot < 4; slot++) {
+    PyObject *item;
+
+    if (absent & (1u << slot)) {
+      Py_INCREF(Py_None);
+      item = Py_None;
+    } else {
+      item = PyLong_FromUnsignedLong(view[slot]);
+      if (! item) {
+        Py_DECREF(result);
+        return NULL;
+      }
+    }
+    PyTuple_SET_ITEM(result, slot, item);
+  }
+  return result;
 }
 
 
@@ -1734,8 +1767,11 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           continue;
         }
         /* ASIDE: a name, resolved to the aside's extent descriptor
-           once the extents are derived; defer */
+           once the extents are derived; defer. PUSH_WIND's fields may
+           carry None, no aside, which the row resolves to NULL. */
         if (fk == KOSTYLE_ASIDE) {
+          if (elem == Py_None && op == KOS_OP_PUSH_WIND)
+            continue;
           if (! PyUnicode_CheckExact(elem)) {
             PyErr_Format(PyExc_TypeError, "Code instruction %zd aside name"
                          " must be a str, not %.100s",
@@ -2097,7 +2133,8 @@ static void code_fill_derived(
    Resolve one row from collect's index form: CONST and VAR fields become
    the pool object (borrowed; the cpool array holds the owned reference),
    every other field its immediate. A LABEL field keeps its placeholder
-   for the pending-label pass. A CMPSRC row's source bits mark the
+   for the pending-label pass, and an ASIDE field is NULL until the
+   pending-aside pass names it. A CMPSRC row's source bits mark the
    operand fields that hold constants.
 */
 static void resolve_extra_row(
@@ -2114,6 +2151,8 @@ static void resolve_extra_row(
 
     if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR)
       out->f[slot].obj = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
+    else if (fk == KOSTYLE_ASIDE)
+      out->f[slot].aside = NULL;
     else
       out->f[slot].imm = idx[slot];
   }
@@ -3246,6 +3285,7 @@ static int resolve_asides(
     uint32_t pc = (uint32_t) PyLong_AsLong(PyTuple_GET_ITEM(pending, 3));
     PyObject *eid = PyDict_GetItemWithError(declared, name);
     const KosExtentDesc *aside;
+    uint32_t block;
 
     if (! eid) {
       if (! PyErr_Occurred())
@@ -3256,8 +3296,15 @@ static int resolve_asides(
     }
 
     aside = &extents[PyLong_AsLong(eid)];
+
+    /* a push other than the declaration, PUSH_WIND, sits in the block
+       its own extent opens in */
+    block = top_extent_id[pc];
+    if (code[pc].op != KOS_OP_PUSH_ASIDE && is_push_op(code[pc].op))
+      block = extents[block].parent_extent_id;
+
     if (code[pc].op != KOS_OP_PUSH_ASIDE
-        && aside->parent_extent_id != top_extent_id[pc]) {
+        && aside->parent_extent_id != block) {
       PyErr_Format(PyExc_ValueError,
                    "instruction %u names aside %R from outside the block"
                    " it is declared in", pc, name);

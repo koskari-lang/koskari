@@ -23,28 +23,35 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...hygiene import function_constant
-from ...lib import FormalsSpec, OpCode, cons, nil, symbol
+from ...lib import OpCode, cons, nil, symbol
 from ...matcher import CALLEDBY, LIST, LITERAL_KW, MATCH, ONEOF, REST, VALUE
 from ...syntax import special
 from ...types import is_nil
 from ..compiler import ByteCodeFragment, Compiler
+from .continuations import refuse_yield
 
 
-def _compile_thunk(compiler, body_src, fragment):
+def _compile_segment(compiler, called_by, fragment, src, role):
     """
-    Compile a zero-argument thunk (lambda [] body) and append to fragment.
-    Returns the fragment with CONST (FunctionSpec) and BUILD_FUNCTION on
-    stack.
+    Emit a before or after segment into fragment as an aside, compiled
+    in the scope the dyn-wind is written in, so its names are that
+    scope's. A yield written in the segment is refused, since the
+    segment's frame is not the generator's; one in a function defined
+    within it belongs to that function
+
+    :param compiler: the Compiler
+    :param called_by: the special's called-by capture
+    :param fragment: the fragment to emit into
+    :param src: the segment's source
+    :param role: 'before' or 'after'
+    :return: the name the aside is declared under
     """
-    thunk = compiler.fragment("<dyn-wind-thunk>")
-    with compiler.resolution_scope(thunk, function=True):
-        thunk.merge(compiler.full_compile(body_src))
-    fragment.instruction(OpCode.CONST, function_constant(
-        compiler, fragment, thunk, None,
-        FormalsSpec((), (), (), (), None, None)))
-    fragment.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
-    return fragment
+
+    name = compiler.gen_label(f"wind-{role}")
+    with fragment.aside(name, f"<{role}>") as inner:
+        inner.merge(compiler.full_compile(src))
+        refuse_yield(called_by, inner.instructions, f"{role} cannot yield")
+    return name
 
 
 def _find_segments(caps, called_by):
@@ -135,8 +142,9 @@ def special_dyn_wind(
         caps: dict) -> ByteCodeFragment:
     """
     Compile (compile/dyn-wind [before] [body] [after]). Body is required;
-    at least one of before or after is required. Wraps before/after in
-    (lambda [] ...) thunks and emits PUSH_WIND / POP_WIND.
+    at least one of before or after is required. Emits each segment as
+    an aside, then PUSH_WIND naming them, with None for an absent one,
+    the body, and POP_WIND.
     """
 
     called_by = caps["called-by"]
@@ -147,22 +155,16 @@ def special_dyn_wind(
     fragment.position(called_by.position)
 
     # an absent segment is nil from _find_segments; a falsy literal in
-    # a segment is an expression its thunk returns
-    has_before = not is_nil(before_src)
-    has_after = not is_nil(after_src)
+    # a segment is an expression the segment returns
+    before = after = None
+    if not is_nil(before_src):
+        before = _compile_segment(
+            compiler, called_by, fragment, before_src, 'before')
+    if not is_nil(after_src):
+        after = _compile_segment(
+            compiler, called_by, fragment, after_src, 'after')
 
-    if has_before and has_after:
-        _compile_thunk(compiler, before_src, fragment)
-        _compile_thunk(compiler, after_src, fragment)
-        fragment.instruction(OpCode.PUSH_WIND, 2)
-    elif has_before:
-        _compile_thunk(compiler, before_src, fragment)
-        fragment.instruction(OpCode.PUSH_WIND, 1)
-    else:
-        fragment.instruction(OpCode.CONST, None)
-        _compile_thunk(compiler, after_src, fragment)
-        fragment.instruction(OpCode.PUSH_WIND, 2)
-
+    fragment.instruction(OpCode.PUSH_WIND, (before, after, 0, 0))
     fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)
     return fragment

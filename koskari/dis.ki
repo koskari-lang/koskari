@@ -390,7 +390,10 @@ def _format_arg [code op_style arg cpool local_names closure_names
               case [OpStyle.LABEL]:
                 f"-> {val}"
               case [OpStyle.ASIDE]:
-                f"aside {val}"
+                if (is val None):
+                  "no aside"
+                else:
+                  f"aside {val}"
               else:
                 (str val)
 

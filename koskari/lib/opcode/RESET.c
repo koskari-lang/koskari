@@ -42,7 +42,9 @@ KOS_OP_HANDLER(RESET) {
   if (! prompt)
     RESULT_RAISE();
 
-  if (! kos_dyn_push_aside(ctx, KosExtra_ASIDE(row, 1)))
+  if (! kos_dyn_push_aside(ctx, KosDynFrame_CODE(KosContext_FRAME(ctx)),
+                           KosContext_NAMESPACE(ctx),
+                           KosExtra_ASIDE(row, 1)))
     RESULT_RAISE();
 
   RESULT_CONTINUE(ctx);
