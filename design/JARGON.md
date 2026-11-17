@@ -34,10 +34,11 @@ objects. Contrast: the demand path.
 A run of a function's instructions that the function's own frame never
 executes. It is written inline between `PUSH_ASIDE` and `POP_ASIDE` and
 declared under a name; the frame it is written in jumps over it. An
-instruction that names the aside (`RESET`, `ABORT`, `SHIFT`) runs it in
-a frame of its own over the same code object, and that frame leaves by
-its `RETURN` like a callee. A reset's body and a shift's or an abort's
-handler are asides.
+instruction that names the aside (`RESET`, `ABORT`, `SHIFT`,
+`PUSH_WIND`) runs it in a frame of its own over the same code object, and
+that frame leaves by its `RETURN` like a callee. A reset's body, a
+shift's or an abort's handler, and a dyn-wind's before and after
+segments are asides.
 
 An aside is not a function and not a value: there is no object for it,
 nothing is built when control passes its declaration, and it cannot be
@@ -52,7 +53,10 @@ a namespace built from the spec when it is run, whose closure names
 come from the namespace live at the instruction that runs it (a shift's
 handler, whose one local is the continuation's name). Declared with
 `None`, it runs over that live namespace itself (a reset's body, an
-abort's handler), so its names are the enclosing function's.
+abort's handler), so its names are the enclosing function's. A
+dyn-wind's segments are declared with `None` and run over the namespace
+live at the `PUSH_WIND`, which the wind node records, since a transfer
+can fire them long after that instruction.
 Reference: OPCODES.md, EVALUATOR.md §6.
 
 ## await frame
@@ -223,7 +227,7 @@ on the chain, as opposed to work completed synchronously.
 ## keep (kept)
 
 What a shift's abort does with the nodes it leaves: each one comes off
-the chain as a transfer has it leave (a wind's after thunk runs, a
+the chain as a transfer has it leave (a wind's after aside runs, a
 param puts the outer cells back) and is linked into the continuation
 as its template instead of being freed. A kept node never runs again;
 each call of the continuation clones the template. Contrast: clone
@@ -246,7 +250,7 @@ resumes (below); the term survives only in archived design notes.
 
 What a WIND or WITH node owes when it is unlinked, held in the node's
 one `KosObligation` slot: a VALUE (the body result), an EXCEPTION set
-aside while the after thunk or `__exit__` runs, or a RETURN crossing a
+aside while the after segment or `__exit__` runs, or a RETURN crossing a
 leave in flight. Released at unlink by kind and by event. Reference:
 EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
 
@@ -291,7 +295,7 @@ before compilation.
 
 ## stored obligation
 
-An obligation stored on a WIND or WITH node while its after thunk or
+An obligation stored on a WIND or WITH node while its after segment or
 `__exit__` runs: the raise walk stores the exception, the return walk
 the value. Reference: EVALUATOR.md §4.4, §6.3. Iteration and await
 suspension are not stored obligations; say "suspended" or name the
@@ -344,10 +348,11 @@ Reference: EVALUATOR.md §6.
 ## waiting goal
 
 A transfer goal waiting on a node whose leave or enter is in flight:
-the node's thunk frame or awaitable is running, the node carries
+a wind's segment frame, or a with's enter or exit call or its
+awaitable, is running, the node carries
 `KOS_DYNF_GOAL_WAIT`, and the goal acts again only when `dyn_top` is
-back at that node. A raise leaves a waiting goal in place while its
-thunk is above the node, and frees it when the raise walk unlinks the
+back at that node. A raise leaves a waiting goal in place while that
+work is above the node, and frees it when the raise walk unlinks the
 node. Reference:
 EVALUATOR.md §6.2. Iteration and await suspension are "suspended",
 not waiting.

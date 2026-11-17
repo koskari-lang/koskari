@@ -1311,9 +1311,11 @@ a miss.
 - **Positional:** `(dyn-wind BEFORE BODY AFTER)` — three elements in fixed order; `BEFORE` and/or `AFTER` may be `nil`.
 - **Keyword:** `(dyn-wind [before: BEFOREBODY...] [body: BODY...] [after: AFTERBODY...])` — top-level lists with marker keywords; omitted segments default to nil; order is arbitrary.
 
-**Use-case:** Dynamic-wind extent: run before thunk on entry, body in the middle, after thunk on exit. Both thunks run on continuation transfer (multi-shot). Before and after are implicitly wrapped in null-arity lambdas; body is compiled as `(compile/begin ...)`.
+**Use-case:** Dynamic-wind extent: run the before segment on entry, the body in the middle, the after segment on exit. Both segments run again on each continuation transfer across the extent (multi-shot). Body is compiled as `(compile/begin ...)`.
 
-**Behaviour:** The form accepts either positional or keyword syntax. Detection: if any top-level element is a pair whose `car` is keyword `before:`, `body:`, or `after:`, keyword mode is used; otherwise positional mode. In keyword mode, segments are identified by their marker; missing segments are nil. Body is required; at least one of before or after is required. Emits: push before thunk (or CONST nil), push after thunk (or CONST nil), PUSH_WIND (arg 1 or 2), compile body, POP_WIND. Stack layout for PUSH_WIND 2: `[..., before, after]` (before below, after above).
+**Segments:** Each of before and after is compiled as an aside declared with `None` for its spec, in the scope the `dyn-wind` is written in, and runs in a frame of its own over the namespace live at the PUSH_WIND. A `var` in a segment declares a name of the enclosing scope. A `return` ends the segment; a `break` or `continue` does not reach a loop around the `dyn-wind`. A `yield` written in a segment is refused at compile time (`SpecialError`, "before cannot yield" / "after cannot yield"); one in a function defined within it belongs to that function. A segment's value is discarded.
+
+**Behaviour:** The form accepts either positional or keyword syntax. Detection: if any top-level element is a pair whose `car` is keyword `before:`, `body:`, or `after:`, keyword mode is used; otherwise positional mode. In keyword mode, segments are identified by their marker; missing segments are nil. Body is required; at least one of before or after is required. A falsy literal such as `0` in a segment's place is a segment, not an absent one. Emits: each present segment as an aside (PUSH_ASIDE, its instructions, RETURN 1, POP_ASIDE), then PUSH_WIND with the extra row `(before, after, 0, 0)` naming them, `None` for an absent one, the body, and POP_WIND.
 
 **Examples:**
 
@@ -3025,7 +3027,7 @@ down to the prompt, the reset's body frame included, with the shift's own
 frame standing at the instruction after the SHIFT -- and aborts to the
 prompt. The nodes the abort leaves are kept as the continuation's template
 instead of being cloned and freed. A node carrying `KOS_DYN_CAP_WINDS`
-runs its leave (a dyn-wind after thunk, a dyn-with exit, a parameterize
+runs its leave (a dyn-wind after segment, a dyn-with exit, a parameterize
 restore), and a plain `with`, `try` or `finally` leaves without running
 anything of its own. The prompt stays, and a frame that runs the aside is
 attached above it over a namespace built from the spec, with the
