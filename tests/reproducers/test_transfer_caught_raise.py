@@ -134,6 +134,31 @@ def after_escapes []:
         except [e ValueError]:
             "escaped"
     #[r log]
+
+def both [a b]:
+    #[a b]
+
+def abort_escapes_during_reentry []:
+    var log #[]
+    var n #[0]
+    var r (reset
+      (both 10
+        (try
+            (dyn-wind (log.append "outer-before")
+                      (dyn-wind (begin
+                                  (set! n[0] (+ n[0] 1))
+                                  (when (> n[0] 1)
+                                    (abort (log.append "abort"))))
+                                (dyn-wind (log.append "body-before")
+                                          (shift k (k 1))
+                                          (log.append "body-after"))
+                                (log.append "inner-after"))
+                      (begin
+                        (log.append "outer-after")
+                        (when (> n[0] 1)
+                          (raise (ValueError "escape")))))
+            [[e ValueError] "escaped"])))
+    #[r log]
 """
 
 
@@ -193,6 +218,19 @@ class TestTransferCaughtRaise(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             ["escaped", []],
             await mod["after_escapes"]())
+
+
+    async def test_raise_ends_the_reentry_its_abort_cut_short(self):
+        # the inner before thunk, re-entered, aborts; that abort runs the
+        # outer after thunk, whose raise ends the abort and with it the
+        # re-entry the abort had already cut short; the try the re-entry
+        # brought back catches it
+        mod = await self.load()
+        self.assertEqual(
+            [[10, "escaped"],
+             ["outer-before", "body-before", "body-after", "inner-after",
+              "outer-after", "outer-before", "outer-after"]],
+            await mod["abort_escapes_during_reentry"]())
 
 
 # The end.

@@ -242,9 +242,11 @@ void kos_xfer_goal_abandon_stepping(KosContext *ctx);
 /**
    The raise walk unlinked node, which a goal waited on (it carried
    KOS_DYNF_GOAL_WAIT, with node_id its id read before the unlink): the
-   thunk the goal waited for is dead. Free that goal and every goal
-   started above it. The node is never dereferenced. Nothing to do when
-   no goal waits on it (a mark a freed goal left behind).
+   thunk the goal waited for is dead. Free that goal, every goal
+   started above it, and the outers its LEAVING voided, which its
+   ATTACHING would have retired. The node is never dereferenced.
+   Nothing to do when no goal waits on it (a mark a freed goal left
+   behind).
 */
 void kos_xfer_goal_thunk_died(
     KosContext *ctx,

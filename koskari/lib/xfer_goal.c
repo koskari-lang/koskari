@@ -340,6 +340,11 @@ void kos_xfer_goal_thunk_died(
   while (KosContext_GOAL(ctx) != goal)
     kos_xfer_goal_pop(ctx);
   kos_xfer_goal_pop(ctx);
+
+  /* the outers its LEAVING voided: their nodes left the chain, and the
+     ATTACHING that would have retired them will not run */
+  while (KosContext_GOAL(ctx) && ! KosContext_GOAL(ctx)->frontier)
+    kos_xfer_goal_pop(ctx);
 }
 
 
