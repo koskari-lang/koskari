@@ -393,4 +393,50 @@ def shape_param_ends_before_resume []:
     (#tuple r seen)
 
 
+def step_shift [x]:
+    (shift k (k x))
+
+
+class StepManager []:
+    def __init__ [self seen]:
+        (set! self.seen seen)
+    def __enter__ [self]:
+        (self.seen.append "enter")
+        self
+    def __exit__ [self *: args]:
+        (self.seen.append "exit")
+        False
+
+
+;; the shift is in a for-each step, with an operand of the dyn-wind's
+;; body waiting under the loop
+def shape_dynwind_over_step []:
+    var seen (#list)
+    var r:
+        (reset
+          (dyn-wind (seen.append "in")
+                    (+ 1000
+                       (begin
+                         (for-each [v (map step_shift (#list 1 2))]
+                           (seen.append v))
+                         5))
+                    (seen.append "out")))
+    (#tuple r seen)
+
+
+;; the same under a dyn-with, whose name each re-entry binds again
+def shape_dynwith_over_step []:
+    var seen (#list)
+    var m (StepManager seen)
+    var r:
+        (reset
+          (dyn-with [c m]
+            (+ 1000
+               (begin
+                 (for-each [v (map step_shift (#list 1 2))]
+                   (seen.append v))
+                 (if (is c m) 5 0)))))
+    (#tuple r seen)
+
+
 ;; The end.

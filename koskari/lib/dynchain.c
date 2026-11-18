@@ -727,6 +727,22 @@ static int kos_dyn_pop_transparent_deliver(
 }
 
 
+/**
+   The result of the call a node is settling, when its delivery was
+   staged: the frame under the node carried a resume, so the return put
+   the value in the pending slot and not on the live block. Returns the
+   value, a new reference, with the slot emptied, or NULL when nothing
+   is staged and the result is the top of the live block.
+*/
+static PyObject *kos_dyn_take_staged_result(KosContext *ctx) {
+
+  PyObject *val = KosContext_PENDING_VALUE(ctx);
+
+  KosContext_PENDING_VALUE(ctx) = NULL;
+  return val;
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_cc.c"

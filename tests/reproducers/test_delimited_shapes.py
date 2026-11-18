@@ -364,6 +364,28 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
 
         await self.check('shape_dynwind_multishot', (32, 6))
 
+    async def test_dynwind_over_step(self):
+        """
+        the shift is in a for-each step under a dyn-wind: the segments
+        run around each abort and invoke, and the operand the body held
+        under the loop is still there when the loop ends
+        """
+
+        await self.check(
+            'shape_dynwind_over_step',
+            (1005, ['in', 'out', 'in', 1, 'out', 'in', 2, 'out']))
+
+    async def test_dynwith_over_step(self):
+        """
+        the same under a dyn-with: each re-entry binds the name to what
+        __enter__ returned
+        """
+
+        await self.check(
+            'shape_dynwith_over_step',
+            (1005, ['enter', 'exit', 'enter', 1, 'exit', 'enter', 2,
+                    'exit']))
+
     async def test_param_around(self):
         """
         parameterize around the shift

@@ -3548,8 +3548,11 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        frame expects. Drop the stale slot ahead of a drive so it can
        neither shadow that delivery nor reach a resume it was never
        meant for. Only ahead of a drive: while the goal waits on a
-       running thunk the slot belongs to the thunk's code. */
-    if (will_drive)
+       running thunk the slot belongs to the thunk's code. A goal whose
+       thunk has just returned may find the thunk's result there, staged
+       because the frame under its node carries a resume: the settle
+       takes it, and the drive drops whatever the settle leaves. */
+    if (will_drive && ! KosContext_GOAL(ctx)->frontier)
       Py_CLEAR(KosContext_PENDING_VALUE(ctx));
 
     {

@@ -234,17 +234,20 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 
 
 /**
-   Complete an __enter__ whose result is TOS: pop it, bind the with name
-   when there is one, and mark the node entered and idle. The name binds
+   Complete an __enter__ whose result is staged or is TOS: take it, bind
+   the with name when there is one, and mark the node entered and idle.
+   The name binds
    in the node's own namespace, the one the with was pushed in: on a
    plain push that is the live namespace too, but a transfer re-enters
    the node with the attached frame above it current, and the binding
    belongs to the with's scope, not to whatever frame sits at dyn_top.
 */
 static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
-  PyObject *result = KosContext_StackPopRef(ctx);
+  PyObject *result = kos_dyn_take_staged_result(ctx);
   PyObject *name;
 
+  if (! result)
+    result = KosContext_StackPopRef(ctx);
   if (! result)
     return -1;
 
@@ -469,8 +472,8 @@ static KosOpResult kos_dyn_with_leave(
 
 
 /**
-   The pending __enter__ or __exit__ returned; its result is the top of
-   the live block.
+   The pending __enter__ or __exit__ returned; its result is staged or
+   is the top of the live block.
 */
 static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
 
@@ -487,7 +490,10 @@ static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
     return kos_dyn_with_bind_entered(ctx, node);
 
   if (KosDynWith_EXIT_PENDING(node)) {
-    PyObject *result = KosContext_StackPopRef(ctx);
+    PyObject *result = kos_dyn_take_staged_result(ctx);
+
+    if (! result)
+      result = KosContext_StackPopRef(ctx);
     if (! result)
       return -1;
     return kos_dyn_with_classify_exit(ctx, node, result);

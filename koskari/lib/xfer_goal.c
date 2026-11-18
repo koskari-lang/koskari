@@ -834,6 +834,9 @@ static KosOpResult goal_drive(
       if (kos_dyn_extent_settle(ctx, goal->frontier) < 0)
         return EVAL_RAISE();
       goal_end_wait(goal);
+      /* the settle took a staged result; anything still staged was for
+         the path the transfer replaces */
+      Py_CLEAR(KosContext_PENDING_VALUE(ctx));
     }
 
     switch (goal->phase) {

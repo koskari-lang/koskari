@@ -208,18 +208,23 @@ static KosOpResult kos_dyn_wind_leave(
 
 
 /**
-   The pending segment returned; its result is the top of the live
-   block.
+   The pending segment returned; its result, which nothing reads, is
+   staged or is the top of the live block.
 */
 static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
+
+  PyObject *val;
 
   if (KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_BEGIN
       && KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_AFTER)
     return 0;
 
-  if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
-      && KosSegment_LEN(*KosContext_BLOCK(ctx))) {
-    PyObject *val = KosContext_StackPopRef(ctx);
+  val = kos_dyn_take_staged_result(ctx);
+  if (val) {
+    Py_DECREF(val);
+  } else if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+             && KosSegment_LEN(*KosContext_BLOCK(ctx))) {
+    val = KosContext_StackPopRef(ctx);
     if (! val)
       return -1;
     Py_DECREF(val);
