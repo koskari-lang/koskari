@@ -164,6 +164,8 @@ def special_dyn_wind(
         after = _compile_segment(
             compiler, called_by, fragment, after_src, 'after')
 
+    # the row reports the form's line, not a segment's last
+    fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_WIND, (before, after, 0, 0))
     fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)

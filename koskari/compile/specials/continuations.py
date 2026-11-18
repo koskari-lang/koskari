@@ -206,6 +206,8 @@ def helper_handler(
         helper_begin(inner, body.datum)
         refuse_yield(called_by, inner.instructions, "handler cannot yield")
 
+    # the row reports the form's line, not the handler's last
+    fragment.position(called_by.position)
     fragment.instruction(
         OpCode.ABORT if k is None else OpCode.SHIFT,
         (tag_count, name, 0, 0))
@@ -235,6 +237,8 @@ def helper_reset_body(compiler, called_by, body, fragment, tag_count):
         helper_begin(inner, body.datum)
         refuse_yield(called_by, inner.instructions, "body cannot yield")
 
+    # the row reports the form's line, not the body's last
+    fragment.position(called_by.position)
     fragment.instruction(OpCode.RESET, (tag_count, name, 0, 0))
 
 
