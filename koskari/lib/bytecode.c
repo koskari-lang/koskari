@@ -304,8 +304,8 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
   descriptors. This reverses emit: CONST/VAR are the pool objects
   themselves; LABEL slots look up the destination PC in ``label_map``;
   ASIDE slots are named for their extent, or None for no aside; other
-  slots stay as integers (FAST, COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
-  phase default.
+  slots stay as integers (FAST, COUNT, STAR, etc.). NOARG schema slots
+  become 0, matching the collect phase default.
 
   :param self: KosCode (for constant pool lookup)
   :param op: opcode (selects EXTRA field schema)
@@ -321,62 +321,58 @@ static PyObject *soften_extra_tuple(
     PyObject *label_map) {
 
   KosExtraSchema schema = extra_row_schema(op, KosExtra_IMM(row, 0));
-  PyObject *items[4];
+  PyObject *result = PyTuple_New(4);
 
+  if (! result)
+    return NULL;
+
+  /* the tuple takes each field's reference as it is stored, so a
+     failure releases the fields before it with the tuple */
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = schema_field(schema, slot);
+    PyObject *item;
 
     /* Mirror code_collect: skip NOARG (emit uses 0); else decode by kind */
     if (fk == KOSTYLE_NOARG) {
-      items[slot] = PyLong_FromLong(0);
+      item = PyLong_FromLong(0);
 
     } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR
                || fk == KOSTYLE_VAR) {
-      PyObject *v = KosExtra_OBJ(row, slot);
-      Py_INCREF(v);
-      items[slot] = v;
+      item = KosExtra_OBJ(row, slot);
+      Py_INCREF(item);
 
     } else if (fk == KOSTYLE_LABEL) {
       uint32_t dest_pc = KosExtra_TARGET(row, slot)->pc;
       PyObject *key = PyLong_FromUnsignedLong((unsigned long) dest_pc);
-      if (! key) {
-        for (int j = 0; j < slot; j++)
-          Py_DECREF(items[j]);
-        return NULL;
-      }
-      PyObject *lab = PyDict_GetItem(label_map, key);
-      Py_DECREF(key);
-      if (! lab) {
-        for (int j = 0; j < slot; j++)
-          Py_DECREF(items[j]);
+
+      item = key ? PyDict_GetItem(label_map, key) : NULL;
+      if (key && ! item)
         PyErr_Format(PyExc_RuntimeError,
                      "label pc %u missing from label map", (unsigned) dest_pc);
-        return NULL;
-      }
-      Py_INCREF(lab);
-      items[slot] = lab;
+      Py_XDECREF(key);
+      Py_XINCREF(item);
 
     } else if (fk == KOSTYLE_ASIDE && ! KosExtra_ASIDE(row, slot)) {
-      Py_INCREF(Py_None);
-      items[slot] = Py_None;
+      item = Py_None;
+      Py_INCREF(item);
 
     } else if (fk == KOSTYLE_ASIDE) {
-      items[slot] = PyUnicode_FromFormat(
+      item = PyUnicode_FromFormat(
           KosCode_SOFTEN_ASIDE_PREFIX "%u",
           (unsigned) (KosExtra_ASIDE(row, slot) - KosCode_EXTENTS(self)));
 
     } else {
-      items[slot] = PyLong_FromLong((long) KosExtra_IMM(row, slot));
+      item = PyLong_FromLong((long) KosExtra_IMM(row, slot));
     }
 
-    if (! items[slot]) {
-      for (int j = 0; j < slot; j++)
-        Py_DECREF(items[j]);
+    if (! item) {
+      Py_DECREF(result);
       return NULL;
     }
+    PyTuple_SET_ITEM(result, slot, item);
   }
 
-  return PyTuple_Pack(4, items[0], items[1], items[2], items[3]);
+  return result;
 }
 
 

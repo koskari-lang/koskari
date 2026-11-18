@@ -24,6 +24,7 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 
 
 import pytest
+import sys
 
 from koskari.exceptions import KoskariPromptNotFound
 from koskari.lib import Code, FormalsSpec, NamespaceSpec, OpCode
@@ -697,6 +698,58 @@ class TestAsides(CevalTest):
 
         again = Code(code_obj.namespace_spec, soft, "again")
         self.assertEqual(6, await make_callable(again, ns)())
+
+
+    def shift_code(self):
+        """
+        A Code with a reset body and a shift handler, the handler's
+        aside carrying a NamespaceSpec
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code_obj, ns = build_expr([
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ])
+        return code_obj
+
+
+    def test_soften_holds_no_reference_to_a_pool_object(self):
+        """
+        Softened rows that have been dropped leave the count of a pool
+        object they carried where it was
+        """
+
+        code_obj = self.shift_code()
+        nspec = [
+            arg[0] for op, arg in code_obj.soften()
+            if OpCode(op).name == "PUSH_ASIDE" and arg[0] is not None].pop()
+        self.assertIsInstance(nspec, NamespaceSpec)
+
+        before = sys.getrefcount(nspec)
+        for _ in range(10):
+            code_obj.soften()
+        self.assertEqual(before, sys.getrefcount(nspec))
+
+
+    def test_soften_holds_no_reference_to_an_aside_name(self):
+        """
+        An aside name taken from softened rows that have been dropped
+        is held by its taker alone, as a new string is
+        """
+
+        code_obj = self.shift_code()
+        name = [
+            arg[1] for op, arg in code_obj.soften()
+            if OpCode(op).name == "SHIFT"].pop()
+        fresh = "_".join(("ASIDE", "x"))
+        self.assertEqual("ASIDE_1", name)
+        self.assertEqual(sys.getrefcount(fresh), sys.getrefcount(name))
 
 
     async def test_aside_run_past_its_end_raises(self):
