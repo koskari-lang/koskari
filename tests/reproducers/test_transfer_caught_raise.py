@@ -30,6 +30,7 @@ import unittest
 
 import pytest
 
+from koskari.lib import KoskariContinuationApply
 from koskari.module import load_module_source_async, new_module
 
 
@@ -168,7 +169,46 @@ def enter_escapes [manager]:
                    (reset (+ 1 (dyn-with [c (manager log box)]
                                  (shift k (k 5)))))))
     #[r log]
+
+def invoke_fails [spoiled]:
+    var log #[]
+    var r (let/cc k
+            (dyn-wind (log.append "before")
+                      (try (spoiled k)
+                           [[e TypeError] (begin (log.append (str e)) 3)])
+                      (log.append "after")))
+    #[r log]
+
+def invoke_fails_in_thunk [spoiled]:
+    var log #[]
+    var box #[None]
+    (let/cc j (set! box[0] j))
+    var r (reset
+        (+ 1 (dyn-wind (log.append "before")
+                       (shift k (begin (log.append "handler") 10))
+                       (try (spoiled box[0])
+                            [[e TypeError] (log.append "after")]))))
+    #[r log]
+
+def invoke_fails_uncaught [spoiled log]:
+    (let/cc k
+      (dyn-wind (log.append "before")
+                (spoiled k)
+                (log.append "after")))
 """
+
+
+def spoiled(k):
+    """
+    Call the continuation k from Python, and send its signal on with
+    nothing the evaluator can invoke in it
+    """
+
+    try:
+        k(1)
+    except KoskariContinuationApply as signal:
+        signal.continuation = 42
+        raise
 
 
 class EnterEscapes:
@@ -270,6 +310,36 @@ class TestTransferCaughtRaise(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [107, ["enter", "exit", "enter"]],
             await mod["enter_escapes"](EnterEscapes))
+
+
+    async def test_failed_invoke_is_caught_where_python_called_it(self):
+        # the signal of a continuation called from Python cannot be
+        # invoked; the failure raises at that call, where the try
+        # around it catches it
+        mod = await self.load()
+        self.assertEqual(
+            [3, ["before",
+                 "KoskariContinuationApply.continuation must be"
+                 " Continuation or DelimitedContinuation, got 42",
+                 "after"]],
+            await mod["invoke_fails"](spoiled))
+
+
+    async def test_failed_invoke_caught_in_a_thunk_leaves_the_transfer(self):
+        # the after thunk an abort waits on catches the failure; the
+        # abort goes on once the thunk returns
+        mod = await self.load()
+        self.assertEqual(
+            [10, ["before", "after", "handler"]],
+            await mod["invoke_fails_in_thunk"](spoiled))
+
+
+    async def test_failed_invoke_runs_the_after_thunk_on_its_way(self):
+        mod = await self.load()
+        log = []
+        with self.assertRaises(TypeError):
+            await mod["invoke_fails_uncaught"](spoiled, log)
+        self.assertEqual(["before", "after"], log)
 
 
 # The end.
