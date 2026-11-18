@@ -915,8 +915,11 @@ static KosOpResult process_raise(KosContext *ctx) {
   /* A goal waiting on a thunk lives as long as the thunk: a raise the
      thunk catches leaves it waiting, and the walk below retires it if it
      reaches the node the goal waits on. The goals above the waiters
-     were stepping when the raise came, and it ends them. */
-  if (! is_cc_apply && KosContext_GOAL(ctx))
+     were stepping when the raise came, and it ends them, a continuation
+     signal included: the transfer it starts voids a waiter whose node
+     it unlinks, and would leave a stepping goal linked over nodes it
+     freed. */
+  if (KosContext_GOAL(ctx))
     kos_xfer_goal_abandon_stepping(ctx);
 
   if (is_cc_apply)

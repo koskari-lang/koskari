@@ -372,9 +372,9 @@ void kos_xfer_goal_thunk_died(
    ENTERING runs, since each ENTERING runs only the nodes its own
    ATTACHING put on the chain. The clear when the wait ends therefore
    drops no other goal's mark. A mark left behind by a goal freed while
-   it waited (a continuation signal abandons every goal) only makes a
-   later LEAVING, or the raise walk, look through the goals for a
-   waiter that is not there.
+   it waited (a failed continuation invoke abandons every goal) only
+   makes a later LEAVING, or the raise walk, look through the goals for
+   a waiter that is not there.
 */
 static void goal_wait(KosXferGoal *goal, KosDynNode *node) {
 

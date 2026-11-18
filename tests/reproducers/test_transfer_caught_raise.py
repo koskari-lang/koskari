@@ -159,7 +159,37 @@ def abort_escapes_during_reentry []:
                           (raise (ValueError "escape")))))
             [[e ValueError] "escaped"])))
     #[r log]
+
+def enter_escapes [manager]:
+    var log #[]
+    var box #[None]
+    var r (+ 100 (let/cc esc
+                   (set! box[0] esc)
+                   (reset (+ 1 (dyn-with [c (manager log box)]
+                                 (shift k (k 5)))))))
+    #[r log]
 """
+
+
+class EnterEscapes:
+    """
+    A context manager whose second __enter__ calls the continuation in
+    its box
+    """
+
+    def __init__(self, log, box):
+        self.log = log
+        self.box = box
+
+    def __enter__(self):
+        self.log.append("enter")
+        if self.log.count("enter") > 1:
+            self.box[0](7)
+        return self
+
+    def __exit__(self, *args):
+        self.log.append("exit")
+        return False
 
 
 class TestTransferCaughtRaise(unittest.IsolatedAsyncioTestCase):
@@ -231,6 +261,15 @@ class TestTransferCaughtRaise(unittest.IsolatedAsyncioTestCase):
              ["outer-before", "body-before", "body-after", "inner-after",
               "outer-after", "outer-before", "outer-after"]],
             await mod["abort_escapes_during_reentry"]())
+
+
+    async def test_continuation_called_from_enter_ends_the_reentry(self):
+        # the re-entry calls __enter__ itself; a continuation that call
+        # invokes replaces the re-entry
+        mod = await self.load()
+        self.assertEqual(
+            [107, ["enter", "exit", "enter"]],
+            await mod["enter_escapes"](EnterEscapes))
 
 
 # The end.
