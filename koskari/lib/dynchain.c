@@ -2490,10 +2490,10 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
 
 /**
    Offer a control transit to dyn_top without unlinking: PASS, CONSUMED,
-   or ERROR. Central dispatch for exception/return/yield/shift
-   semantics (TRY/FINALLY except/finally PCs, GEN node, PROMPT shift).
-   Callers: the kos_dyn_unwind_* walks (raise, return, yield, to_frame),
-   shift walk.
+   or ERROR. Central dispatch for exception/return/yield
+   semantics (TRY/FINALLY except/finally PCs, GEN node).
+   Callers: the kos_dyn_unwind_* walks (raise, return, yield, to_frame).
+   An abort's seek for its prompt does not come here (kos_prompt_seek).
 
    TRY: CONSUMED when RAISE, enabled, PyErr set, and extent has except_pc.
    FINALLY: CONSUMED when RAISE, RETURN, BREAK or CONTINUE and finally
@@ -2534,18 +2534,6 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
     case KOS_DYN_GEN:
       if (event == KOS_XFER_EVENT_RETURN
           || event == KOS_XFER_EVENT_RAISE)
-        return KOS_HANDLE_CONSUMED;
-      if (event == KOS_XFER_EVENT_ABORT) {
-        /* kos_prompt_seek names the operation */
-        kos_raise_prompt_unreachable(
-            NULL, "generator", "cannot abort across a %s boundary");
-        return KOS_HANDLE_ERROR;
-      }
-      return KOS_HANDLE_PASS;
-    case KOS_DYN_PROMPT:
-      /* every prompt consumes an abort; kos_prompt_seek judges the
-         tag and crosses a prompt whose tag differs */
-      if (event == KOS_XFER_EVENT_ABORT)
         return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
     default:
@@ -2829,11 +2817,10 @@ static KosContinuation *kos_continuation_capture_segment(
 
 /**
    The nearest prompt carrying tag, for an abort or the abort a shift
-   makes. One walk from dyn_top offers handle(ABORT) to every node
-   crossed: GEN denies (no abort crosses a generator node), a PROMPT
-   consumes -- the match
-   when its tag agrees, crossed when it does not, so the walk goes on
-   to the parent. A consumer of any other kind is a topology error.
+   makes. One walk from dyn_top, by kind, for the two kinds that
+   decide it: a GEN denies (no abort crosses a generator node), and a
+   PROMPT is the match when its tag agrees, crossed when it does not,
+   so the walk goes on to the parent. Every other kind is crossed.
    Reachability is implied by the walk itself. Returns NULL with an
    exception set. With capturing set, for a shift, each node crossed
    before the prompt is also one the continuation will hold, and one
@@ -2848,21 +2835,20 @@ static KosDynPrompt *kos_prompt_seek(
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node) {
-    KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_ABORT);
-
-    if (hr == KOS_HANDLE_ERROR) {
-      kos_capture_note(tag, operation);
-      return NULL;
-    }
-    if (hr == KOS_HANDLE_CONSUMED) {
-      if (! KosDynNode_IS_PROMPT(node)) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "%s consumed before reaching prompt", operation);
+    switch (KosDynNode_KIND(node)) {
+      case KOS_DYN_PROMPT:
+        if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag)
+          return (KosDynPrompt *) node;
+        break;
+      case KOS_DYN_GEN:
+        kos_raise_prompt_unreachable(
+            NULL, "generator", "cannot abort across a %s boundary");
+        kos_capture_note(tag, operation);
         return NULL;
-      }
-      if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag)
-        return (KosDynPrompt *) node;
+      default:
+        break;
     }
+
     /* a node the capture will keep: what its clone would refuse is
        refused here, while every node is still on the chain */
     if (capturing && kos_dyn_node_capturable(node) < 0) {

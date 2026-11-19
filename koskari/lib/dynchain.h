@@ -359,7 +359,6 @@ typedef enum KosXferEvent {
   KOS_XFER_EVENT_RAISE,
   KOS_XFER_EVENT_BREAK,
   KOS_XFER_EVENT_CONTINUE,
-  KOS_XFER_EVENT_ABORT,      /* an abort seeking its prompt */
   KOS_XFER_EVENT_TRANSFER,   /* a transfer is tearing the node down */
 } KosXferEvent;
 
