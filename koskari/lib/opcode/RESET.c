@@ -36,9 +36,8 @@ KOS_OP_HANDLER(RESET) {
                      &tag) < 0)
     RESULT_RAISE();
 
-  /* the prompt takes its own reference; NULL is the default tag */
+  /* the prompt takes the popped reference; NULL is the default tag */
   prompt = kos_dyn_push_prompt(ctx, tag);
-  Py_XDECREF(tag);
   if (! prompt)
     RESULT_RAISE();
 

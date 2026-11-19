@@ -43,8 +43,10 @@ KosOpResult kos_abort_to_prompt(
 
   ns = kos_aside_namespace(KosDynFrame_CODE(KosContext_FRAME(ctx)),
                            KosContext_NAMESPACE(ctx), aside, &owns_ns);
-  if (! ns)
+  if (! ns) {
+    Py_XDECREF(payload);
     return EVAL_RAISE();
+  }
 
   /* An aside that introduces no namespace runs over the live one,
      which belongs to a frame the abort leaves: the namespace is
@@ -62,10 +64,10 @@ KosOpResult kos_abort_to_prompt(
   frame = (KosDynNode *) kos_dynframe_new_aside(
       NULL, (KosDynFrame *) base, KosDynFrame_CODE(KosContext_FRAME(ctx)),
       ns, owns_ns, aside->entry);
-  if (owns_ns)
-    Py_DECREF(ns);
-  if (! frame)
+  if (! frame) {
+    Py_XDECREF(payload);
     return EVAL_RAISE();
+  }
   KosDynFrame_BACK_FRAME(frame) = NULL;
   KosSegment_BACK(KosDynNode_STACK(frame)) = NULL;
 
@@ -76,8 +78,9 @@ KosOpResult kos_abort_to_prompt(
      which ends the prompt, is delivered. The transfer runs here, from
      a goal in this frame, and is kept only if a leave on the way
      pauses or fails. */
-  kos_xfer_goal_init(&goal, frame, (KosDynNode *) prompt, payload, NULL, NULL,
+  kos_xfer_goal_init(&goal, frame, (KosDynNode *) prompt, NULL, NULL, NULL,
                      0);
+  goal.payload = payload;  /* the caller's reference */
   goal.keep = keep;
 
   /* what a clone for an attach records, for a copy of one frame */

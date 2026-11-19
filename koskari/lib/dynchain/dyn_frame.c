@@ -390,7 +390,8 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
    stands above once linked, the source of its depth and demand flag,
    or NULL when it will stand on a prompt at the root of a context;
    parent is the node it is linked on, or NULL for one linked later.
-   code and ns are borrowed. Callers: kos_dyn_push_aside,
+   code is borrowed; ns is consumed, on failure too: the frame holds
+   the reference kos_aside_namespace gave. Callers: kos_dyn_push_aside,
    kos_abort_to_prompt.
    Returns the frame, or NULL with PyErr set.
 */
@@ -404,8 +405,10 @@ KosDynFrame *kos_dynframe_new_aside(
 
   KosDynFrame *frame = kos_dynnode_alloc();
 
-  if (! frame)
+  if (! frame) {
+    Py_DECREF(ns);
     return NULL;
+  }
 
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
                    owns_ns ? KOS_DYN_CAP_OWNS_NS : 0);
@@ -414,8 +417,7 @@ KosDynFrame *kos_dynframe_new_aside(
   KosDynFrame_PC(frame) = entry;
   KosDynFrame_ACTING_PC(frame) = entry;
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
-  Py_INCREF(ns);
-  KosDynFrame_NS(frame) = ns;  /* owned fill */
+  KosDynFrame_NS(frame) = ns;  /* owned fill, the caller's reference */
   KosDynFrame_FLAGS(frame) =
       base ? KosDynFrame_FLAGS(base) & KOS_FRAME_DEMAND : 0;
   kos_dynframe_note_parent(frame);
@@ -433,9 +435,10 @@ KosDynFrame *kos_dynframe_new_aside(
    The namespace a frame made here for aside, an aside of code, runs
    over, where ns is the namespace the aside is written in. An aside
    whose PUSH_ASIDE carries a spec introduces a namespace built from
-   it, whose closure names are resolved from ns: a new reference, with
-   *owns_ns set. One that carries None runs over ns itself: borrowed,
-   with *owns_ns clear. Code construction holds each instruction that
+   it, whose closure names are resolved from ns, with *owns_ns set.
+   One that carries None runs over ns itself, with *owns_ns clear.
+   Either is a new reference, for kos_dynframe_new_aside to consume.
+   Code construction holds each instruction that
    names an aside to the block the aside is declared in, so the
    namespace live at that instruction is the one the aside was written
    in. Callers: kos_dyn_push_aside, kos_abort_to_prompt. Returns NULL
@@ -451,7 +454,7 @@ PyObject *kos_aside_namespace(
       KosExtra_OBJ(KosOp_ROW(&KosCode_CODE(code)[aside->push_pc]), 0);
 
   *owns_ns = (spec != Py_None);
-  return *owns_ns ? KosNamespace_FromSpec(spec, ns) : ns;
+  return *owns_ns ? KosNamespace_FromSpec(spec, ns) : Py_NewRef(ns);
 }
 
 
@@ -479,10 +482,9 @@ KosDynFrame *kos_dyn_push_aside(
   if (! ns)
     return NULL;
 
+  /* the frame takes the reference; ns is read through it below */
   frame = kos_dynframe_new_aside(
       KosContext_DYN_TOP(ctx), cur, code, ns, owns_ns, aside->entry);
-  if (owns_ns)
-    Py_DECREF(ns);
   if (! frame)
     return NULL;
 

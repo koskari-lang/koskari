@@ -1086,7 +1086,7 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
     PyObject *ns);
 
 /* An aside: a frame of no arguments over another frame's code,
-   starting at entry; see dynchain/dyn_frame.c. */
+   starting at entry; ns is consumed. See dynchain/dyn_frame.c. */
 KosDynFrame *kos_dynframe_new_aside(
     KosDynNode *parent,
     KosDynFrame *base,
@@ -1096,8 +1096,9 @@ KosDynFrame *kos_dynframe_new_aside(
     KosOp *entry);
 
 /* The namespace a frame made for aside, an aside of code, runs over
-   when ns is the namespace the aside is written in: a new reference
-   with *owns_ns set, or ns, borrowed, with it clear. */
+   when ns is the namespace the aside is written in: one built for it,
+   with *owns_ns set, or ns, with it clear; a new reference either
+   way. */
 PyObject *kos_aside_namespace(
     KosCode *code,
     PyObject *ns,
@@ -1352,7 +1353,7 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
    :param ctx: execution context
    :param tag: the prompt's tag, matched by identity, or NULL for the
-      default tag (never None); a reference is taken
+      default tag (never None); consumed, on failure too
 
    :return: new prompt, or NULL on error
 */
@@ -1429,7 +1430,8 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
    :param ctx: execution context
    :param prompt: the prompt to abort to
    :param aside: the aside to run above it
-   :param payload: a value for the aside's stack, borrowed, or NULL
+   :param payload: a value for the aside's stack, or NULL; consumed,
+     on failure too
    :param keep: the continuation kos_shift_capture began, which the
      nodes the transfer leaves are kept into, or NULL to free them;
      borrowed, and kept alive by payload

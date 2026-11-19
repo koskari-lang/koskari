@@ -84,16 +84,19 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
    Push a prompt as dyn_top. A prompt owns no segment and introduces
    no namespace, so no live register moves: the push is the link and
    the namespace fill every non-frame node carries, a reference to the
-   live one. Callers: opcode RESET. Returns the prompt, or NULL with
-   PyErr set.
+   live one. tag is consumed: the prompt holds the caller's reference.
+   Callers: opcode RESET. Returns the prompt, or NULL with PyErr set.
 */
 KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, PyObject *tag) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), tag);
-  if (! prompt)
+  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), NULL);
+  if (! prompt) {
+    Py_XDECREF(tag);
     return NULL;
+  }
 
+  KosDynPrompt_TAG(prompt) = tag;
   KosDynNode_NS((KosDynNode *) prompt) =
       Py_XNewRef(KosContext_NAMESPACE(ctx));
   KosContext_DYN_TOP(ctx) = (KosDynNode *) prompt;

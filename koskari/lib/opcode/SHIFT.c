@@ -34,15 +34,14 @@ KOS_OP_HANDLER(SHIFT) {
   const KosExtra *row = KosOp_ROW(insn);
   KosDynPrompt *prompt;
   PyObject *k = shift_capture(ctx, (unsigned) KosExtra_IMM(row, 0), &prompt);
-  KosOpResult res;
 
   if (! k)
     RESULT_RAISE();
 
-  res = kos_abort_to_prompt(ctx, prompt, KosExtra_ASIDE(row, 1), k,
-                            KosPyDelimitedContinuation_CAPTURED(k));
-  Py_DECREF(k);
-  RESULT_RELAY(ctx, res);
+  /* the abort takes the reference to k */
+  RESULT_RELAY(ctx, kos_abort_to_prompt(
+      ctx, prompt, KosExtra_ASIDE(row, 1), k,
+      KosPyDelimitedContinuation_CAPTURED(k)));
 }
 
 
