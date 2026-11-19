@@ -1952,13 +1952,14 @@ class ByteCodeProcessor:
 
         compiler = self.fragment.compiler
 
-        # a jump to a PUSH_ASIDE goes to where it leads instead
-        self.pass_labels_over_asides()
-
         # a short-circuit jump leading to a conditional jump becomes
         # that jump, so the clause's predicate and the branch sit
         # adjacent for the squish
         self.thread_shortcut_jumps()
+
+        # a jump to a PUSH_ASIDE goes to where it leads instead; after
+        # the threading, which inserts labels of its own
+        self.pass_labels_over_asides()
 
         # first we do the peephole squish, which sounds more suggestive than
         # it actually is.

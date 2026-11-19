@@ -142,4 +142,28 @@ class TestPassLabelsOverAsides(unittest.TestCase):
         self.assertEqual(instr, passed(instr, holds_aside=False))
 
 
+    def test_label_a_threaded_jump_inserts_at_an_aside_moves(self):
+        # the JUMP_OR threads to the fall-through of the JUMP_FALSE it
+        # leads to, where no label is, so one is inserted there, at
+        # the aside
+        frag = make_fragment([
+            (V, "a"), (OpCode.JUMP_OR, "test"), (V, "b"),
+            (L, "test"), (JF, "end"),
+            *aside("body", (C, 2)),
+            (RESET, (0, "body", 0, 0)), (RET, 1),
+            (L, "end"), (C, 3), (RET, 1),
+        ])
+        frag.holds_aside = True
+        out = ByteCodeProcessor(frag).process()
+
+        ops = [op for op, _ in out]
+        self.assertNotIn(OpCode.JUMP_OR, ops)
+        self.assertIn(PUSHA, ops)
+        for i, op in enumerate(ops):
+            if op != L:
+                continue
+            after = next(o for o in ops[i:] if o not in (L, P, NOOP))
+            self.assertNotEqual(PUSHA, after)
+
+
 # The end.
