@@ -1508,6 +1508,15 @@ KOS_OP_INLINE int eval_region_resume_return(
     PyObject *val,
     const KosResumeKind **out_resume,
     void **out_state);
+KOS_OP_INLINE KosOpResult eval_prompt_return(
+    KosContext *ctx,
+    KosDynNode *child,
+    KosDynNode *parent,
+    PyObject *val);
+static KOS_PRESERVE_NONE KosOpResult kos_return_deliver_prompt(
+    KosContext *ctx,
+    void *insn,
+    PyObject *val);
 
 
 /**
@@ -1723,6 +1732,16 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
     }
   }
 
+  /* The prompt arm: the returning frame is dyn_top and sits on a
+     prompt, a reset's body or a handler returning. Tested ahead of the
+     region arms, whose predicates rely on it having been; the work is
+     out of line by tail call, so this function stays small. */
+  if (child && KosContext_DYN_TOP(ctx) == child) {
+    parent = KosDynNode_PARENT(child);
+    if (parent && KosDynNode_IS_PROMPT(parent))
+      TAILCALL(kos_return_deliver_prompt, ctx, NULL, val);
+  }
+
   if (kos_return_is_region(ctx, &child, &parent, &ft)) {
     KOS_TRACE_POST_OP_WRAP(plain_return,
         r = eval_region_return(ctx, child, parent, ft, val));
@@ -1753,8 +1772,8 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   }
 
   /* The general path: the walk over the extents above the frame, the
-     generator parents, a frame on a prompt, the
-     root. Its own plain case is the transition above. The arms above
+     generator parents, the root. Its own plain and prompt cases are
+     the transitions above. The arms above
      are the RETURN row's own work; from here on is the signal's. */
   KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(ctx, val));
@@ -2745,12 +2764,11 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
 
-  /* a frame on a prompt ends it: the general path takes it */
+  /* a prompt parent never arrives: kos_return_deliver takes it first */
   parent = KosDynNode_PARENT(child);
   if (! parent
       || KosDynNode_IS_FRAME(parent)
-      || KosDynNode_IS_GEN(parent)
-      || KosDynNode_IS_PROMPT(parent))
+      || KosDynNode_IS_GEN(parent))
     return 0;
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
@@ -2830,7 +2848,6 @@ KOS_OP_INLINE int kos_return_is_region_resume(
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
-      || KosDynNode_IS_PROMPT(parent)
       || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
     return 0;
 
@@ -2898,6 +2915,94 @@ KOS_OP_INLINE int eval_region_resume_return(
 
 
 /**
+   Prompt-parent return: child, the frame at dyn_top, sits on the
+   prompt parent -- a reset's body, or a shift's handler called above
+   the reset's prompt, returned. The frame on a prompt ends the prompt:
+   both go, and the value is the reset's, delivered to whatever is
+   below as any callee's return is. A prompt at the root of a context
+   ends the context, as a root generator does. val consumed.
+*/
+KOS_OP_INLINE KosOpResult eval_prompt_return(
+    KosContext *ctx,
+    KosDynNode *child,
+    KosDynNode *parent,
+    PyObject *val) {
+
+  KosDynNode *below = KosDynNode_PARENT(parent);
+  KosDynFrame *ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
+
+  /* Frame and prompt go in one step when every retarget fact is
+     recorded: the frame live when the returning one was installed,
+     the slot its segment displaced (a prompt owns no segment, so
+     that is the slot live under the prompt), and the namespace the
+     node under the prompt carries. A missing fact takes the two
+     general pops below. */
+  if (likely(below
+             && ft
+             && KosDynNode_STACK(child)
+             && KosSegment_BACK(KosDynNode_STACK(child))
+             && KosDynNode_NS(below))) {
+    KosContext_DYN_TOP(ctx) = below;
+    KosContext_LoadFrame(ctx, ft, KosSegment_BACK(KosDynNode_STACK(child)),
+                         KosDynNode_NS(below));
+    kos_dynframe_free_fast((KosDynFrame *) child);
+    kos_dynprompt_free((KosDynPrompt *) parent);
+
+    /* a bytecode frame with no resume takes the value on its stack,
+       and a node that hooks no control return has nothing to run */
+    if (likely(KosDynFrame_CODE(ft)
+               && ! KosDynFrame_RESUME_KIND(ft)
+               && ! KosDynNode_HAS_CAP(below, KOS_DYN_CAP_CONTROL_HOOK))) {
+      if (KosContext_StackPUSH(ctx, val) < 0)
+        return EVAL_FATAL();
+      return kos_eval_delivery_done(ctx);
+    }
+    return eval_parent_return_deliver(ctx, val);
+  }
+
+  if (unlikely(kos_dyn_pop_frame(ctx) < 0
+               || kos_dyn_pop_prompt(ctx, (KosDynPrompt *) parent) < 0)) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
+  }
+  if (! KosContext_DYN_TOP(ctx)) {
+    KosContext_MarkDeadAfterReturn(ctx);
+    ctx->terminal = 1;
+    return EVAL_RETURN(val);
+  }
+  return eval_parent_return_deliver(ctx, val);
+}
+
+
+/**
+   The delivery of a RETURN from the frame at dyn_top onto the prompt
+   it sits on, which kos_return_deliver established before its tail
+   call here. val is the owned return value; insn is unused.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_return_deliver_prompt(
+    KosContext *ctx,
+    void *insn,
+    PyObject *val) {
+
+  KosDynNode *child = (KosDynNode *) KosContext_FRAME(ctx);
+  KosOpResult r;
+
+  (void) insn;
+
+  KOS_TRACE_TRAMPOLINE_STEP();
+  KOS_TRACE_POST_OP_WRAP(return_event,
+      r = eval_prompt_return(ctx, child, KosDynNode_PARENT(child), val));
+  if (likely(r.kind == KOS_RES_DISPATCH))
+    RESULT_CONTINUE(ctx);
+  if (r.kind == KOS_RES_RESUME)
+    TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
+  if (r.kind == KOS_RES_REPROLOGUE)
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+  return r;
+}
+
+
+/**
    Unified RETURN dispatch.  Called when DYN_TOP == FRAME — no try/with/wind
    nodes above it (either naturally, or after the unwind walk completes).
 
@@ -2948,56 +3053,10 @@ static KosOpResult eval_event_return_at_frame(
     return EVAL_FATAL();
   }
 
-  /* Case 2b: prompt parent -- a reset's body, or a shift's handler
-     called above the reset's prompt, returned. The frame on a prompt
-     ends the prompt: both go, and the value is the reset's, delivered
-     to whatever is below as any callee's return is. A prompt at the
-     root of a context ends the context, as a root generator does. */
-  if (parent && KosDynNode_IS_PROMPT(parent)) {
-    KosDynNode *below = KosDynNode_PARENT(parent);
-    KosDynFrame *ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
-
-    /* Frame and prompt go in one step when every retarget fact is
-       recorded: the frame live when the returning one was installed,
-       the slot its segment displaced (a prompt owns no segment, so
-       that is the slot live under the prompt), and the namespace the
-       node under the prompt carries. A missing fact takes the two
-       general pops below. */
-    if (likely(below
-               && ft
-               && KosDynNode_STACK(child)
-               && KosSegment_BACK(KosDynNode_STACK(child))
-               && KosDynNode_NS(below))) {
-      KosContext_DYN_TOP(ctx) = below;
-      KosContext_LoadFrame(ctx, ft, KosSegment_BACK(KosDynNode_STACK(child)),
-                           KosDynNode_NS(below));
-      kos_dynframe_free_fast((KosDynFrame *) child);
-      kos_dynprompt_free((KosDynPrompt *) parent);
-
-      /* a bytecode frame with no resume takes the value on its stack,
-         and a node that hooks no control return has nothing to run */
-      if (likely(KosDynFrame_CODE(ft)
-                 && ! KosDynFrame_RESUME_KIND(ft)
-                 && ! KosDynNode_HAS_CAP(below, KOS_DYN_CAP_CONTROL_HOOK))) {
-        if (KosContext_StackPUSH(ctx, val) < 0)
-          return EVAL_FATAL();
-        return kos_eval_delivery_done(ctx);
-      }
-      return eval_parent_return_deliver(ctx, val);
-    }
-
-    if (unlikely(kos_dyn_pop_frame(ctx) < 0
-                 || kos_dyn_pop_prompt(ctx, (KosDynPrompt *) parent) < 0)) {
-      Py_DECREF(val);
-      return EVAL_FATAL();
-    }
-    if (! KosContext_DYN_TOP(ctx)) {
-      KosContext_MarkDeadAfterReturn(ctx);
-      ctx->terminal = 1;
-      return EVAL_RETURN(val);
-    }
-    return eval_parent_return_deliver(ctx, val);
-  }
+  /* Case 2b: prompt parent. Normally taken by kos_return_deliver's own
+     arm; this is the terminus for the other routes, as case 1 is. */
+  if (parent && KosDynNode_IS_PROMPT(parent))
+    return eval_prompt_return(ctx, child, parent, val);
 
   /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, a
      for-each region, native frame, etc.) -- pop the callee frame and
