@@ -228,4 +228,45 @@ class TestExtentStructureValidation(unittest.TestCase):
         self.assertIn("unclosed extent", str(caught.exception))
 
 
+class TestForeachStepValidation(unittest.TestCase):
+    """
+    A for-each step belongs to a PUSH_FOREACH of the frame it runs in.
+    An aside's instructions run in a frame of their own, so a
+    PUSH_FOREACH around the aside is not the step's
+    """
+
+    def test_step_in_an_aside_inside_a_foreach_is_refused(self):
+        with self.assertRaises(RuntimeError) as caught:
+            make([
+                [OpCode.CONST, ()],
+                [OpCode.PUSH_FOREACH, 0],
+                [OpCode.PUSH_ASIDE, (None, "a", 0, 0)],
+                [OpCode.ITER_NEXT, "done"],
+                [OpCode.LABEL, "done"],
+                [OpCode.RETURN, 1],
+                [OpCode.POP_ASIDE, 0],
+                [OpCode.RESET, (0, "a", 0, 0)],
+                [OpCode.POP_FOREACH, 0],
+                [OpCode.RETURN, 1],
+            ])
+        self.assertIn(
+            "must be inside a PUSH_FOREACH block", str(caught.exception))
+
+    def test_foreach_inside_an_aside_builds(self):
+        code = make([
+            [OpCode.PUSH_ASIDE, (None, "a", 0, 0)],
+            [OpCode.CONST, ()],
+            [OpCode.PUSH_FOREACH, 0],
+            [OpCode.ITER_NEXT, "done"],
+            [OpCode.LABEL, "done"],
+            [OpCode.POP_FOREACH, 0],
+            [OpCode.CONST, None],
+            [OpCode.RETURN, 1],
+            [OpCode.POP_ASIDE, 0],
+            [OpCode.RESET, (0, "a", 0, 0)],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+
+
 # The end.

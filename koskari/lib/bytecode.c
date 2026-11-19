@@ -2762,7 +2762,10 @@ static int validate_jump_locality(
 
 /**
    Validate ITER_NEXT and its STORE twins are only used inside a
-   PUSH_FOREACH block extent. Called after derive_extents.
+   PUSH_FOREACH block extent. An extent whose instructions run in a
+   frame of their own ends the search: the step runs in that frame,
+   and the extents around it are the frame below's. Called after
+   derive_extents.
 */
 static int validate_iter_next_in_foreach(
     const KosOp *code,
@@ -2789,6 +2792,8 @@ static int validate_iter_next_in_foreach(
         found = 1;
         break;
       }
+      if (own_frame_for_push((KosOpCode) code[extents[eid].push_pc].op))
+        break;
       eid = extents[eid].parent_extent_id;
     }
     if (! found) {
