@@ -122,14 +122,19 @@ static int kos_dynframe_capturable(KosDynFrame *frame) {
    chain: a holder's cache slot it was to return to, which may be gone
    by the time the template is freed, and the links to the frame and
    segment below it. Its namespace is revealed, since the continuation
-   can be stored back into scope. Its function reference stays, so the
-   frame is offered to the function's frame cache when the template is
-   freed, as it would have been had the abort freed it. Callers:
+   can be stored back into scope, and the function's frame cache takes
+   no frame with a revealed namespace, so the frame gives up its
+   function reference too, as a clone does. Callers:
    kos_dyn_keep_node.
 */
 static void kos_dynframe_keep(KosDynFrame *frame) {
 
   KosNamespace_TrackChain(KosDynFrame_NS(frame));
+
+  /* only prevents the frame cache offer kos_dynframe_free would make:
+     the namespace was just revealed, so the cache would refuse it */
+  Py_CLEAR(KosDynFrame_FN(frame));
+
   KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_RETURN_TO_CACHE;
   KosDynFrame_CACHE_SLOT(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
