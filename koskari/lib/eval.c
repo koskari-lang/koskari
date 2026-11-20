@@ -3215,16 +3215,6 @@ static KosOpResult eval_parent_return_deliver(KosContext *ctx, PyObject *val) {
 
 
 /**
-   Top-of-loop transfer drain.
-*/
-static KosOpResult eval_step_drain_goal(KosContext *ctx) {
-  if (! KosContext_GOAL(ctx))
-    return EVAL_NORMAL();
-  return kos_eval_drain_goal(ctx);
-}
-
-
-/**
    The prologue's delivery step, first half: take the delivery staged
    for the live frame's resume and clear the resume. Caller must only
    invoke when the live frame has a resume kind set. The pending slot
@@ -3588,7 +3578,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
 
     /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a
        wind before-thunk) must go through process_raise before
-       eval_step_drain_goal; otherwise the goal could step on while
+       the goal's drain below; otherwise the goal could step on while
        PyErr is still set. */
     if (err) {
       KosOpResult pend = process_raise(ctx);
@@ -3601,7 +3591,10 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
       }
     }
 
-    /* A transfer replaces the control path a staged delivery was
+    /* The goal's drain, for a goal that will act: one waiting on a
+       running thunk has nothing to do in this pass.
+
+       A transfer replaces the control path a staged delivery was
        waiting on: the frame it was staged for may be gone once the
        goal attaches its target, and the goal's own delivery is the one that
        frame expects. Drop the stale slot ahead of a drive so it can
@@ -3611,11 +3604,13 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        thunk has just returned may find the thunk's result there, staged
        because the frame under its node carries a resume: the settle
        takes it, and the drive drops whatever the settle leaves. */
-    if (will_drive && ! KosContext_GOAL(ctx)->frontier)
-      Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+    if (will_drive) {
+      KosOpResult xfer;
 
-    {
-      KosOpResult xfer = eval_step_drain_goal(ctx);
+      if (! KosContext_GOAL(ctx)->frontier)
+        Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+
+      xfer = kos_eval_drain_goal(ctx);
       if (xfer.kind != KOS_RES_NORMAL) {
         if (xfer.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(ctx);
