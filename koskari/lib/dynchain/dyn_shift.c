@@ -83,7 +83,8 @@ KosOpResult kos_abort_to_prompt(
   goal.payload = payload;  /* the caller's reference */
   goal.keep = keep;
 
-  /* what a clone for an attach records, for a copy of one frame */
+  /* what a clone for an attach records, for a copy of one frame: the
+     whole record, which the goal's fill leaves to its caller */
   goal.shape.bottom = frame;
   goal.shape.frames = 1;
   goal.shape.top.top = frame;
@@ -92,6 +93,10 @@ KosOpResult kos_abort_to_prompt(
   goal.shape.top.ns = KosDynNode_NS(frame);
   goal.shape.open_frame = frame;
   goal.shape.open_segment = KosDynNode_STACK(frame);
+  goal.shape.ns_open = NULL;
+  goal.shape.pieces = NULL;
+  goal.shape.piece_count = 0;
+  goal.shape.frozen = 0;
   return kos_xfer_goal_run(ctx, &goal);
 }
 

@@ -181,19 +181,15 @@ KosOpResult kos_call_continuation(
 
   /* A delimited k leaves nothing: the copy goes on above the calling
      frame, which stays where it is, so the transfer runs here. There
-     is no template node to stop at and so nothing to restore. */
+     is no template node to stop at and so nothing to restore. The
+     clone records its shape in the goal directly. */
   if (kos_invoke_prepare(
           ctx, k, &target, &seam, &tmpl_stop, &goal.shape) < 0)
     return EVAL_RAISE();
 
-  {
-    KosCloneShape shape = goal.shape;
-
-    kos_xfer_goal_init(
-        &goal, target, seam, value, KosContinuation_RESUME_PC(k),
-        continuation_ref, 0);
-    goal.shape = shape;
-  }
+  kos_xfer_goal_init(
+      &goal, target, seam, value, KosContinuation_RESUME_PC(k),
+      continuation_ref, 0);
   return kos_xfer_goal_run(ctx, &goal);
 }
 

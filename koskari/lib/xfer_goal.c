@@ -48,7 +48,9 @@ void kos_xfer_goal_init(
   goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  memset(&goal->shape, 0, sizeof(goal->shape));
+  /* with a target the shape is the caller's to set */
+  if (! target)
+    memset(&goal->shape, 0, sizeof(goal->shape));
   goal->piece_next = 0;
   goal->piece_entered = 0;
   goal->keep = NULL;
