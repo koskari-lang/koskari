@@ -1313,9 +1313,9 @@ a miss.
 
 **Use-case:** Dynamic-wind extent: run the before segment on entry, the body in the middle, the after segment on exit. Both segments run again on each continuation transfer across the extent (multi-shot). Body is compiled as `(compile/begin ...)`.
 
-**Segments:** Each of before and after is compiled as an aside declared with `None` for its spec, in the scope the `dyn-wind` is written in, and runs in a frame of its own over the namespace live at the PUSH_WIND. A `var` in a segment declares a name of the enclosing scope. A `return` ends the segment; a `break` or `continue` does not reach a loop around the `dyn-wind`. A `yield` written in a segment is refused at compile time (`SpecialError`, "before cannot yield" / "after cannot yield"); one in a function defined within it belongs to that function. A segment's value is discarded.
+**Segments:** Each of before and after is compiled as an aside, a Code carried in the PUSH_WIND's ASIDE field, in the scope the `dyn-wind` is written in, and runs in a frame of its own over the namespace live at the PUSH_WIND. A `var` in a segment declares a name of the enclosing scope. A `return` ends the segment; a `break` or `continue` does not reach a loop around the `dyn-wind`. A `yield` written in a segment is refused at compile time (`SpecialError`, "before cannot yield" / "after cannot yield"); one in a function defined within it belongs to that function. A segment's value is discarded.
 
-**Behaviour:** The form accepts either positional or keyword syntax. Detection: if any top-level element is a pair whose `car` is keyword `before:`, `body:`, or `after:`, keyword mode is used; otherwise positional mode. In keyword mode, segments are identified by their marker; missing segments are nil. Body is required; at least one of before or after is required. A falsy literal such as `0` in a segment's place is a segment, not an absent one. Emits: each present segment as an aside (PUSH_ASIDE, its instructions, RETURN 1, POP_ASIDE), then PUSH_WIND with the extra row `(before, after, 0, 0)` naming them, `None` for an absent one, the body, and POP_WIND.
+**Behaviour:** The form accepts either positional or keyword syntax. Detection: if any top-level element is a pair whose `car` is keyword `before:`, `body:`, or `after:`, keyword mode is used; otherwise positional mode. In keyword mode, segments are identified by their marker; missing segments are nil. Body is required; at least one of before or after is required. A falsy literal such as `0` in a segment's place is a segment, not an absent one. Each present segment is compiled as an aside (its instructions, RETURN 1). Emits: PUSH_WIND with the extra row `(before, after, 0, 0)` carrying them, `None` for an absent one, the body, and POP_WIND.
 
 **Examples:**
 
@@ -2973,10 +2973,12 @@ calls, captures the continuation up to this prompt.
 
 **Behaviour:** `helper_reset_body` compiles `BODY` as an aside (JARGON.md)
 through `Fragment.aside` with no names of its own: the body is compiled
-with `helper_begin` into the enclosing fragment's scope and emitted as
-`PUSH_ASIDE (None, name)`, the body, `RETURN 1`, `POP_ASIDE`. One `RESET`
-instruction follows, an EXTRA row of the tag count 0 (the default tag) and
-the aside's name. At run time the enclosing frame passes over the aside;
+with `helper_begin` in the enclosing fragment's scope and closed by
+`RETURN 1`. Nothing of it is emitted into the enclosing fragment, which
+gets one `RESET` instruction, an EXTRA row of the tag count 0 (the
+default tag) and the aside. The aside rides in that field as an `Aside`
+until the enclosing code completes, when it is built as a Code over the
+enclosing scope's NamespaceSpec. At run time
 RESET pushes the prompt and a frame above it that runs the aside over the
 live namespace; the body's return ends the prompt and is the form's value.
 
@@ -3016,11 +3018,11 @@ Python (only from within a Koskari eval loop, through CALL).
 one name, `K`: `Fragment.aside` opens a resolution scope declaring `K`,
 and every other name the handler declares is moved to the enclosing
 fragment and reached from the handler as a closure name. The aside is
-emitted as `PUSH_ASIDE (spec, name)`, a `VAR_STORE K`, the handler,
-`RETURN 1`, `POP_ASIDE`, the spec being the aside's NamespaceSpec (local
+a `VAR_STORE K`, the handler and `RETURN 1`, built as a Code over its
+own NamespaceSpec (local
 `K`, closures the enclosing names it uses). One `SHIFT` instruction
-follows, an EXTRA row of the tag count 0 (the default tag) and the aside's
-name.
+is emitted, an EXTRA row of the tag count 0 (the default tag) and the
+aside, in an ASIDE_NS field.
 
 At run time SHIFT captures the continuation -- whole frames from the shift
 down to the prompt, the reset's body frame included, with the shift's own
@@ -3074,7 +3076,7 @@ continuation would go unused.
 
 **Behaviour:** `helper_handler` with no `K` compiles the handler as an
 aside with no names of its own, as a reset's body is, and emits one
-`ABORT` instruction, an EXTRA row of the tag count 0 and the aside's name.
+`ABORT` instruction, an EXTRA row of the tag count 0 and the aside.
 At run time ABORT finds the prompt, leaves every node above it as a shift's
 abort does, and runs the aside in a frame above the prompt over the
 namespace live at the ABORT, which is revealed first since the frame that
@@ -3103,8 +3105,7 @@ The handler's names are all the enclosing function's. `return`, `break`,
 `compile/shift-at` or `compile/abort-at` seeking the same tag.
 
 **Behaviour:** Compiles `TAG`, then the body as `compile/reset` does, and
-emits `RESET` with tag count 1 (the tag is popped from the stack). The tag
-is on the stack while the enclosing frame passes over the aside. A tag is
+emits `RESET` with tag count 1 (the tag is popped from the stack). A tag is
 any object, matched by identity. `None` is the
 default tag: `(reset-at None BODY ...)` is `(reset BODY ...)`. `gensym`
 makes a tag no other code can name.

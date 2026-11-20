@@ -31,32 +31,29 @@ objects. Contrast: the demand path.
 
 ## aside
 
-A run of a function's instructions that the function's own frame never
-executes. It is written inline between `PUSH_ASIDE` and `POP_ASIDE` and
-declared under a name; the frame it is written in jumps over it. An
-instruction that names the aside (`RESET`, `ABORT`, `SHIFT`,
-`PUSH_WIND`) runs it in a frame of its own over the same code object, and
-that frame leaves by its `RETURN` like a callee. A reset's body, a
-shift's or an abort's handler, and a dyn-wind's before and after
-segments are asides.
+A Code that an instruction runs directly on the chain, in a frame of
+its own that takes no arguments, with no Function or Expression layer
+around it. The word names the invocation: the Code is an ordinary Code
+in the constant pool of the code it is written in, and records nothing
+about being an aside. The instruction that carries it (`RESET`,
+`ABORT`, `SHIFT`, `PUSH_WIND`) runs it, and its frame leaves by its
+`RETURN` like a callee. A reset's body, a shift's or an abort's
+handler, and a dyn-wind's before and after segments are asides.
 
-An aside is not a function and not a value: there is no object for it,
-nothing is built when control passes its declaration, and it cannot be
-stored or passed. It is an entry in the code's extent table, and the
-instructions that run it hold that entry. What a lambda would give the
-same code is a closure built on every pass and a call through the
-general call path; an aside gives a frame at the moment it is needed
-and nothing before.
+What a lambda would give the same code is a closure built on every
+pass and a call through the general call path; an aside gives a frame
+at the moment it is needed and nothing before.
 
-An aside runs over one of two namespaces. Declared with a spec, it gets
-a namespace built from the spec when it is run, whose closure names
-come from the namespace live at the instruction that runs it (a shift's
-handler, whose one local is the continuation's name). Declared with
-`None`, it runs over that live namespace itself (a reset's body, an
-abort's handler), so its names are the enclosing function's. A
-dyn-wind's segments are declared with `None` and run over the namespace
-live at the `PUSH_WIND`, which the wind node records, since a transfer
-can fire them long after that instruction.
+An aside runs over one of two namespaces, chosen by the kind of the
+field that carries it. In an `ASIDE_NS` field it gets a namespace built
+from its own spec when it is run, whose closure names come from the
+namespace live at the instruction that runs it (a shift's handler,
+whose one local is the continuation's name). In an `ASIDE` field it
+runs over that live namespace itself (a reset's body, an abort's
+handler), so its spec is that scope's and its names are the enclosing
+function's. A dyn-wind's segments are in `ASIDE` fields and run over
+the namespace live at the `PUSH_WIND`, which the wind node records,
+since a transfer can fire them long after that instruction.
 Reference: OPCODES.md, EVALUATOR.md §6.
 
 ## await frame
@@ -176,8 +173,7 @@ A dynamic extent: the span of execution during which a construct is
 active, represented by a node on the chain (a with body, a wind, a
 parameterize, a loop). "Discardable extents" (NS, LOOP, FOREACH) are
 those whose removal is pure reference release. The code object's
-extent table describes each `PUSH_*`/`POP_*` pair statically; an aside
-is the one kind of entry there with no node on the chain.
+extent table describes each `PUSH_*`/`POP_*` pair statically.
 
 ## flatten (flattened)
 

@@ -232,8 +232,9 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 - **Delimited**: `reset`, `shift`, `abort`, and `reset-at` / `shift-at` /
   `abort-at`, which take an evaluated tag matched by identity (`None` is
   the default tag). A reset's body and a shift's or an abort's handler
-  are asides ([JARGON.md](JARGON.md)): instructions declared inline that
-  the enclosing frame passes over and that run in a frame of their own.
+  are asides ([JARGON.md](JARGON.md)): Code constants an instruction
+  runs in a frame of their own, with no Function or Expression around
+  them.
   **RESET** pushes a prompt and runs the body above it. **ABORT** leaves
   everything up to the prompt and runs its handler above it. **SHIFT**
   does the same and keeps the nodes it leaves, whole frames through the
@@ -288,7 +289,7 @@ wrappers, GC hooks.
 
 **Bytecode** — `Code`, full opcode surface per [OPCODES.md](OPCODES.md) §1.6 (runtime implementations for all shipped opcodes except compile-time labels and **THEEND**).
 
-**Continuation opcodes** — PUSH/POP ASIDE, RESET, ABORT, SHIFT, PUSH/POP CC, CAPTURE_CC, PUSH/POP WIND; continuations invoke through CALL.
+**Continuation opcodes** — RESET, ABORT, SHIFT, PUSH/POP CC, CAPTURE_CC, PUSH/POP WIND; continuations invoke through CALL.
 
 **Namespace opcodes** — PUSH_NS / POP_NS; **VAR_STORE**.
 
