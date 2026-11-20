@@ -409,16 +409,10 @@ EXTENT_DISCARDABLE = {
 
 EXTENT_POPS = frozenset(op for op in OpCode if op.push is not None)
 
-# extents whose instructions run in a frame of their own: a tail call
-# inside one replaces that frame, so the extents open around it are not
-# in its way, and its POP row belongs to the frame below
-EXTENT_OWN_FRAME = frozenset(op for op in OpCode if op.own_frame)
-
 
 # rows the tail-call route reads through on its way to RETURN 1
 ROUTE_TRANSPARENT = frozenset((
-    OpCode.LABEL, OpCode.POSITION, OpCode.NOOP)) | frozenset(
-        op for op in EXTENT_POPS if op.push not in EXTENT_OWN_FRAME)
+    OpCode.LABEL, OpCode.POSITION, OpCode.NOOP)) | EXTENT_POPS
 
 # rows a join-point edge reads past between its last real row and the
 # label: they push nothing and transfer nowhere
@@ -512,12 +506,84 @@ squish_rule = rule_registrar(SQUISH_RULES)
 fuse_rule = rule_registrar(FUSE_RULES)
 
 
+class Aside:
+    """
+    An aside before its Code is built: instructions an instruction
+    runs in a frame of their own, with no function around them. The
+    instruction carries it in an ASIDE field until the code it is
+    written in completes, since the names it reaches in the enclosing
+    scope have slots only then
+
+    :param instructions: the aside's instruction rows
+    :param nspec: the NamespaceSpec of a namespace of the aside's own,
+        for an ASIDE_NS field, or None for an aside over the namespace
+        it is run in, for an ASIDE field
+    """
+
+    __slots__ = ("instructions", "nspec")
+
+
+    def __init__(self, instructions=None, nspec=None):
+        self.instructions = [] if instructions is None else instructions
+        self.nspec = nspec
+
+
+ASIDE_STYLES = (OpStyle.ASIDE, OpStyle.ASIDE_NS)
+
+
+def carries_asides(op):
+    """
+    Whether an opcode's EXTRA row has an ASIDE or ASIDE_NS field
+
+    :param op: the OpCode
+    """
+
+    return bool(op.extra) and any(fk in ASIDE_STYLES for fk in op.extra)
+
+
+def asides_of(op, arg):
+    """
+    The Aside bodies an instruction carries in its aside fields
+
+    :param op: the instruction's OpCode
+    :param arg: the instruction's argument
+    :return: a tuple of Aside
+    """
+
+    if not carries_asides(op):
+        return ()
+    return tuple(
+        v for v, fk in zip(arg, op.extra)
+        if fk in ASIDE_STYLES and isinstance(v, Aside))
+
+
+def map_asides(op, arg, change):
+    """
+    The argument of an instruction with change applied to each Aside
+    body in its aside fields
+
+    :param op: the instruction's OpCode
+    :param arg: the instruction's argument
+    :param change: callable taking an Aside, returning the field's new
+        value
+    :return: the argument, a new tuple when the instruction has aside
+        fields
+    """
+
+    if not carries_asides(op):
+        return arg
+    return tuple(
+        change(v) if fk in ASIDE_STYLES and isinstance(v, Aside) else v
+        for v, fk in zip(arg, op.extra))
+
+
 def merge_function_constant_needs(fragment, instructions):
     """
     Merge the closure and write needs of every completed function
-    constant in instructions into fragment, so a scope that encloses
-    the function captures what it closes over. A function constant
-    whose Code is not yet complete has nothing to merge
+    constant in instructions, and in the asides they carry, into
+    fragment, so a scope that encloses the function captures what it
+    closes over. A function constant whose Code is not yet complete has
+    nothing to merge
     """
 
     reso = fragment.resolution
@@ -531,6 +597,9 @@ def merge_function_constant_needs(fragment, instructions):
                 continue
             request_for_write_syms = reso.get_request_for_write_syms(code)
             reso.cpool_merge(fragment, nspec, request_for_write_syms)
+
+        for aside in asides_of(op, arg):
+            merge_function_constant_needs(fragment, aside.instructions)
 
 
 def stringify_namespace_spec(nspec):
@@ -552,11 +621,18 @@ def stringify_operands(rows):
     """
     The rows with every variable operand and inline scope's names
     lowered to their final forms, which is mostly str conversion from
-    symbols.
+    symbols. An aside the rows carry is copied with its own rows
+    lowered the same way.
 
     :param rows: instruction rows whose names are atoms
     :return: a new list of rows
     """
+
+    def stringify_aside(aside):
+        nspec = aside.nspec
+        if nspec is not None:
+            nspec = stringify_namespace_spec(nspec)
+        return Aside(stringify_operands(aside.instructions), nspec)
 
     out = []
     for op, arg in rows:
@@ -569,9 +645,8 @@ def stringify_operands(rows):
         elif op == OpCode.PUSH_COLLECT:
             arg = stringify_namespace_spec(arg)
 
-        elif op == OpCode.PUSH_ASIDE:
-            if arg[0] is not None:
-                arg = (stringify_namespace_spec(arg[0]), *arg[1:])
+        elif carries_asides(op):
+            arg = map_asides(op, arg, stringify_aside)
 
         elif op.style == OpStyle.VAR:
             arg = str(arg)
@@ -599,14 +674,19 @@ class ByteCodeProcessor:
     exactly the validity of that state.
     """
 
-    def __init__(self, fragment):
+    def __init__(self, fragment, instructions=None):
         """
         :param fragment: the ByteCodeFragment whose instructions are
             processed
+        :param instructions: the rows of an aside carried in the
+            fragment's stream, already lowered to their final forms,
+            to process in place of the fragment's own
         """
 
         self.fragment = fragment
-        self.instructions = stringify_operands(fragment.instructions)
+        if instructions is None:
+            instructions = stringify_operands(fragment.instructions)
+        self.instructions = instructions
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction
@@ -1405,8 +1485,10 @@ class ByteCodeProcessor:
     def convert_fast(self, base_nspec):
         """
         Lower VAR-family rows to their FAST twins where the name has a
-        fast slot in the active namespace scope, tracking PUSH_NS,
-        PUSH_COLLECT and PUSH_ASIDE scope entries through the stream
+        fast slot in the active namespace scope, tracking PUSH_NS /
+        PUSH_COLLECT scope entries through the stream. An aside the
+        stream carries is lowered against its own NamespaceSpec, or
+        against the scope active at the instruction that runs it
 
         :param base_nspec: NamespaceSpec seeding the base scope, or
             None for a stream with no base scope (only inner PUSH_NS /
@@ -1415,7 +1497,6 @@ class ByteCodeProcessor:
 
         result = []
         nstack = []
-        asides = []
         findex = []
 
         def reload_findex():
@@ -1453,18 +1534,17 @@ class ByteCodeProcessor:
             elif op == OpCode.PUSH_COLLECT:
                 push_nspec(arg)
 
-            elif op == OpCode.PUSH_ASIDE:
-                # None is an aside over the scope it is written in
-                asides.append(arg[0] is not None)
-                if arg[0] is not None:
-                    push_nspec(arg[0])
-
-            elif op == OpCode.POP_ASIDE:
-                if asides.pop():
-                    pop_nspec()
-
             elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 pop_nspec()
+
+            elif carries_asides(op):
+                for aside in asides_of(op, arg):
+                    scope = aside.nspec
+                    if scope is None and nstack:
+                        scope = nstack[-1]
+                    sub = ByteCodeProcessor(self.fragment, aside.instructions)
+                    sub.convert_fast(scope)
+                    aside.instructions = sub.instructions
 
             elif nstack and op == OpCode.CHECK_COMPARE_VAR:
                 # CMPSRC row: slot kinds are data-dependent (a set source
@@ -1567,46 +1647,6 @@ class ByteCodeProcessor:
             result.append((op, arg))
 
         flush()
-        self.instructions = result
-
-
-    def pass_labels_over_asides(self):
-        """
-        Move each LABEL that leads to a PUSH_ASIDE to after the aside's
-        POP_ASIDE. In the frame an aside is written in, PUSH_ASIDE only
-        passes over the aside's instructions, so a jump to the label
-        goes where the PUSH_ASIDE would have taken it. A label leads to
-        a PUSH_ASIDE when only POSITION, NOOP and LABEL rows lie
-        between them; one moved after an aside that another directly
-        follows moves again.
-        """
-
-        instr = self.instructions
-        if not self.fragment.holds_aside:
-            return
-
-        result = []
-        leading = []
-        moved = []
-        for op, arg in instr:
-            if op == OpCode.PUSH_ASIDE:
-                moved.append([result.pop(i) for i in reversed(leading)])
-                leading = []
-                result.append((op, arg))
-            elif op == OpCode.POP_ASIDE:
-                result.append((op, arg))
-                leading = []
-                for row in reversed(moved.pop()):
-                    leading.append(len(result))
-                    result.append(row)
-            elif op == OpCode.LABEL:
-                leading.append(len(result))
-                result.append((op, arg))
-            else:
-                if op not in (OpCode.POSITION, OpCode.NOOP):
-                    leading = []
-                result.append((op, arg))
-
         self.instructions = result
 
 
@@ -1817,9 +1857,7 @@ class ByteCodeProcessor:
         pop rows. At a promotable call, promotion is denied if any
         open extent is not discardable -- an extent whose uninstall
         behavior must run after the call cannot be tail-called
-        through. Only the extents opened since the innermost one that
-        runs in a frame of its own count: that frame is the one the
-        call replaces. Otherwise the route reads forward: extent pops,
+        through. Otherwise the route reads forward: extent pops,
         LABEL, POSITION, and NOOP rows pass; unconditional JUMPs are
         followed through the label index with a seen set guarding
         cycles; arrival at RETURN 1 promotes, and any other arrival
@@ -1857,31 +1895,18 @@ class ByteCodeProcessor:
                 return False
             return False
 
-        def open_extents_discard(extents):
-            # the extents a tail call here would pass through: those
-            # opened since the innermost frame of its own, marked None
-            for discard in reversed(extents):
-                if discard is None:
-                    return True
-                if not discard:
-                    return False
-            return True
-
         result = []
         extents = []
         for i, (op, arg) in enumerate(instr):
             discard = EXTENT_DISCARDABLE.get(op)
-            if op in EXTENT_OWN_FRAME:
-                extents.append(None)
-            elif discard is not None:
+            if discard is not None:
                 extents.append(discard)
             elif op in EXTENT_POPS:
                 if extents:
                     extents.pop()
 
             elif (op in CALL_TO_TAIL_CALL
-                  and open_extents_discard(extents)
-                  and clear_route(i + 1)):
+                  and all(extents) and clear_route(i + 1)):
                 op = CALL_TO_TAIL_CALL[op]
 
             result.append((op, arg))
@@ -1889,15 +1914,21 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
-    def demote_tail_calls_if_yields(self):
+    def demote_tail_calls_if_yields(self, yields=None):
         """
         If the stream contains yield or yield-from, replace TAIL_CALL*
         with CALL* so generator frames never use tail-call frame reuse.
         Native Code lowering rejects the combination outright.
+
+        :param yields: whether the code yields, for the stream of an
+            aside, which follows the code it is written in; None to
+            read it from the stream
         """
 
         instr = self.instructions
-        if not any(op in YIELD_OPS for op, _ in instr):
+        if yields is None:
+            yields = any(op in YIELD_OPS for op, _ in instr)
+        if not yields:
             return
         self.instructions = [
             (TAIL_CALL_TO_CALL.get(op, op), arg)
@@ -1934,32 +1965,33 @@ class ByteCodeProcessor:
         return sym
 
 
-    def process(self, function_body=False):
+    def each_aside(self, step):
         """
-        Run the full pipeline and return the finished rows.
+        Run step on a processor over the rows of each aside the stream
+        carries, and leave the aside with the rows it finishes with
 
-        The pass settings come from the fragment's compiler: tail-call
-        promotion needs the compiler's tco setting and a function-body
-        stream, and the VAR to FAST lowering follows the compiler's
-        convert-fast setting. The base NamespaceSpec is resolved
-        mid-pipeline from the fragment's resolution instance and stays
-        readable on the processor afterward.
-
-        :param function_body: whether this stream is a function body
-            (has a base scope, runs repeatedly, may tail-call promote)
-        :return: the finished instruction rows
+        :param step: callable taking the aside's ByteCodeProcessor
         """
 
-        compiler = self.fragment.compiler
+        for op, arg in self.instructions:
+            for aside in asides_of(op, arg):
+                sub = ByteCodeProcessor(self.fragment, aside.instructions)
+                step(sub)
+                aside.instructions = sub.instructions
+
+
+    def reduce(self):
+        """
+        The passes that read no scope and no setting of the code as a
+        whole, over the asides the stream carries and then the stream
+        """
+
+        self.each_aside(ByteCodeProcessor.reduce)
 
         # a short-circuit jump leading to a conditional jump becomes
         # that jump, so the clause's predicate and the branch sit
         # adjacent for the squish
         self.thread_shortcut_jumps()
-
-        # a jump to a PUSH_ASIDE goes to where it leads instead; after
-        # the threading, which inserts labels of its own
-        self.pass_labels_over_asides()
 
         # first we do the peephole squish, which sounds more suggestive than
         # it actually is.
@@ -1972,20 +2004,78 @@ class ByteCodeProcessor:
         # then we fuse the feeders and consumer opcodes where applicable
         self.fuse_feeders()
 
-        # we either promote or forcibly demote tail calls depending
-        # on whether tco is enable and also allowed (a non-yielding
-        # function body).
-        tco_enabled = (
-            compiler.tco_enabled and function_body and not
-            any(op in YIELD_OPS for op, _ in self.instructions))
 
-        if tco_enabled:
+    def settle_tail_calls(self, promote, yields):
+        """
+        Promote or demote tail calls, in the asides the stream carries
+        as in the stream, and pack the opcount operands
+
+        :param promote: whether calls with a clear route to RETURN 1
+            become tail calls
+        :param yields: whether the code yields, which demotes the tail
+            calls already written
+        """
+
+        self.each_aside(lambda sub: sub.settle_tail_calls(promote, yields))
+
+        if promote:
             self.promote_tail_calls()
         else:
-            self.demote_tail_calls_if_yields()
+            self.demote_tail_calls_if_yields(yields)
 
         # fixes the opcount and cmpcount operands to be packed uint16s
         self.normalize_opcount()
+
+
+    def finish(self):
+        """
+        The last passes, over the asides the stream carries and then
+        the stream
+        """
+
+        self.each_aside(ByteCodeProcessor.finish)
+
+        # combine runs of consecutive bare CONST, VAR, FAST
+        self.pack_runs()
+
+        # a fusion that ended the stream re-emitted the POSITION it
+        # stepped over for instructions that never came
+        rows = self.instructions
+        while rows and rows[-1][0] is OpCode.POSITION:
+            rows.pop()
+
+
+    def process(self, function_body=False):
+        """
+        Run the full pipeline and return the finished rows.
+
+        The pass settings come from the fragment's compiler: tail-call
+        promotion needs the compiler's tco setting and a function-body
+        stream, and the VAR to FAST lowering follows the compiler's
+        convert-fast setting. The base NamespaceSpec is resolved
+        mid-pipeline from the fragment's resolution instance and stays
+        readable on the processor afterward.
+
+        An aside the stream carries goes through the same passes, and
+        is still an Aside in the finished rows: the caller builds its
+        Code.
+
+        :param function_body: whether this stream is a function body
+            (has a base scope, runs repeatedly, may tail-call promote)
+        :return: the finished instruction rows
+        """
+
+        compiler = self.fragment.compiler
+
+        self.reduce()
+
+        # we either promote or forcibly demote tail calls depending
+        # on whether tco is enable and also allowed (a non-yielding
+        # function body). An aside cannot yield, so the stream answers
+        # for the asides it carries.
+        yields = any(op in YIELD_OPS for op, _ in self.instructions)
+        self.settle_tail_calls(
+            compiler.tco_enabled and function_body and not yields, yields)
 
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
@@ -2001,16 +2091,8 @@ class ByteCodeProcessor:
         if compiler.convert_fast_enabled and function_body:
             self.convert_fast(self.base_nspec)
 
-        # combine runs of consecutive bare CONST, VAR, FAST
-        self.pack_runs()
-
-        # a fusion that ended the stream re-emitted the POSITION it
-        # stepped over for instructions that never came
-        rows = self.instructions
-        while rows and rows[-1][0] is OpCode.POSITION:
-            rows.pop()
-
-        return rows
+        self.finish()
+        return self.instructions
 
 
 # The end.

@@ -492,61 +492,19 @@ static void goal_keep_node(KosXferGoal *goal, KosDynNode *node) {
    generator's span boundary finishes its generator as it goes, and the
    root of a generator's own context refuses, being the driver
    boundary, which only a cc-unwind reaches, as its seam.
+
+   A goal with a continuation to fill, a shift's abort, keeps each node
+   instead of freeing it (kos_dyn_unlink_top_keep). The nodes come off
+   top first, so each goes under the one kept before it and onto the
+   template's bottom, and the template is a whole chain after every
+   step. The capture checked every node down to the seam before the
+   transfer began.
 */
 static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
 #if KOS_EVAL_SAFETYNET
   /* checked before anything is unlinked: a seam that is not on the
      chain would otherwise be discovered only once the chain is empty */
-  if (goal->seam
-      && (! kos_dyn_reaches(ctx, goal->seam)
-      || kos_dynnode_id(goal->seam) != goal->seam_id)) {
-    PyErr_SetString(PyExc_SystemError,
-        "transfer: the seam is not on the chain");
-    return EVAL_RAISE();
-  }
-#endif
-
-  while (KosContext_DYN_TOP(ctx) != goal->seam) {
-    KosDynNode *top = KosContext_DYN_TOP(ctx);
-    uint32_t waited_id;
-    KosOpResult r;
-
-    if (! top) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: the seam is not on the chain");
-      return EVAL_RAISE();
-    }
-
-    /* an outer waits on this node: its id is read now, as the unlink
-       frees the node */
-    waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)
-        ? kos_dynnode_id(top) : 0;
-    r = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_TRANSFER, 1);
-    if (r.kind == KOS_RES_NORMAL) {
-      if (waited_id)
-        goal_void_outers_on(goal, top, waited_id);
-      continue;
-    }
-    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
-      goal_wait(goal, top);
-    return r;
-  }
-  return EVAL_NORMAL();
-}
-
-
-/**
-   LEAVING for a goal with a continuation to fill, a shift's abort:
-   goal_leave, with each node kept instead of freed
-   (kos_dyn_unlink_top_keep). The nodes come off top first, so each
-   goes under the one kept before it and onto the template's bottom,
-   and the template is a whole chain after every step. The capture
-   checked every node down to the seam before the transfer began.
-*/
-static KosOpResult goal_leave_keep(KosContext *ctx, KosXferGoal *goal) {
-
-#if KOS_EVAL_SAFETYNET
   if (goal->seam
       && (! kos_dyn_reaches(ctx, goal->seam)
       || kos_dynnode_id(goal->seam) != goal->seam_id)) {
@@ -568,12 +526,16 @@ static KosOpResult goal_leave_keep(KosContext *ctx, KosXferGoal *goal) {
       return EVAL_RAISE();
     }
 
-    /* read now: keeping the node takes the mark off it */
+    /* an outer waits on this node: its id is read now, as the unlink
+       frees the node, or takes the mark off one it keeps */
     waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)
         ? kos_dynnode_id(top) : 0;
-    r = kos_dyn_unlink_top_keep(ctx, &kept);
+    r = goal->keep
+        ? kos_dyn_unlink_top_keep(ctx, &kept)
+        : kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_TRANSFER, 1);
     if (r.kind == KOS_RES_NORMAL) {
-      goal_keep_node(goal, kept);
+      if (kept)
+        goal_keep_node(goal, kept);
       if (waited_id)
         goal_void_outers_on(goal, top, waited_id);
       continue;
@@ -843,7 +805,7 @@ static KosOpResult goal_drive(
 
     switch (goal->phase) {
       case KOS_GOAL_LEAVING:
-        r = goal->keep ? goal_leave_keep(ctx, goal) : goal_leave(ctx, goal);
+        r = goal_leave(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
           return r;
         goal->phase = KOS_GOAL_ATTACHING;

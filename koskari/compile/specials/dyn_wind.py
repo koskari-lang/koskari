@@ -33,25 +33,25 @@ from .continuations import refuse_yield
 
 def _compile_segment(compiler, called_by, fragment, src, role):
     """
-    Emit a before or after segment into fragment as an aside, compiled
-    in the scope the dyn-wind is written in, so its names are that
-    scope's. A yield written in the segment is refused, since the
-    segment's frame is not the generator's; one in a function defined
-    within it belongs to that function
+    Compile a before or after segment as an aside, in the scope the
+    dyn-wind is written in, so its names are that scope's. A yield
+    written in the segment is refused, since the segment's frame is
+    not the generator's; one in a function defined within it belongs
+    to that function
 
     :param compiler: the Compiler
     :param called_by: the special's called-by capture
-    :param fragment: the fragment to emit into
+    :param fragment: the fragment the dyn-wind is emitted into
     :param src: the segment's source
     :param role: 'before' or 'after'
-    :return: the name the aside is declared under
+    :return: the Aside
     """
 
-    name = compiler.gen_label(f"wind-{role}")
-    with fragment.aside(name, f"<{role}>") as inner:
+    with fragment.aside(f"<{role}>") as (inner, aside):
+        inner.position(called_by.position)
         inner.merge(compiler.full_compile(src))
         refuse_yield(called_by, inner.instructions, f"{role} cannot yield")
-    return name
+    return aside
 
 
 def _find_segments(caps, called_by):
@@ -142,9 +142,9 @@ def special_dyn_wind(
         caps: dict) -> ByteCodeFragment:
     """
     Compile (compile/dyn-wind [before] [body] [after]). Body is required;
-    at least one of before or after is required. Emits each segment as
-    an aside, then PUSH_WIND naming them, with None for an absent one,
-    the body, and POP_WIND.
+    at least one of before or after is required. Emits PUSH_WIND
+    carrying each segment as an aside, with None for an absent one,
+    then the body and POP_WIND.
     """
 
     called_by = caps["called-by"]
@@ -152,7 +152,6 @@ def special_dyn_wind(
     before_src, body_src, after_src = _find_segments(caps, called_by)
 
     fragment = compiler.fragment(called_by.datum)
-    fragment.position(called_by.position)
 
     # an absent segment is nil from _find_segments; a falsy literal in
     # a segment is an expression the segment returns
@@ -164,7 +163,6 @@ def special_dyn_wind(
         after = _compile_segment(
             compiler, called_by, fragment, after_src, 'after')
 
-    # the row reports the form's line, not a segment's last
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_WIND, (before, after, 0, 0))
     fragment.merge(compiler.full_compile(body_src))

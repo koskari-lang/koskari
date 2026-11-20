@@ -37,7 +37,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (PUSH_ASIDE, RESET, ABORT, SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
+   POP_*), continuations (RESET, ABORT, SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first
@@ -421,11 +421,9 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(PUSH_ASIDE, 0, EXTRA, CONST, ASIDE, NOARG, NOARG)  // a NamespaceSpec or None, the aside's name; declare the aside the instructions up to POP_ASIDE make, and pass over it
-OP(POP_ASIDE, 0, NOARG)   // closes an aside's instructions; never run
 OP(RESET, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count (0, or 1 popped), the body; push the prompt and run the aside above it
 OP(ABORT, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count, the handler; leave everything up to the prompt and run the aside above it
-OP(SHIFT, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count, the handler; capture up to the prompt, then as ABORT with the continuation on the aside's stack
+OP(SHIFT, 0, EXTRA, COUNT, ASIDE_NS, NOARG, NOARG)  // tag count, the handler; capture up to the prompt, then as ABORT with the continuation on the aside's stack
 
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, 1, NOARG)             // cache: extent close pc

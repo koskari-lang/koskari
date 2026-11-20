@@ -1378,7 +1378,7 @@ static PyObject *kos_import_module(
    CHECK_* - comparison / jump
    OBJECT_* - object protocol
    PUSH_*, POP_* - blocks, regions, NS
-   PUSH_ASIDE, RESET, ABORT, SHIFT, CALL on
+   RESET, ABORT, SHIFT, CALL on
    DelimitedContinuation - continuations
  */
 

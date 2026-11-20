@@ -176,10 +176,10 @@ def refuse_yield(called_by, instructions, refusal):
 def helper_handler(
         compiler, called_by, body, fragment, tag_count, k=None):
     """
-    Emit a handler as an aside and the row that runs it into fragment:
-    the aside, then an ABORT row, or with k a SHIFT row, which
-    captures the continuation and pushes it for the handler, whose
-    first instruction stores it to K. A shift's handler is compiled in
+    Compile a handler as an aside and emit the row that runs it into
+    fragment: an ABORT row, or with k a SHIFT row, which captures the
+    continuation and pushes it for the handler, whose first
+    instruction stores it to K. A shift's handler is compiled in
     a scope of its own that owns K alone: every other name it declares
     is the enclosing scope's, reached from the handler as a closure
     name. An abort's handler owns no name and is compiled in the
@@ -198,28 +198,29 @@ def helper_handler(
     """
 
     own = () if k is None else (k.datum,)
-    name = compiler.gen_label("handler")
-    with fragment.aside(name, "<handler>", own) as inner:
+
+    with fragment.aside("<handler>", own) as (inner, aside):
+        inner.position(called_by.position)
         if k is not None:
             inner.declare_var(k.datum, position=k.position)
             inner.instruction(OpCode.VAR_STORE, k.datum)
         helper_begin(inner, body.datum)
         refuse_yield(called_by, inner.instructions, "handler cannot yield")
 
-    # the row reports the form's line, not the handler's last
+    # the row reports the form's line, not the tag's last
     fragment.position(called_by.position)
     fragment.instruction(
         OpCode.ABORT if k is None else OpCode.SHIFT,
-        (tag_count, name, 0, 0))
+        (tag_count, aside, 0, 0))
 
 
 def helper_reset_body(compiler, called_by, body, fragment, tag_count):
     """
-    Emit a reset's body as an aside and the RESET row that runs it
-    into fragment. The body is compiled in the scope the reset is
-    written in, so its names are that scope's. RESET starts a frame
-    over this code at the body's first instruction, and the frame the
-    reset is written in goes on after the row with the reset's value.
+    Compile the reset's body as an aside and emit the RESET row that
+    runs it into fragment. The body is compiled in the scope the reset
+    is written in, so its names are that scope's. RESET starts a frame
+    over the aside, and the frame the reset is written in goes on
+    after the RESET with the reset's value.
     A yield written in the body is refused, since the body's frame is
     not the generator's; one in a function defined within it belongs
     to that function
@@ -232,14 +233,14 @@ def helper_reset_body(compiler, called_by, body, fragment, tag_count):
         has already pushed
     """
 
-    name = compiler.gen_label("reset")
-    with fragment.aside(name, "<reset>") as inner:
+    with fragment.aside("<reset>") as (inner, aside):
+        inner.position(called_by.position)
         helper_begin(inner, body.datum)
         refuse_yield(called_by, inner.instructions, "body cannot yield")
 
-    # the row reports the form's line, not the body's last
+    # the row reports the form's line, not the tag's last
     fragment.position(called_by.position)
-    fragment.instruction(OpCode.RESET, (tag_count, name, 0, 0))
+    fragment.instruction(OpCode.RESET, (tag_count, aside, 0, 0))
 
 
 @builtin("compile/shift")

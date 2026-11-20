@@ -127,8 +127,8 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Run segment, an aside of the wind's code, in a frame above the wind,
-   which is dyn_top, over the namespace live at its PUSH_WIND. The
+   Run segment, an aside, in a frame above the wind, which is dyn_top,
+   the namespace live at its PUSH_WIND being the one it is run in. The
    phase has already been set to the pending value by the caller; the
    segment's return settles it.
 
@@ -138,10 +138,9 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
 static KosOpResult kos_dyn_wind_fire(
     KosContext *ctx,
     KosDynWind *node,
-    const KosExtentDesc *segment) {
+    KosCode *segment) {
 
-  if (! kos_dyn_push_aside(ctx, KosDynWind_CODE(node), KosDynNode_NS(node),
-                           segment))
+  if (! kos_dyn_push_aside(ctx, segment, KosDynNode_NS(node)))
     return EVAL_RAISE();
   return EVAL_REPROLOGUE();
 }

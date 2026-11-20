@@ -17,30 +17,35 @@
 /**
    SHIFT: arg = extra index. Schema COUNT (0 for the default prompt
    tag, or 1 for a tag popped from the stack, where a popped None is
-   the default tag again), ASIDE (the handler).
+   the default tag again), ASIDE_NS (the handler).
 
    Capture the continuation from this frame down to the prompt, whole
    frames up to and including the reset's body, and go to the prompt
    as ABORT does: the nodes the abort leaves are the continuation's
    template, kept as they come off the chain. The aside runs at the
-   prompt with the continuation pushed on its stack, where the
-   handler's first instruction stores it. This frame stands at the
-   next instruction, so a call of the continuation goes on from there
+   prompt, over a namespace built from its spec above the one live
+   here, with the continuation pushed on its stack, where the
+   handler's first instruction stores it. This frame stands after
+   this instruction, so a call of the continuation goes on from there
    with the value it is called with.
 */
 
 KOS_OP_HANDLER(SHIFT) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
+  KosCode *aside = KosExtra_ASIDE(row, 1);
   KosDynPrompt *prompt;
-  PyObject *k = shift_capture(ctx, (unsigned) KosExtra_IMM(row, 0), &prompt);
+  PyObject *k;
+  PyObject *ns;
 
+  k = shift_capture(ctx, (unsigned) KosExtra_IMM(row, 0), &prompt);
   if (! k)
     RESULT_RAISE();
 
-  /* the abort takes the reference to k */
+  /* the abort takes the references to ns and k, a failed ns included */
+  ns = KosNamespace_FromSpec(KosCode_NSPEC(aside), KosContext_NAMESPACE(ctx));
   RESULT_RELAY(ctx, kos_abort_to_prompt(
-      ctx, prompt, KosExtra_ASIDE(row, 1), k,
+      ctx, prompt, aside, ns, 1, k,
       KosPyDelimitedContinuation_CAPTURED(k)));
 }
 

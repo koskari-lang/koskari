@@ -20,9 +20,9 @@
    the default tag again), ASIDE (the handler).
 
    Find the prompt, leave everything between this frame and it, this
-   frame included, and run the aside in a frame above the prompt.
-   Nothing is captured. The handler's return ends the prompt and is
-   the reset's return.
+   frame included, and run the aside in a frame above the prompt, over
+   the namespace live here. Nothing is captured. The handler's return
+   ends the prompt and is the reset's return.
 */
 
 KOS_OP_HANDLER(ABORT) {
@@ -30,6 +30,7 @@ KOS_OP_HANDLER(ABORT) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *tag;
   KosDynPrompt *prompt;
+  PyObject *ns;
 
   if (pop_prompt_tag(KosContext_BLOCK(ctx), (unsigned) KosExtra_IMM(row, 0),
                      &tag) < 0)
@@ -40,8 +41,13 @@ KOS_OP_HANDLER(ABORT) {
   if (! prompt)
     RESULT_RAISE();
 
+  /* the live namespace belongs to a frame the abort leaves: revealed,
+     that frame's release does not reclaim it */
+  ns = Py_NewRef(KosContext_NAMESPACE(ctx));
+  KosNamespace_TrackChain(ns);
+
   RESULT_RELAY(ctx, kos_abort_to_prompt(ctx, prompt, KosExtra_ASIDE(row, 1),
-                                        NULL, NULL));
+                                        ns, 0, NULL, NULL));
 }
 
 

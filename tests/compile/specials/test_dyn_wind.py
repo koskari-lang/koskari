@@ -21,7 +21,7 @@ Dynamic-wind runs before/after segments on extent entry and exit.
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import OpCode
+from koskari.lib import Code, OpCode
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -224,13 +224,18 @@ class TestDynWindSpecial(SpecialsTestCase):
     async def test_falsy_before_is_a_segment_not_an_absence(self):
         """
         A falsy literal in the before position is an expression the
-        segment returns, so both segments are declared
+        segment returns, so the PUSH_WIND carries both segments
         """
 
         code = self.compile_to_code("(dyn-wind 0 (b) (c))")
-        ops = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertEqual(ops.count(OpCode.PUSH_ASIDE), 2)
-        self.assertEqual(ops.count(OpCode.PUSH_WIND), 1)
+        rows = [
+            code.extra_tuple(arg)
+            for op, arg in map(code.oparg, range(code.length()))
+            if op == OpCode.PUSH_WIND]
+        self.assertEqual(len(rows), 1)
+        before, after = rows[0][:2]
+        self.assertIsInstance(code.constants_pool[before], Code)
+        self.assertIsInstance(code.constants_pool[after], Code)
 
 
     async def test_segment_var_is_the_enclosing_scope_name(self):

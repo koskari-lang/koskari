@@ -300,10 +300,10 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 /**
   Build a 4-tuple of Python soften arguments for one EXTRA opcode row.
 
-  A resolved row holds pool objects, immediates, label pcs and aside
-  descriptors. This reverses emit: CONST/VAR are the pool objects
-  themselves; LABEL slots look up the destination PC in ``label_map``;
-  ASIDE slots are named for their extent, or None for no aside; other
+  A resolved row holds pool objects, immediates and label pcs. This
+  reverses emit: CONST/VAR are the pool objects themselves; LABEL
+  slots look up the destination PC in ``label_map``; ASIDE slots are
+  the aside's Code, or None for no aside; other
   slots stay as integers (FAST, COUNT, STAR, etc.). NOARG schema slots
   become 0, matching the collect phase default.
 
@@ -352,14 +352,13 @@ static PyObject *soften_extra_tuple(
       Py_XDECREF(key);
       Py_XINCREF(item);
 
-    } else if (fk == KOSTYLE_ASIDE && ! KosExtra_ASIDE(row, slot)) {
+    } else if (KOSTYLE_IS_ASIDE(fk) && ! KosExtra_ASIDE(row, slot)) {
       item = Py_None;
       Py_INCREF(item);
 
-    } else if (fk == KOSTYLE_ASIDE) {
-      item = PyUnicode_FromFormat(
-          KosCode_SOFTEN_ASIDE_PREFIX "%u",
-          (unsigned) (KosExtra_ASIDE(row, slot) - KosCode_EXTENTS(self)));
+    } else if (KOSTYLE_IS_ASIDE(fk)) {
+      item = KosExtra_OBJ(row, slot);
+      Py_INCREF(item);
 
     } else {
       item = PyLong_FromLong((long) KosExtra_IMM(row, slot));
@@ -958,8 +957,9 @@ static PyObject *code_m_function_spec(PyObject *self, PyObject *formals_spec) {
 
 /**
    The index view of a resolved row, for introspection and soften's
-   callers: a CONST or VAR field reports its pool index, recovered by
-   identity against the identity-deduplicated pool; every other field
+   callers: a CONST, VAR or ASIDE field reports its pool index,
+   recovered by identity against the identity-deduplicated pool; every
+   other field
    reports its immediate. An ASIDE field that names no aside reports 0
    and sets its bit in *absent. The owning instruction supplies the
    schema; rows are one per instruction.
@@ -995,7 +995,11 @@ static int extra_row_indices(
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = schema_field(schema, slot);
 
-    if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR) {
+    if (KOSTYLE_IS_ASIDE(fk) && ! KosExtra_ASIDE(row, slot)) {
+      out[slot] = 0;
+      *absent |= 1u << slot;
+    } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR
+               || fk == KOSTYLE_VAR || KOSTYLE_IS_ASIDE(fk)) {
       PyObject *obj = KosExtra_OBJ(row, slot);
       uint32_t cpool_len = KosCode_CPOOL_LEN(self);
       uint32_t ci = 0;
@@ -1009,12 +1013,6 @@ static int extra_row_indices(
       out[slot] = (uint16_t) ci;
     } else if (fk == KOSTYLE_LABEL) {
       out[slot] = KosExtra_TARGET(row, slot)->pc;
-    } else if (fk == KOSTYLE_ASIDE && ! KosExtra_ASIDE(row, slot)) {
-      out[slot] = 0;
-      *absent |= 1u << slot;
-    } else if (fk == KOSTYLE_ASIDE) {
-      out[slot] =
-          (uint16_t) (KosExtra_ASIDE(row, slot) - KosCode_EXTENTS(self));
     } else {
       out[slot] = (uint16_t) KosExtra_IMM(row, slot);
     }
@@ -1321,9 +1319,6 @@ typedef struct {
   uint16_t last_col;
   /* LABEL slots in EXTRA rows deferred until emit: (extra_idx, slot, label_name) */
   PyObject *pending_labels;
-  /* ASIDE slots in EXTRA rows deferred until the extents are derived:
-     (extra_idx, slot, aside_name, pc) */
-  PyObject *pending_asides;
 } CodeCollect;
 
 
@@ -1387,7 +1382,6 @@ static void code_collect_clear(CodeCollect *coll) {
   Py_CLEAR(coll->cpool_list);
   Py_CLEAR(coll->labels);
   Py_CLEAR(coll->pending_labels);
-  Py_CLEAR(coll->pending_asides);
   PyMem_Del(coll->pos_entries);
   coll->pos_entries = NULL;
   PyMem_Del(coll->extra_rows);
@@ -1519,13 +1513,10 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   coll->cpool_list = PyList_New(0);
   coll->labels = PyDict_New();
   coll->pending_labels = PyList_New(0);
-  coll->pending_asides = PyList_New(0);
-  if (! coll->cpool_list || ! coll->labels || ! coll->pending_labels
-      || ! coll->pending_asides) {
+  if (! coll->cpool_list || ! coll->labels || ! coll->pending_labels) {
     Py_CLEAR(coll->cpool_list);
     Py_CLEAR(coll->labels);
     Py_CLEAR(coll->pending_labels);
-    Py_CLEAR(coll->pending_asides);
     return -1;
   }
 
@@ -1762,25 +1753,30 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* ASIDE: a name, resolved to the aside's extent descriptor
-           once the extents are derived; defer. PUSH_WIND's fields may
-           carry None, no aside, which the row resolves to NULL. */
-        if (fk == KOSTYLE_ASIDE) {
-          if (elem == Py_None && op == KOS_OP_PUSH_WIND)
-            continue;
-          if (! PyUnicode_CheckExact(elem)) {
-            PyErr_Format(PyExc_TypeError, "Code instruction %zd aside name"
-                         " must be a str, not %.100s",
+        /* an aside: a Code, interned as a constant. PUSH_WIND's
+           fields may carry None, no aside, interned the same way and
+           resolved to NULL. */
+        if (KOSTYLE_IS_ASIDE(fk)) {
+          if (! (elem == Py_None && op == KOS_OP_PUSH_WIND)
+              && ! KosCode_Check(elem)) {
+            PyErr_Format(PyExc_TypeError, "Code instruction %zd aside"
+                         " must be a Code, not %.100s",
                          i, Py_TYPE(elem)->tp_name);
             goto failure;
           }
-          PyObject *pending = Py_BuildValue(
-              "(IiOI)", (unsigned) extra_idx, slot, elem, (unsigned) di);
-          if (! pending || PyList_Append(coll->pending_asides, pending) < 0) {
-            Py_XDECREF(pending);
+          int idx = intern_const(coll, elem);
+          if (idx < 0) {
             goto failure;
           }
-          Py_DECREF(pending);
+          if (slot == 0) {
+            row.a0 = (uint16_t) idx;
+          } else if (slot == 1) {
+            row.a1 = (uint16_t) idx;
+          } else if (slot == 2) {
+            row.a2 = (uint16_t) idx;
+          } else {
+            row.a3 = (uint16_t) idx;
+          }
           continue;
         }
         /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC,
@@ -2129,9 +2125,9 @@ static void code_fill_derived(
    Resolve one row from collect's index form: CONST and VAR fields become
    the pool object (borrowed; the cpool array holds the owned reference),
    every other field its immediate. A LABEL field keeps its placeholder
-   for the pending-label pass, and an ASIDE field is NULL until the
-   pending-aside pass names it. A CMPSRC row's source bits mark the
-   operand fields that hold constants.
+   for the pending-label pass. An ASIDE field is the pool's Code, or
+   NULL where the pool object is None, for no aside. A CMPSRC row's
+   source bits mark the operand fields that hold constants.
 */
 static void resolve_extra_row(
     CodeCollect *coll,
@@ -2147,9 +2143,10 @@ static void resolve_extra_row(
 
     if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR)
       out->f[slot].obj = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
-    else if (fk == KOSTYLE_ASIDE)
-      out->f[slot].aside = NULL;
-    else
+    else if (KOSTYLE_IS_ASIDE(fk)) {
+      PyObject *aside = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
+      out->f[slot].obj = aside == Py_None ? NULL : aside;
+    } else
       out->f[slot].imm = idx[slot];
   }
 }
@@ -2237,6 +2234,9 @@ static int code_emit(
     /* Record YIELDS flag for generators */
     if (kos_op_yields(op))
       KosCode_FLAGS(self) |= KOS_CODE_YIELDS;
+    else if (op >= KOS_OP_TAIL_CALL
+             && op <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
+      KosCode_FLAGS(self) |= KOS_CODE_TAIL_CALLS;
 
     /* Emit position entry when this instruction has a position change */
     if (pi < coll->pos_count && coll->pos_entries[pi].index == di) {
@@ -2328,10 +2328,6 @@ typedef struct {
   int discardable;   /* a tail call may pass through the extent: its
                         uninstall is a pure release, so frame handoff
                         drops it without running its POP_* row */
-  int own_frame;     /* the extent's instructions run in a frame of
-                        their own: a tail call inside it replaces that
-                        frame, and the extents open around it belong
-                        to the frame below */
 } ExtentOpPair;
 
 
@@ -2341,21 +2337,17 @@ typedef struct {
    this one. The runtime teardown (kos_dyn_teardown_extents_to_frame)
    holds the discardable set once more, keyed by node kind. */
 static const ExtentOpPair extent_pairs[] = {
-  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0, 0 },
-  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1, 0 },
-  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0, 0 },
-  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0, 0 },
-  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0, 0 },
-  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0, 0 },
-  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS,       1, 0 },
-  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT,  0, 0 },
-  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0, 0 },
-  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1, 0 },
-  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0, 0 },
-  /* an aside's instructions run in a frame of their own, made by the
-     instruction that names the aside; the frame the aside is written
-     in passes over them */
-  { KOS_OP_PUSH_ASIDE,    KOS_OP_POP_ASIDE,    KOS_EXT_ASIDE,    0, 1 },
+  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
+  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
+  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
+  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
+  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
+  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },
+  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS,       1 },
+  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT,  0 },
+  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0 },
+  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1 },
+  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0 },
 };
 
 
@@ -2418,17 +2410,6 @@ static inline int discardable_for_push(KosOpCode push_op) {
 }
 
 
-static inline int own_frame_for_push(KosOpCode push_op) {
-
-  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
-    if (extent_pairs[i].push_op == push_op) {
-      return extent_pairs[i].own_frame;
-    }
-  }
-  return 0;
-}
-
-
 static inline KosExtentKind kind_for_push(KosOpCode push_op) {
 
   for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
@@ -2455,9 +2436,7 @@ typedef struct {
    release, every other kind has uninstall behavior that must run, so
    the compiler's promoter never puts a tail call inside one and a
    hand-assembled stream that does is refused here, the same set the
-   runtime teardown holds. An extent whose instructions run in a frame
-   of their own ends the search: that frame is the one handed off, and
-   the extents around it are the frame below's.
+   runtime teardown holds.
 
    :return: 0 when pc is not a tail call or sits only in discardable
      extents, -1 with ValueError set otherwise
@@ -2469,10 +2448,8 @@ static int validate_tail_call_extents(
   if (op < KOS_OP_TAIL_CALL || op > KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
     return 0;
 
-  for (uint32_t i = stack_top; i-- > 0;) {
+  for (uint32_t i = 0; i < stack_top; i++) {
     KosOpCode push = stack[i].push_op;
-    if (own_frame_for_push(push))
-      break;
     if (discardable_for_push(push))
       continue;
     PyErr_Format(PyExc_ValueError,
@@ -2546,9 +2523,6 @@ static int derive_extents_fill(
         e->push_pc = pc;
         e->pop_pc = 0;
         e->parent_extent_id = parent_id;
-        /* the stream ends in THEEND, so both positions are records */
-        e->entry = &code[pc + 1];
-        e->after = NULL;
         top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
       }
 
@@ -2576,7 +2550,6 @@ static int derive_extents_fill(
       if (extents_out) {
         uint32_t eid = stack[stack_top - 1].extent_id;
         extents_out[eid].pop_pc = pc;
-        extents_out[eid].after = &code[pc + 1];
 
         /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
         uint32_t enter_pc = extents_out[eid].push_pc + 1;
@@ -2762,10 +2735,7 @@ static int validate_jump_locality(
 
 /**
    Validate ITER_NEXT and its STORE twins are only used inside a
-   PUSH_FOREACH block extent. An extent whose instructions run in a
-   frame of their own ends the search: the step runs in that frame,
-   and the extents around it are the frame below's. Called after
-   derive_extents.
+   PUSH_FOREACH block extent. Called after derive_extents.
 */
 static int validate_iter_next_in_foreach(
     const KosOp *code,
@@ -2774,80 +2744,27 @@ static int validate_iter_next_in_foreach(
     uint32_t extent_len,
     const uint16_t *top_extent_id) {
 
-  if (! top_extent_id) {
-    return 0;
-  }
-
-  /* the step must be inside a PUSH_FOREACH; walk parent chain to find */
+  /* the step must be inside a PUSH_FOREACH; walk parent chain to
+     find. A code with no extents has no table, and no PUSH_FOREACH */
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
     if (op != KOS_OP_ITER_NEXT && op != KOS_OP_ITER_NEXT_STORE_VAR
         && op != KOS_OP_ITER_NEXT_STORE_FAST) {
       continue;
     }
-    uint32_t eid = top_extent_id[pc];
+    uint32_t eid = top_extent_id ? top_extent_id[pc] : KOS_EXTENT_NONE;
     int found = 0;
     while (eid != KOS_EXTENT_NONE && eid < extent_len) {
       if (extents[eid].kind == KOS_EXT_FOREACH) {
         found = 1;
         break;
       }
-      if (own_frame_for_push((KosOpCode) code[extents[eid].push_pc].op))
-        break;
       eid = extents[eid].parent_extent_id;
     }
     if (! found) {
       PyErr_Format(PyExc_RuntimeError,
                    "ITER_NEXT at pc %u must be inside a PUSH_FOREACH block",
                    pc);
-      return -1;
-    }
-  }
-
-  return 0;
-}
-
-
-/**
-   Reject streams that mix yield with tail-call opcodes. Generators must
-   not use tail-call frame reuse; the compiler demotes TAIL_* to CALL_* when
-   yields are present.
-
-   :param instr_fast: result of PySequence_Fast on the instruction list
-
-   :return: 0 if ok, -1 with ValueError set if both yields and tail calls
-*/
-static int validate_no_tail_with_yield(PyObject *instr_fast) {
-
-  int saw_yield = 0;
-  int saw_tail = 0;
-  Py_ssize_t instr_l = PySequence_Fast_GET_SIZE(instr_fast);
-
-  for (Py_ssize_t i = 0; i < instr_l; i++) {
-    PyObject *pair = PySequence_Fast_GET_ITEM(instr_fast, i);
-    if (! PySequence_Check(pair) || PySequence_Fast_GET_SIZE(pair) < 2) {
-      continue;
-    }
-
-    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
-    if (! PyLong_Check(a)) {
-      continue;
-    }
-
-    long lop = PyLong_AsLong(a);
-    if (kos_op_yields(lop)) {
-      saw_yield = 1;
-    } else if (lop >= KOS_OP_TAIL_CALL
-               && lop <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR) {
-      /* the TAIL_CALL family is one contiguous run in opcodes.incl;
-         additions belong inside the run so this range stays total */
-      saw_tail = 1;
-    }
-
-    if (saw_yield && saw_tail) {
-      PyErr_SetString(PyExc_ValueError,
-                      "code containing yield or yield-from cannot use "
-                      "TAIL_CALL family opcodes");
       return -1;
     }
   }
@@ -3002,16 +2919,82 @@ static int record_function_slots(PyObject *constant, PyObject *scope) {
 
 
 /**
+   Whether two namespace specs lay a namespace out the same way: the
+   same local, closure and global names in the same order.
+
+   :return: 1 or 0, or -1 with PyErr set
+*/
+static int same_namespace_layout(PyObject *a, PyObject *b) {
+
+  int same;
+
+  if (a == b)
+    return 1;
+
+  same = PyObject_RichCompareBool(
+      KosNamespaceSpec_LOCAL_SYMS(a), KosNamespaceSpec_LOCAL_SYMS(b), Py_EQ);
+  if (same > 0)
+    same = PyObject_RichCompareBool(
+        KosNamespaceSpec_CLOSURE_SYMS(a), KosNamespaceSpec_CLOSURE_SYMS(b),
+        Py_EQ);
+  if (same > 0)
+    same = PyObject_RichCompareBool(
+        KosNamespaceSpec_GLOBAL_SYMS(a), KosNamespaceSpec_GLOBAL_SYMS(b),
+        Py_EQ);
+  return same;
+}
+
+
+/**
+   An aside met in the fast slot walk, at the instruction that runs it:
+   scope is the spec of the namespace live there. In an ASIDE_NS field
+   the instruction builds the aside a namespace from its spec, so its
+   closure slots are recorded against scope, as a function constant's
+   are. In an ASIDE field the aside runs over the live namespace
+   itself, so its spec must lay a namespace out as scope does. self
+   yields or tail-calls where its aside does. NULL, for no aside, is
+   passed over. Callers: validate_fast_slots.
+
+   :return: 0, or -1 with PyErr set
+*/
+static int check_aside(
+    PyObject *self,
+    KosCode *aside,
+    KosOpStyle fk,
+    PyObject *scope,
+    uint32_t pc) {
+
+  int same;
+
+  if (! aside)
+    return 0;
+
+  KosCode_FLAGS(self) |=
+      KosCode_FLAGS(aside) & (KOS_CODE_YIELDS | KOS_CODE_TAIL_CALLS);
+
+  if (fk == KOSTYLE_ASIDE_NS)
+    return KosNamespaceSpec_RecordClosureSlots(KosCode_NSPEC(aside), scope);
+
+  same = same_namespace_layout(KosCode_NSPEC(aside), scope);
+  if (! same)
+    PyErr_Format(PyExc_ValueError,
+                 "instruction %u runs an aside written against another"
+                 " namespace", (unsigned) pc);
+  return same > 0 ? 0 : -1;
+}
+
+
+/**
    Reject FASTVAR operands outside the active NamespaceSpec slot range,
-   and record each inline scope's and each function constant's closure
-   slots.
+   record each inline scope's and each function constant's closure
+   slots, and check each aside against the scope it is run in.
 
    Called after emit when ``code`` and ``extra`` are fully materialized so we
    can validate both scalar FAST opcodes and FAST slots embedded in EXTRA rows
    (CALL_FAST-style operands). Mirrors ``Compiler.convert_fast``: walk the
    instruction stream in order, read the ``PUSH_NS`` nspec from the EXTRA row
    and the ``PUSH_COLLECT`` nspec from its operand, push/pop slot limits on
-   ``PUSH_NS`` / ``PUSH_COLLECT`` / ``PUSH_ASIDE`` and their POP rows. The active
+   ``PUSH_NS`` / ``PUSH_COLLECT`` / ``POP_NS`` / ``POP_COLLECT``. The active
    limit is the root ``Code`` NamespaceSpec when the namespace stack is
    empty, else the innermost pushed extent.
 
@@ -3044,9 +3027,6 @@ static int validate_fast_slots(
   /* the spec behind each limit, borrowed from the pool */
   PyObject *spec_stack[DERIVE_EXTENT_STACK_MAX];
   int depth = 0;
-  /* per open PUSH_ASIDE: whether it opened a namespace of its own */
-  uint8_t aside_owns[DERIVE_EXTENT_STACK_MAX];
-  int asides = 0;
 
   for (uint32_t i = 0; i < code_len; i++) {
     KosOpCode op = (KosOpCode) code[i].op;
@@ -3097,6 +3077,10 @@ static int validate_fast_slots(
 
         if (fk == KOSTYLE_CONST
             && record_function_slots(KosExtra_OBJ(row, slot), scope))
+          return -1;
+
+        if (KOSTYLE_IS_ASIDE(fk)
+            && check_aside(self, KosExtra_ASIDE(row, slot), fk, scope, i))
           return -1;
 
         if (fk != KOSTYLE_FASTVAR) {
@@ -3168,46 +3152,6 @@ static int validate_fast_slots(
       }
       if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
         return -1;
-    } else if (op == KOS_OP_PUSH_ASIDE) {
-      /* an aside's instructions index the namespace built from its
-         spec; None is the namespace the aside is written in */
-      uint16_t eidx = code[i].arg;
-      PyObject *ns;
-      uint32_t lim = 0;
-
-      if (eidx >= extra_len) {
-        PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
-        return -1;
-      }
-      ns = KosExtra_OBJ(&extra[eidx], 0);
-
-      if (asides >= DERIVE_EXTENT_STACK_MAX
-          || depth >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_Format(PyExc_ValueError, "namespace stack overflow (limit %u)",
-                     (unsigned) DERIVE_EXTENT_STACK_MAX);
-        return -1;
-      }
-
-      aside_owns[asides++] = (ns != Py_None);
-      if (ns != Py_None) {
-        if (! KosNamespaceSpec_CheckExact(ns)) {
-          PyErr_Format(
-              PyExc_TypeError,
-              "PUSH_ASIDE at pc %u spec must be a NamespaceSpec or None,"
-              " not %.100s",
-              i, Py_TYPE(ns)->tp_name);
-          return -1;
-        }
-        if (namespace_spec_fast_slot_limit(ns, &lim)) {
-          return -1;
-        }
-        if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
-          return -1;
-      }
-    } else if (op == KOS_OP_POP_ASIDE) {
-      /* as below, underflow is the extent validation's to report */
-      if (asides > 0 && aside_owns[--asides] && depth > 0)
-        depth--;
     } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
       /* Do not error on underflow; extent validation reports POP without PUSH */
       if (depth > 0) {
@@ -3217,107 +3161,6 @@ static int validate_fast_slots(
   }
 
   return 0;
-}
-
-
-/**
-   Resolve the ASIDE fields collect deferred, now that the extents are
-   derived: each becomes the extent descriptor of the aside its name
-   declares. A PUSH_ASIDE declares the name its field carries, for its
-   own extent. Any other instruction names an aside to run, and sits in
-   the block the aside is declared in, so the namespace it runs the
-   aside over is the one the aside's instructions were written against.
-   A name declared twice, a name no PUSH_ASIDE declares and an
-   instruction outside its aside's block are refused.
-
-   :return: 0, or -1 with ValueError set
-*/
-static int resolve_asides(
-    CodeCollect *coll,
-    const KosOp *code,
-    KosExtra *extra,
-    const KosExtentDesc *extents,
-    const uint16_t *top_extent_id) {
-
-  Py_ssize_t n_pending = PyList_GET_SIZE(coll->pending_asides);
-  PyObject *declared;
-  int res = -1;
-
-  if (! n_pending)
-    return 0;
-
-  declared = PyDict_New();
-  if (! declared)
-    return -1;
-
-  /* the declarations: a push's pc carries its own extent's id */
-  for (Py_ssize_t k = 0; k < n_pending; k++) {
-    PyObject *pending = PyList_GET_ITEM(coll->pending_asides, k);
-    PyObject *name = PyTuple_GET_ITEM(pending, 2);
-    uint32_t pc = (uint32_t) PyLong_AsLong(PyTuple_GET_ITEM(pending, 3));
-    PyObject *eid;
-    int known;
-
-    if (code[pc].op != KOS_OP_PUSH_ASIDE)
-      continue;
-
-    known = PyDict_Contains(declared, name);
-    if (known < 0)
-      goto done;
-    if (known) {
-      PyErr_Format(PyExc_ValueError,
-                   "instruction %u declares aside %R again", pc, name);
-      goto done;
-    }
-
-    eid = PyLong_FromUnsignedLong(top_extent_id[pc]);
-    if (! eid || PyDict_SetItem(declared, name, eid) < 0) {
-      Py_XDECREF(eid);
-      goto done;
-    }
-    Py_DECREF(eid);
-  }
-
-  for (Py_ssize_t k = 0; k < n_pending; k++) {
-    PyObject *pending = PyList_GET_ITEM(coll->pending_asides, k);
-    long eidx = PyLong_AsLong(PyTuple_GET_ITEM(pending, 0));
-    long slot = PyLong_AsLong(PyTuple_GET_ITEM(pending, 1));
-    PyObject *name = PyTuple_GET_ITEM(pending, 2);
-    uint32_t pc = (uint32_t) PyLong_AsLong(PyTuple_GET_ITEM(pending, 3));
-    PyObject *eid = PyDict_GetItemWithError(declared, name);
-    const KosExtentDesc *aside;
-    uint32_t block;
-
-    if (! eid) {
-      if (! PyErr_Occurred())
-        PyErr_Format(PyExc_ValueError,
-                     "instruction %u names aside %R, which no PUSH_ASIDE"
-                     " declares", pc, name);
-      goto done;
-    }
-
-    aside = &extents[PyLong_AsLong(eid)];
-
-    /* a push other than the declaration, PUSH_WIND, sits in the block
-       its own extent opens in */
-    block = top_extent_id[pc];
-    if (code[pc].op != KOS_OP_PUSH_ASIDE && is_push_op(code[pc].op))
-      block = extents[block].parent_extent_id;
-
-    if (code[pc].op != KOS_OP_PUSH_ASIDE
-        && aside->parent_extent_id != block) {
-      PyErr_Format(PyExc_ValueError,
-                   "instruction %u names aside %R from outside the block"
-                   " it is declared in", pc, name);
-      goto done;
-    }
-    extra[eidx].f[slot].aside = aside;
-  }
-  res = 0;
-
- done:
-  Py_DECREF(declared);
-  return res;
 }
 
 
@@ -3375,11 +3218,6 @@ static int code_instr_init(
     return -1;
   }
 
-  if (validate_no_tail_with_yield(instr_fast)) {
-    Py_DECREF(instr_fast);
-    return -1;
-  }
-
   /* Phase 1: Collect — derive exact sizes, build label map, cpool, extra rows */
   CodeCollect coll = { 0 };
   if (code_collect(self, instr_fast, &coll)) {
@@ -3429,26 +3267,31 @@ static int code_instr_init(
     goto reject;
   }
 
+  code_collect_clear(&coll);
   Py_DECREF(instr_fast);
+
+  /* an aside's yields and tail calls are this code's too */
+  if ((KosCode_FLAGS(self) & KOS_CODE_YIELDS)
+      && (KosCode_FLAGS(self) & KOS_CODE_TAIL_CALLS)) {
+    PyErr_SetString(PyExc_ValueError,
+                    "code containing yield or yield-from cannot use "
+                    "TAIL_CALL family opcodes");
+    goto reject;
+  }
 
   /* Phase 4: Finalize — fill extent table, validate, seal. The
      buffers are NULL when no PUSH_* was counted, and the walk then
      validates alone, refusing a stray POP_*. */
   if (derive_extents_fill(code, code_len, extents, extent_count,
-                          top_extent_id)
-      || resolve_asides(&coll, code, extra, extents, top_extent_id)) {
-    code_collect_clear(&coll);
+                          top_extent_id))
     goto reject;
-  }
-  code_collect_clear(&coll);
 
   if (extents && top_extent_id &&
       validate_jump_locality(code, code_len, extra, extra_len, extents,
                              extent_count, top_extent_id))
     goto reject;
 
-  if (extents && top_extent_id &&
-      validate_iter_next_in_foreach(code, code_len, extents,
+  if (validate_iter_next_in_foreach(code, code_len, extents,
                                     extent_count, top_extent_id))
     goto reject;
 
@@ -4225,6 +4068,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, OPERAND);
   int_enum(enum_dict, KOSTYLE_, RAW);
   int_enum(enum_dict, KOSTYLE_, ASIDE);
+  int_enum(enum_dict, KOSTYLE_, ASIDE_NS);
 
   return create_int_enum("OpStyle", enum_dict);
 
@@ -4317,9 +4161,7 @@ static int set_opcode_attr(PyObject *member, const char *name,
    object a generator; ``pop`` is the paired POP_* member of a PUSH_*
    row and ``push`` the paired PUSH_* member of a POP_* row, None
    otherwise; ``discardable`` says whether a tail call may pass through
-   the extent a PUSH_* row opens, False for every other row;
-   ``own_frame`` says whether the extent a PUSH_* row opens runs in a
-   frame of its own, False for every other row. The extent
+   the extent a PUSH_* row opens, False for every other row. The extent
    facts come from extent_pairs, so the compiler's tables derive from
    the one classification the validator and extent derivation use.
 
@@ -4352,11 +4194,8 @@ static int decorate_opcode(PyObject *member, PyObject *opcodes,
   if (set_opcode_attr(member, "push",
                       opcode_member_or_none(opcodes, push_for_pop(op))))
     return -1;
-  if (set_opcode_attr(member, "discardable",
-                      PyBool_FromLong(discardable_for_push(op))))
-    return -1;
-  return set_opcode_attr(member, "own_frame",
-                         PyBool_FromLong(own_frame_for_push(op)));
+  return set_opcode_attr(member, "discardable",
+                         PyBool_FromLong(discardable_for_push(op)));
 }
 
 

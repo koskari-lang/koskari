@@ -20,10 +20,10 @@
    the default tag again), ASIDE (the body).
 
    Push a prompt carrying the tag, and above it a frame that runs the
-   aside. This frame stands at the next instruction: the body's
-   return, or the return of a handler that aborted to the prompt,
-   takes the prompt with it and pushes its value here as any callee's
-   return does.
+   aside. This frame stands after this instruction: the body's return,
+   or the return of a handler that aborted to the prompt, takes the
+   prompt with it and pushes its value there as any callee's return
+   does.
 */
 
 KOS_OP_HANDLER(RESET) {
@@ -41,9 +41,8 @@ KOS_OP_HANDLER(RESET) {
   if (! prompt)
     RESULT_RAISE();
 
-  if (! kos_dyn_push_aside(ctx, KosDynFrame_CODE(KosContext_FRAME(ctx)),
-                           KosContext_NAMESPACE(ctx),
-                           KosExtra_ASIDE(row, 1)))
+  if (! kos_dyn_push_aside(ctx, KosExtra_ASIDE(row, 1),
+                           KosContext_NAMESPACE(ctx)))
     RESULT_RAISE();
 
   RESULT_CONTINUE(ctx);

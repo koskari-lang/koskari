@@ -849,7 +849,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
    :param parent: parent node in dynamic chain
    :param code: the code holding the PUSH_WIND (borrowed; the node
      takes its own reference), or NULL with row
-   :param row: the PUSH_WIND's row, naming the before and after asides,
+   :param row: the PUSH_WIND's row, carrying the before and after asides,
      or NULL for a wind with neither
 
    :return: new wind node, or NULL on error
@@ -1084,32 +1084,23 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
     KosCode *code,
     PyObject *ns);
 
-/* An aside: a frame of no arguments over another frame's code,
-   starting at entry; ns is consumed. See dynchain/dyn_frame.c. */
+/* The frame of an aside: one of no arguments that runs aside, a
+   code, over ns, with no function around it; ns is consumed, and
+   with owns_ns set the frame introduces it. See
+   dynchain/dyn_frame.c. */
 KosDynFrame *kos_dynframe_new_aside(
     KosDynNode *parent,
     KosDynFrame *base,
-    KosCode *code,
+    KosCode *aside,
     PyObject *ns,
-    int owns_ns,
-    KosOp *entry);
+    int owns_ns);
 
-/* The namespace a frame made for aside, an aside of code, runs over
-   when ns is the namespace the aside is written in: one built for it,
-   with *owns_ns set, or ns, with it clear; a new reference either
-   way. */
-PyObject *kos_aside_namespace(
-    KosCode *code,
-    PyObject *ns,
-    const KosExtentDesc *aside,
-    int *owns_ns);
-
-/* Push a frame that runs aside, an aside of code written in ns. */
+/* Push a frame that runs aside over ns, the namespace live at the
+   instruction that runs it. */
 KosDynFrame *kos_dyn_push_aside(
     KosContext *ctx,
-    KosCode *code,
-    PyObject *ns,
-    const KosExtentDesc *aside);
+    KosCode *aside,
+    PyObject *ns);
 
 
 /**
@@ -1410,8 +1401,11 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
    Leave everything up to a prompt and run an aside above it.
 
    The live frame stands after the instruction that aborts. A frame is
-   made for aside, an aside of the live frame's code, over the
-   namespace kos_aside_namespace gives, linked to nothing. The
+   made for aside over ns, linked to nothing. The caller chooses ns:
+   the live namespace, which belongs to a frame the abort leaves, so
+   the caller reveals it (KosNamespace_TrackChain) and that frame's
+   release does not reclaim it; or one built from the aside's spec
+   over the live namespace, which the new frame introduces. The
    transfer leaves everything from dyn_top down to the prompt, the
    live frame and the reset's body frame included, which holds the
    region's operands until the abort can no longer be cancelled: a
@@ -1429,6 +1423,11 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
    :param ctx: execution context
    :param prompt: the prompt to abort to
    :param aside: the aside to run above it
+   :param ns: the namespace its frame runs over; consumed, on failure
+     too. NULL, with PyErr set, is a namespace the caller failed to
+     build: payload is released and the result is EVAL_RAISE
+   :param owns_ns: nonzero when ns was built for the aside, zero when
+     it is the live namespace
    :param payload: a value for the aside's stack, or NULL; consumed,
      on failure too
    :param keep: the continuation kos_shift_capture began, which the
@@ -1443,7 +1442,9 @@ KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
 KosOpResult kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
-    const KosExtentDesc *aside,
+    KosCode *aside,
+    PyObject *ns,
+    int owns_ns,
     PyObject *payload,
     KosContinuation *keep);
 
@@ -1453,7 +1454,7 @@ KosOpResult kos_abort_to_prompt(
 
    :param ctx: execution context
    :param code: the code holding the PUSH_WIND (borrowed)
-   :param row: the PUSH_WIND's row, naming the before and after asides
+   :param row: the PUSH_WIND's row, carrying the before and after asides
 
    :return: new wind node, or NULL on error
 */

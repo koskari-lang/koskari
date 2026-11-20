@@ -39,7 +39,9 @@ from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, ResolutionMode, StrayColon,
     StrayHash)
 from .pragma.settings import CODE_PROTECTION
-from .processor import ByteCodeProcessor, merge_function_constant_needs
+from .processor import (
+    Aside, ByteCodeProcessor, asides_of, carries_asides, map_asides,
+    merge_function_constant_needs)
 
 
 class Compiled(ABC):
@@ -83,6 +85,81 @@ _symbol_hash = symbol("#")
 # the parameter name (active-pragma) reads; the compiler binds it for
 # each compilation turn
 ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
+
+
+def rewrite_rows(instructions, choose, scopes):
+    """
+    The rows with each variable operand replaced by choose(name,
+    scopes), for ByteCodeFragment.rewrite_vars. An aside the rows
+    carry is copied with its own rows rewritten: one with a namespace
+    of its own is a scope around its rows, and any other is written in
+    the scopes open at the instruction that carries it
+
+    :param instructions: the compiler's own emission, where PUSH_NS
+        and PUSH_COLLECT carry their NamespaceSpec as the operand and
+        the fused rows the processor mints later are not present yet
+    :param choose: callable taking an atom and the open scopes,
+        returning the atom to emit
+    :param scopes: the spelling sets of the inline scopes open around
+        the rows, innermost first; changed in place as scopes open and
+        close
+    :return: a new list of rows
+    """
+
+    def rebuild_nspec(nspec):
+        closure = []
+        for name in nspec.closure_syms:
+            chosen = choose(name, scopes)
+            if chosen not in closure:
+                closure.append(chosen)
+        if tuple(closure) == tuple(nspec.closure_syms):
+            return nspec
+        return NamespaceSpec(
+            nspec.name, nspec.local_syms, tuple(closure),
+            nspec.global_syms)
+
+    def scope_names(nspec):
+        # a global an inline scope declares is bound in the module
+        # and visible within the scope under that spelling, as its
+        # locals are
+        return {str(n) for n in nspec.local_syms} | {
+            str(n) for n in nspec.global_syms}
+
+    def rewrite_aside(aside):
+        nspec = aside.nspec
+        inner = list(scopes)
+        if nspec is not None:
+            nspec = rebuild_nspec(nspec)
+            inner.insert(0, scope_names(nspec))
+        return Aside(rewrite_rows(aside.instructions, choose, inner), nspec)
+
+    out = []
+    for op, arg in instructions:
+        if op == OpCode.PUSH_NS:
+            nspec = rebuild_nspec(arg[0])
+            arg = (nspec,) + tuple(arg[1:])
+            scopes.insert(0, scope_names(nspec))
+
+        elif op == OpCode.PUSH_COLLECT:
+            arg = rebuild_nspec(arg)
+            scopes.insert(0, scope_names(arg))
+
+        elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+            scopes.pop(0)
+
+        elif op.style == OpStyle.VAR:
+            arg = choose(arg, scopes)
+
+        elif carries_asides(op):
+            arg = map_asides(op, arg, rewrite_aside)
+
+        elif op.extra and OpStyle.VAR in op.extra:
+            arg = tuple(
+                choose(v, scopes) if fk == OpStyle.VAR else v
+                for v, fk in zip(arg, op.extra))
+
+        out.append((op, arg))
+    return out
 
 
 class ByteCodeFragment:
@@ -147,10 +224,6 @@ class ByteCodeFragment:
         # deferred function: that function's requests reach this one
         # only when it completes, so this one cannot complete early
         self.holds_deferred = False
-
-        # set once an aside is emitted into this fragment, so the
-        # processor reads the stream for one only where one can be
-        self.holds_aside = False
 
 
     def as_namespace_spec(self):
@@ -317,80 +390,28 @@ class ByteCodeFragment:
             returning the atom to emit
         """
 
-        def rebuild_nspec(nspec, scopes):
-            closure = []
-            for name in nspec.closure_syms:
-                chosen = choose(name, scopes)
-                if chosen not in closure:
-                    closure.append(chosen)
-            if tuple(closure) == tuple(nspec.closure_syms):
-                return nspec
-            return NamespaceSpec(
-                nspec.name, nspec.local_syms, tuple(closure),
-                nspec.global_syms)
-
-        def scope_names(nspec):
-            # a global an inline scope declares is bound in the module
-            # and visible within the scope under that spelling, as its
-            # locals are
-            return {str(n) for n in nspec.local_syms} | {
-                str(n) for n in nspec.global_syms}
-
-        # the stream is the compiler's own emission: PUSH_NS and
-        # PUSH_ASIDE carry their NamespaceSpec as the first field,
-        # PUSH_COLLECT as the operand, and the fused rows the processor
-        # mints later are not here yet
-        scopes = []
-        asides = []
-        out = []
-        for op, arg in self.instructions:
-            if op == OpCode.PUSH_NS:
-                nspec = rebuild_nspec(arg[0], scopes)
-                arg = (nspec,) + tuple(arg[1:])
-                scopes.insert(0, scope_names(nspec))
-
-            elif op == OpCode.PUSH_COLLECT:
-                arg = rebuild_nspec(arg, scopes)
-                scopes.insert(0, scope_names(arg))
-
-            elif op == OpCode.PUSH_ASIDE:
-                # None is an aside over the scope it is written in
-                nspec = arg[0]
-                asides.append(nspec is not None)
-                if nspec is not None:
-                    nspec = rebuild_nspec(nspec, scopes)
-                    arg = (nspec,) + tuple(arg[1:])
-                    scopes.insert(0, scope_names(nspec))
-
-            elif op == OpCode.POP_ASIDE:
-                if asides.pop():
-                    scopes.pop(0)
-
-            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
-                scopes.pop(0)
-
-            elif op.style == OpStyle.VAR:
-                arg = choose(arg, scopes)
-
-            elif op.extra and OpStyle.VAR in op.extra:
-                arg = tuple(
-                    choose(v, scopes) if fk == OpStyle.VAR else v
-                    for v, fk in zip(arg, op.extra))
-
-            out.append((op, arg))
-
-        self.instructions = out
+        self.instructions = rewrite_rows(self.instructions, choose, [])
 
 
     def merge(self, other):
         """
-        Merge another fragment into this one: adopt its declarations,
-        requests, requests_for_write, request_global, and
-        annotation_bindings, then append its instructions.
+        Merge another fragment into this one: adopt its names, then
+        append its instructions.
 
         Used when combining forms in the same scope (e.g. begin body);
         request_global must propagate so that (define-global x) followed
         by (setq x 1) in the same block works.
+        """
+
+        self.adopt(other)
+        self.instructions.extend(other.instructions)
+
+
+    def adopt(self, other):
+        """
+        Take another fragment's declarations, requests,
+        requests_for_write, request_global, and annotation_bindings as
+        this one's, leaving its instructions where they are
         """
 
         for name in other.declares:
@@ -410,9 +431,6 @@ class ByteCodeFragment:
             self.marked = True
         if other.holds_deferred:
             self.holds_deferred = True
-        if other.holds_aside:
-            self.holds_aside = True
-        self.instructions.extend(other.instructions)
 
 
     @contextmanager
@@ -480,49 +498,44 @@ class ByteCodeFragment:
                 self.marked = True
             if child.holds_deferred:
                 self.holds_deferred = True
-            if child.holds_aside:
-                self.holds_aside = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
 
 
     @contextmanager
-    def aside(self, name, ns_name, own=()):
+    def aside(self, ns_name, own=()):
         """
         Context manager that compiles an aside: instructions that run
-        in a frame of their own, made by the instruction that names the
-        aside. On entry, yields a fragment for the aside's
-        instructions. On exit, emits PUSH_ASIDE with the aside's
-        NamespaceSpec and name, the instructions, RETURN 1, and
-        POP_ASIDE. The caller emits the instruction that runs the
-        aside, after it and in the same block.
+        in a frame of their own, with no function around them, made by
+        the instruction that carries the aside. On entry, yields a
+        fragment for the aside's instructions and the Aside, which is
+        empty until exit. On exit the Aside holds the instructions,
+        closed by RETURN 1, and nothing is emitted into this fragment:
+        the caller puts the Aside in the ASIDE field of the instruction
+        that runs it.
 
         The aside's namespace owns only the names in own. Every other
         name declared at the aside's level is declared in this
         fragment's scope instead and reached from the aside as a
         closure name, so it is the enclosing scope's name and outlives
         the aside. An aside that owns no name has no namespace of its
-        own: it carries None in place of a spec, runs over the
-        namespace it is written in, and its instructions are compiled
-        in this fragment's scope.
+        own: it carries no NamespaceSpec, runs over the namespace it is
+        written in, and its instructions are compiled in this
+        fragment's scope.
 
-        :param name: the name the aside is declared under, one the
-            compiler's label generator made
         :param ns_name: name for the aside's namespace
         :param own: the symbols the aside's namespace declares
         """
 
         compiler = self.compiler
         own = tuple(own)
-        self.holds_aside = True
+        aside = Aside()
 
         if not own:
             child = compiler.fragment(str(ns_name))
-            yield child
-            self.instruction(OpCode.PUSH_ASIDE, (None, name, 0, 0))
-            self.merge(child)
-            self.instruction(OpCode.RETURN, 1)
-            self.instruction(OpCode.POP_ASIDE, 0)
+            yield child, aside
+            self.adopt(child)
+            aside.instructions = [*child.instructions, (OpCode.RETURN, 1)]
             return
 
         child = compiler.fragment(str(ns_name))
@@ -530,7 +543,7 @@ class ByteCodeFragment:
             for sym in own:
                 child.declare_var(sym)
 
-            yield child
+            yield child, aside
 
             # a declare made at the aside's level is the enclosing
             # scope's, written from the aside through a closure name
@@ -560,16 +573,12 @@ class ByteCodeFragment:
                     self.request_var(
                         sym, position=child.request_positions.get(sym))
 
-            self.instruction(OpCode.PUSH_ASIDE, (nspec, name, 0, 0))
             if child.marked:
                 self.marked = True
             if child.holds_deferred:
                 self.holds_deferred = True
-            if child.holds_aside:
-                self.holds_aside = True
-            self.instructions.extend(child.instructions)
-            self.instruction(OpCode.RETURN, 1)
-            self.instruction(OpCode.POP_ASIDE, 0)
+            aside.nspec = nspec
+            aside.instructions = [*child.instructions, (OpCode.RETURN, 1)]
 
 
     @contextmanager
@@ -604,8 +613,6 @@ class ByteCodeFragment:
                 self.marked = True
             if child.holds_deferred:
                 self.holds_deferred = True
-            if child.holds_aside:
-                self.holds_aside = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_COLLECT, 0)
 
@@ -1477,10 +1484,7 @@ class Compiler:
         if ancestors is None:
             ancestors = tuple(self.lexical_stack)
 
-        rows = fragment.instructions
-        for i, (op, arg) in enumerate(rows):
-            if op is OpCode.CONST and isinstance(arg, Deferred):
-                rows[i] = (op, arg.complete(self, fragment, ancestors))
+        self.complete_deferred(fragment.instructions, fragment, ancestors)
 
         if fragment.marked:
             Resolver(fragment, ancestors, vars(self.module)).resolve(fragment)
@@ -1519,11 +1523,17 @@ class Compiler:
         if mode == CompilerMode.FUNCTION and self.pack_module:
             allocator = self.allocator
 
+        # an aside is part of this code: it takes its name, filename
+        # and settings
+        def make(nspec, rows, **kwds):
+            return Code(nspec, rows, fragment.name, filename,
+                        protect=self.protect_code, cache=cache,
+                        allocator=allocator, **kwds)
+
         # Build Code and register with pragma for position lookup on errors
         try:
-            code = Code(base_nspec, instr, fragment.name, filename,
-                        protect=self.protect_code, cache=cache,
-                        allocator=allocator, self_slot=proc.self_slot)
+            code = make(base_nspec, self.build_asides(instr, base_nspec, make),
+                        self_slot=proc.self_slot)
         except (ValueError, OverflowError) as ex:
             raise self.limit_error(fragment, ex) from ex
         if fragment.doc is not None:
@@ -1540,6 +1550,57 @@ class Compiler:
             reso.close()
 
         return code
+
+
+    def complete_deferred(self, rows, fragment, ancestors):
+        """
+        Complete the Deferred constants in rows, and in the asides
+        rows carry, in place
+
+        :param rows: instruction rows of the completing fragment
+        :param fragment: the completing fragment
+        :param ancestors: the fragments enclosing it, outermost first
+        """
+
+        for i, (op, arg) in enumerate(rows):
+            if op is OpCode.CONST and isinstance(arg, Deferred):
+                rows[i] = (op, arg.complete(self, fragment, ancestors))
+            for aside in asides_of(op, arg):
+                self.complete_deferred(aside.instructions, fragment, ancestors)
+
+
+    def build_asides(self, rows, scope, make):
+        """
+        The rows with each Aside they carry replaced by its Code,
+        built over a NamespaceSpec of its own or over the spec of the
+        namespace live at the instruction that runs it
+
+        :param rows: finished instruction rows
+        :param scope: the NamespaceSpec of the namespace live where
+            rows start
+        :param make: callable building a Code from a NamespaceSpec
+            and rows
+        :return: a new list of rows
+        """
+
+        def aside_code(aside):
+            nspec = scopes[-1] if aside.nspec is None else aside.nspec
+            return make(
+                nspec, self.build_asides(aside.instructions, nspec, make))
+
+        scopes = [scope]
+        out = []
+        for op, arg in rows:
+            if op == OpCode.PUSH_NS:
+                scopes.append(arg[0])
+            elif op == OpCode.PUSH_COLLECT:
+                scopes.append(arg)
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+                scopes.pop()
+            else:
+                arg = map_asides(op, arg, aside_code)
+            out.append((op, arg))
+        return out
 
 
     def limit_error(self, fragment, ex):

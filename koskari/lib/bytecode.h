@@ -119,14 +119,24 @@ typedef enum KosOpStyle {
       of stack operands, which is COUNT */
   KOSTYLE_RAW,
 
-  /** field names an aside of this code: the name the aside's
-      PUSH_ASIDE declares it under, there and in each instruction that
-      runs it. Hardened, it is the aside's extent descriptor. A field
-      of PUSH_WIND may carry None instead, for no aside: hardened, it
-      is NULL. */
+  /** field is an aside: a pool constant that is a Code, which the
+      instruction runs in a frame of its own with no function around
+      it, over the namespace live at the instruction; the Code's spec
+      is that scope's. A field of PUSH_WIND may carry None instead,
+      for no aside: hardened, it is NULL. */
   KOSTYLE_ASIDE,
 
+  /** field is an aside the instruction runs over a namespace built
+      from the Code's spec, its closure names resolved from the
+      namespace live at the instruction */
+  KOSTYLE_ASIDE_NS,
+
 } KosOpStyle;
+
+
+/** Whether a field kind holds an aside */
+#define KOSTYLE_IS_ASIDE(fk)                    \
+  ((fk) == KOSTYLE_ASIDE || (fk) == KOSTYLE_ASIDE_NS)
 
 
 /** Compose/decode a KOSTYLE_OPCOUNT value: operator selector + reduce count. */
@@ -220,7 +230,6 @@ typedef struct KosExtraSchema {
 /* Forward names: a row field may point at an instruction, an
    instruction at a cache slot. Both structs are defined below. */
 typedef struct KosCacheSlot KosCacheSlot;
-typedef struct KosExtentDesc KosExtentDesc;
 
 
 /**
@@ -229,18 +238,16 @@ typedef struct KosExtentDesc KosExtentDesc;
    OPCOUNT, CMP, CMPSRC, STAR, and OPERAND; ``obj`` for CONST and VAR,
    the pool object, borrowed (the cpool keeps it alive for the life of
    the code); ``target`` for LABEL, the target record, whose own pc
-   names the index; ``aside`` for ASIDE, the aside's extent
-   descriptor. Resolved at finalize and on every load, never
-   serialized: soften recovers a constant's index by identity against
-   the pool, a label's pc off the target and an aside's name off its
-   descriptor's place in the extent table.
+   names the index. An ASIDE field is read through ``obj`` too: the
+   aside's Code, or NULL for no aside. Resolved at finalize and on
+   every load, never serialized: soften recovers a constant's index by
+   identity against the pool and a label's pc off the target.
    See design/archive/resolved-operands.md.
 */
 typedef union KosExtraField {
   uint32_t imm;
   PyObject *obj;
   KosOp *target;
-  const KosExtentDesc *aside;
 } KosExtraField;
 
 
@@ -257,7 +264,7 @@ typedef struct KosExtra {
 #define KosExtra_IMM(row, i)     ((row)->f[i].imm)
 #define KosExtra_OBJ(row, i)     ((row)->f[i].obj)
 #define KosExtra_TARGET(row, i)  ((row)->f[i].target)
-#define KosExtra_ASIDE(row, i)   ((row)->f[i].aside)
+#define KosExtra_ASIDE(row, i)   ((KosCode *) (row)->f[i].obj)
 
 /* A row whose schema is all CONST or VAR read as the vector of its
    pool objects: a field is one pointer wide, so the four fields are
@@ -310,6 +317,8 @@ typedef enum KosCodeFlag {
   /** per-site opcode caches are enabled for this code object (pragma gate);
       when unset, no cache slots are allocated and every index stays unset */
   KOS_CODE_CACHE = 0x08,
+  /** code contains TAIL_CALL family opcodes */
+  KOS_CODE_TAIL_CALLS = 0x10,
 } KosCodeFlag;
 
 
@@ -381,13 +390,6 @@ struct KosOp {
 #define KosCode_SOFTEN_LABEL_PREFIX "LABEL_"
 
 
-/**
-  The name soften gives an aside: this prefix followed by the index of
-  the aside's extent in decimal.
-*/
-#define KosCode_SOFTEN_ASIDE_PREFIX "ASIDE_"
-
-
 #define KosOp_FN(insn)     (((KosOp *) (insn))->fn)
 #define KosOp_OP(insn)     (((KosOp *) (insn))->op)
 
@@ -457,26 +459,20 @@ typedef enum KosExtentKind {
   KOS_EXT_NS,
   KOS_EXT_COLLECT,
   KOS_EXT_PARAM,
-  KOS_EXT_ASIDE,
 } KosExtentKind;
 
 
 /**
    Static extent descriptor. Describes a block extent with push_pc and
    pop_pc. Handler and jump target PCs are derived on demand from
-   code[push_pc] and pop_pc as needed. entry is the instruction after
-   the push and after the one after the pop, both recorded when the
-   extent is derived: an aside is run from its entry, and the frame it
-   is written in passes over it to after.
+   code[push_pc] and pop_pc as needed.
 */
-struct KosExtentDesc {
+typedef struct KosExtentDesc {
   KosExtentKind kind;
   uint32_t push_pc;
   uint32_t pop_pc;
   uint32_t parent_extent_id;
-  KosOp *entry;
-  KosOp *after;
-};
+} KosExtentDesc;
 
 
 /* === Per-site cache slots === */

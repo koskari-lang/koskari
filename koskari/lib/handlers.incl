@@ -296,8 +296,6 @@
 #include "opcode/OBJECT_TRUTH.c"
 #include "opcode/OBJECT_TYPE.c"
 #include "opcode/OBJECT_VARS.c"
-#include "opcode/PUSH_ASIDE.c"
-#include "opcode/POP_ASIDE.c"
 #include "opcode/RESET.c"
 #include "opcode/ABORT.c"
 #include "opcode/SHIFT.c"

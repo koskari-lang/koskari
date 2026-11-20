@@ -31,28 +31,20 @@
 KosOpResult kos_abort_to_prompt(
     KosContext *ctx,
     KosDynPrompt *prompt,
-    const KosExtentDesc *aside,
+    KosCode *aside,
+    PyObject *ns,
+    int owns_ns,
     PyObject *payload,
     KosContinuation *keep) {
 
   KosDynNode *base;
   KosDynNode *frame;
   KosXferGoal goal;
-  PyObject *ns;
-  int owns_ns;
 
-  ns = kos_aside_namespace(KosDynFrame_CODE(KosContext_FRAME(ctx)),
-                           KosContext_NAMESPACE(ctx), aside, &owns_ns);
   if (! ns) {
     Py_XDECREF(payload);
     return EVAL_RAISE();
   }
-
-  /* An aside that introduces no namespace runs over the live one,
-     which belongs to a frame the abort leaves: the namespace is
-     revealed, so that frame's release does not reclaim it. */
-  if (! owns_ns)
-    KosNamespace_TrackChain(ns);
 
   /* it will stand above the frame under the prompt, linked by the
      transfer: its back link and its segment's are open for the seam's
@@ -62,8 +54,7 @@ KosOpResult kos_abort_to_prompt(
     base = KosDynNode_PARENT(base);
 
   frame = (KosDynNode *) kos_dynframe_new_aside(
-      NULL, (KosDynFrame *) base, KosDynFrame_CODE(KosContext_FRAME(ctx)),
-      ns, owns_ns, aside->entry);
+      NULL, (KosDynFrame *) base, aside, ns, owns_ns);
   if (! frame) {
     Py_XDECREF(payload);
     return EVAL_RAISE();
@@ -73,7 +64,7 @@ KosOpResult kos_abort_to_prompt(
 
   /* The target is the one frame, which ATTACHING links on the prompt,
      the seam, and which belongs to the goal until then. No resume pc:
-     the frame starts at the aside's entry, and the frame below the
+     the frame starts at the aside's first instruction, and the frame below the
      prompt already stands after the reset, where the aside's return,
      which ends the prompt, is delivered. The transfer runs here, from
      a goal in this frame, and is kept only if a leave on the way

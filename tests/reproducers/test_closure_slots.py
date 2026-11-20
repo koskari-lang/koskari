@@ -30,7 +30,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import FunctionSpec, NamespaceSpec
+from koskari.lib import Code, FunctionSpec, NamespaceSpec
 from koskari.module import load_module_source_async, new_module
 from koskari.serialize import compile_ki_source_to_kio, load_kio
 
@@ -77,8 +77,9 @@ def produce [items]:
 
 def specs_in(code, found=None):
     """
-    Every NamespaceSpec constant of code and of the functions written
-    in it, by name, a function's being its code's own spec
+    Every NamespaceSpec constant of code and of the functions and
+    asides written in it, by name, a function's being its code's own
+    spec, as is an aside's
     """
 
     found = {} if found is None else found
@@ -89,6 +90,9 @@ def specs_in(code, found=None):
         elif isinstance(arg, FunctionSpec):
             found[arg.code.namespace_spec.name] = arg.code.namespace_spec
             specs_in(arg.code, found)
+        elif isinstance(arg, Code):
+            found[arg.namespace_spec.name] = arg.namespace_spec
+            specs_in(arg, found)
         elif isinstance(arg, tuple):
             for item in arg:
                 visit(item)

@@ -22,24 +22,19 @@ import pytest
 
 from koskari.lib import Code, OpCode
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
+from tests.lib.opcode import AsideRows, CevalTest, build_expr
 
 
 pytestmark = pytest.mark.phase_lib
 
 
-def aside(name, *rows):
+def aside(*rows):
     """
-    The rows declaring an aside under name: PUSH_ASIDE over the
-    namespace it is written in, rows, RETURN 1 and POP_ASIDE
+    An aside over the namespace it is run in: rows and RETURN 1, for a
+    field of PUSH_WIND
     """
 
-    return [
-        ["PUSH_ASIDE", (None, name, 0, 0)],
-        *rows,
-        ["RETURN", 1],
-        ["POP_ASIDE", 0],
-    ]
+    return AsideRows([*rows, ["RETURN", 1]])
 
 
 class TestWindOpcodes(CevalTest):
@@ -52,7 +47,7 @@ class TestWindOpcodes(CevalTest):
         When body calls a helper that returns, unwind runs the after
         aside and delivers the return value to the wind's caller.
 
-        Builds: an after aside calling record, PUSH_WIND (None, after),
+        Builds: PUSH_WIND (None, an after aside calling record),
         CALL ret99, RETURN 1. ret99 does CONST 99; RETURN 1. The ret99
         frame is a direct child of the wind; when it returns, unwind
         suspends, the after aside runs, then 99 must be delivered.
@@ -70,8 +65,8 @@ class TestWindOpcodes(CevalTest):
         ret99 = make_callable(ret99_code, ret99_ns)
 
         code, ns = build_expr([
-            *aside('after', ['VAR', 'record'], ['CALL', 0]),
-            ['PUSH_WIND', (None, 'after', 0, 0)],
+            ['PUSH_WIND', (
+                None, aside(['VAR', 'record'], ['CALL', 0]), 0, 0)],
             ['VAR', 'ret99'],
             ['CALL', 0],
             ['POP_WIND', 0],
@@ -102,8 +97,8 @@ class TestWindOpcodes(CevalTest):
 
         marker = object()
         code, ns = build_expr([
-            *aside('after', ['VAR', 'boom'], ['CALL', 0]),
-            ['PUSH_WIND', (None, 'after', 0, 0)],
+            ['PUSH_WIND', (
+                None, aside(['VAR', 'boom'], ['CALL', 0]), 0, 0)],
             ['VAR', 'marker'],
             ['POP_WIND', 0],
             ['RETURN', 1],
@@ -140,8 +135,8 @@ class TestWindOpcodes(CevalTest):
         k = await self.capture_continuation(log)
 
         code, ns = build_expr([
-            *aside('before', ['VAR', 'k'], ['CALL', 0]),
-            ['PUSH_WIND', ('before', None, 0, 0)],
+            ['PUSH_WIND', (
+                aside(['VAR', 'k'], ['CALL', 0]), None, 0, 0)],
             ['VAR', 'record'],
             ['CONST', "body"],
             ['CALL', 1],
@@ -162,8 +157,8 @@ class TestWindOpcodes(CevalTest):
         k = await self.capture_continuation(log)
 
         code, ns = build_expr([
-            *aside('after', ['VAR', 'k'], ['CALL', 0]),
-            ['PUSH_WIND', (None, 'after', 0, 0)],
+            ['PUSH_WIND', (
+                None, aside(['VAR', 'k'], ['CALL', 0]), 0, 0)],
             ['CONST', None],
             ['POP_WIND', 0],
             ['VAR', 'record'],
@@ -182,13 +177,13 @@ class TestWindOpcodes(CevalTest):
         the body, whose 1 is added to the 11 the after aside leaves
         """
 
+        before = aside(
+            ['CONST', 1], ['VAR_STORE', 'x'], ['CONST', None])
+        after = aside(
+            ['VAR', 'x'], ['CONST', 10], ['OBJECT_ADD', 2],
+            ['VAR_STORE', 'x'], ['CONST', None])
         code, ns = build_expr([
-            *aside('before',
-                   ['CONST', 1], ['VAR_STORE', 'x'], ['CONST', None]),
-            *aside('after',
-                   ['VAR', 'x'], ['CONST', 10], ['OBJECT_ADD', 2],
-                   ['VAR_STORE', 'x'], ['CONST', None]),
-            ['PUSH_WIND', ('before', 'after', 0, 0)],
+            ['PUSH_WIND', (before, after, 0, 0)],
             ['VAR', 'x'],
             ['POP_WIND', 0],
             ['VAR', 'x'],
@@ -209,15 +204,14 @@ class TestWindOpcodes(CevalTest):
 
     async def test_soften_reports_an_absent_aside_as_none(self):
         """
-        Code.soften gives None for a field that names no aside, and the
-        softened rows build a Code that runs the same
+        Code.soften gives None for a field that carries no aside, and
+        the softened rows build a Code that runs the same
         """
 
         log = []
+        before = aside(['VAR', 'record'], ['CONST', 'before'], ['CALL', 1])
         code, ns = build_expr([
-            *aside('before', ['VAR', 'record'], ['CONST', 'before'],
-                   ['CALL', 1]),
-            ['PUSH_WIND', ('before', None, 0, 0)],
+            ['PUSH_WIND', (before, None, 0, 0)],
             ['CONST', 3],
             ['POP_WIND', 0],
             ['RETURN', 1],
@@ -227,7 +221,9 @@ class TestWindOpcodes(CevalTest):
         pushes = [
             arg[:2] for op, arg in soft
             if OpCode(op).name == "PUSH_WIND"]
-        self.assertEqual([("ASIDE_0", None)], pushes)
+        self.assertEqual(1, len(pushes))
+        self.assertIsInstance(pushes[0][0], Code)
+        self.assertIsNone(pushes[0][1])
 
         again = Code(code.namespace_spec, soft, "again")
         self.assertEqual(3, await make_callable(again, ns)())
@@ -241,28 +237,8 @@ class TestWindOpcodes(CevalTest):
         with self.assertRaises(TypeError) as caught:
             build_expr(code)
         self.assertEqual(
-            "Code instruction 0 aside name must be a str, not NoneType",
+            "Code instruction 0 aside must be a Code, not NoneType",
             str(caught.exception))
-
-    async def test_push_wind_names_asides_of_its_own_block(self):
-        """
-        PUSH_WIND opens the wind's extent, and names asides declared in
-        the block it opens in; an aside declared inside the wind's body
-        is outside that block
-        """
-
-        code = [
-            ["PUSH_WIND", (None, "inner", 0, 0)],
-            *aside("inner", ["CONST", None]),
-            ["CONST", 1],
-            ["POP_WIND", 0],
-            ["RETURN", 1],
-        ]
-        with self.assertRaises(ValueError) as caught:
-            build_expr(code)
-        self.assertEqual(
-            "instruction 0 names aside 'inner' from outside the block it is"
-            " declared in", str(caught.exception))
 
 
 # The end.

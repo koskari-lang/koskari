@@ -25,7 +25,21 @@ Pluggable name-resolution semantics for the compiler.
 from typing import Optional, Protocol, Tuple
 
 from ...exceptions import CompilerError
-from ...lib import FunctionSpec, NamespaceSpec, symbol
+from ...lib import Code, FunctionSpec, NamespaceSpec, symbol
+
+
+def _function_codes(code):
+    """
+    The Codes of the function constants in code's pool and in the
+    pools of the asides code runs, which are part of code and no
+    functions themselves
+    """
+
+    for const in (code.constants_pool or ()):
+        if isinstance(const, FunctionSpec) and const.code is not None:
+            yield const.code
+        elif isinstance(const, Code):
+            yield from _function_codes(const)
 
 
 def _unique_append(lst, val):
@@ -359,9 +373,8 @@ class KoskariPragma:
 
         # Recurse into nested function Codes; the pool is only how they
         # are found, each carries its own recorded ancestry
-        for const in (code.constants_pool or ()):
-            if isinstance(const, FunctionSpec) and const.code is not None:
-                self.validate_tree(const.code, (), mode, is_root=False)
+        for inner in _function_codes(code):
+            self.validate_tree(inner, (), mode, is_root=False)
 
 
     def _raise_unsatisfied_write(self, fragment, name, filename=None):
@@ -503,9 +516,8 @@ class SchemePragma(KoskariPragma):
         # at runtime via ns_init_syms fallback to mdl_ns_borrow_ref
 
         # Recurse into nested function Codes
-        for const in (code.constants_pool or ()):
-            if isinstance(const, FunctionSpec) and const.code is not None:
-                self.validate_tree(const.code, (), mode, is_root=False)
+        for inner in _function_codes(code):
+            self.validate_tree(inner, (), mode, is_root=False)
 
 
 class PythonPragma(KoskariPragma):
