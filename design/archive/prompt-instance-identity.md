@@ -126,7 +126,7 @@ Two consequences of the once-at-capture placement:
 
 - Grafts of one k share the falsified ids, degrading resolution within
   a single k to nearest-with-that-id. That is safe by construction:
-  grafts land at dyn_top and capture bounds at the nearest prompt, so a
+  grafts attach at dyn_top and capture bounds at the nearest prompt, so a
   same-id instance can never sit between a SHIFT and its true delimiter
   (guarded by `reentrant-nested-same-k`).
 - "Every prompt clone" matters, not just the boundary: the capture's
@@ -194,7 +194,7 @@ A capture bounded at an invocation prompt must not clone below it (the
 pairing delim and the outer chain are not region content), which costs
 the template the frame that executes the region's own bytecode. A plain
 return falling through the invocation prompt (return-at-frame case 3)
-must land in a copy of that frame and run the remaining region bytecode
+must arrive in a copy of that frame and run the remaining region bytecode
 to POP_PROMPT; without it, the value arrives at the invoke site by
 accident while the grafted prompt and delim sit stranded on the chain
 (surfacing as "cannot unwind past barrier node" at the next loop

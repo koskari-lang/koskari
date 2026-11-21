@@ -207,7 +207,7 @@ static int test_native_install_fresh_and_cached(void) {
 
   {
     PyObject *popped = KosContext_StackPopRef(ctx);
-    TEST_ASSERT_SAME(popped, staged, "staged value lands on the stack");
+    TEST_ASSERT_SAME(popped, staged, "staged value is pushed on the stack");
     Py_XDECREF(popped);
   }
   Py_DECREF(staged);

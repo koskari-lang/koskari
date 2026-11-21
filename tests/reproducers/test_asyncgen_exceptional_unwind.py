@@ -103,7 +103,7 @@ class TestAsyncGenExceptionalUnwind(unittest.IsolatedAsyncioTestCase):
     async def test_module_drive_propagates(self):
         """
         Module-load drive: the AttributeError propagates out of the load
-        (currently swallowed; the define lands empty and the load
+        (currently swallowed; the define ends up empty and the load
         reports success)
         """
 

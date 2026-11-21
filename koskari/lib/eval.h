@@ -239,7 +239,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
    breaker polled ahead of every pass -- run until no step asks for
    another pass, then the instruction at ctx->pc fetched and tail-called.
    Every re-entry into the instruction stream (a raise walk that found
-   its handler, a plan transfer, a continuation replay, a staged
+   its handler, a transfer, a continuation replay, a staged
    delivery) tails into this, and it returns only a boundary result.
    insn and val are unused.
 */
@@ -1874,8 +1874,8 @@ KosOpResult KosContext_PushOrAwait(KosContext *ctx, PyObject *val);
    installed as a call frame on the running chain; any other awaitable
    is eagerly stepped to its result, or suspends. NORMAL with *out the
    settled value (new reference), REPROLOGUE with a callee installed
-   whose return lands the value on the current frame's stack, AWAIT
-   with the yielded value (the revive lands the settled value there
+   whose return pushes the value on the current frame's stack, AWAIT
+   with the yielded value (the revive pushes the settled value there
    too), or RAISE. val is consumed.
 */
 KosOpResult KosContext_Settle(KosContext *ctx, PyObject *val, PyObject **out);

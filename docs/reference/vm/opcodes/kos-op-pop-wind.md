@@ -1,8 +1,4 @@
 # KOS_OP_POP_WIND
 - **Style**: NOARG.
-- **Stack**: Pops TOS (the body result) into the wind node, pops wind from the dynamic chain, and runs the after thunk (if entered and non-null) via kos_dyn_wind_unwind; the body result is delivered to the revealed segment when the thunk completes (or immediately when there is none). May return KOS_DYN_UNWIND_ASYNC_STARTED when the thunk pushes a frame.
+- **Stack**: Pops the body result into the wind node and leaves the node. An entered node with an after aside pushes a frame that runs it above the node; when that frame returns, its value is dropped, the node unlinks, and the body result is pushed on the stack of the frame POP_WIND ran in. Otherwise the node unlinks at once and the body result is pushed.
 - **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
-
-
-## 23. Parameterize extent
-

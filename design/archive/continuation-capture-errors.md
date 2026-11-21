@@ -50,7 +50,7 @@ them to do.
 The generator case is not hypothetical. It is the documented reason lazy,
 one-solution-at-a-time enumeration is a non-goal for `koskari.solve` — "a
 `shift` cannot cross a generator boundary" — so any user who reaches for
-generator-flavoured laziness over a search lands here.
+generator-flavoured laziness over a search arrives here.
 
 ---
 

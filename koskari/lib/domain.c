@@ -22,7 +22,7 @@
    holds the shadow cells written by parameterize (forked at context
    creation by sharing the table; the first writer copies it), and the
    KosDomain object homes root_refs, the root scope where a store with
-   no enclosing extent lands. root_refs is never copied; contexts reach
+   no enclosing extent goes. root_refs is never copied; contexts reach
    it by resolution. A parameterize block opened from Python is a span
    (koskari.lib.Parameterize): the same cells, held in a table on a
    ContextVar chain that a context takes at creation and an ambient
@@ -1378,7 +1378,7 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
     return NULL;
 
   /* A read creates nothing. The caller's default answers when nothing
-     is bound, and never lands in a store. */
+     is bound, and never goes into a store. */
   cell = kos_param_lookup_ambient(key_str);
   Py_DECREF(key_str);
   value = cell ? KosSymbolicRef_VALUE(cell) : NULL;

@@ -428,7 +428,7 @@ def _verify_stages [record]:
 
     var ran 0
     for-each [[stage expected] (.items verify)]:
-        when (in? stage #("invalid" "warning")):
+        when (in? stage #("invalid" "warning" "gc_collect")):
             (continue)
 
         var handler (HANDLERS.get stage)

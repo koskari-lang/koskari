@@ -7,7 +7,7 @@ Archived. The hygiene machinery this rollup names, `HygienicMatchCompiler`,
 replaced by hygiene by marks; see [gensym-atom-subtype.md](gensym-atom-subtype.md)
 and the [MATCHER.md](../MATCHER.md) rollup for the current shape.
 
-Phases 1 through 6 of the implementation strategy below are landed. The
+Phases 1 through 6 of the implementation strategy below are implemented. The
 native engine lives in `koskari/lib/matcher.{c,h}`; the Python builder
 API and the cleanroom composite layer live in `koskari/matcher.py`.
 `matcher` does **not** import **`koskari.exceptions`**, arbitrary
@@ -27,7 +27,7 @@ shape helpers from **`koskari.types`**, in addition to **`koskari.lib`**
 etc.). So the builder layer is cleanroom relative to the **removed** legacy
 matcher / compile-helper stacks, but not a single-module island.
 
-Phase 6 parser/registry surface is landed in `matcher` as
+Phase 6 parser/registry surface is implemented in `matcher` as
 `META_PATTERN`, `META_MATCHER`, `parse_matcher`,
 `MATCHER_REGISTRY`/`register_matcher`/`lookup_matcher`, and built-in
 head factory registration. Coverage for this surface lives in
@@ -39,16 +39,16 @@ in **`koskari/compile/specials/syntax.py`** into quoted runtime call forms
 (**`build-syntax`**, **`build-macro`**, **`build-special`**) backed by
 **`parse-rule-pattern`** / **`parse-match-pattern`**; see bootstrap bindings in
 **`koskari/importer/bootstrap.py`**. **Runtime `match/case` (Phase 8) is
-landed** (see the Phase 8 section below and the archived design docs). What
+implemented** (see the Phase 8 section below and the archived design docs). What
 remains for this rollup is narrower than the original Phase 7 bullet:
 per-special polish where a form still prefers ad hoc matching over shared
 **`matcher`** / **`helpers`** surfaces, and optional **rename NG modules to
 canonical names** once the tree stabilizes. Earlier legacy matcher stacks and duplicate compile-helper paths
-that predated this layout are **removed**. Treat Phase 7 in the checklist below as **landed** for the define-syntax /
+that predated this layout are **removed**. Treat Phase 7 in the checklist below as **implemented** for the define-syntax /
 **`syntax.Syntax`** story, with follow-up only for straggler specials and
 hardening.
 
-**Syntax NG (dispatcher and transforms, landed and wired).**
+**Syntax NG (dispatcher and transforms, implemented and wired).**
 `koskari/syntax.py` defines **`Syntax`**, **`SyntaxTransform`**, **`MacroTransform`**, and
 **`SpecialTransform`**, plus runtime builtins **`build-syntax`**, **`build-macro`**, and
 **`build-special`**, with **`parse-rule-pattern`** and **`parse-match-pattern`** lowering
@@ -112,7 +112,7 @@ pattern story. Delivery is intentionally a **single “Big Heave”**
 replacement of the legacy matcher / hygiene / syntax-rules surface for this
 codebase. **Running old and new matcher or hygiene stacks in parallel as a
 long-term architecture is not a design goal**; incidental overlap while
-landing patches is expected, but sustained dual-stack operation is not.
+implementing patches is expected, but sustained dual-stack operation is not.
 
 Complements the current architecture reference at
 [unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md),
@@ -122,7 +122,7 @@ which documents the implementation `matcher` is intended to supersede.
 
 These bullets record how the shipped tree behaves relative to the
 high-level goals above; the rest of the document describes the same
-system without a separate “planned vs landed” split.
+system without a separate “planned vs implemented” split.
 
 * **Phase 4.5 (repeat frames and slot helpers).** Builder helpers
   `repeat_capture`, `slot_prefix`, `binding_inner_pattern`, and
@@ -1433,7 +1433,7 @@ one matcher plus one walker over its captures dict.
 
 ## Implementation Strategy: Low to High
 
-### Phase 1 — Native low-level matcher core *(landed)*
+### Phase 1 — Native low-level matcher core *(implemented)*
 
 C-native tagged node array, validator, and matcher core in
 `koskari/lib/matcher.{c,h}`.
@@ -1452,7 +1452,7 @@ Implemented:
 * extern table validation
 * `NOT` rejects subtrees containing `CAPTURE`
 
-### Phase 2 — Subject adapters *(landed)*
+### Phase 2 — Subject adapters *(implemented)*
 
 Adapters for both `PySequence_Fast` (tuple/list runtime matching)
 and `KosPair` (compile-time source-form matching) live in
@@ -1460,7 +1460,7 @@ and `KosPair` (compile-time source-form matching) live in
 `subject_from_any` dispatches at the subject root and `match_form`
 re-enters the dispatch when descending into a nested element.
 
-### Phase 3 — Frozen tuple schema and thaw *(landed)*
+### Phase 3 — Frozen tuple schema and thaw *(implemented)*
 
 Schema is the **six-element** tuple
 `("MATCHER", slots, externs, consts, nodes, entry)` (no separate version
@@ -1470,7 +1470,7 @@ ordinary Python code-constant machinery. `thaw` in `koskari/matcher.py`
 wraps `Matcher.from_tuple` for symmetry with the builder API. **Hygiene** is
 not a field of this tuple; see **As-built notes** (hygiene split).
 
-### Phase 4 — Python builder API *(landed)*
+### Phase 4 — Python builder API *(implemented)*
 
 Builder classes and shorthand factories live in
 `koskari/matcher.py`:
@@ -1485,7 +1485,7 @@ make_matcher, thaw,
 All ergonomic shorthands lower into the same frozen-tuple
 representation as the primitives.
 
-### Phase 4.5 — Repeat frames and slots helpers *(landed)*
+### Phase 4.5 — Repeat frames and slots helpers *(implemented)*
 
 Builder helpers in `koskari/matcher.py`:
 
@@ -1500,7 +1500,7 @@ BINDING_CELL(slot)                # slot_prefix(binding_inner_pattern, slot)
 is its own slot-uniqueness scope; identical slot names across
 mutually exclusive arms are valid.
 
-### Phase 5 — Bootstrap composites *(landed, cleanroom rewrite)*
+### Phase 5 — Bootstrap composites *(implemented, cleanroom rewrite)*
 
 Composites in `koskari/matcher.py`: `DEFINE`, `DECL`, `BINDING`,
 `BINDINGS`, `FORMALS`, `USING`, `BODY`. Each composite is a thin
@@ -1512,7 +1512,7 @@ Python transform; the captures dict is the **`MatchResult`** payload.
 Composite sketches are summarized under **As-built notes** above and in
 **Current Matcher Examples Rewritten** below.
 
-### Phase 6 — Matcher syntax parser *(landed)*
+### Phase 6 — Matcher syntax parser *(implemented)*
 
 The matcher-syntax parser lives in `koskari/matcher.py` and uses
 the existing primitives/composites to unpack matcher syntax itself.
@@ -1527,7 +1527,7 @@ Implemented pieces:
 * parser test suite: `tests/matcher/test_syntax.py`
 
 The shape and capture contract of that parser are sketched in the
-"Self-Describing Matcher Syntax" section above. With this landed,
+"Self-Describing Matcher Syntax" section above. With this implemented,
 source-level matcher authoring becomes:
 
 ```scheme
@@ -1545,7 +1545,7 @@ constructors).
 
 ### Phase 7 — Special-form dispatch integration *(in progress)*
 
-**Landed for the `Syntax` box:** **`compile/define-syntax`** (and related
+**Implemented for the `Syntax` box:** **`compile/define-syntax`** (and related
 **`compile/syntax-match`**, macro-rules, special-rules builders) compile to
 **`syntax.Syntax`** with per-arm frozen matchers and the expansion pipeline
 described under "Syntax NG" above.
@@ -1645,7 +1645,7 @@ left as a thin legacy adapter until Cutover E. Baseline C can be
 satisfied by a shared protocol (match + optional hygiene) that both
 types satisfy.
 
-#### Baseline D — reduced syntax-rules matcher compiler *(largely landed)*
+#### Baseline D — reduced syntax-rules matcher compiler *(largely implemented)*
 
 **Done in tree:** **`koskari/syntax.py`** — **`parse_syntax_rules_pattern`**,
 **`build-syntax`** / **`build-macro`** / **`build-special`** runtime constructors,
@@ -1665,7 +1665,7 @@ shapes and multi-arm **`Syntax`** ordering; audit any macro handlers that still
 expect legacy **`RepeatResult`**-style kwargs instead of raw **`captures`**;
 optional performance work (cached lowers for **`helpers.match`** static
 patterns, etc.—see tune-up notes in reviews, not normative here). Cutover E
-**landed:** legacy **`koskari.syntax`**, **`koskari.matcher`**, **`koskari.hygiene`**,
+**implemented:** legacy **`koskari.syntax`**, **`koskari.matcher`**, **`koskari.hygiene`**,
 **`koskari.compile.helpers`**, and **`koskari/compile/helpers.py`** are removed from
 the tree.
 
@@ -1713,7 +1713,7 @@ all framework pieces are already present and individually tested.
    `name=`. `AttributeError` during attribute extraction folds
    to a no-match.
 6. **Whether shorthand `(Point x: 0 y)` is accepted or only
-   canonical `(CLASS Point x: 0 y)`.** *Open.* The landed
+   canonical `(CLASS Point x: 0 y)`.** *Open.* The implemented
    Phase 6 parser recognises only the canonical `(CLASS ...)` form;
    the meta-matcher sketch in this document recognises only the
    canonical `(CLASS ...)` form.

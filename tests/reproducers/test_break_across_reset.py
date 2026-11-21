@@ -15,13 +15,17 @@
 """
 tests.reproducers.test_break_across_reset
 
-A break or continue reaches the innermost loop of its own function
-through any reset between them, whether it is written in the reset
-body or in a shift handler, as a return or a raise does. Inside a
-resumed delimited slice the slice is the continuation's body: a break
-or continue there with no loop of its own is a break outside a loop,
-not an exit from the loop surrounding the reset and not an exit from a
-loop in the shift handler.
+A reset's body is a function the reset calls, so only a loop inside
+the body is the body's: a break or continue there with no loop of its
+own is a break outside a loop, whatever loop surrounds the reset, and a
+return gives the reset its value while a raise crosses it. A
+shift handler runs after the shift has aborted to its reset, so only a
+loop inside the handler is the handler's: a break or continue there
+with no loop of its own is a break outside a loop, whatever loop
+surrounds the reset. Inside a resumed delimited slice the slice is the
+continuation's body: a break or continue there with no loop of its own
+is a break outside a loop too, not an exit from the loop surrounding
+the reset and not an exit from a loop in the shift handler.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -66,9 +70,11 @@ def continue_in_handler []:
     seen
 
 def return_in_body []:
+    var seen #[]
     while True:
-        reset:
-            return 7
+        (seen.append (reset (return 7)))
+        break
+    seen
 
 def raise_in_body []:
     try:
@@ -107,29 +113,37 @@ class TestBreakAcrossReset(unittest.IsolatedAsyncioTestCase):
         return vars(module)
 
 
-    async def test_break_in_reset_body(self):
+    async def test_break_in_reset_body_is_outside_loop(self):
         mod = await self.load()
-        self.assertEqual(5, await mod["break_in_body"]())
+        with self.assertRaises(RuntimeError) as caught:
+            await mod["break_in_body"]()
+        self.assertEqual("break outside loop", str(caught.exception))
 
 
-    async def test_continue_in_reset_body(self):
+    async def test_continue_in_reset_body_is_outside_loop(self):
         mod = await self.load()
-        self.assertEqual([1, 2, 3], await mod["continue_in_body"]())
+        with self.assertRaises(RuntimeError) as caught:
+            await mod["continue_in_body"]()
+        self.assertEqual("continue outside loop", str(caught.exception))
 
 
-    async def test_break_in_shift_handler(self):
+    async def test_break_in_shift_handler_is_outside_loop(self):
         mod = await self.load()
-        self.assertEqual(9, await mod["break_in_handler"]())
+        with self.assertRaises(RuntimeError) as caught:
+            await mod["break_in_handler"]()
+        self.assertEqual("break outside loop", str(caught.exception))
 
 
-    async def test_continue_in_shift_handler(self):
+    async def test_continue_in_shift_handler_is_outside_loop(self):
         mod = await self.load()
-        self.assertEqual([1, 2, 3], await mod["continue_in_handler"]())
+        with self.assertRaises(RuntimeError) as caught:
+            await mod["continue_in_handler"]()
+        self.assertEqual("continue outside loop", str(caught.exception))
 
 
-    async def test_return_and_raise_still_cross(self):
+    async def test_return_is_the_reset_value_and_raise_crosses(self):
         mod = await self.load()
-        self.assertEqual(7, await mod["return_in_body"]())
+        self.assertEqual([7], await mod["return_in_body"]())
         self.assertEqual("boo", await mod["raise_in_body"]())
 
 

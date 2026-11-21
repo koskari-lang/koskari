@@ -99,26 +99,21 @@ void kos_gen_state_clear(KosGenState *state) {
 
 
 /**
-   The owner is held by the record that steps the generator for the
-   installed span: the for-each request, the next request's resume
-   state, the native frame's record, the yield-from delegate slot, or
-   a Python adapter. The reference taken here keeps it through the
-   free and the finish, whose side effects may release the record.
+   Mark a flattened generator's owner closed, once the unlink that left
+   its span has freed the GEN: the work a GEN's uninstall hands back to
+   the unlink (kos_dyn_uninstall_handler). The owner is held by the
+   record that steps the generator for the installed span: the for-each
+   request, the next request's resume state, the native frame's record,
+   the yield-from delegate slot, or a Python adapter. The unlink holds
+   its own reference through the free and this finish, whose side
+   effects may release the record.
 */
-void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
+static void kos_dyngen_finish_owner(PyObject *owner) {
 
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-  KosDynNode *consumer = KosDynNode_PARENT(gen);
-  PyObject *owner = Py_NewRef(KosDynGen_OWNER(gen));
   KosIterSlots *islots;
 
-  PyErr_Fetch(&typ, &val, &tb);
-  kos_dyn_commit_dyn_top(ctx, consumer);
-  kos_dynnode_free((KosDynNode *) gen);
-  PyErr_Restore(typ, val, tb);
   if (KosIter_CheckSlots(owner, &islots))
     islots->ki_finish(owner, 1);
-  Py_DECREF(owner);
 }
 
 
@@ -139,6 +134,15 @@ KosDynGen *kos_dyn_find_gen(KosContext *ctx) {
 }
 
 
+KosDynGen *kos_dyn_yield_gen(KosContext *ctx) {
+  KosDynGen *gen = kos_dyn_find_gen(ctx);
+
+  if (! gen)
+    PyErr_SetString(PyExc_RuntimeError, "yield outside generator");
+  return gen;
+}
+
+
 /**
    Capture the live registers at the current dyn_top into regs.
 */
@@ -151,10 +155,9 @@ static void kos_live_regs_capture(KosContext *ctx, KosLiveRegs *regs) {
 
 
 /**
-   Make regs the live registers: dyn_top and the retarget a resync from
-   that top would produce, with the outgoing frame's pc flushed.
+   Make regs the live registers. See dynchain.h.
 */
-static void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
+void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
   KosContext_DYN_TOP(ctx) = regs->top;
   kos_dyn_resync_apply(ctx, (KosDynFrame *) regs->frame, regs->block,
                        regs->ns, 1);
@@ -288,7 +291,7 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   /* frozen.top always equals the active head here: kos_dyn_gen_freeze
      writes active and the frozen snapshot together and nothing else
      sets active non-NULL. The compare is kept so a future freeze path
-     that records one without the other lands on the rebuild instead of
+     that records one without the other takes the rebuild instead of
      stale registers; the same holds for host.top at the freeze. */
   if (state->frozen.top == active && state->frozen.frame) {
     /* The registers the freeze recorded for this very head: apply

@@ -18,9 +18,9 @@
    koskari/lib/dynchain.h
 
    Dynamic chain infrastructure for delimited continuations and
-   dynamic-wind semantics. Provides DynNode types (FRAME, PROMPT,
-   WIND, REGION, and others) that form a unified parent
-   chain, replacing the separate frame and handler chains.
+   dynamic-wind semantics. Provides the DynNode kinds (FRAME, PROMPT,
+   WIND, TRY, FINALLY, LOOP, FOREACH, NS, COLLECT, CC, PARAM, WITH,
+   GEN) that link into one parent chain.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -45,9 +45,10 @@
   KosDynKind enumerates the types of nodes in the dynamic chain.
 
   KOS_DYN_FRAME    - Function activation record
-  KOS_DYN_PROMPT   - Delimiter for delimited continuations (reset)
-  KOS_DYN_DELIM    - Delimited invoke return marker with return metadata
-  KOS_DYN_WIND     - Dynamic-wind extent with before/after hooks
+  KOS_DYN_PROMPT   - Delimiter for delimited continuations (reset): the
+                     frame on it is the reset's body or a shift's
+                     handler, and ends it
+  KOS_DYN_WIND    - Dynamic-wind extent with before/after hooks
   KOS_DYN_TRY      - try region
   KOS_DYN_FINALLY  - finally region
   KOS_DYN_LOOP     - loop region
@@ -57,18 +58,15 @@
                      on pop
   KOS_DYN_CC       - Undelimited continuation block (call/cc)
   KOS_DYN_PARAM    - Parameter bindings (parameterize extent)
-  KOS_DYN_WITH     - Context manager (with / dyn-with); multi vs single-shot
-                     is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
-  KOS_DYN_SHIFT    - Shift handler bookmark (transparent; no segment,
-                     frame, or namespace of its own)
+  KOS_DYN_WITH     - Context manager (with / dyn-with); a dyn-with carries
+                     KOS_DYN_CAP_WINDS, not a second kind
   KOS_DYN_GEN      - Generator node; intercepts handle(RETURN/RAISE),
-                     denies handle(SHIFT)
+                     denies handle(ABORT)
   KOS_DYN_UNKNOWN  - Sentinel value for unknown node kind
 */
 typedef enum KosDynKind {
   KOS_DYN_FRAME = 0,
   KOS_DYN_PROMPT,
-  KOS_DYN_DELIM,
   KOS_DYN_WIND,
   KOS_DYN_TRY,
   KOS_DYN_FINALLY,
@@ -79,7 +77,6 @@ typedef enum KosDynKind {
   KOS_DYN_CC,
   KOS_DYN_PARAM,
   KOS_DYN_WITH,
-  KOS_DYN_SHIFT,
   KOS_DYN_GEN,
 
   KOS_DYN_UNKNOWN,
@@ -103,16 +100,11 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
                          the wait ends, never copied to a clone. A
                          goal's LEAVING that unlinks a node carrying it
                          voids the waiting goal (see xfer_goal.c)
-  KOS_DYNF_INVOCATION  - PROMPT: instance created by a k-invocation
-                         (graft instantiation or in-place invoke);
-                         no POP_PROMPT instruction pairs with it, so
-                         delivery routes through the paired DELIM
 */
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,
   KOS_DYNF_GOAL_WAIT   = 0x02,
-  KOS_DYNF_INVOCATION  = 0x08,
 } KosDynFlags;
 
 
@@ -127,10 +119,15 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_CATCH                    (1u << 0)
 
 /* a LOOP or FOREACH region still running its body: the region a break
-   or continue lands on. CLEAR_LOOP and CLEAR_FOREACH take it away when
+   or continue targets. CLEAR_LOOP and CLEAR_FOREACH take it away when
    the else clause starts, so a break or continue written there belongs
    to the enclosing loop. The one record of the region's enabled state. */
 #define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
+
+/* a transfer runs this node: its leave on the way out, its enter on
+   re-entry. Carried by WIND, PARAM, and a WITH pushed by dyn-with; the
+   kind's own enter and leave do the work (kos_dyn_extent_enter) */
+#define KOS_DYN_CAP_WINDS                    (1u << 4)
 
 /* the node reacts when control returns into it from a frame it owns:
    the extent contract has work for it (WITH, WIND), and it carries an
@@ -148,7 +145,7 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 
 /**
-   Node participates in raise-walk dispatch (handle/restitch); the fast
+   Node participates in raise-walk dispatch (handle); the fast
    first check before kos_dyn_handle.
 */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
@@ -196,6 +193,51 @@ typedef struct KosLiveRegs {
   KosSegment **block;
   PyObject *ns;
 } KosLiveRegs;
+
+
+/**
+   A point where a transfer attaches its copy in pieces: a node the
+   transfer runs (KOS_DYN_CAP_WINDS) at regs.top, the node resting on
+   it in the copy at rest (NULL when it is the copy's top), and the
+   registers live with regs.top at dyn_top. Borrowed: they belong to
+   the copy until attached and to the chain after.
+*/
+typedef struct KosXferPiece {
+  struct KosDynNode *rest;
+  KosLiveRegs regs;
+} KosXferPiece;
+
+
+/**
+   What one pass of kos_dyn_clone_segment met, so no caller walks the
+   clone again: its bottom, how many frames it holds, and the registers
+   live with its top at dyn_top (top.top is the clone's top). Borrowed
+   pointers into the clone, but for pieces.
+
+   A copy cloned for an attach also carries what attaching it needs:
+   every frame back link and segment back inside the copy is set, the
+   lowest frame and the lowest segment are left open for the facts
+   below the copy, and the split points come with their registers. A
+   register field no node of the copy supplies is NULL, and is the one
+   below the copy; ns_open heads the run of nodes at the copy's bottom
+   that carry no namespace. kos_dyn_settle_clone fills all of these
+   from the seam once.
+*/
+typedef struct KosCloneShape {
+  struct KosDynNode *bottom;
+  unsigned frames;
+  KosLiveRegs top;
+
+  /* for an attach only */
+  struct KosDynNode *open_frame;
+  KosSegment *open_segment;
+  struct KosDynNode *ns_open;
+  KosXferPiece *pieces;        /* outermost first; owned */
+  size_t piece_count;
+  /* a TRY or FINALLY holding its handled exception was met, which
+     the attach puts back on the thread (kos_dyn_install_regions) */
+  int frozen;
+} KosCloneShape;
 
 
 /**
@@ -317,7 +359,6 @@ typedef enum KosXferEvent {
   KOS_XFER_EVENT_RAISE,
   KOS_XFER_EVENT_BREAK,
   KOS_XFER_EVENT_CONTINUE,
-  KOS_XFER_EVENT_SHIFT,
   KOS_XFER_EVENT_TRANSFER,   /* a transfer is tearing the node down */
 } KosXferEvent;
 
@@ -354,7 +395,6 @@ typedef struct KosObligation {
     struct {
       PyObject *value;             /* owned */
       uint8_t path;                /* KosPendingReturnKind */
-      struct KosDynNode *delim;    /* borrowed bookmark, delimited path */
     } ret;
   } u;
 } KosObligation;
@@ -394,7 +434,7 @@ typedef enum KosHandleResult {
    KosThreadFn. clear runs at a teardown with no delivery coming (a
    frame freed or cached with the resume still set); NULL means the
    state is borrowed and its owner cleans up. clone runs at a
-   continuation capture and at a multi-shot landing; NULL means the
+   continuation capture and at each application of one; NULL means the
    capture refuses by name. throw_kind is the kind that takes a throw
    into this halt, with the exception object as its value and the same
    state: a throw ingress sets it on the frame in place of this kind
@@ -477,7 +517,7 @@ void *kos_resume_clone_object(void *state);
 
 
 /* The record a LOOP and a FOREACH region share: the instructions
-   break and continue land on, and the body's last continue value. Jump
+   break and continue jump to, and the body's last continue value. Jump
    targets held by a node are records of the frame's code, which the
    frame keeps alive; code never relocates, so they stay valid for the
    life of the node and of any clone. */
@@ -496,8 +536,8 @@ struct KosDynNode {
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
   /* Owned operand segment. Region kinds always own one (aimed at the
      embedded iseg at construction or push, heap after a spill); NULL
-     marks a transfer bookmark, which inherits the enclosing extent's
-     segment. */
+     marks a transfer bookmark (CC, PROMPT, GEN), which inherits the
+     enclosing extent's segment. */
   KosSegment *stack;
   /* Namespace (reference owned): the node's own scope when it has
      KOS_DYN_CAP_OWNS_NS, otherwise a fill of the live namespace taken
@@ -512,9 +552,9 @@ struct KosDynNode {
       KosOp *acting_pc;   /* instruction currently being executed */
       uint32_t frame_flags;
       /* Frame nesting depth on this context's chain: the enclosing
-         frame's depth + 1, the root frame at 1. Set at install and
-         renumbered whenever a segment carrying frames is spliced in
-         (continuation landing, generator install), so the frame
+         frame's depth + 1, the root frame at 1. Set at install, set by
+         the clone for a continuation's copy, and renumbered whenever a
+         generator's span is spliced in, so the frame
          depth test against the frame depth limit at install is one
          load and one compare. The limit defaults to 10000 and is
          settable up to KOS_FRAME_DEPTH_MAX, the width of this field. */
@@ -540,9 +580,10 @@ struct KosDynNode {
       PyObject *fn;
       /* Unwind cache: the frame displaced at install (borrowed; an
          ancestor on the chain, so it outlives this frame while
-         installed). Set at install only; cleared at clone and at the
-         restitch of a stashed span; a frozen GEN span keeps it, and
-         the install rewrites the span's bottom frame's. NULL means
+         installed). Set at install, and by the clone pass of a copy
+         cloned for an attach; cleared at clone; a frozen GEN span
+         keeps it, and the install rewrites the span's bottom frame's.
+         NULL means
          fall back to the chain walk. While the
          frame is held in its function's cache this links the next
          cached frame instead (see KosFunction_CacheFrame), and the
@@ -550,45 +591,20 @@ struct KosDynNode {
       struct KosDynNode *back_frame;
     } frame;
     struct {
-      uint32_t prompt_id;
-      /* the POP_PROMPT closing this prompt's region, resolved from the
-         PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
-         pop_pc + 1; stored resolved because by the time a shift body
-         runs, no live acting pc still points into the extent. NULL on
-         an invocation prompt, which has no region of its own. */
-      KosOp *pop_pc;
+      /* the tag a shift finds this prompt by, compared by identity;
+         owned. NULL is the default tag, the one reset and shift use,
+         and the one None names: None itself is never stored. */
+      PyObject *tag;
     } prompt;
-    struct {
-      uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
-      KosDynNode *chain;  /* owned when mode == INPLACE */
-      /* where the return lands in frame; NULL with no frame, and for a
-         code-less frame, whose resume takes the delivery. frame alone
-         says whether there is a return site */
-      KosOp *pc;
-      /* The frame control lands in when the invoke comes back from
-         the slice: the invoking frame, borrowed. For an INPLACE invoke
-         it is the frame below the prompt, a frame of the stashed span
-         (a helper the handler called), or the handler snapshot the
-         invoke placed at the span's bottom when the handler's own
-         frame is the invoker and dies with the slice. */
-      KosDynNode *frame;
-      KosDynNode *node;
-      /* INPLACE only: the invoke-site pc and acting pc, restored at
-         restitch (slice execution overwrites both) */
-      KosOp *saved_pc;
-      KosOp *saved_acting_pc;
-      /* the borrowed resume frame's own resume, displaced with its pcs
-         while the slice runs in that frame and restored at the
-         restitch; NULL kind when the frame carried none */
-      const KosResumeKind *saved_resume_kind;
-      void *saved_resume_state;
-    } delim;
     struct {
       KosOp *resume_pc;  /* the instruction after POP_CC */
     } cc;
     struct {
-      PyObject *before_thunk;  /* callable (owned) or NULL */
-      PyObject *after_thunk;   /* callable (owned) or NULL */
+      /* the code the PUSH_WIND is in (owned), and its row (borrowed,
+         kept alive by the code), whose fields are the before and after
+         asides, each NULL for none */
+      KosCode *code;
+      const KosExtra *row;
       /* the body result at POP_WIND, or what a walk stored while the
          after-thunk runs */
       KosObligation ob;
@@ -635,30 +651,17 @@ struct KosDynNode {
       uint8_t self_bind;
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_* */
-      uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
       /* __exit__ runs as a handler of the obligation's exception: saved
          is the handler-visible state that displaced, given back when
          __exit__ is done */
       uint8_t exc_saved;
-      /* KosRef shared across clones (owned); non-empty once the
-         single-shot __exit__ has run. NULL for multi-shot */
-      PyObject *exit_done;
-      PyObject *name;      /* binding name or NULL (owned) */
+      PyObject *name;     /* binding name or NULL (owned) */
       KosOp *resume_pc;    /* the instruction after the with body (pop + 1) */
       /* the exception __exit__ is handling, or what a walk stored while
          __exit__ runs */
       KosObligation ob;
       KosExcState saved;
     } with;
-    struct {
-      /* shift: marker delimiting the handler body; owns no block, so
-         handler operands land in the innermost owner below (the
-         prompt's region block, or a frame). prompt_node_id is the
-         instance id of the PROMPT this shift captured against;
-         POP_SHIFT resolves its delimiter by this, never by chain
-         position. */
-      uint32_t prompt_node_id;
-    } shift;
     struct {
       /* The generator object whose span this node marks, borrowed. It
          is alive while the node is installed on a running chain: the
@@ -678,7 +681,7 @@ struct KosDynNode {
   /* Embedded operand-segment storage for region kinds: stack aims
      here at construction and spills to a heap segment on growth (the
      storage then sits dormant until node reuse). Transfer bookmarks
-     leave it unused. */
+     (CC, PROMPT, GEN) leave it unused. */
   KosInlineSegment iseg;
 };
 
@@ -729,7 +732,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx);
 
 
 typedef struct KosDynNode KosDynPrompt;
-typedef struct KosDynNode KosDynDelim;
 typedef struct KosDynNode KosDynWind;
 typedef struct KosDynNode KosDynTry;
 typedef struct KosDynNode KosDynFinally;
@@ -740,7 +742,6 @@ typedef struct KosDynNode KosDynCollect;
 typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
-typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynGen;
 
 
@@ -751,55 +752,32 @@ typedef struct KosDynNode KosDynGen;
    KosContinuation holds a captured delimited continuation.
 
    The captured_chain is a cloned segment of the dynamic chain from the
-   capture point down through the prompt and its owning FRAME node
-   (delimited), or from above the CC block down to root (undelimited).
+   capture point down through the prompt, whole frames up to and
+   including the reset's body (delimited), or from above the CC block
+   down to root (undelimited).
 
    The resume_pc is the instruction to resume at; the frame it
-   resumes in is resolved from the chain at invoke time (the landed
-   segment's innermost FRAME), never stored. The resume_stack points at
-   the innermost node-owned operand stack on captured_chain; it is an
-   alias for that node-owned block, not separately released here.
+   resumes in is resolved from the chain at invoke time (the attached
+   segment's innermost FRAME), never stored.
 
-   For multi-shot continuations, the chain/stack are cloned on
-   each invocation. For one-shot, they are consumed directly.
+   A continuation is multi-shot: the chain and its stacks are cloned on
+   each invocation.
 */
 
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosOp *resume_pc;             /* the instruction to resume at */
-  KosSegment *resume_stack;  /* aliases node-owned stack on captured_chain */
-  uint32_t prompt_id;           /* target prompt tag */
-  uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
-  uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
+  uint8_t delimited;            /* 1 = shift capture, 0 = call/cc */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
-
-  /* Capture-time live node identities for in-place (Path A) invoke
-   * detection. Borrowed pointers: dereference only after a pointer +
-   * node_id ancestry match from dyn_top confirms the node is still live
-   * on this chain. Zero for undelimited continuations. */
-  KosDynNode *live_prompt_node;
-  uint32_t live_prompt_node_id;
-  KosDynNode *live_shift_node;
-  uint32_t live_shift_node_id;
+  unsigned frames;              /* frames in captured_chain */
 };
 
 
 #define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
-#define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
-#define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
-#define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
-#define KosContinuation_LIVE_SLICE_CONSUMED(k) \
-  (((KosContinuation *)(k))->live_slice_consumed)
+#define KosContinuation_DELIMITED(k)       (((KosContinuation *)(k))->delimited)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
-#define KosContinuation_LIVE_PROMPT_NODE(k) \
-  (((KosContinuation *)(k))->live_prompt_node)
-#define KosContinuation_LIVE_PROMPT_NODE_ID(k) \
-  (((KosContinuation *)(k))->live_prompt_node_id)
-#define KosContinuation_LIVE_SHIFT_NODE(k) \
-  (((KosContinuation *)(k))->live_shift_node)
-#define KosContinuation_LIVE_SHIFT_NODE_ID(k) \
-  (((KosContinuation *)(k))->live_shift_node_id)
+#define KosContinuation_FRAMES(k)          (((KosContinuation *)(k))->frames)
 
 
 /* === DynNode allocation and lifecycle === */
@@ -849,11 +827,12 @@ void kos_dynframe_free(KosDynFrame *frame);
    Allocate a new prompt node.
 
    :param parent: parent node in dynamic chain
-   :param prompt_id: tag for matching (0 = default)
+   :param tag: the prompt's tag, matched by identity, or NULL for the
+      default tag (never None); a reference is taken
 
    :return: new prompt node, or NULL on error
 */
-KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id);
+KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag);
 
 
 /**
@@ -865,47 +844,20 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
 
 
 /**
-   Allocate a new DELIM marker node for delimited return bookkeeping.
-
-   :param parent: parent node in dynamic chain
-   :param mode: KOS_DYN_DELIM_MODE_*
-   :param chain: optional owned chain payload for INPLACE mode
-   :param pc: the instruction the return lands on, or NULL
-   :param frame: resume frame payload
-   :param node: resume node payload
-
-   :return: new DELIM node, or NULL on error
-*/
-KosDynDelim *kos_dyndelim_new(
-   KosDynNode *parent,
-   uint8_t mode,
-   KosDynNode *chain,
-   KosOp *pc,
-   KosDynFrame *frame,
-   KosDynNode *node);
-
-
-/**
-   Free a DELIM node.
-
-   :param delim: DELIM node to free (may be NULL)
-*/
-void kos_dyndelim_free(KosDynDelim *delim);
-
-
-/**
    Allocate a new wind node.
 
    :param parent: parent node in dynamic chain
-   :param before_thunk: before hook callable (new ref, or NULL)
-   :param after_thunk: after hook callable (new ref, or NULL)
+   :param code: the code holding the PUSH_WIND (borrowed; the node
+     takes its own reference), or NULL with row
+   :param row: the PUSH_WIND's row, carrying the before and after asides,
+     or NULL for a wind with neither
 
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dynwind_new(
    KosDynNode *parent,
-   PyObject *before_thunk,
-   PyObject *after_thunk);
+   KosCode *code,
+   const KosExtra *row);
 
 
 /**
@@ -997,17 +949,64 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
 /**
    Clone a chain segment from top down to (but not including) stop.
 
-   Each node in the segment is cloned and linked. The cloned chain's
-   bottom node's parent is set to stop (or NULL if stop is NULL).
+   Each node in the segment is cloned and linked, in one pass from top
+   down. The clone's bottom node's parent is set to stop (or NULL if
+   stop is NULL); a caller that keeps the clone off the chain unlinks
+   it through shape->bottom.
 
    :param top: top of segment to clone
    :param stop: stop at this node (not cloned), or NULL to clone all
+   :param fresh_ids: non-zero for a delimited continuation's template
+      and for each copy attached from it: every clone is a new instance,
+      its id minted on first read. Zero for call/cc, whose clones keep
+      their source's id so an attached clone counts as the same extent as
+      the node it was captured from
+   :param for_attach: non-zero for a copy an invoke attaches: the pass
+      also numbers its frames, the topmost at top_depth and each one
+      below it one less, as they stand once attached. Zero for a
+      template, whose frames keep their source's depths
+   :param top_depth: the depth the copy's topmost frame takes
+   :param shape: filled with what the pass met; see KosCloneShape
 
-   :return: cloned chain top, or NULL on error
+   :return: cloned chain top, or NULL on error (shape is then empty)
 */
 KosDynNode *kos_dyn_clone_segment(
-   KosDynNode *top,
-   KosDynNode *stop);
+    KosDynNode *top,
+    KosDynNode *stop,
+    int fresh_ids,
+    int for_attach,
+    unsigned top_depth,
+    KosCloneShape *shape);
+
+
+/**
+   Complete a copy cloned for an attach from the facts below it: the
+   live registers, read with the seam the copy goes on at dyn_top. The
+   lowest frame's back link and the lowest segment's back take the
+   live frame and block, the run of nodes at the bottom with no
+   namespace takes the live one, and every register the copy left
+   open takes the live value. Runs once, before the first piece is
+   attached.
+*/
+void kos_dyn_settle_clone(KosContext *ctx, KosCloneShape *shape);
+
+
+/**
+   Make regs the live registers: dyn_top is regs->top, and the frame,
+   block and namespace are loaded as a chain walk from it would find
+   them, flushing the outgoing frame's pc.
+*/
+void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs);
+
+
+#if KOS_EVAL_SAFETYNET
+/**
+   Whether the live frame, block and namespace are what a walk from
+   dyn_top derives. A diagnostic for a register load from recorded
+   facts.
+*/
+int kos_dyn_live_regs_derived(KosContext *ctx);
+#endif
 
 
 /* === Unified dynamic chain API === */
@@ -1085,6 +1084,24 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
     KosCode *code,
     PyObject *ns);
 
+/* The frame of an aside: one of no arguments that runs aside, a
+   code, over ns, with no function around it; ns is consumed, and
+   with owns_ns set the frame introduces it. See
+   dynchain/dyn_frame.c. */
+KosDynFrame *kos_dynframe_new_aside(
+    KosDynNode *parent,
+    KosDynFrame *base,
+    KosCode *aside,
+    PyObject *ns,
+    int owns_ns);
+
+/* Push a frame that runs aside over ns, the namespace live at the
+   instruction that runs it. */
+KosDynFrame *kos_dyn_push_aside(
+    KosContext *ctx,
+    KosCode *aside,
+    PyObject *ns);
+
 
 /**
    Push a placeholder frame with code=NULL and ns=NULL for INSTALL to configure.
@@ -1106,12 +1123,6 @@ KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
 KosDynFrame *kos_dyn_push_frame_native(KosContext *ctx);
 
 /**
-   The depth of the nearest frame at or below node, 0 when the chain
-   under node holds no frame (or node is NULL).
-*/
-unsigned kos_dyn_frame_depth_at(KosDynNode *node);
-
-/**
    Count the FRAME nodes on the segment from top down to but excluding
    base (NULL: the whole chain).
 */
@@ -1120,20 +1131,11 @@ unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base);
 /**
    Renumber the frames on the segment from top down to but excluding
    base so the lowest sits at base_depth + 1 and each frame above it is
-   one deeper. Called after a segment carrying frames is spliced onto a
-   chain; the caller has already established that the result fits
-   under the frame depth limit, which never exceeds
-   KOS_FRAME_DEPTH_MAX.
-*/
-void kos_dyn_renumber_frames(
-    KosDynNode *top,
-    KosDynNode *base,
-    unsigned base_depth);
-
-/**
-   kos_dyn_renumber_frames for a caller that has already counted the
-   segment's frames (count from kos_dyn_frame_count over the same
-   bounds), saving the recount.
+   one deeper, for a caller that has already counted the segment's
+   frames (count from kos_dyn_frame_count over the same bounds). Called
+   after a segment carrying frames is spliced onto a chain; the caller
+   has already established that the result fits under the frame depth
+   limit, which never exceeds KOS_FRAME_DEPTH_MAX.
 */
 void kos_dyn_renumber_frames_counted(
     KosDynNode *top,
@@ -1271,15 +1273,6 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span);
 
 
 /**
-   Finish a flattened generator whose frame has already left the chain
-   and which is now dyn_top: unlink and free its GEN node, then mark
-   its owner closed. The raise walk and a transfer's leave both cross a
-   flattened generator this way. PyErr is preserved across it.
-*/
-void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen);
-
-
-/**
    Install a resting, started span onto the context's chain: a new GEN
    node under the chain's top, the span above it, the live registers
    retargeted to the span's top, and Py_None pushed as the suspended
@@ -1345,19 +1338,16 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
 
 /**
-   Push a prompt delimiter onto the dynamic chain.
+   Push a prompt delimiter onto the dynamic chain. It owns no operands:
+   the frame called on it, a reset's body, holds the region's.
 
    :param ctx: execution context
-   :param prompt_id: tag for matching (0 = default)
-   :param pop: the POP_PROMPT closing the region (from the PROMPT
-      extent at the push site); POP_SHIFT resumes at pop + 1
+   :param tag: the prompt's tag, matched by identity, or NULL for the
+      default tag (never None); consumed, on failure too
 
    :return: new prompt, or NULL on error
 */
-KosDynPrompt *kos_dyn_push_prompt(
-    KosContext *ctx,
-    uint32_t prompt_id,
-    KosOp *pop);
+KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, PyObject *tag);
 
 
 /**
@@ -1371,79 +1361,6 @@ KosDynPrompt *kos_dyn_push_prompt(
   :return: 0 on success, -1 on error
 */
 int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
-
-
-/**
-   Push a DELIM node via kos_dyn_push.
-
-   :return: new DELIM node, or NULL on error
-*/
-KosDynDelim *kos_dyn_push_delim(
-   KosContext *ctx,
-   uint8_t mode,
-   KosDynNode *chain,
-   KosOp *pc,
-   KosDynFrame *frame,
-   KosDynNode *node);
-
-
-/**
-   Pop a DELIM node from the dynamic chain.
-
-   :param ctx: execution context
-   :param delim: DELIM node to pop (must be dyn_top)
-*/
-int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
-
-
-/**
-   Complete a delimited POP_PROMPT return after the unwind walk succeeds
-   (non-async). Pushes value onto the delimited return frame's stack, sets
-   PC and frame_top, clears invocation and delimited-return fields.
-
-   :param ctx: execution context
-   :param value: return value (consumes a reference on success or failure)
-
-   :return: 0 on success, -1 if ctx, value or delimited_return_frame is
-      invalid (sets PyExc_RuntimeError)
-*/
-int kos_dyn_finish_delimited_pop_return(
-   KosContext *ctx,
-   KosDynDelim *delim,
-   PyObject *value);
-
-
-/**
-   Complete an in-place (Path A) delimited POP_PROMPT return. Restores the
-   resume frame's displaced stack/pc from the INPLACE delim, re-links the
-   stashed invoke span above the prompt (which stays on the chain for the
-   shift body's POP_SHIFT), frees the delim, and pushes value at the
-   restored invoke site. Expects the delim at dyn_top.
-
-   :param ctx: context
-   :param delim: INPLACE DELIM node at dyn_top
-   :param value: return value (consumes a reference on success or failure)
-
-   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
-*/
-int kos_dyn_finish_inplace_pop_return(
-   KosContext *ctx,
-   KosDynDelim *delim,
-   PyObject *value);
-
-
-/**
-   Restitch an in-place (Path A) delimited invoke at its INPLACE delim
-   without delivering a value: restore the pc and resume of the frame
-   below the prompt, re-link the stashed invoke span above the prompt
-   and renumber its frames, free the delim, and restore invoke-site live
-   registers. Used by the POP_PROMPT
-   value return and by exception propagation out of the slice. Expects
-   the delim at dyn_top.
-
-   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
-*/
-int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim);
 
 
 /**
@@ -1468,32 +1385,83 @@ int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
 
 /**
-   Push a SHIFT block onto the dynamic chain.  A shift node pushes a stack
-   block for its body (no frame, no namespace).  Used by PUSH_SHIFT after
-   unwinding to the prompt.
+   The nearest prompt carrying tag that an abort can reach.
 
    :param ctx: execution context
-   :param prompt_node_id: instance id of the PROMPT the shift captured
-      against; POP_SHIFT resolves the delimiter by this id
+   :param tag: the tag sought, matched by identity, or NULL for the
+     default tag (never None); borrowed
 
-   :return: 0 on success, -1 on error
+   :return: the prompt, borrowed, or NULL with KoskariPromptNotFound or
+     KoskariPromptUnreachable set
 */
-int kos_dyn_push_shift(KosContext *ctx, uint32_t prompt_node_id);
+KosDynPrompt *kos_abort_prompt(KosContext *ctx, PyObject *tag);
+
+
+/**
+   Leave everything up to a prompt and run an aside above it.
+
+   The live frame stands after the instruction that aborts. A frame is
+   made for aside over ns, linked to nothing. The caller chooses ns:
+   the live namespace, which belongs to a frame the abort leaves, so
+   the caller reveals it (KosNamespace_TrackChain) and that frame's
+   release does not reclaim it; or one built from the aside's spec
+   over the live namespace, which the new frame introduces. The
+   transfer leaves everything from dyn_top down to the prompt, the
+   live frame and the reset's body frame included, which holds the
+   region's operands until the abort can no longer be cancelled: a
+   dyn-wind after thunk or a with's __exit__ that raises on the way
+   out abandons the transfer, the aside's frame is released, and the
+   region carries on where the raise is caught. Once the prompt is at
+   dyn_top the frame is attached above it and runs the aside, with
+   payload, when there is one, pushed on its stack. Its return takes
+   the prompt with it and is the reset's return. A shift or an abort
+   made in the aside finds the same prompt.
+
+   Runs the transfer at once (kos_xfer_goal_run), its target the new
+   frame; the caller relays the result.
+
+   :param ctx: execution context
+   :param prompt: the prompt to abort to
+   :param aside: the aside to run above it
+   :param ns: the namespace its frame runs over; consumed, on failure
+     too. NULL, with PyErr set, is a namespace the caller failed to
+     build: payload is released and the result is EVAL_RAISE
+   :param owns_ns: nonzero when ns was built for the aside, zero when
+     it is the live namespace
+   :param payload: a value for the aside's stack, or NULL; consumed,
+     on failure too
+   :param keep: the continuation kos_shift_capture began, which the
+     nodes the transfer leaves are kept into, or NULL to free them;
+     borrowed, and kept alive by payload
+
+   :return: EVAL_NORMAL when the aside's frame is live above the
+     prompt and the evaluator threads on in it; otherwise the result
+     to relay: EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE with an
+     exception set
+*/
+KosOpResult kos_abort_to_prompt(
+    KosContext *ctx,
+    KosDynPrompt *prompt,
+    KosCode *aside,
+    PyObject *ns,
+    int owns_ns,
+    PyObject *payload,
+    KosContinuation *keep);
 
 
 /**
    Push a wind extent onto the dynamic chain.
 
    :param ctx: execution context
-   :param before_thunk: before hook callable (new ref, or NULL)
-   :param after_thunk: after hook callable (new ref, or NULL)
+   :param code: the code holding the PUSH_WIND (borrowed)
+   :param row: the PUSH_WIND's row, carrying the before and after asides
 
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dyn_push_wind(
    KosContext *ctx,
-   PyObject *before_thunk,
-   PyObject *after_thunk);
+   KosCode *code,
+   const KosExtra *row);
 
 
 /**
@@ -1532,11 +1500,19 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 /**
    The GEN node of the generator the running frame belongs to: the
    nearest GEN walking outward from the frame, or NULL when the frame
-   is not in a generator. Callers: kos_yield_deliver and the
-   trampoline's YIELD arm, which then freeze it through
-   kos_dyn_gen_freeze.
+   is not in a generator. It crosses every node: a caller that wants the
+   chain's generators starts from it.
 */
 KosDynGen *kos_dyn_find_gen(KosContext *ctx);
+
+
+/**
+   The GEN node a yield in the running frame suspends: the nearest GEN
+   walking outward from the frame. NULL with a RuntimeError set when
+   the chain ran out. Callers: kos_yield_deliver and the trampoline's
+   YIELD arm, which then freeze the node through kos_dyn_gen_freeze.
+*/
+KosDynGen *kos_dyn_yield_gen(KosContext *ctx);
 
 
 /**
@@ -1628,11 +1604,12 @@ int kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
 
 /**
    Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
-   enter. :c:member:`shot` is KOS_DYN_WITH_SHOT_MULTI or
-   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE. self_bind carries KOS_WITH_SELF_ENTER
-   and KOS_WITH_SELF_EXIT for the protocol methods that were resolved on
-   the type as plain functions and are called with mgr as their first
-   argument; the others are already bound or need no receiver.
+   enter. winds is KOS_DYN_CAP_WINDS for a dyn-with, which a transfer
+   runs, or 0 for a plain with, which is local to its body. self_bind
+   carries KOS_WITH_SELF_ENTER and KOS_WITH_SELF_EXIT for the protocol
+   methods that were resolved on the type as plain functions and are
+   called with mgr as their first argument; the others are already
+   bound or need no receiver.
 
    :return: new KosDynWith node, or NULL on error
 */
@@ -1644,12 +1621,14 @@ KosDynWith *kos_dyn_push_with_provisional(
     uint8_t self_bind,
     PyObject *name,
     KosOp *resume_pc,
-    uint8_t shot);
+    uint32_t winds);
 
 
 /**
    Clone a WITH node for continuation capture. Copies mgr, enter, exit,
-   name with new references and copies shot/caps from src.
+   name with new references and the caps from src. A dyn-with's clone is
+   not entered, for a transfer to enter; a plain with's clone keeps the
+   source's entered state, so the copy runs __exit__ when it exits.
 
    :return: cloned node, or NULL on error
 */
@@ -1671,7 +1650,10 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    1. A KOS_DYN_CAP_CONTROL_HOOK node is asked to leave
       (kos_dyn_extent_leave); any answer but NORMAL returns unchanged,
       with the node still on the chain -- the caller stores what it
-      carries and asks again later.
+      carries and asks again later. Under KOS_XFER_EVENT_TRANSFER a
+      node without KOS_DYN_CAP_WINDS is local and is not asked: a call
+      of its in flight is discharged (kos_dyn_extent_abort) and nothing
+      else of it runs.
    2. The synchronous per-kind teardown runs (PARAM restore,
       TRY/FINALLY exception-state restore).
    3. The node's obligation is detached.
@@ -1700,16 +1682,83 @@ KosOpResult kos_dyn_unlink_top(
 
 
 /**
+   Unlink dyn_top and keep it: the node leaves the chain as a transfer
+   has it leave, and is handed to the caller instead of freed. It
+   shares nothing with kos_dyn_unlink_top, whose callers pay nothing
+   for it.
+
+   This is how a delimited continuation is captured. A shift leaves
+   every node between itself and its prompt, and those same nodes are
+   what the continuation is a template of, so the transfer that leaves
+   them keeps each one as it comes off the chain and links it into the
+   continuation, in place of cloning the run first and freeing it
+   after. A kept node is never linked on a chain again: each call of
+   the continuation clones the template, so a kept node only has to be
+   what a clone taken before the leave would have been.
+
+   The node leaves as it does under a transfer, and what its leave
+   does outside itself still happens: a wind's after thunk and a
+   dyn-with's __exit__ run, a PARAM puts the outer cells back, a
+   FOREACH finishes the request of a step in flight. A TRY or FINALLY
+   that is handling an exception takes it off the thread into itself
+   and puts back the one it displaced, as when a generator's span is
+   frozen, so a copy of it attached later is handling that exception
+   again. What a clone would have recorded stays on the node: the
+   resume a FOREACH's step left on the frame below, which is kept in
+   its turn. A frame gives up a
+   holder's cache slot it was to return to and has its namespace
+   revealed, as a frame's clone does.
+
+   The caller has checked every node it will keep with
+   kos_dyn_node_capturable, before the first one left.
+
+   :param ctx: execution context
+   :param out_kept: receives the node, owned by the caller, with no
+     parent; written only on EVAL_NORMAL
+   :return: EVAL_NORMAL when the node is the caller's; EVAL_REPROLOGUE
+     or EVAL_AWAIT when its leave is in flight and it stays on the
+     chain; EVAL_RAISE
+*/
+KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept);
+
+
+/**
+   Put the handled exception of each frozen TRY or FINALLY from top
+   down to stop (not included) back on the thread, outermost first:
+   the region's exception becomes handler-visible and the region
+   records what was visible before it, which it gives back when it
+   leaves. Run on each piece of a continuation's copy as it is
+   attached, when the clone met such a region, so a body resumed
+   inside a handler is handling its exception again, as a generator
+   resumed there is.
+*/
+void kos_dyn_install_regions(
+    KosContext *ctx,
+    KosDynNode *top,
+    const KosDynNode *stop);
+
+
+/**
+   Whether node can be part of a continuation's template: what its
+   clone refuses, kos_dyn_unlink_top_keep's caller refuses here, before
+   any node leaves. A wind or a with whose thunk is in flight, or that
+   holds something stored for its completion, cannot; nor can a frame
+   whose resume is of a kind that cannot clone its state.
+
+   :return: 0, or -1 with the clone's exception set
+*/
+int kos_dyn_node_capturable(KosDynNode *node);
+
+
+/**
    Which return path a stored pending return re-enters once the node
    whose leave thunk suspended the unwind walk has finished.
 */
 typedef enum KosPendingReturnKind {
   KOS_PENDING_RETURN_NONE = 0,
   KOS_PENDING_RETURN_FRAME,     /* a bytecode frame's RETURN */
-  KOS_PENDING_RETURN_DELIM,     /* routed to a delimited-invoke bookmark */
-  KOS_PENDING_RETURN_BREAK,     /* a loop's BREAK, value in hand */
+  KOS_PENDING_RETURN_BREAK,    /* a loop's BREAK, value in hand */
   KOS_PENDING_RETURN_CONTINUE,  /* a loop's CONTINUE, value in hand */
-  KOS_PENDING_RETURN_TRANSFER,  /* a transfer goal waiting on a FINALLY body */
 } KosPendingReturnKind;
 
 
@@ -1723,7 +1772,7 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_to_node offers nothing: it unlinks each node above
    the target through kos_dyn_unlink_top with the barrier allowed, so
-   it crosses barriers and delimiters and no node can consume. A
+   it crosses barriers and no node can consume. A
    suspension leaves the value the caller is carrying with the caller,
    to store on the node whose leave is in flight, which is stored in
    *out_pending (NULL otherwise; the out-param itself may be NULL when
@@ -1732,17 +1781,15 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
    FINALLY consumes the return, taking val onto its block and branching
-   to its handler, and the walk answers EVAL_REPROLOGUE. A live DELIM
-   invoke bookmark stops the walk: it is left at dyn_top, stored in
-   *took, and the walk answers EVAL_NORMAL with val still the caller's to
-   route. A suspension stores val on the in-flight node as a RETURN
+   to its handler, and the walk answers EVAL_REPROLOGUE. EVAL_NORMAL
+   leaves val the caller's. A suspension stores val on the in-flight node as a RETURN
    obligation carrying the given kind before answering; the loop walk
    stores a break or continue the same way. val is consumed on every
    answer but EVAL_NORMAL.
 
    kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
-   innermost loop region in the current frame, pops to it crossing any
-   PROMPT or SHIFT between (the region is the frame's own), and on
+   innermost loop region in the current frame, pops to it (every node
+   between is the frame's own), and on
    EVAL_NORMAL has set the pc and either stored result on the region
    (CONTINUE) or popped the region and pushed result (BREAK). result is
    consumed on every answer.
@@ -1757,28 +1804,12 @@ KosOpResult kos_dyn_unwind_return(
     KosContext *ctx,
     KosDynFrame *frame,
     PyObject *val,
-    KosPendingReturnKind kind,
-    KosDynDelim **took);
+    KosPendingReturnKind kind);
 
 KosOpResult kos_dyn_unwind_to_loop(
     KosContext *ctx,
     KosXferEvent event,
     PyObject *result);
-
-
-/**
-  Hand a transfer leaving the chain to the enabled FINALLY at dyn_top:
-  its body runs for its side effects with None as the region value,
-  the region stays at dyn_top disabled with HANDLING_CONTROL set to
-  KOS_PENDING_RETURN_TRANSFER, and POP_FINALLY resumes the transfer
-  once the region is gone. The caller sets the goal to wait on the
-  region. Caller: xfer_goal.c goal_leave.
-
-  :return: EVAL_REPROLOGUE, or EVAL_RAISE with PyErr set
-*/
-KosOpResult kos_dyn_finally_take_transfer(
-    KosContext *ctx,
-    KosDynFinally *fin);
 
 
 /**
@@ -1797,7 +1828,10 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
 /**
   The extent contract for KOS_DYN_CAP_CONTROL_HOOK nodes (WIND, WITH).
   Total and re-entrant: asking again is always legal, the node never
-  unlinks itself, and the node never reads the transfer state.
+  unlinks itself, and the node never reads the transfer state. enter
+  also serves a PARAM, which a transfer re-enters as it does a WIND
+  (KOS_DYN_CAP_WINDS): it binds synchronously, answering EVAL_NORMAL
+  (also when already bound) or EVAL_RAISE.
 
   enter / leave answer EVAL_NORMAL when the obligation is discharged,
   EVAL_REPROLOGUE when a thunk or __enter__/__exit__ frame was
@@ -1893,8 +1927,7 @@ int kos_dyn_ob_store_exception(
 int kos_dyn_ob_store_return(
     KosDynNode *node,
     PyObject *val,
-    uint8_t path,
-    KosDynNode *delim);
+    uint8_t path);
 
 
 /**
@@ -1970,16 +2003,15 @@ KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 /**
   Find the innermost enabled LOOP or FOREACH region on the dynamic
-  chain, walking from dyn_top toward root. A live delimited-invoke
-  bookmark ends the walk: the resumed slice above it has no loop of
-  its own. Read-only; never sets PyErr.
+  chain, walking from dyn_top toward root. Read-only; never sets
+  PyErr.
 
   Callers: opcode/ITER_NEXT.c, kos_dyn_unwind_to_loop.
 
   :param ctx: context
 
   :return: the topmost enabled LOOP or FOREACH region, or NULL if the
-    walk reaches the root or a live bookmark first
+    walk reaches the root first
 */
 KosDynNode *kos_dyn_find_loop(KosContext *ctx);
 
@@ -1998,26 +2030,39 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx);
 
 
 /**
-  Capture a delimited continuation.
+  Begin the capture of a delimited continuation.
 
-  Finds the prompt, validates capture, clones the chain segment,
-  and creates a KosContinuation.
+  Finds the prompt, checks that every node between dyn_top and it can
+  be captured, and creates a KosContinuation whose template holds the
+  prompt's copy alone. The transfer that aborts to the prompt keeps
+  the nodes it leaves into the template (kos_abort_to_prompt), so the
+  continuation is whole once the handler's frame is live.
 
   :param ctx: context
-  :param prompt_id: target prompt tag
+  :param tag: the tag of the prompt to capture up to, nearest first,
+     matched by identity, or NULL for the default tag (never None);
+     borrowed
   :param out_k: output for captured continuation
+  :param out_prompt: output for the live prompt the capture stopped at;
+     borrowed
 
   :return: 0 on success, -1 on error
 */
 int kos_shift_capture(
    KosContext *ctx,
-   uint32_t prompt_id,
-   KosOp *resume_pc,
-   KosContinuation **out_k);
+   PyObject *tag,
+   KosContinuation **out_k,
+   KosDynPrompt **out_prompt);
 
 
-/** Sentinel prompt_id for undelimited (call/cc) continuations. */
-#define KOS_PROMPT_ID_UNDELIMITED ((uint32_t)-1)
+/**
+   Raise KoskariPromptUnreachable at a node that refused a capture. fmt
+   takes the boundary word once; operation may be NULL for None.
+*/
+void kos_raise_prompt_unreachable(
+    const char *operation,
+    const char *boundary,
+    const char *fmt);
 
 
 /**
@@ -2053,19 +2098,22 @@ void kos_continuation_free(KosContinuation *k);
   the top of the run of pairs, matched by node id and by phase (a live
   node that has moved on since the capture ends the match), that
   reaches both roots. *out_live on the chain, *out_tmpl its
-  counterpart; both NULL when the roots differ.
+  counterpart; both NULL when the roots differ. *out_frames is the
+  number of template frames above *out_tmpl, or in the whole template
+  when there is none: the frames a transfer attaches.
 */
 void kos_chain_common_ancestor(
     KosContext *ctx,
     KosDynNode *tmpl,
     KosDynNode **out_live,
-    KosDynNode **out_tmpl);
+    KosDynNode **out_tmpl,
+    unsigned *out_frames);
 
 /**
   Invoke a captured continuation.
 
   Pushes a transfer goal from the current position to the continuation's
-  captured chain and schedules execution.
+  captured chain, for the prologue to drive.
 
   :param ctx: context
   :param k: continuation to invoke
@@ -2074,6 +2122,31 @@ void kos_chain_common_ancestor(
   :return: 0 on success, -1 on error
 */
 int kos_invoke_continuation(
+   KosContext *ctx,
+   KosContinuation *k,
+   PyObject *value,
+   PyObject *continuation_ref);
+
+
+/**
+  Call a captured continuation from a call site.
+
+  A delimited continuation's transfer runs at once
+  (kos_xfer_goal_run): the calling frame stays on the chain under the
+  copy. An undelimited one is pushed as kos_invoke_continuation pushes
+  it.
+
+  :param ctx: context
+  :param k: continuation to call
+  :param value: resume value
+  :param continuation_ref: the continuation object, kept alive for the
+    transfer; borrowed
+
+  :return: EVAL_NORMAL when the transfer is done or pushed; otherwise
+    the result to relay: EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE
+    with an exception set
+*/
+KosOpResult kos_call_continuation(
    KosContext *ctx,
    KosContinuation *k,
    PyObject *value,
@@ -2174,7 +2247,6 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
-#define KosDynNode_IS_DELIM(n)   (KosDynNode_KIND(n) == KOS_DYN_DELIM)
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
 #define KosDynNode_IS_TRY(n)     (KosDynNode_KIND(n) == KOS_DYN_TRY)
 #define KosDynNode_IS_FINALLY(n) (KosDynNode_KIND(n) == KOS_DYN_FINALLY)
@@ -2185,7 +2257,6 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
-#define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
@@ -2285,45 +2356,20 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
     kos_dynframe_note_parent((KosDynFrame *) node);
 }
 
+
 /* A resume is set when the kind is non-NULL; the name is a read-only
    view through the kind for messages and the snapshot. */
 #define KosDynFrame_RESUME_NAME(f)                                        \
   (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->name : NULL)
 
-#define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
-
-#define KOS_DYN_DELIM_MODE_NONE       0u
-
-/* 1u retired: K_RETURN (pre-walk delim scan in the RETURN opcode).  The
-   return walk now stops naturally at any DELIM with a live bookmark. */
-#define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
-
-/* In-place (Path A) delimited return: chain stashes the detached invoke
-   span; saved_pc/saved_acting_pc hold the invoke-site pcs. */
-#define KOS_DYN_DELIM_MODE_INPLACE    3u
-
-#define KosDynDelim_MODE(d)        (((KosDynNode *)(d))->u.delim.mode)
-#define KosDynDelim_RETURN_CHAIN(d) (((KosDynNode *)(d))->u.delim.chain)
-#define KosDynDelim_RETURN_PC(d)   (((KosDynNode *)(d))->u.delim.pc)
-#define KosDynDelim_RETURN_FRAME_NODE(d) (((KosDynNode *)(d))->u.delim.frame)
-#define KosDynDelim_RETURN_FRAME(d) ((KosDynFrame *) (KosDynDelim_RETURN_FRAME_NODE(d)))
-#define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
-#define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
-#define KosDynDelim_SAVED_ACTING_PC(d) \
-  (((KosDynNode *)(d))->u.delim.saved_acting_pc)
-#define KosDynDelim_SAVED_RESUME_KIND(d) \
-  (((KosDynNode *)(d))->u.delim.saved_resume_kind)
-#define KosDynDelim_SAVED_RESUME_STATE(d) \
-  (((KosDynNode *)(d))->u.delim.saved_resume_state)
+#define KosDynPrompt_TAG(p)              (((KosDynNode *)(p))->u.prompt.tag)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 
-#define KosDynShift_PROMPT_NODE_ID(s) \
-  (((KosDynNode *)(s))->u.shift.prompt_node_id)
-
-#define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
-#define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)
+#define KosDynWind_CODE(w)         (((KosDynNode *)(w))->u.wind.code)
+#define KosDynWind_ROW(w)          (((KosDynNode *)(w))->u.wind.row)
+#define KosDynWind_BEFORE(w)       KosExtra_ASIDE(KosDynWind_ROW(w), 0)
+#define KosDynWind_AFTER(w)        KosExtra_ASIDE(KosDynWind_ROW(w), 1)
 #define KosDynWind_OB(w)           (&((KosDynNode *)(w))->u.wind.ob)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
@@ -2382,15 +2428,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 /** terminal: the extent has been left; every further leave is a no-op */
 #define KOS_WITH_PHASE_LEFT                3
 
-/** Multi-shot (dyn-with); participates in install wind */
-#define KOS_DYN_WITH_SHOT_MULTI 0u
-
-/** Single-shot; __exit__ not yet consumed for extent pairing */
-#define KOS_DYN_WITH_SHOT_SINGLE_ACTIVE 1u
-
-/** Single-shot; __exit__ already consumed; ignore further protocol */
-#define KOS_DYN_WITH_SHOT_SINGLE_DONE 2u
-
 /** enter is a plain function: call it with mgr as the first argument */
 #define KOS_WITH_SELF_ENTER 1u
 
@@ -2403,8 +2440,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.self_bind)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
-#define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
-#define KosDynWith_EXIT_DONE(n)    (((KosDynNode *)(n))->u.with.exit_done)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)

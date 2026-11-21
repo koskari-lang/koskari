@@ -57,7 +57,7 @@ CAPTURE_SRC = """
 # Two defers forked from one context. Each worker parameterizes `shared`
 # with its own name; barrier B1 forces both extents to be live at the
 # same moment on different threads. After the extents exit, T1 stores
-# with no extent in the way -- which lands in the root of the thread
+# with no extent in the way -- which goes into the root of the thread
 # running it -- and B2 orders that store before T2's read on its own
 # thread. B1, B2, and RESULTS are pre-seeded into the module
 # namespace.
@@ -79,7 +79,7 @@ SHARED_SRC = """
 
 # A defer created on the loading thread that stores a parameter with no
 # extent in the way and reads it back: run on another thread, the store
-# lands in that thread's root.
+# goes into that thread's root.
 STORE_SRC = """
 (var probe
   (defer (lambda []
@@ -168,7 +168,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         """
         Two threads inside parameterize extents of the same name at the
         same moment each read their own binding, and a store made with no
-        extent in the way lands in the root of the thread running it,
+        extent in the way goes into the root of the thread running it,
         which the other thread does not see
         """
 
@@ -199,7 +199,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results["after"], "unset")
 
     @needs_threads
-    async def test_bare_store_lands_in_the_running_threads_root(self):
+    async def test_bare_store_goes_into_the_running_threads_root(self):
         """
         A defer created on this thread and run on another stores, with
         no extent in the way, into the root of the thread running it:
@@ -261,7 +261,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         """
         A `with Domain():` block opened in Python code that Koskari called
         out to is the current domain for Koskari calls made inside it:
-        a bare store from such a call lands in the block's root and the
+        a bare store from such a call goes into the block's root and the
         thread root never sees it
         """
 

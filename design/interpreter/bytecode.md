@@ -38,8 +38,8 @@ struct KosOp {
 };
 ```
 
-`pc` makes every pointer to an instruction self-describing: a jump lands
-through `target` and reads the landing pc off it, and a handler's
+`pc` makes every pointer to an instruction self-describing: a jump arrives
+through `target` and reads the arrival pc off it, and a handler's
 straight-line step is `insn + 1`. Jump targets and `pc` are 16-bit, so a
 code object holds at most 65,535 instructions and finalize enforces it.
 `obj` and `slot` point out of the block; `target` and `row` point into
@@ -126,7 +126,7 @@ The per-site cache slots follow the struct as a variable-length tail; they are
 the one thing a Code owns that can take part in a reference cycle, and the
 reason the type is GC-tracked.
 
-The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). Each entry is a flat KosExtentDesc: kind, push_pc, pop_pc and parent_extent_id; handler and jump targets are derived on demand from the instruction at push_pc and from pop_pc. It enables O(1) lookup of block membership. See [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md).
+The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, WITH, etc.). Each entry is a flat KosExtentDesc: kind, push_pc, pop_pc and parent_extent_id; handler and jump targets are derived on demand from the instruction at push_pc and from pop_pc. It enables O(1) lookup of block membership. See [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md).
 
 ### Memory Protection
 
@@ -266,13 +266,12 @@ quick lookup.
 - `KOS_OP_POP_WITH`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_FOREACH`, `KOS_OP_POP_NS`, `KOS_OP_POP_COLLECT` (POP_NS, POP_LOOP, POP_FOREACH, POP_COLLECT implemented), etc.
 
 ### Delimited Continuations
-- `KOS_OP_PUSH_PROMPT`: Push prompt delimiter; also pushes a COW stack block for the delimited region (arg = prompt_id constant index)
-- `KOS_OP_POP_PROMPT`: Drop PROMPT's stack block, pop prompt, push result to outer stack (normal path); or unwind to invocation site (continuation-return path)
-- `KOS_OP_PUSH_SHIFT`: Capture continuation, unwind to prompt, enter shift block with k on stack (arg = prompt_id constant index); SHIFT is a simple marker, no stack block
-- `KOS_OP_POP_SHIFT`: Pop TOS as result; TRUNCATE_AND_INJECT unwinds through SHIFT+PROMPT, drops stack block, injects result onto outer stack
+- `KOS_OP_RESET`: EXTRA row (tag count, aside), the aside a Code constant. Pop the tag when the count is 1, push a KOS_DYN_PROMPT, and run the body's aside in a frame above it; the return of the frame on the prompt pops both and is the instruction's value
+- `KOS_OP_ABORT`: EXTRA row (tag count, aside). Pop the tag when the count is 1, leave everything up to the prompt, and run the handler's aside in a frame above it; its return pops the prompt and is the reset's value
+- `KOS_OP_SHIFT`: EXTRA row (tag count, aside). As ABORT, keeping the nodes it leaves as the continuation, whole frames up to the prompt, which is pushed on the handler's stack
 
 ### Dynamic Wind
-- `KOS_OP_PUSH_WIND`: Push wind extent (arg = COUNT: 1 = before only, 2 = both thunks)
+- `KOS_OP_PUSH_WIND`: EXTRA row (before aside or None, after aside or None). Push a wind node and run the before aside in a frame above it
 - `KOS_OP_POP_WIND`: Pop wind from dynamic chain
 
 ### Continuation Invocation
@@ -381,7 +380,6 @@ int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
 uint32_t kos_extent_top(PyObject *code, uint32_t pc);
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
-uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
 
 /* Macros */
 KosCode_FLAGS(code)
@@ -398,7 +396,7 @@ KosCode_TOP_EXTENT_ID(code)
 
 ## Extent table and metadata
 
-Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)**. Each extent descriptor is flat (kind, push_pc, pop_pc, parent_extent_id); targets are derived from the push instruction and pop_pc, and `kos_shift_ic_for` resolves a shift's resume pc. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
+Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)**. Each extent descriptor is flat (kind, push_pc, pop_pc, parent_extent_id); targets are derived from the push instruction and pop_pc. RESET and SHIFT open no extent: their body and handler are functions of their own. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
 
 ## Files
 

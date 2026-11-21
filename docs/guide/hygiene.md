@@ -309,7 +309,7 @@ Some positions read a name as a label rather than as a binding, and
 there the compiler reads the base:
 
 - an attribute name, in `(attr obj name)` and in `(.method obj ...)`;
-- a member name in `import-from`, though the binding it lands in keeps
+- a member name in `import-from`, though the binding it goes into keeps
   the template's marks;
 - a member a `class` body defines, so a template can add a method under
   the name a caller will call;

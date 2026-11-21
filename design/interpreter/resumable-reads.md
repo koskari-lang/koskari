@@ -68,7 +68,7 @@ on the raw arm and demote to the generic body, and the generic body is
 the handler this change splits.
 
 No behaviour changes in this step. It is sequenced first so that
-change 2 lands on a tree where every row already has a finish.
+change 2 is implemented on a tree where every row already has a finish.
 
 ### 2. The deref answers "call this"
 
@@ -99,7 +99,7 @@ a thread function:
   the getter as a call with no arguments and no resume: the plain
   return arm pushes the callee's value onto the invoker's stack and
   threads at the invoker's saved pc, which the handler had already
-  advanced past its row, so the value lands where the load would have
+  advanced past its row, so the value is delivered where the load would have
   pushed it;
 - for any other row it sets the row kind (change 3) with state `k` on
   the invoking frame and installs the call.
@@ -165,14 +165,14 @@ the value. The handler's cold branch is the same `RESULT_READ_FAILED`;
 threads), and tails into `kos_eval_await` with the awaitable. An
 awaitable already done delivers on the spot; one that is not returns
 the boundary and the Python loop runs the background work; under a
-demand driver the boundary forces as it does today. The delivery lands
-in the row as a call's does.
+demand driver the boundary forces as it does today. The delivery goes
+into the row as a call's does.
 
 What it gives: a binding form (name to be chosen; `background` is the
 working name) that stores a future ref, so every read of the name is
 a plain FAST until the first read that arrives before the value,
 which suspends the context and resumes in the row when the value
-lands. A suspended read is a frame with a resume set, so the frame
+arrives. A suspended read is a frame with a resume set, so the frame
 cache refuses it under the existing rule. The binding form must
 produce a non-raw ref, which promotes the slot as a closure capture
 does; the template reset returns it to raw at the cache store.
@@ -215,7 +215,7 @@ materialise it but collects it:
 - **each step is a next request**: the handler, and then the kind's
   `fn` after every delivery, steps the provider once with the row
   resume set on the frame, exactly as `KosContext_NextResume` does for
-  `(next it)`. A delivered element lands through the pending slot into
+  `(next it)`. A delivered element goes through the pending slot into
   `fn`, which finishes the provider's step, pushes the element and
   requests the next. A request that continues threads into the
   installed frame or bounces through the prologue, and the delivery

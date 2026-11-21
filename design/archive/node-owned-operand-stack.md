@@ -48,7 +48,7 @@
 
 - Redesigning Python semantics or the bytecode instruction set (except where
   stack access is implemented).
-- Micro-optimizing stack storage layout in the first landing (see §10).
+- Micro-optimizing stack storage layout in the first implementation (see §10).
 
 ## 4. Current state (summary)
 

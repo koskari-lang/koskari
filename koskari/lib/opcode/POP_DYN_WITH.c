@@ -14,9 +14,9 @@
 */
 
 /**
-   POP_DYN_WITH: arg unused. The multi-shot with pops exactly as the
-   single-shot one does; the node kind is the same and the shot is the
-   node's own affair. Defined after POP_WITH in handlers.incl.
+   POP_DYN_WITH: arg unused. A dyn-with pops exactly as a plain with
+   does; the node kind is the same, and the capability a transfer reads
+   is the node's own affair. Defined after POP_WITH in handlers.incl.
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {

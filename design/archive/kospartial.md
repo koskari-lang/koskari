@@ -22,7 +22,7 @@ the install-slot fast path — no `KosContext` allocation, no nested
 
 ---
 
-## 1. What landed
+## 1. What was implemented
 
 `KosPartial` is a **standalone static `KosCallableTypeObject`** with its own
 instance storage (`func`, `args`, `keywords`, plus `__dict__` and weakref

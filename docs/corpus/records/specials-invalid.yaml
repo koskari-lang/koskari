@@ -141,3 +141,77 @@ tags:
   - namespace
   - invalid
 notes: "vars takes zero operands (the current namespace) or one (an object's __dict__); two is a compile error. corrective: (vars a)"
+---
+id: special-shift-handler-break-outer-loop-invalid-001
+feature: special/compile/shift
+source: |-
+  (while True (reset (shift k (break 9))))
+  
+verify:
+  read: (while True (reset (shift k (break 9))))
+  invalid: "a shift handler runs after the shift has left the captured region and stands at the reset, so it has only the loops written inside it. The break is in the handler and the while is around the reset, so it fails at runtime with RuntimeError: break outside loop. The same holds for continue. Put the loop inside the handler, as in (reset (shift k (while True (break 9)))), or have the reset return a value that the loop tests after the reset."
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-break.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "runtime failure, not a compile error; a break written directly in a reset body is out of reach of the loop around the reset too, since the body is a function of its own. corrective: (reset (shift k (while True (break 9))))"
+---
+id: special-shift-resumed-yield-invalid-004
+feature: special/compile/shift
+source: |-
+  (list ((lambda [] (reset (+ (shift k (call k 1)) (yield 5))))))
+
+verify:
+  read: (list ((lambda [] (reset (+ (shift k (call k 1)) (yield 5))))))
+  error: "SpecialError: reset body cannot yield"
+references:
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "compile error: the yield is written in the reset's body, which runs in a frame of its own, so it is refused wherever k is called from. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
+---
+id: special-shift-handler-yield-invalid-005
+feature: special/compile/shift
+source: |-
+  (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))
+
+verify:
+  read: (list ((lambda [] (reset (+ 100 (shift k (yield (call k 1))))))))
+  error: "SpecialError: shift handler cannot yield"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "compile error: the handler runs in a frame of its own, not in the generator the reset is in. A generator defined inside the handler may yield. corrective: (list ((lambda [] (yield (reset (+ 100 (shift k (call k 1))))))))"
+---
+id: special-abort-handler-yield-invalid-001
+feature: special/compile/abort
+source: (list ((lambda [] (reset (+ 100 (abort (yield 1)))))))
+verify:
+  read: (list ((lambda [] (reset (+ 100 (abort (yield 1)))))))
+  error: "SpecialError: abort handler cannot yield"
+references:
+  - reference/specials/compile-abort.md
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - continuation
+  - invalid
+  - pitfall
+notes: "compile error: the handler runs in a frame of its own, not in the generator the reset is in. corrective: (list ((lambda [] (yield (reset (+ 100 (abort 1)))))))"

@@ -18,7 +18,7 @@ Both wrappers want no frame, so the tail prep pops the caller before
 the install runs. The install used to forward the tail request into
 the target's call, which prepped again against the caller's parent and
 reset or popped a live frame: the parent's continuation was lost and
-the result landed one frame too high.
+the result was delivered one frame too high.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

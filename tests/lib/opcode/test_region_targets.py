@@ -17,7 +17,7 @@ tests.lib.opcode.test_region_targets
 Region pushes resolve their break, continue, resume, and handler
 targets once per site and keep using them: the same loop, for-each,
 try, with, call/cc, and reset sites re-entered many times, from one
-function and from two generators interleaved on one code object, land
+function and from two generators interleaved on one code object, arrive
 where they should every time.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

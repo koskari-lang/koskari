@@ -60,7 +60,7 @@ quasiquote, `cons`) produces plain pairs and behaves identically. Implying
 `FORM` and delegating to `parse_matcher` gets all of this for free.
 
 Because `FORM` is implied, a case pattern's elements are its sequence positions.
-A `::` type name lands as a matcher **extern**, not a capture; `[[greet :: str]
+A `::` type name becomes a matcher **extern**, not a capture; `[[greet :: str]
 who]` matches a two-element sequence whose first element is a `str` bound to
 `greet`.
 

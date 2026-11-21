@@ -1,5 +1,7 @@
 # Resumed region runs against the wrong namespace
 
+> Status note: this write-up references the invocation prompt and invocation-bounded capture, the synthesized baseline frame, `baseline_ns`, and the in-place resume of a delimited continuation, which the code no longer has.
+
 ## Status
 
 Fixed. Reproducers are the `shape_bind_*` functions of
@@ -86,7 +88,7 @@ raw", so `kos_ns_fast_deref` takes the reference branch and calls
 reference`).
 
 So the question is not "who cleared the binding" but **which node
-provides the namespace after the second invoke lands**. Capture shares
+provides the namespace after the second invoke is attached**. Capture shares
 namespaces rather than copying them (`kos_dynns_clone` increfs;
 `kos_dynframe_clone` uses `KosNamespace_Reveal`, also an incref), so
 the values are still alive somewhere; the live namespace register is

@@ -88,7 +88,7 @@ denying promotion through a cleared try. Two consistent readings:
 
 The loop CLEARs are restart-shaped and the try/finally CLEARs are
 close-shaped, so the answer is probably per-kind, not global. Decide
-before the finalize check lands, because the check must either treat
+before the finalize check is implemented, because the check must either treat
 cleared extents as open (restart) or track CLEAR ops in the walk
 (close).
 

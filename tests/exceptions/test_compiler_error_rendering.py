@@ -96,7 +96,7 @@ class TestCompilerErrorRendering(unittest.IsolatedAsyncioTestCase):
 class TestKoskariSyntaxErrorOffset(unittest.TestCase):
     """
     The reader's 0-based column becomes SyntaxError's 1-based offset,
-    so the traceback caret lands under the column the reader reported
+    so the traceback caret sits under the column the reader reported
     """
 
     def test_offset_is_the_column_plus_one(self):

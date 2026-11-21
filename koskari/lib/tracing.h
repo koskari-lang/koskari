@@ -81,7 +81,7 @@ typedef enum KosTraceEventId {
 /**
    Per-site opcode-cache counter ids (KOS_TRACE_OPCACHE). These are distinct
    from the eval-loop event counters: they measure cache behavior (hit rate,
-   churn) per cache family, and grow as new caches land. Add new ids only at
+   churn) per cache family, and grow as caches are added. Add new ids only at
    the end. See design/archive/attr-lookup-cache.md.
 
    Method cache: hit = guarded slot served without a full resolve; miss = slot

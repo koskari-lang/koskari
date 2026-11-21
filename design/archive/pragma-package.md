@@ -103,7 +103,7 @@ so the package pragma (or built-in default) is the source.
 
 ## Implementation (MVP)
 
-The landed shape is deliberately minimal; everything above falls out of two
+The implemented shape is deliberately minimal; everything above falls out of two
 small pieces plus the immutability of `ModulePragma`:
 
 - **The macro is a wrapper.** `compile/package-pragma`

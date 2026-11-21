@@ -10,7 +10,7 @@ proposal covers the intermediary that gets us most of the structure while
 staying on a portable loop, and specifies the seam that lets the tail-call
 form drop in later as a localized change.
 
-**Status:** Archived, implemented 2026-09-02. The landed form skipped
+**Status:** Archived, implemented 2026-09-02. The implemented form skipped
 phase 1's function-pointer loop and went straight to tail-call threading:
 `KosSlot` per pc in the code block, `kos_op_handlers[]`, handlers with the
 `KosThreadFn` prototype `(es, void *arg, PyObject *value)` shared with CPS
@@ -335,12 +335,12 @@ Deferred. Recorded so phase 1 does not foreclose it.
   the branch target slot.
 - Gate on a `KOS_HAVE_MUSTTAIL` feature test during phase-2 bring-up, with the
   phase-1 loop body as the transitional fallback while the tail-call form is
-  landed and verified. §6.2 covers what ships once it is.
+  implemented and verified. §6.2 covers what ships once it is.
 - Enforce the §2 invariant: audit every control-event exit to confirm promoted
   facets are flushed to `KosEvalState` before returning to the trampoline.
 - Safety-net stack walks (`KOS_EVAL_SAFETYNET`) can only run at trampoline
   returns under threading, since mid-run frames are not reachable. Coarser
-  granularity than today; note in the safetynet docs when phase 2 lands.
+  granularity than today; note in the safetynet docs when phase 2 is implemented.
 
 ### 6.1 Signature and the register-budget decision
 
@@ -380,7 +380,7 @@ supersedes the "build-gated dispatch backend" framing in §2.
 This decision takes effect when phase 2 work starts, not before; phase 1
 and the current portable build stay as-is until then.
 
-Consequence for release engineering, to land alongside phase 2 rather than
+Consequence for release engineering, to be implemented alongside phase 2 rather than
 after: build scripts and the PyPI prebuilt wheel matrix must pin a
 musttail-capable compiler on every platform the wheel matrix covers. A
 platform whose toolchain cannot reach clang or GCC 15+ drops out of the

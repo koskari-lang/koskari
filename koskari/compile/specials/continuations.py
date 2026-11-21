@@ -15,8 +15,9 @@
 koskari.compile.specials.continuations
 
 Special form handlers for compile/call/cc, compile/let/cc,
-compile/capture/cc, compile/reset, compile/shift, compile/return,
-compile/yield, and compile/await.
+compile/capture/cc, compile/reset, compile/reset-at, compile/shift,
+compile/shift-at, compile/return, compile/yield, compile/await, and
+compile/yield-from.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -24,11 +25,13 @@ compile/yield, and compile/await.
 
 
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_keyword
 from ..helpers import helper_begin
+from ..processor import YIELD_OPS
 
 
 _symbol_values = symbol("values")
@@ -44,6 +47,14 @@ _K_BODY_PATTERNS = [
 
 _BODY_PATTERNS = [
     MATCH(CALLEDBY("called_by"), BODY("body")),
+]
+
+_TAG_BODY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("tag"), BODY("body")),
+]
+
+_TAG_K_BODY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("tag"), SYMBOL("k"), BODY("body")),
 ]
 
 _VALUES_PATTERNS = [
@@ -134,36 +145,192 @@ def special_capture_cc(compiler, called_by, k, body):
 @special("compile/reset", patterns=_BODY_PATTERNS, unpack="kwargs")
 def special_reset(compiler, called_by, body):
     """
-    Compile (compile/reset EXPR...). Establishes a prompt (tag 0), runs body,
-    pops prompt. Enables delimited continuations via compile/shift.
+    Compile (compile/reset EXPR...). The body runs in a frame of its
+    own above a prompt of the default tag; its value, or the value of
+    a compile/shift handler that aborts to the prompt, is the reset's
     """
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
-    fragment.instruction(OpCode.PUSH_PROMPT, 0)
-    helper_begin(fragment, body.datum)
-    fragment.instruction(OpCode.POP_PROMPT, 0)
+    helper_reset_body(compiler, called_by, body, fragment, 0)
 
     return fragment
+
+
+def refuse_yield(called_by, instructions, refusal):
+    """
+    Raise SpecialError when instructions hold a yield or yield-from
+
+    :param called_by: the special's called-by capture
+    :param instructions: the instructions of a reset's body or a
+        shift's handler, without those of a function defined within it
+    :param refusal: the message's text after the form's name
+    """
+
+    if any(op in YIELD_OPS for op, _ in instructions):
+        raise SpecialError(
+            f"{called_by.datum} {refusal}",
+            called_by.datum, position=called_by.position)
+
+
+def helper_handler(
+        compiler, called_by, body, fragment, tag_count, k=None):
+    """
+    Compile a handler as an aside and emit the row that runs it into
+    fragment: an ABORT row, or with k a SHIFT row, which captures the
+    continuation and pushes it for the handler, whose first
+    instruction stores it to K. A shift's handler is compiled in
+    a scope of its own that owns K alone: every other name it declares
+    is the enclosing scope's, reached from the handler as a closure
+    name. An abort's handler owns no name and is compiled in the
+    enclosing scope. The tag, when there is one, is already on the
+    stack, where the row takes it from. A yield written in the handler
+    is refused, since the handler's frame is not the generator's; one
+    in a function defined within it belongs to that function
+
+    :param compiler: the Compiler
+    :param called_by: the special's called-by capture
+    :param body: the BODY capture
+    :param fragment: the fragment to emit into
+    :param tag_count: 0 for the default tag, 1 for a tag the fragment
+        has already pushed
+    :param k: the K capture of a shift, or None for an abort
+    """
+
+    own = () if k is None else (k.datum,)
+
+    with fragment.aside("<handler>", own) as (inner, aside):
+        inner.position(called_by.position)
+        if k is not None:
+            inner.declare_var(k.datum, position=k.position)
+            inner.instruction(OpCode.VAR_STORE, k.datum)
+        helper_begin(inner, body.datum)
+        refuse_yield(called_by, inner.instructions, "handler cannot yield")
+
+    # the row reports the form's line, not the tag's last
+    fragment.position(called_by.position)
+    fragment.instruction(
+        OpCode.ABORT if k is None else OpCode.SHIFT,
+        (tag_count, aside, 0, 0))
+
+
+def helper_reset_body(compiler, called_by, body, fragment, tag_count):
+    """
+    Compile the reset's body as an aside and emit the RESET row that
+    runs it into fragment. The body is compiled in the scope the reset
+    is written in, so its names are that scope's. RESET starts a frame
+    over the aside, and the frame the reset is written in goes on
+    after the RESET with the reset's value.
+    A yield written in the body is refused, since the body's frame is
+    not the generator's; one in a function defined within it belongs
+    to that function
+
+    :param compiler: the Compiler
+    :param called_by: the special's called-by capture
+    :param body: the BODY capture
+    :param fragment: the fragment to emit into
+    :param tag_count: 0 for the default tag, 1 for a tag the fragment
+        has already pushed
+    """
+
+    with fragment.aside("<reset>") as (inner, aside):
+        inner.position(called_by.position)
+        helper_begin(inner, body.datum)
+        refuse_yield(called_by, inner.instructions, "body cannot yield")
+
+    # the row reports the form's line, not the tag's last
+    fragment.position(called_by.position)
+    fragment.instruction(OpCode.RESET, (tag_count, aside, 0, 0))
 
 
 @builtin("compile/shift")
 @special("compile/shift", patterns=_K_BODY_PATTERNS, unpack="kwargs")
 def special_shift(compiler, called_by, k, body):
     """
-    Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
-    handler body. K must be a symbol; tag 0.
+    Compile (compile/shift K EXPR...). Captures the continuation up to
+    the nearest prompt of the default tag, aborts to that prompt, and
+    runs the handler EXPR... there in a frame of its own, with K bound
+    to the continuation in the scope the shift is written in. The
+    handler's value is the reset's. K must be a symbol
     """
-
-    k_sym = k.datum
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
-    fragment.instruction(OpCode.PUSH_SHIFT, 0)
-    fragment.declare_var(k_sym, position=k.position)
-    fragment.instruction(OpCode.VAR_STORE, k_sym)
-    helper_begin(fragment, body.datum)
-    fragment.instruction(OpCode.POP_SHIFT, 0)
+    helper_handler(compiler, called_by, body, fragment, 0, k)
+
+    return fragment
+
+
+@builtin("compile/reset-at")
+@special("compile/reset-at", patterns=_TAG_BODY_PATTERNS, unpack="kwargs")
+def special_reset_at(compiler, called_by, tag, body):
+    """
+    Compile (compile/reset-at TAG EXPR...). Evaluates TAG, then runs
+    the body in a frame of its own above a prompt carrying TAG. A
+    compile/shift-at seeking the same tag, by identity, captures up to
+    this prompt. A TAG of None is the default tag, the one
+    compile/reset uses
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    fragment.merge(compiler.full_compile(tag.datum))
+    helper_reset_body(compiler, called_by, body, fragment, 1)
+
+    return fragment
+
+
+@builtin("compile/shift-at")
+@special("compile/shift-at", patterns=_TAG_K_BODY_PATTERNS, unpack="kwargs")
+def special_shift_at(compiler, called_by, tag, k, body):
+    """
+    Compile (compile/shift-at TAG K EXPR...). Evaluates TAG, captures the
+    continuation up to the nearest prompt carrying it, aborts to that
+    prompt, and runs the handler EXPR... there in a frame of its own,
+    with K bound to the continuation in the scope the shift is written
+    in. K must be a symbol. Prompts of other tags between are crossed
+    and become part of the continuation
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    fragment.merge(compiler.full_compile(tag.datum))
+    helper_handler(compiler, called_by, body, fragment, 1, k)
+
+    return fragment
+
+
+@builtin("compile/abort")
+@special("compile/abort", patterns=_BODY_PATTERNS, unpack="kwargs")
+def special_abort(compiler, called_by, body):
+    """
+    Compile (compile/abort EXPR...). Aborts to the nearest prompt of
+    the default tag and runs the handler EXPR... there in a frame of
+    its own. The handler's value is the reset's. No continuation is
+    captured
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    helper_handler(compiler, called_by, body, fragment, 0)
+
+    return fragment
+
+
+@builtin("compile/abort-at")
+@special("compile/abort-at", patterns=_TAG_BODY_PATTERNS, unpack="kwargs")
+def special_abort_at(compiler, called_by, tag, body):
+    """
+    Compile (compile/abort-at TAG EXPR...). Evaluates TAG, aborts to
+    the nearest prompt carrying it, and runs the handler EXPR... there
+    in a frame of its own. The handler's value is the reset-at's. No
+    continuation is captured
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
+    fragment.merge(compiler.full_compile(tag.datum))
+    helper_handler(compiler, called_by, body, fragment, 1)
 
     return fragment
 

@@ -120,7 +120,7 @@ class TestItemElectorRebindUnderHash(unittest.IsolatedAsyncioTestCase):
         d = await vars(mod)["store-twice"](key, hooks)
         self.assertIsNone(d)
         self.assertTrue(all(len(r) == 0 for r in key.reused),
-                        "the store landed in a dict the row never fetched")
+                        "the store went into a dict the row never fetched")
 
     async def test_load_body(self):
         mod = await self.load("ierh_load")
@@ -137,7 +137,7 @@ class TestItemElectorRebindUnderHash(unittest.IsolatedAsyncioTestCase):
         d = await vars(mod)["inplace-twice"](key, hooks)
         self.assertIsNone(d)
         self.assertTrue(all(len(r) == 0 for r in key.reused),
-                        "the store landed in a dict the row never fetched")
+                        "the store went into a dict the row never fetched")
 
 
 # The end.

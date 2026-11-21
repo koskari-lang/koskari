@@ -15,9 +15,8 @@
 
 
 /**
-  Included by dynchain.c. Continuation invocation: the in-place resume
-  and the transfer plan that grafts a captured chain onto the call
-  site.
+  Included by dynchain.c. Continuation invocation: the transfer that
+  attaches a copy of a captured chain at the call site.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -27,322 +26,48 @@
 
 
 /**
-   In-place (Path A) invoke readiness: the capture-time live prompt and
-   shift nodes are both still on the current chain (pointer + node_id
-   match), the shift node lies above the prompt, no barrier node (foreign
-   DELIM, GEN, PROMPT) sits between dyn_top and the shift node,
-   and no transfer goal is active. Returns 1 when in-place invoke
-   applies, 0 otherwise (fall back to the PUSH path).
-
-   On success, *out_nested_frame is the first FRAME between the SHIFT and
-   its prompt (the nested handler's frame), or NULL when the handler
-   shares the prompt's frame -- recorded here so the invoke does not
-   re-walk the same stretch.
+   What a transfer to k needs before its goal is made: the seam, the
+   template node the copy stops at, and a fresh clone of the template
+   with the shape its clone recorded. For a delimited k the caller
+   stays on the chain and the clone is attached on its dyn_top, every
+   time; for an undelimited k the chain above the seam is replaced.
+   Returns 0, or -1 with PyErr set and nothing to release.
 */
-static int kos_delimited_inplace_ready(
+static int kos_invoke_prepare(
     KosContext *ctx,
     KosContinuation *k,
-    KosDynFrame **out_nested_frame) {
-
-  KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
-  KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
-  KosDynNode *node;
-
-  if (! prompt || ! shift)
-    return 0;
-  if (KosContext_GOAL(ctx))
-    return 0;
-
-  node = KosContext_DYN_TOP(ctx);
-  while (node && node != shift) {
-    switch (KosDynNode_KIND(node)) {
-      case KOS_DYN_DELIM:
-      case KOS_DYN_GEN:
-      case KOS_DYN_PROMPT:
-        return 0;
-      default:
-        break;
-    }
-    node = KosDynNode_PARENT(node);
-  }
-  if (! node || ! KosDynNode_IS_SHIFT(node)
-      || kos_dynnode_id(node) != KosContinuation_LIVE_SHIFT_NODE_ID(k))
-    return 0;
-
-  *out_nested_frame = NULL;
-  node = KosDynNode_PARENT(node);
-  while (node && node != prompt) {
-    /* An INPLACE delim between this SHIFT and the prompt means another
-       invoke against the same prompt is already in flight: its span is
-       detached and its restitch still expects to find itself directly
-       above that prompt. Inserting a second delim there re-parents the
-       first, which then fails with "inconsistent INPLACE delim state".
-       This is the re-entrant case -- a shift firing inside a continuation
-       that is being resumed -- and it belongs on the graft, which
-       instantiates the template per invoke rather than mutating the live
-       chain. The dyn_top-to-SHIFT walk above already rejects barriers;
-       this stretch was unchecked. */
-    if (KosDynNode_IS_DELIM(node))
-      return 0;
-    if (! *out_nested_frame && KosDynNode_IS_FRAME(node))
-      *out_nested_frame = (KosDynFrame *) node;
-    node = KosDynNode_PARENT(node);
-  }
-  if (! node || ! KosDynNode_IS_PROMPT(node)
-      || kos_dynnode_id(node) != KosContinuation_LIVE_PROMPT_NODE_ID(k))
-    return 0;
-
-  return 1;
-}
-
-
-/**
-   In-place (Path A) delimited invoke: detach the invoke span (dyn_top down
-   through the live SHIFT node) onto an INPLACE DELIM inserted directly
-   above the live prompt, set the resume frame's pc to the captured
-   resume pc, and continue on the live chain. The region's operands are
-   where capture left them: on the live prompt and the region nodes
-   between it and the shift, untouched by the handler, whose own
-   operands sit on the SHIFT node in the stashed span. The invocation
-   prompt that stands in for the live prompt under the slice takes a
-   copy of the prompt's operands, so the slice resumes over them and
-   the live prompt keeps its own for the handler's return. A handler in
-   a callee of the reset runs the slice in its own frame and loses it
-   when the slice returns, so that frame is cloned and the copy stashed
-   at the span's bottom for the handler to resume in. No transfer plan,
-   no wind replay; live extents unwind exactly once as the slice runs
-   to POP_PROMPT, which restitches via kos_dyn_finish_inplace_pop_return.
-   Borrows value.
-*/
-static int kos_delimited_invoke_inplace(
-    KosContext *ctx,
-    KosContinuation *k,
-    PyObject *value,
-    KosDynFrame *nested_frame) {
-
-  KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
-  KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
-  KosDynNode *span_top = KosContext_DYN_TOP(ctx);
-  KosDynNode *slice_top = KosDynNode_PARENT(shift);
-  KosDynFrame *region_frame;
-  KosDynFrame *resume_frame;
-  KosDynFrame *snapshot = NULL;
-  KosDynDelim *delim;
-  KosDynFrame *return_frame;
-  KosOp *return_pc;
-
-  /* Region frame: the FRAME at-or-below the prompt, the one the slice
-     runs through to POP_PROMPT. Its pc and resume are displaced onto
-     the delim and restored at the restitch, which finds it by the same
-     walk. */
-  {
-    KosDynNode *node = prompt;
-
-    while (node && ! KosDynNode_IS_FRAME(node))
-      node = KosDynNode_PARENT(node);
-    if (! node) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "in-place invoke: no frame below prompt");
-      return -1;
-    }
-    region_frame = (KosDynFrame *) node;
-  }
-
-  /* Resume frame: the FRAME owning the SHIFT, which is what capture
-     recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
-     the first frame walking down from the captured chain's top). Chain
-     order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so when
-     the shift sits in a callee that frame is ABOVE the prompt and a walk
-     at-or-below the prompt can never reach it -- installing the callee's
-     pc and stack into the caller's frame. The readiness walk records
-     that frame (nested_frame); when the shift is lexically inside the
-     reset no frame intervenes and the region frame is the resume frame. */
-  resume_frame = nested_frame ? nested_frame : region_frame;
-
-  KosContext_FlushLiveRegsToFrame(ctx);
-  return_frame = KosContext_FRAME(ctx);
-  return_pc = return_frame ? KosContext_PC(ctx) : NULL;
-
-  /* Nested handler: the slice runs in the handler's frame, returns out
-     of it and frees it, so the handler needs a frame to resume in once
-     the span is restitched. Snapshot it now: its stored pc is the
-     handler's continuation point, flushed above when the handler itself
-     invokes k, and by the push of the invoking frame when a helper
-     called from the handler does. The copy becomes the bottom of the
-     stashed span, so the chain owns it and the restitch places it above
-     the prompt with the rest of the span. When the handler is the
-     invoker the copy is also where the value lands; a helper's frame
-     survives in the span and takes the value itself. */
-  if (nested_frame) {
-    snapshot = kos_dynframe_clone(nested_frame);
-    if (! snapshot) {
-      if (! PyErr_Occurred())
-        PyErr_NoMemory();
-      return -1;
-    }
-    if (return_frame == nested_frame)
-      return_frame = snapshot;
-  }
-
-  delim = kos_dyndelim_new(prompt,
-                           KOS_DYN_DELIM_MODE_INPLACE,
-                           NULL,
-                           return_pc,
-                           return_frame,
-                           NULL);
-  if (! delim) {
-    kos_dynframe_free(snapshot);
-    if (! PyErr_Occurred())
-      PyErr_NoMemory();
-    return -1;
-  }
-  KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
-
-  /* The invocation re-delimits: a shift firing inside the resumed slice
-     must capture up to THIS invocation's prompt, not the original
-     prompt, or its POP_SHIFT discards the remainder of the suspended
-     handler (control semantics where shift was promised). The fresh
-     instance sits between the delim and the slice; captures inside the
-     slice bound at it and its completion routes through the delim. */
-  KosDynPrompt *invocation_prompt = kos_dynprompt_new_invocation(
-      (KosDynNode *) delim,
-      KosDynPrompt_ID(prompt));
-  if (! invocation_prompt) {
-    KosDynNode_PARENT((KosDynNode *) delim) = NULL;
-    kos_dyndelim_free(delim);
-    kos_dynframe_free(snapshot);
-    if (! PyErr_Occurred())
-      PyErr_NoMemory();
-    return -1;
-  }
-
-  /* The one step that can fail comes first, before the chain is
-     touched: the invocation prompt takes a copy of the region's pending
-     operands from the live prompt. A failure here leaves the chain as
-     it was. */
-  if (kos_dyn_clone_copy_segment((KosDynNode *) invocation_prompt,
-                                 prompt) < 0) {
-    kos_dynprompt_free(invocation_prompt);
-    KosDynNode_PARENT((KosDynNode *) delim) = NULL;
-    kos_dyndelim_free(delim);
-    kos_dynframe_free(snapshot);
-    if (! PyErr_Occurred())
-      PyErr_NoMemory();
-    return -1;
-  }
-
-  #if KOS_XFER_TRACE
-    SAYF("[xfer] invoke inplace: span_top=%p shift=%p prompt=%p "
-         "resume_frame=%p return_pc=%u",
-         (void *) span_top, (void *) shift, (void *) prompt,
-         (void *) resume_frame, (unsigned) kos_insn_pc(return_pc));
-  #endif
-
-  /* Detach the invoke span and stash it on the delim, the handler
-   * snapshot as its bottom when there is one. Its segments'
-   * unwind-cache back links die with the detach. */
-  KosDynNode_PARENT(shift) = (KosDynNode *) snapshot;
-  if (snapshot)
-    KosDynNode_PARENT((KosDynNode *) snapshot) = NULL;
-  KosDynDelim_RETURN_CHAIN(delim) = span_top;
-  kos_dyn_clear_unwind_caches(span_top, NULL);
-
-  /* Wire prompt <- delim <- invocation prompt <- slice so the slice's
-   * natural unwind leaves the invocation prompt (then the delim) at
-   * dyn_top when POP_PROMPT runs. */
-  if (slice_top == prompt) {
-    slice_top = (KosDynNode *) invocation_prompt;
-  } else {
-    KosDynNode *child = slice_top;
-    while (KosDynNode_PARENT(child) != prompt)
-      child = KosDynNode_PARENT(child);
-    KosDynNode_PARENT(child) = (KosDynNode *) invocation_prompt;
-    kos_dynnode_note_parent(child);
-    /* The re-spliced slice span's back links likewise predate the new
-     * shape. */
-    kos_dyn_clear_unwind_caches(slice_top, (KosDynNode *) invocation_prompt);
-  }
-
-  /* The region frame's pc and resume are displaced onto the delim for
-   * the restitch: the slice runs through that frame to POP_PROMPT and
-   * overwrites its pc, and a resume it carries, waiting on a delivery
-   * the invoke site will receive later, would be offered cold by the
-   * prologue. The invoke-site acting pc is saved with them. Then the
-   * resume frame is pointed at the captured resume pc; a nested resume
-   * frame dies with the slice, and carries no resume at this point,
-   * mid-handler or mid-call as it is. */
-  KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(region_frame);
-  KosDynDelim_SAVED_ACTING_PC(delim) = KosContext_ACTING_PC(ctx);
-  KosDynDelim_SAVED_RESUME_KIND(delim) = KosDynFrame_RESUME_KIND(region_frame);
-  KosDynDelim_SAVED_RESUME_STATE(delim) = KosDynFrame_RESUME_STATE(region_frame);
-  KosDynFrame_RESUME_KIND(region_frame) = NULL;
-  KosDynFrame_RESUME_STATE(region_frame) = NULL;
-  KosDynFrame_PC(resume_frame) = KosContinuation_RESUME_PC(k);
-
-  KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;
-
-  kos_dyn_commit_dyn_top(ctx, slice_top);
-  kos_dyn_resync_chain(ctx);
-  /* rebuild leaves live PCs alone when the frame is unchanged (invoke
-   * frame == resume frame); load them from the displaced frame state. */
-  kos_dyn_resync_load_regs(ctx, resume_frame);
-
-  Py_INCREF(value);
-  /* StackPUSH consumes the value reference, on failure as well. */
-  return KosContext_StackPUSH(ctx, value);
-}
-
-
-/**
-   Invoke k with value. Delimited with the capture-time reset live
-   in ancestry: in-place resume (no goal). Otherwise pushes a transfer goal:
-   for a delimited k the caller stays on the chain and a fresh clone of the
-   template lands on a DELIM bookmark; for an undelimited k the chain is
-   replaced. Callers: callable invoke, apply paths.
-*/
-int kos_invoke_continuation(
-    KosContext *ctx,
-    KosContinuation *k,
-    PyObject *value,
-    PyObject *continuation_ref) {
+    KosDynNode **out_target,
+    KosDynNode **out_seam,
+    KosDynNode **out_tmpl_stop,
+    KosCloneShape *out_shape) {
 
   if (! k) {
     PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
     return -1;
   }
 
-  /* In-place (Path A) invoke when the capture-time reset is still live in
-     dyn_top ancestry: resume on the live chain, no graft, no wind replay.
-     Only the first invoke can run in place (it consumes the live slice);
-     re-invokes fall through to the PUSH graft, which instantiates the
-     captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))). */
-  if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
-      && ! KosContinuation_LIVE_SLICE_CONSUMED(k)) {
-    KosDynFrame *nested_frame = NULL;
-
-    if (kos_delimited_inplace_ready(ctx, k, &nested_frame))
-      return kos_delimited_invoke_inplace(ctx, k, value, nested_frame);
-  }
-
-  /* Delimited k(value): the caller stays on the chain and the segment
-     lands on a DELIM bookmark that routes the slice's completion back
-     to this invoke site. Undelimited: the whole chain is replaced. */
-  int is_delimited =
-      (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
+  /* Delimited k(value): the caller stays on the chain and the copy is
+     attached above it, returning to it as a call does. Undelimited: the
+     whole chain is replaced. */
+  int is_delimited = KosContinuation_DELIMITED(k);
 
   /* Undelimited: the seam is the lowest common ancestor of the live
      chain and the template, matched by node id and by phase, so
      nothing at or below it leaves or re-enters, and only the template
-     above its counterpart lands; a live node that has moved on since
+     above its counterpart is attached; a live node that has moved on since
      the capture sits above the seam and is left and re-entered. */
   KosDynNode *seam = NULL;
   KosDynNode *tmpl_stop = NULL;
+  unsigned frames = KosContinuation_FRAMES(k);
+  unsigned top_depth;
+
   if (! is_delimited)
     kos_chain_common_ancestor(
-        ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop);
+        ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop, &frames);
 
-  /* The landed frames sit above the invoker's frame (delimited) or
-     above the seam's frame (undelimited); refuse here, before anything
+  /* The attached frames sit above the live frame, on the caller's
+     dyn_top (delimited), or above the seam's frame (undelimited);
+     refuse here, before anything
      moves, so RecursionError raises at the invoke site. */
   {
     KosDynNode *base = is_delimited
@@ -350,107 +75,122 @@ int kos_invoke_continuation(
 
     while (base && ! KosDynNode_IS_FRAME(base))
       base = KosDynNode_PARENT(base);
-    if (kos_eval_check_frame_room(
-            ctx, (KosDynFrame *) base,
-            kos_dyn_frame_count(KosContinuation_CAPTURED_CHAIN(k),
-                                tmpl_stop)) < 0)
+    if (kos_eval_check_frame_room(ctx, (KosDynFrame *) base, frames) < 0)
       return -1;
+    top_depth = (base ? KosDynFrame_DEPTH(base) : 0u) + frames;
   }
 
-  /* The landed segment is a fresh clone of the captured template, so
+  /* The attached segment is a fresh clone of the captured template, so
      each invoke instantiates the template anew (multi-shot, e.g.
-     (sum (k 0) (k 1))); the template itself is never landed. */
+     (sum (k 0) (k 1))); the template itself is never attached. A
+     delimited copy's nodes are new instances; an undelimited one's
+     keep the ids the seam and the restore records match by. The
+     clone's one pass also numbers the copy's frames as they stand once
+     attached, links their back links, and records the split points
+     ATTACHING needs with the registers live at each. */
   KosDynNode *target = kos_dyn_clone_segment(
-      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop);
+      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop, is_delimited, 1,
+      top_depth, out_shape);
   if (! target && KosContinuation_CAPTURED_CHAIN(k) != tmpl_stop) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "continuation template clone failed without PyErr");
     return -1;
   }
-  /* kos_dyn_clone_segment leaves the clone's bottom parented at
-     tmpl_stop; sever it so goal_land's walk to the bottom stops at the
-     clone and re-parents it to the seam, rather than following into the
-     template and moving the template's own root onto the live chain. */
-  if (target && tmpl_stop)
-    kos_chain_detach_template(target, tmpl_stop);
+  /* the copy's bottom sits on tmpl_stop, a template node: unlink it, so
+     the copy holds nothing of the template, and ATTACHING links it to
+     the seam */
+  if (target)
+    KosDynNode_PARENT(out_shape->bottom) = NULL;
 
-  /* An INPLACE delim in the landed segment whose return frame is in
-     neither its own stashed span nor the segment resumes into the live
-     frame of that id, shared at or below the seam. */
-  for (KosDynNode *node = target; node; node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_DELIM(node)
-        || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
-        || kos_dyndelim_return_frame_in_span((KosDynDelim *) node))
-      continue;
-    KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
-    if (! want)
-      continue;
-    int inside = 0;
-    for (KosDynNode *cand = target; cand; cand = KosDynNode_PARENT(cand)) {
-      if (cand == want) {
-        inside = 1;
-        break;
-      }
-    }
-    if (inside)
-      continue;
-    KosDynNode *live = seam;
-    while (live && ! (KosDynNode_IS_FRAME(live)
-                      && kos_dynnode_id(live) == kos_dynnode_id(want)))
-      live = KosDynNode_PARENT(live);
-    if (! live) {
-      kos_dynchain_free(target, NULL);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "continuation: the frame a resumed shift handler"
-                      " returns into is no longer live");
-      return -1;
-    }
-    KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) = live;
-  }
+  /* A delimited copy is whole frames ending in its prompt, attached on
+     the caller's dyn_top: the body frame's copy returns to the caller
+     as any callee does, so there is nothing to leave. */
+  if (is_delimited)
+    seam = KosContext_DYN_TOP(ctx);
 
-  if (is_delimited) {
-    KosDynDelim *ret_delim = kos_dyn_push_delim(
-        ctx,
-        KOS_DYN_DELIM_MODE_POP_PROMPT,
-        NULL,
-        KosContext_FRAME(ctx) ? KosContext_PC(ctx) : NULL,
-        KosContext_FRAME(ctx),
-        NULL);
-    if (! ret_delim) {
-      kos_dynchain_free(target, NULL);
-      if (! PyErr_Occurred())
-        PyErr_SetString(PyExc_RuntimeError,
-                        "failed to push delimited return marker");
-      return -1;
-    }
-    KosDynDelim_RETURN_NODE(ret_delim) = (KosDynNode *) ret_delim;
-    seam = (KosDynNode *) ret_delim;
-    if (KOS_XFER_TRACE)
-      SAYF("[xfer] invoke: push DELIM dyn_top=%p frame_top=%p",
-           (void *) KosContext_DYN_TOP(ctx),
-           (void *) KosContext_FRAME(ctx));
-  }
-
-  {
-    KosXferGoal *goal = kos_xfer_goal_new(
-        target, seam, value, KosContinuation_RESUME_PC(k),
-        continuation_ref, 0);
-    if (! goal) {
-      /* target is freed by kos_xfer_goal_new on failure. Undo only the
-         DELIM this call pushed; an undelimited seam is a live node. */
-      if (is_delimited && seam)
-        (void) kos_dyn_pop_delim(ctx, (KosDynDelim *) seam);
-      return -1;
-    }
-    if (tmpl_stop
-        && kos_xfer_goal_capture_restore(goal, seam, tmpl_stop) < 0) {
-      kos_xfer_goal_free(goal);
-      return -1;
-    }
-    kos_xfer_goal_push(ctx, goal);
-  }
+  *out_target = target;
+  *out_seam = seam;
+  *out_tmpl_stop = tmpl_stop;
   return 0;
+}
+
+
+/**
+   Invoke k with value by pushing a transfer goal for the prologue to
+   drive. See dynchain.h for the contract. Callers: the apply path in
+   the raise walk, kos_call_continuation for an undelimited k.
+*/
+int kos_invoke_continuation(
+    KosContext *ctx,
+    KosContinuation *k,
+    PyObject *value,
+    PyObject *continuation_ref) {
+
+  KosDynNode *target;
+  KosDynNode *seam;
+  KosDynNode *tmpl_stop;
+  KosCloneShape shape;
+  KosXferGoal *goal;
+
+  if (kos_invoke_prepare(ctx, k, &target, &seam, &tmpl_stop, &shape) < 0)
+    return -1;
+
+  goal = kos_xfer_goal_new(
+      target, seam, value, KosContinuation_RESUME_PC(k), continuation_ref,
+      0);
+  if (! goal) {
+    /* target is freed by kos_xfer_goal_new on failure */
+    PyMem_Free(shape.pieces);
+    return -1;
+  }
+  goal->shape = shape;
+  if (tmpl_stop
+      && kos_xfer_goal_capture_restore(goal, seam, tmpl_stop) < 0) {
+    kos_xfer_goal_free(goal);
+    return -1;
+  }
+  kos_xfer_goal_push(ctx, goal);
+  return 0;
+}
+
+
+/**
+   Call k with value from a call site. See dynchain.h for the contract.
+   Callers: the continuation types' install.
+*/
+KosOpResult kos_call_continuation(
+    KosContext *ctx,
+    KosContinuation *k,
+    PyObject *value,
+    PyObject *continuation_ref) {
+
+  KosDynNode *target;
+  KosDynNode *seam;
+  KosDynNode *tmpl_stop;
+  KosXferGoal goal;
+
+  /* An undelimited k may take the calling frame off the chain, and the
+     call site may still set that frame's resume once the install
+     returns: its transfer waits for the prologue. */
+  if (! k || ! KosContinuation_DELIMITED(k)) {
+    if (kos_invoke_continuation(ctx, k, value, continuation_ref) < 0)
+      return EVAL_RAISE();
+    return EVAL_NORMAL();
+  }
+
+  /* A delimited k leaves nothing: the copy goes on above the calling
+     frame, which stays where it is, so the transfer runs here. There
+     is no template node to stop at and so nothing to restore. The
+     clone records its shape in the goal directly. */
+  if (kos_invoke_prepare(
+          ctx, k, &target, &seam, &tmpl_stop, &goal.shape) < 0)
+    return EVAL_RAISE();
+
+  kos_xfer_goal_init(
+      &goal, target, seam, value, KosContinuation_RESUME_PC(k),
+      continuation_ref, 0);
+  return kos_xfer_goal_run(ctx, &goal);
 }
 
 
@@ -458,20 +198,24 @@ int kos_invoke_continuation(
    The lowest common ancestor of the live chain and a template: the
    top of the run of node pairs, matched by id and by phase, that
    reaches both roots. NULL on both sides when the roots differ.
-   Clones keep their source's id, so a landed clone of this template
+   Call/cc clones keep their source's id, so an attached clone of this template
    counts as the same extent. The two tops are brought to one depth
    and walked to the roots together: a mismatch clears the pair in
    hand, a match records one when none is in hand, so what remains is
-   the top of the root-anchored run.
+   the top of the root-anchored run. The template's frames are counted
+   on the way down, and a match keeps the count of those above it.
 */
 void kos_chain_common_ancestor(
     KosContext *ctx,
     KosDynNode *tmpl,
     KosDynNode **out_live,
-    KosDynNode **out_tmpl) {
+    KosDynNode **out_tmpl,
+    unsigned *out_frames) {
 
   size_t n_live = 0;
   size_t n_tmpl = 0;
+  unsigned frames = 0;
+  unsigned above = 0;
   KosDynNode *live = KosContext_DYN_TOP(ctx);
   KosDynNode *node;
 
@@ -484,8 +228,11 @@ void kos_chain_common_ancestor(
 
   for (; n_live > n_tmpl; n_live--)
     live = KosDynNode_PARENT(live);
-  for (; n_tmpl > n_live; n_tmpl--)
+  for (; n_tmpl > n_live; n_tmpl--) {
+    if (KosDynNode_IS_FRAME(tmpl))
+      frames++;
     tmpl = KosDynNode_PARENT(tmpl);
+  }
 
   for (; live; live = KosDynNode_PARENT(live), tmpl = KosDynNode_PARENT(tmpl)) {
     if (kos_dynnode_id(live) != kos_dynnode_id(tmpl)
@@ -495,8 +242,12 @@ void kos_chain_common_ancestor(
     } else if (! *out_live) {
       *out_live = live;
       *out_tmpl = tmpl;
+      above = frames;
     }
+    if (KosDynNode_IS_FRAME(tmpl))
+      frames++;
   }
+  *out_frames = *out_tmpl ? above : frames;
 }
 
 

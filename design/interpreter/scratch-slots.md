@@ -16,8 +16,8 @@ A special that walks something needs locals of its own: the match
 form's cursor, mark and repeat items, declared today as gensyms in the
 enclosing scope. Each form declares its own set, so a function with
 two sequence matches carries two cursors in its local table though
-the two walks never overlap; at module or class scope the names land
-in that namespace and outlive the form; and the gensym spellings vary
+the two walks never overlap; at module or class scope the names go
+into that namespace and outlive the form; and the gensym spellings vary
 per compile in the `.kio`. A namespace pushed per form was built and
 measured: the push is cheap, the write-through cell per capture is
 not, and the churn match_case kernel ran four times slower.

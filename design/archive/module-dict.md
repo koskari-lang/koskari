@@ -68,7 +68,7 @@ forward through the namespace:
 - `__getitem__`, `get`, `__contains__`, `keys`, `items`, `values`,
   iteration and `len` answer from the module's own bindings, deref'ing
   each `Ref`; a dynamic reference's handler runs on the demand path.
-- Writes land in the subclass's own dict storage so `exec`'s
+- Writes go into the subclass's own dict storage so `exec`'s
   `__builtins__` insertion and similar succeed, and that storage is
   purged on every subsequent read so nothing written through the dict
   is ever stored for long or read back as module state. The module's

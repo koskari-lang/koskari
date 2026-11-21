@@ -95,7 +95,7 @@ class TestItemSlotRebindGetter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.log, [("del", ["a", "b", "c"])])
 
 
-    async def test_store_lands_in_the_loaded_list(self):
+    async def test_store_goes_into_the_loaded_list(self):
         mod = await self.load_module()
         self.assertIn(OpCode.FAST_ITEM_FAST_STORE_FAST, opcodes_of(mod.store))
         self.assertIsNone(await mod.store(Tracked, Rebinder))

@@ -29,7 +29,8 @@
         "eval": { "type": "string" },
         "error": { "type": "string" },
         "invalid": { "type": "string" },
-        "warning": { "type": "string" }
+        "warning": { "type": "string" },
+        "gc_collect": { "type": "boolean" }
       }
     },
     "references": {

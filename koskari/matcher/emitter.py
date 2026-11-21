@@ -217,7 +217,7 @@ class Emitter:
             self.op(OpCode.JUMP, self.miss_at(miss))
 
 
-    def land(self, label):
+    def place_miss(self, label):
         """
         Place a miss target where the code before it never falls
         through, with the fail entry of its lowest pending top falling
@@ -540,7 +540,7 @@ class Emitter:
             nxt = self.join("match.oneof", value)
             self.test(branch, nxt, keep, cur)
             self.op(OpCode.JUMP, done)
-            self.land(nxt)
+            self.place_miss(nxt)
             if self.stores_ahead(branch):
                 self.clear(scope, branch)
         self.test(branches[-1], miss, keep, cur)
@@ -793,7 +793,7 @@ class Emitter:
                 self.emit(branch, cur, nxt)
                 self.op(OpCode.POP, 1, effect=-1)
                 self.op(OpCode.JUMP, done)
-                self.land(nxt)
+                self.place_miss(nxt)
                 self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
                 self.clear(scope, branch)
             self.goto(miss)
@@ -806,7 +806,7 @@ class Emitter:
             self.emit(node[1], cur, back)
             self.op(OpCode.POP, 1, effect=-1)
             self.op(OpCode.JUMP, done)
-            self.land(back)
+            self.place_miss(back)
             self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
             self.clear(analysis.node_scope[i], node[1])
             self.op(OpCode.POP, 1, effect=-1)
@@ -822,7 +822,7 @@ class Emitter:
             self.op(OpCode.MATCH_UNBOUND, self.top - cur, effect=1)
             self.emit(node[1], start, ok)
             self.goto(miss)
-            self.land(ok)
+            self.place_miss(ok)
             self.op(OpCode.POP, 1, effect=-1)
             self.place(past, start - 1)
 
@@ -905,7 +905,7 @@ class Emitter:
         self.op(OpCode.POP, 1, effect=-1)
         self.op(OpCode.JUMP, head)
 
-        self.land(pass_miss)
+        self.place_miss(pass_miss)
         self.op(OpCode.MATCH_RESET, self.top - bound, self.top - mark)
         self.op(OpCode.POP, 1, effect=-1)
         del self.marks[scope]

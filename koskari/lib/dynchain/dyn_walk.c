@@ -142,9 +142,8 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
 
 /**
    Generic unwind walk toward a target node. See dynchain.h for the
-   contract. Pops until dyn_top == target or empty, crossing barriers and
-   delimiters since these walks deliberately unwind through delimited
-   prompt boundaries. Callers: eval.c route_delim_return.
+   contract. Pops until dyn_top == target or empty, crossing barriers.
+   Callers: transform.c.
 */
 KosOpResult kos_dyn_unwind_to_node(
     KosContext *ctx,
@@ -217,16 +216,6 @@ static KosOpResult finally_take_control(
 }
 
 
-KosOpResult kos_dyn_finally_take_transfer(
-    KosContext *ctx,
-    KosDynFinally *fin) {
-
-  Py_INCREF(Py_None);
-  return finally_take_control(ctx, fin, Py_None,
-                              KOS_PENDING_RETURN_TRANSFER, "goal_leave");
-}
-
-
 /**
    RETURN unwind walk to frame. See dynchain.h for the contract. Caller:
    eval.c eval_event_return.
@@ -235,10 +224,8 @@ KosOpResult kos_dyn_unwind_return(
     KosContext *ctx,
     KosDynFrame *frame,
     PyObject *val,
-    KosPendingReturnKind kind,
-    KosDynDelim **took) {
+    KosPendingReturnKind kind) {
 
-  *took = NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_return: target frame=%p", (void *) frame);
 
@@ -246,18 +233,6 @@ KosOpResult kos_dyn_unwind_return(
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
     KosOpResult r;
-
-    /* Stopping node: a live delimited-invoke bookmark.  The return has
-       reached the delimiting reset; leave the DELIM at dyn_top and let the
-       caller route val to the k-invocation site.  val is NOT consumed. */
-    if (KosDynNode_IS_DELIM(top)
-        && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL) {
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] unwind_return: stopped at DELIM bookmark node=%p",
-             (void *) top);
-      *took = (KosDynDelim *) top;
-      return EVAL_NORMAL();
-    }
 
     /* Handle phase: offer RETURN before unwind */
     {
@@ -289,7 +264,7 @@ KosOpResult kos_dyn_unwind_return(
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
       /* The node's leave started and will suspend; val is stored on the node
          and the return resumes once the node has left the chain. */
-      if (kos_dyn_ob_store_return(top, val, (uint8_t) kind, NULL) < 0) {
+      if (kos_dyn_ob_store_return(top, val, (uint8_t) kind) < 0) {
         Py_XDECREF(r.val);
         return EVAL_RAISE();
       }
@@ -309,12 +284,9 @@ KosOpResult kos_dyn_unwind_return(
    Find the nearest enabled LOOP or FOREACH from dyn_top. A loop whose
    else clause is running has been disabled by CLEAR_LOOP or
    CLEAR_FOREACH and is finished: a break or continue issued there
-   belongs to the loop enclosing it. A live delimited-invoke bookmark
-   ends the search: the resumed slice above it is the continuation's
-   body, and a loop below it (the one around the reset, or one in the
-   shift handler) is outside that body, as a return or a raise in the
-   slice is delivered to the (k ...) call site and not past it.
-   Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
+   belongs to the loop enclosing it. A loop in another frame is not
+   reachable: kos_dyn_unwind_to_loop refuses one below the current
+   frame. Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
    kos_dyn_unwind_to_loop serving BREAK/CONTINUE.
 */
 KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
@@ -322,9 +294,6 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
   while (node) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
-    if (KosDynNode_IS_DELIM(node)
-        && KosDynDelim_RETURN_FRAME((KosDynDelim *) node) != NULL)
-      return NULL;
     node = KosDynNode_PARENT(node);
   }
   return NULL;
@@ -401,8 +370,7 @@ KosOpResult kos_dyn_unwind_to_loop(
     }
 
     /* The loop lies under the current frame, so every node between
-       is the frame's own: a reset's PROMPT and a SHIFT leave like any
-       other node, as they do for the return walk. */
+       is the frame's own. */
     r = kos_dyn_unlink_top(ctx, event, 1);
 
     if (r.kind == KOS_RES_NORMAL)
@@ -414,7 +382,7 @@ KosOpResult kos_dyn_unwind_to_loop(
       uint8_t path = (event == KOS_XFER_EVENT_BREAK)
           ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
 
-      if (kos_dyn_ob_store_return(top, result, path, NULL) < 0) {
+      if (kos_dyn_ob_store_return(top, result, path) < 0) {
         Py_XDECREF(r.val);
         return EVAL_RAISE();
       }
@@ -602,21 +570,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
        handle phase; everything else goes straight to unwind/pop. */
     if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)) {
 
-    /* In-place delimited return bookmark: the slice raised. Restitch the
-       invoke span and continue the raise from the invoke site. */
-    if (KosDynNode_IS_DELIM(top)) {
-      PyObject *typ = NULL, *val = NULL, *tb = NULL;
-      PyErr_Fetch(&typ, &val, &tb);
-      if (kos_dyn_inplace_restitch(ctx, (KosDynDelim *) top) < 0) {
-        Py_XDECREF(typ);
-        Py_XDECREF(val);
-        Py_XDECREF(tb);
-        return EVAL_FATAL();
-      }
-      PyErr_Restore(typ, val, tb);
-      continue;
-    }
-
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
     {
@@ -638,10 +591,14 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
           }
 
           /* Flattened generator whose frame the earlier raise phases
-             already crossed (dyn_top is the GEN itself). Finish it and
-             continue the walk so the raise propagates into the
-             consumer's regions, per Python generator semantics. */
-          kos_dyn_finish_flattened_gen(ctx, (KosDynGen *) top);
+             already crossed (dyn_top is the GEN itself). Its unlink
+             finishes it, with the raise held across the free; the walk
+             continues so the raise propagates into the consumer's
+             regions, per Python generator semantics. Unlinking a GEN
+             that has a parent cannot fail. */
+          if (kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_RAISE, 1).kind
+              != KOS_RES_NORMAL)
+            return EVAL_FATAL();
           continue;
         }
 
@@ -713,6 +670,11 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
       int top_is_wind = (top && KosDynNode_IS_WIND(top));
       int top_is_barrier =
           (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+      /* A goal waits on this node for a thunk that sat above it: the
+         walk crossed that thunk, so once the node is unlinked the goal
+         is told. Its id is read now, as the unlink frees the node. */
+      uint32_t waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)
+          ? kos_dynnode_id(top) : 0;
       /* A wind about to fire its after-thunk runs it clean: the
          exception in flight is held here and stored on the node once
          the thunk has started. A wind (or with) whose thunk is dead is
@@ -756,6 +718,12 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
         }
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
+      /* unlinked: dyn_top moved off the node, and no leave of its own
+         started a call above it */
+      if (waited_id && KosContext_DYN_TOP(ctx) != top
+          && pop_res.kind != KOS_RES_REPROLOGUE
+          && pop_res.kind != KOS_RES_AWAIT)
+        kos_xfer_goal_thunk_died(ctx, top, waited_id);
       if (pop_res.kind == KOS_RES_AWAIT) {
         return pop_res;
       }
@@ -783,6 +751,8 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
                             "raise walk: a node's leave keeps failing");
             return EVAL_FATAL();
           }
+          if (waited_id)
+            kos_xfer_goal_thunk_died(ctx, top, waited_id);
         }
         continue;
       }

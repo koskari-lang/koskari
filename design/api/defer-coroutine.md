@@ -219,7 +219,7 @@ If donor `r` is:
 ## Integration with `AWAIT` opcode
 
 The AWAIT opcode treats a defer as a generic awaitable: it calls
-`PyObject_GetAwaitable`, which lands in `__await__`, starts the handle's
+`PyObject_GetAwaitable`, which arrives at `__await__`, starts the handle's
 delegation, and returns the defer itself as the drive target. The eval's
 ordinary eager-step machinery then drives it via `send`, which forwards
 into the held iterator. No defer-specific opcode support exists or is needed.

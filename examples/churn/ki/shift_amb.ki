@@ -1,0 +1,25 @@
+;; churn_shift_amb -- a three-level search for Pythagorean triples where
+;; each choice point is a shift whose handler calls the continuation once
+;; per choice and gathers the solutions.  One capture is resumed many
+;; times, and each resume reaches the choice points below it.
+
+def amb [choices]:
+    shift k:
+        var out #[]
+        for-each [c choices]:
+            out.extend (k c)
+        out
+
+
+def churn_shift_amb [n]:
+    reset:
+        var a (amb (range 1 n))
+        var b (amb (range a n))
+        var c (amb (range b n))
+        if (== (+ (* a a) (* b b)) (* c c)):
+            #[#(a b c)]
+        else:
+            #[]
+
+
+;; The end.

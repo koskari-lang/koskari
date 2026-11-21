@@ -16,7 +16,7 @@
 
 /**
   Included by dynchain.c. The KOS_DYN_WIND node: a dynamic-wind extent
-  with its before and after thunks.
+  with its before and after asides.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -26,26 +26,23 @@
 
 
 /**
-   Allocate dynamic-wind node; caps derived from which thunks are present.
+   Allocate dynamic-wind node over the code and row of its PUSH_WIND.
    Callers: kos_dyn_push_wind.
 */
 KosDynWind *kos_dynwind_new(
     KosDynNode *parent,
-    PyObject *before_thunk,
-    PyObject *after_thunk) {
+    KosCode *code,
+    const KosExtra *row) {
 
   KosDynWind *wind = kos_dynnode_alloc();
   if (! wind)
     return NULL;
 
   kos_dynnode_init(wind, KOS_DYN_WIND, parent,
-                   KOS_DYN_CAP_CONTROL_HOOK);
-  KosDynWind_BEFORE_THUNK(wind) = before_thunk;
-  if (before_thunk)
-    Py_INCREF(before_thunk);
-  KosDynWind_AFTER_THUNK(wind) = after_thunk;
-  if (after_thunk)
-    Py_INCREF(after_thunk);
+                   KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_WINDS);
+  Py_XINCREF(code);
+  KosDynWind_CODE(wind) = code;  /* owned */
+  KosDynWind_ROW(wind) = row;
   KosDynWind_OB(wind)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(wind) = 0;
   KosDynWind_PHASE(wind) = KOS_WIND_PHASE_IDLE;
@@ -54,14 +51,13 @@ KosDynWind *kos_dynwind_new(
 
 
 /**
-   Clone thunks and phase for continuation segments.
+   Whether a wind can be part of a continuation's template. A segment
+   in flight, or a value, exception or return stored for its
+   completion, belongs to this node's one run and to no template.
+   Returns 0, or -1 with the refusal set.
 */
-KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
-  if (! wind)
-    return NULL;
+static int kos_dynwind_capturable(KosDynWind *wind) {
 
-  /* A thunk in flight, or a value, exception or return stored for its
-     completion, belongs to this node's one run and to no template. */
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
       || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER
       || KosDynWind_OB(wind)->kind != KOS_OB_NONE) {
@@ -69,20 +65,30 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
         NULL, KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
                   ? "before" : "after",
         "cannot capture a continuation from inside a dyn-wind whose %s"
-        " thunk is in flight");
-    return NULL;
+        " segment is in flight");
+    return -1;
   }
+  return 0;
+}
+
+
+/**
+   Clone the code, row and phase for continuation segments.
+*/
+KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
+  if (! wind)
+    return NULL;
+
+  if (kos_dynwind_capturable(wind) < 0)
+    return NULL;
 
   KosDynWind *clone = kos_dynnode_clone_base(wind);
   if (! clone)
     return NULL;
 
-  KosDynWind_BEFORE_THUNK(clone) = KosDynWind_BEFORE_THUNK(wind);
-  if (KosDynWind_BEFORE_THUNK(clone))
-    Py_INCREF(KosDynWind_BEFORE_THUNK(clone));
-  KosDynWind_AFTER_THUNK(clone) = KosDynWind_AFTER_THUNK(wind);
-  if (KosDynWind_AFTER_THUNK(clone))
-    Py_INCREF(KosDynWind_AFTER_THUNK(clone));
+  Py_XINCREF(KosDynWind_CODE(wind));
+  KosDynWind_CODE(clone) = KosDynWind_CODE(wind);  /* owned */
+  KosDynWind_ROW(clone) = KosDynWind_ROW(wind);
   KosDynWind_OB(clone)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(clone) = 0;
   KosDynWind_PHASE(clone) = KOS_WIND_PHASE_IDLE;
@@ -91,16 +97,14 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
 
 
 /**
-   DECREF thunks and body_result; return to freelist.
+   DECREF the code and body_result; return to freelist.
 */
 void kos_dynwind_free(KosDynWind *wind) {
   if (! wind)
     return;
 
-  Py_XDECREF(KosDynWind_BEFORE_THUNK(wind));
-  KosDynWind_BEFORE_THUNK(wind) = NULL;
-  Py_XDECREF(KosDynWind_AFTER_THUNK(wind));
-  KosDynWind_AFTER_THUNK(wind) = NULL;
+  Py_CLEAR(KosDynWind_CODE(wind));
+  KosDynWind_ROW(wind) = NULL;
   kos_dyn_ob_clear(KosDynWind_OB(wind));
   kos_dynnode_return_to_freelist(wind);
 }
@@ -112,11 +116,8 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_int(data, "phase", (int) KosDynWind_PHASE((KosDynWind *) node)) < 0)
     return -1;
-  if (snapshot_set_obj(data, "before_thunk",
-      KosDynWind_BEFORE_THUNK((KosDynWind *) node)) < 0)
-    return -1;
-  if (snapshot_set_obj(data, "after_thunk",
-      KosDynWind_AFTER_THUNK((KosDynWind *) node)) < 0)
+  if (snapshot_set_obj(data, "code",
+      (PyObject *) KosDynWind_CODE((KosDynWind *) node)) < 0)
     return -1;
   if (snapshot_set_int(data, "obligation",
       (int) KosDynWind_OB((KosDynWind *) node)->kind) < 0)
@@ -126,37 +127,27 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Fire thunk with no arguments and classify what happened. The phase
-   has already been set to the pending value by the caller.
+   Run segment, an aside, in a frame above the wind, which is dyn_top,
+   the namespace live at its PUSH_WIND being the one it is run in. The
+   phase has already been set to the pending value by the caller; the
+   segment's return settles it.
 
-   :return: EVAL_RAISE; EVAL_AWAIT with the awaitable; EVAL_REPROLOGUE
-     when the thunk's frame is installed; EVAL_NORMAL when the thunk ran
-     to completion in hand, its result already dropped
+   :return: EVAL_REPROLOGUE with the segment's frame installed, or
+     EVAL_RAISE
 */
-static KosOpResult kos_dyn_wind_fire(KosContext *ctx, PyObject *thunk) {
-  KosOpResult wr = KosContext_Call(
-      ctx, thunk, NULL, 0, NULL, 0, NULL, NULL);
+static KosOpResult kos_dyn_wind_fire(
+    KosContext *ctx,
+    KosDynWind *node,
+    KosCode *segment) {
 
-  /* A value in hand is settled, or awaited onto the block; settled, it
-     is not the wind's business. */
-  if (wr.kind == KOS_RES_RETURN) {
-    PyObject *val;
-
-    wr = KosContext_Settle(ctx, wr.val, &val);
-    if (wr.kind == KOS_RES_NORMAL) {
-      Py_DECREF(val);
-      return EVAL_NORMAL();
-    }
-  }
-
-  if (wr.kind == KOS_RES_RAISE || wr.kind == KOS_RES_AWAIT)
-    return wr;
+  if (! kos_dyn_push_aside(ctx, segment, KosDynNode_NS(node)))
+    return EVAL_RAISE();
   return EVAL_REPROLOGUE();
 }
 
 
 /**
-   Enter: run the before-thunk once. See the extent contract in
+   Enter: run the before segment once. See the extent contract in
    dynchain.h.
 */
 static KosOpResult kos_dyn_wind_enter(KosContext *ctx, KosDynWind *node) {
@@ -164,27 +155,20 @@ static KosOpResult kos_dyn_wind_enter(KosContext *ctx, KosDynWind *node) {
   if (KosDynWind_ENTERED(node))
     return EVAL_NORMAL();
   if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN)
-    return EVAL_REPROLOGUE();  /* before-thunk in flight */
+    return EVAL_REPROLOGUE();  /* before segment in flight */
 
-  if (! KosDynWind_BEFORE_THUNK(node)) {
+  if (! KosDynWind_BEFORE(node)) {
     KosDynWind_ENTERED(node) = 1;
     return EVAL_NORMAL();
   }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
-  {
-    KosOpResult wr = kos_dyn_wind_fire(ctx, KosDynWind_BEFORE_THUNK(node));
-    if (wr.kind != KOS_RES_NORMAL)
-      return wr;
-  }
-  KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_BEGIN;
-  KosDynWind_ENTERED(node) = 1;
-  return EVAL_NORMAL();
+  return kos_dyn_wind_fire(ctx, node, KosDynWind_BEFORE(node));
 }
 
 
 /**
-   Leave: run the after-thunk once. See the extent contract in
+   Leave: run the after segment once. See the extent contract in
    dynchain.h. The body result is not delivered here; the unlink does
    that after the node is gone.
 */
@@ -201,10 +185,10 @@ static KosOpResult kos_dyn_wind_leave(
 
     case KOS_WIND_PHASE_PRE_AFTER:
     case KOS_WIND_PHASE_PRE_BEGIN:
-      /* A thunk in flight sat in a frame above this node. The node is
-         dyn_top, so that frame is gone (it raised, or the walk crossed
-         it) and the thunk is dead: nothing to wait for and, for a
-         before-thunk, never entered. */
+      /* A segment in flight sat in a frame above this node. The node
+         is dyn_top, so that frame is gone (it raised, or the walk
+         crossed it) and the segment is dead: nothing to wait for and,
+         for a before segment, never entered. */
       KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
       return EVAL_NORMAL();
 
@@ -212,34 +196,34 @@ static KosOpResult kos_dyn_wind_leave(
       break;
   }
 
-  if (! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER_THUNK(node)) {
+  if (! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER(node)) {
     KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
     return EVAL_NORMAL();
   }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_AFTER;
-  {
-    KosOpResult wr = kos_dyn_wind_fire(ctx, KosDynWind_AFTER_THUNK(node));
-    if (wr.kind != KOS_RES_NORMAL)
-      return wr;
-  }
-  KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
-  return EVAL_NORMAL();
+  return kos_dyn_wind_fire(ctx, node, KosDynWind_AFTER(node));
 }
 
 
 /**
-   The pending thunk returned; its result is the top of the live block.
+   The pending segment returned; its result, which nothing reads, is
+   staged or is the top of the live block.
 */
 static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
+
+  PyObject *val;
 
   if (KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_BEGIN
       && KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_AFTER)
     return 0;
 
-  if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
-      && KosSegment_LEN(*KosContext_BLOCK(ctx))) {
-    PyObject *val = KosContext_StackPopRef(ctx);
+  val = kos_dyn_take_staged_result(ctx);
+  if (val) {
+    Py_DECREF(val);
+  } else if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+             && KosSegment_LEN(*KosContext_BLOCK(ctx))) {
+    val = KosContext_StackPopRef(ctx);
     if (! val)
       return -1;
     Py_DECREF(val);
@@ -256,7 +240,7 @@ static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
 
 
 /**
-   The pending thunk died; nothing to take.
+   The pending segment died; nothing to take.
 */
 static void kos_dyn_wind_abort(KosDynWind *node) {
 
@@ -272,11 +256,10 @@ static void kos_dyn_wind_abort(KosDynWind *node) {
 */
 KosDynWind *kos_dyn_push_wind(
     KosContext *ctx,
-    PyObject *before_thunk,
-    PyObject *after_thunk) {
+    KosCode *code,
+    const KosExtra *row) {
 
-  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
-                                     before_thunk, after_thunk);
+  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx), code, row);
   if (! wind)
     return NULL;
 
@@ -292,13 +275,12 @@ KosDynWind *kos_dyn_push_wind(
 
 
 /**
-   GC traverse a KOS_DYN_WIND: visit the before and after thunk callables,
-   and the stored body result.
+   GC traverse a KOS_DYN_WIND: visit the code and the stored body
+   result.
 */
 static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWind *wind = (KosDynWind *) node;
-  Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
-  Py_VISIT(KosDynWind_AFTER_THUNK(wind));
+  Py_VISIT(KosDynWind_CODE(wind));
   return kos_dyn_ob_traverse(KosDynWind_OB(wind), visit, arg);
 }
 

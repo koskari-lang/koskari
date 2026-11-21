@@ -85,7 +85,7 @@ def collect_source [src]:
 
 
 def collect_else [n]:
-    ;; the end of the iteration lands on the else clause
+    ;; the end of the iteration arrives at the else clause
     var out #[]
     (for-each [v (gen n)]
       (out.append v)

@@ -428,13 +428,13 @@ NO_FALLTHROUGH = frozenset((
 CONTROL_NONE_OPS = frozenset((
     OpCode.RETURN, OpCode.BREAK, OpCode.CONTINUE, OpCode.YIELD))
 
-# the jump a short-circuit jump becomes when its label lands on a
-# conditional jump, keyed by (jump op, landing op). The value pushed on
+# the jump a short-circuit jump becomes when its label leads to a
+# conditional jump, keyed by (jump op, destination op). The value pushed on
 # the jumping path is known (falsy after JUMP_AND, truthy after
-# JUMP_OR), so the landing's outcome on it is fixed: True when the
-# landing would jump, and the rewrite takes the landing's target; False
-# when the landing would fall through, and the rewrite takes the
-# landing's fall-through label. The replacement pops the value either
+# JUMP_OR), so the destination's outcome on it is fixed: True when the
+# destination would jump, and the rewrite takes the destination's target; False
+# when the destination would fall through, and the rewrite takes the
+# destination's fall-through label. The replacement pops the value either
 # way.
 SHORTCUT_THREADS = {
     (OpCode.JUMP_AND, OpCode.JUMP_FALSE): (OpCode.JUMP_FALSE, True),
@@ -449,10 +449,10 @@ SHORTCUT_THREADS = {
 
 SHORTCUT_OPS = frozenset((OpCode.JUMP_AND, OpCode.JUMP_OR))
 
-# a landing OBJECT_NOT ahead of one of these jumps resolves as the
+# a destination OBJECT_NOT ahead of one of these jumps resolves as the
 # opposite jump: the value the short-circuit jump pushes is negated
-# before the landing tests it
-NOT_LANDINGS = {
+# before the destination tests it
+NOT_DESTINATIONS = {
     OpCode.JUMP_FALSE: OpCode.JUMP_TRUE,
     OpCode.JUMP_TRUE: OpCode.JUMP_FALSE,
 }
@@ -506,12 +506,64 @@ squish_rule = rule_registrar(SQUISH_RULES)
 fuse_rule = rule_registrar(FUSE_RULES)
 
 
+class Aside:
+    """
+    An aside before its Code is built: instructions an instruction
+    runs in a frame of their own, with no function around them. The
+    instruction carries it in an ASIDE field until the code it is
+    written in completes, since the names it reaches in the enclosing
+    scope have slots only then
+
+    :param instructions: the aside's instruction rows
+    :param nspec: the NamespaceSpec of a namespace of the aside's own,
+        for an ASIDE_NS field, or None for an aside over the namespace
+        it is run in, for an ASIDE field
+    """
+
+    __slots__ = ("instructions", "nspec")
+
+
+    def __init__(self, instructions=None, nspec=None):
+        self.instructions = [] if instructions is None else instructions
+        self.nspec = nspec
+
+
+ASIDE_STYLES = (OpStyle.ASIDE, OpStyle.ASIDE_NS)
+
+
+def carries_asides(op):
+    """
+    Whether an opcode's EXTRA row has an ASIDE or ASIDE_NS field
+
+    :param op: the OpCode
+    """
+
+    return bool(op.extra) and any(fk in ASIDE_STYLES for fk in op.extra)
+
+
+def find_asides(rows):
+    """
+    Each Aside the rows carry in their aside fields. The asides an
+    aside carries in turn are not walked
+
+    :param rows: instruction rows
+    :return: generator of Aside
+    """
+
+    for op, arg in rows:
+        if carries_asides(op):
+            for value in arg:
+                if isinstance(value, Aside):
+                    yield value
+
+
 def merge_function_constant_needs(fragment, instructions):
     """
     Merge the closure and write needs of every completed function
-    constant in instructions into fragment, so a scope that encloses
-    the function captures what it closes over. A function constant
-    whose Code is not yet complete has nothing to merge
+    constant in instructions, and in the asides they carry, into
+    fragment, so a scope that encloses the function captures what it
+    closes over. A function constant whose Code is not yet complete has
+    nothing to merge
     """
 
     reso = fragment.resolution
@@ -525,6 +577,9 @@ def merge_function_constant_needs(fragment, instructions):
                 continue
             request_for_write_syms = reso.get_request_for_write_syms(code)
             reso.cpool_merge(fragment, nspec, request_for_write_syms)
+
+    for aside in find_asides(instructions):
+        merge_function_constant_needs(fragment, aside.instructions)
 
 
 def stringify_namespace_spec(nspec):
@@ -546,7 +601,8 @@ def stringify_operands(rows):
     """
     The rows with every variable operand and inline scope's names
     lowered to their final forms, which is mostly str conversion from
-    symbols.
+    symbols. An aside the rows carry is copied with its own rows
+    lowered the same way.
 
     :param rows: instruction rows whose names are atoms
     :return: a new list of rows
@@ -562,6 +618,18 @@ def stringify_operands(rows):
 
         elif op == OpCode.PUSH_COLLECT:
             arg = stringify_namespace_spec(arg)
+
+        elif carries_asides(op):
+            fields = []
+            for value in arg:
+                if isinstance(value, Aside):
+                    nspec = value.nspec
+                    if nspec is not None:
+                        nspec = stringify_namespace_spec(nspec)
+                    value = Aside(
+                        stringify_operands(value.instructions), nspec)
+                fields.append(value)
+            arg = tuple(fields)
 
         elif op.style == OpStyle.VAR:
             arg = str(arg)
@@ -589,14 +657,19 @@ class ByteCodeProcessor:
     exactly the validity of that state.
     """
 
-    def __init__(self, fragment):
+    def __init__(self, fragment, instructions=None):
         """
         :param fragment: the ByteCodeFragment whose instructions are
             processed
+        :param instructions: the rows of an aside carried in the
+            fragment's stream, already lowered to their final forms,
+            to process in place of the fragment's own
         """
 
         self.fragment = fragment
-        self.instructions = stringify_operands(fragment.instructions)
+        if instructions is None:
+            instructions = stringify_operands(fragment.instructions)
+        self.instructions = instructions
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction
@@ -1396,7 +1469,9 @@ class ByteCodeProcessor:
         """
         Lower VAR-family rows to their FAST twins where the name has a
         fast slot in the active namespace scope, tracking PUSH_NS /
-        PUSH_COLLECT scope entries through the stream
+        PUSH_COLLECT scope entries through the stream. An aside the
+        stream carries is lowered against its own NamespaceSpec, or
+        against the scope active at the instruction that runs it
 
         :param base_nspec: NamespaceSpec seeding the base scope, or
             None for a stream with no base scope (only inner PUSH_NS /
@@ -1444,6 +1519,17 @@ class ByteCodeProcessor:
 
             elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 pop_nspec()
+
+            elif carries_asides(op):
+                for aside in arg:
+                    if not isinstance(aside, Aside):
+                        continue
+                    scope = aside.nspec
+                    if scope is None and nstack:
+                        scope = nstack[-1]
+                    sub = ByteCodeProcessor(self.fragment, aside.instructions)
+                    sub.convert_fast(scope)
+                    aside.instructions = sub.instructions
 
             elif nstack and op == OpCode.CHECK_COMPARE_VAR:
                 # CMPSRC row: slot kinds are data-dependent (a set source
@@ -1551,24 +1637,24 @@ class ByteCodeProcessor:
 
     def thread_shortcut_jumps(self):
         """
-        Rewrite a JUMP_AND or JUMP_OR whose label lands on a
-        conditional jump into the jump that landing performs on the
+        Rewrite a JUMP_AND or JUMP_OR whose label leads to a
+        conditional jump into the jump that destination performs on the
         value the short-circuit jump pushes.
 
-        The landing is the first instruction after the label that is
-        not POSITION, NOOP or LABEL. A landing that is a JUMP_FALSE,
+        The destination is the first instruction after the label that is
+        not POSITION, NOOP or LABEL. A destination that is a JUMP_FALSE,
         JUMP_TRUE, JUMP_AND or JUMP_OR resolves through SHORTCUT_THREADS
         to the replacement op and whether the rewrite takes the
-        landing's target or its fall-through; the fall-through label is
-        the LABEL directly after the landing when one is there, and is
+        destination's target or its fall-through; the fall-through label is
+        the LABEL directly after the destination when one is there, and is
         otherwise inserted from the compiler's label generator. A
-        landing OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
+        destination OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
         as the opposite jump, the NOT staying for the fall-through
-        clause. Any other landing leaves the jump alone, as does a label
+        clause. Any other destination leaves the jump alone, as does a label
         with no LABEL.
 
         Sweeps repeat until none changes a jump, so a nested form
-        threads once its inner landing has been rewritten. A label a
+        threads once its inner destination has been rewritten. A label a
         rewrite dereferenced goes when nothing else refers to it; every
         other label stays. Runs before squish so the threaded jumps
         fuse with their feeders there.
@@ -1582,7 +1668,7 @@ class ByteCodeProcessor:
         orphaned = set()
         transparent = JOIN_TRANSPARENT | {OpCode.LABEL}
 
-        def landing(li):
+        def destination(li):
             li += 1
             while li < len(instr) and instr[li][0] in transparent:
                 li += 1
@@ -1601,15 +1687,15 @@ class ByteCodeProcessor:
                 li = labels.get(arg)
                 if li is None:
                     continue
-                ci = landing(li)
+                ci = destination(li)
                 if ci is None:
                     continue
                 lop, larg = instr[ci]
                 if lop == OpCode.OBJECT_NOT:
-                    ci = landing(ci)
-                    if ci is None or instr[ci][0] not in NOT_LANDINGS:
+                    ci = destination(ci)
+                    if ci is None or instr[ci][0] not in NOT_DESTINATIONS:
                         continue
-                    lop, larg = NOT_LANDINGS[instr[ci][0]], instr[ci][1]
+                    lop, larg = NOT_DESTINATIONS[instr[ci][0]], instr[ci][1]
                 thread = SHORTCUT_THREADS.get((op, lop))
                 if thread is None:
                     continue
@@ -1813,15 +1899,21 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
-    def demote_tail_calls_if_yields(self):
+    def demote_tail_calls_if_yields(self, yields=None):
         """
         If the stream contains yield or yield-from, replace TAIL_CALL*
         with CALL* so generator frames never use tail-call frame reuse.
         Native Code lowering rejects the combination outright.
+
+        :param yields: whether the code yields, for the stream of an
+            aside, which follows the code it is written in; None to
+            read it from the stream
         """
 
         instr = self.instructions
-        if not any(op in YIELD_OPS for op, _ in instr):
+        if yields is None:
+            yields = any(op in YIELD_OPS for op, _ in instr)
+        if not yields:
             return
         self.instructions = [
             (TAIL_CALL_TO_CALL.get(op, op), arg)
@@ -1858,25 +1950,18 @@ class ByteCodeProcessor:
         return sym
 
 
-    def process(self, function_body=False):
+    def reduce(self):
         """
-        Run the full pipeline and return the finished rows.
-
-        The pass settings come from the fragment's compiler: tail-call
-        promotion needs the compiler's tco setting and a function-body
-        stream, and the VAR to FAST lowering follows the compiler's
-        convert-fast setting. The base NamespaceSpec is resolved
-        mid-pipeline from the fragment's resolution instance and stays
-        readable on the processor afterward.
-
-        :param function_body: whether this stream is a function body
-            (has a base scope, runs repeatedly, may tail-call promote)
-        :return: the finished instruction rows
+        The passes that read no scope and no setting of the code as a
+        whole, over the asides the stream carries and then the stream
         """
 
-        compiler = self.fragment.compiler
+        for aside in find_asides(self.instructions):
+            sub = ByteCodeProcessor(self.fragment, aside.instructions)
+            sub.reduce()
+            aside.instructions = sub.instructions
 
-        # a short-circuit jump landing on a conditional jump becomes
+        # a short-circuit jump leading to a conditional jump becomes
         # that jump, so the clause's predicate and the branch sit
         # adjacent for the squish
         self.thread_shortcut_jumps()
@@ -1892,20 +1977,84 @@ class ByteCodeProcessor:
         # then we fuse the feeders and consumer opcodes where applicable
         self.fuse_feeders()
 
-        # we either promote or forcibly demote tail calls depending
-        # on whether tco is enable and also allowed (a non-yielding
-        # function body).
-        tco_enabled = (
-            compiler.tco_enabled and function_body and not
-            any(op in YIELD_OPS for op, _ in self.instructions))
 
-        if tco_enabled:
+    def settle_tail_calls(self, promote, yields):
+        """
+        Promote or demote tail calls, in the asides the stream carries
+        as in the stream, and pack the opcount operands
+
+        :param promote: whether calls with a clear route to RETURN 1
+            become tail calls
+        :param yields: whether the code yields, which demotes the tail
+            calls already written
+        """
+
+        for aside in find_asides(self.instructions):
+            sub = ByteCodeProcessor(self.fragment, aside.instructions)
+            sub.settle_tail_calls(promote, yields)
+            aside.instructions = sub.instructions
+
+        if promote:
             self.promote_tail_calls()
         else:
-            self.demote_tail_calls_if_yields()
+            self.demote_tail_calls_if_yields(yields)
 
         # fixes the opcount and cmpcount operands to be packed uint16s
         self.normalize_opcount()
+
+
+    def finish(self):
+        """
+        The last passes, over the asides the stream carries and then
+        the stream
+        """
+
+        for aside in find_asides(self.instructions):
+            sub = ByteCodeProcessor(self.fragment, aside.instructions)
+            sub.finish()
+            aside.instructions = sub.instructions
+
+        # combine runs of consecutive bare CONST, VAR, FAST
+        self.pack_runs()
+
+        # a fusion that ended the stream re-emitted the POSITION it
+        # stepped over for instructions that never came
+        rows = self.instructions
+        while rows and rows[-1][0] is OpCode.POSITION:
+            rows.pop()
+
+
+    def process(self, function_body=False):
+        """
+        Run the full pipeline and return the finished rows.
+
+        The pass settings come from the fragment's compiler: tail-call
+        promotion needs the compiler's tco setting and a function-body
+        stream, and the VAR to FAST lowering follows the compiler's
+        convert-fast setting. The base NamespaceSpec is resolved
+        mid-pipeline from the fragment's resolution instance and stays
+        readable on the processor afterward.
+
+        An aside the stream carries goes through the same passes, and
+        is still an Aside in the finished rows: the caller builds its
+        Code.
+
+        :param function_body: whether this stream is a function body
+            (has a base scope, runs repeatedly, may tail-call promote)
+        :return: the finished instruction rows
+        """
+
+        compiler = self.fragment.compiler
+
+        self.reduce()
+
+        # we either promote or forcibly demote tail calls depending
+        # on whether tco is enable and also allowed (a non-yielding
+        # function body). An aside cannot yield, so the stream answers
+        # for the asides it carries.
+        yields = any(op in YIELD_OPS for op, _ in self.instructions)
+        self.settle_tail_calls(
+            compiler.tco_enabled and function_body and not yields, yields)
 
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
@@ -1921,16 +2070,8 @@ class ByteCodeProcessor:
         if compiler.convert_fast_enabled and function_body:
             self.convert_fast(self.base_nspec)
 
-        # combine runs of consecutive bare CONST, VAR, FAST
-        self.pack_runs()
-
-        # a fusion that ended the stream re-emitted the POSITION it
-        # stepped over for instructions that never came
-        rows = self.instructions
-        while rows and rows[-1][0] is OpCode.POSITION:
-            rows.pop()
-
-        return rows
+        self.finish()
+        return self.instructions
 
 
 # The end.

@@ -798,7 +798,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: shift aborts the reset body and returns 42; k is the delimited continuation
+notes: shift aborts the reset body, so the pending (+ 1 ...) never runs; the handler's value, 42, is the reset's value; k is unused
 ---
 id: special-reset-shift-call-003
 feature: special/compile/reset
@@ -834,7 +834,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: shift k aborts the reset context; 42 is the result; k is unused
+notes: shift aborts the region up to the reset before the handler runs; the handler's value, 42, is the reset's value; k is unused
 ---
 id: special-shift-call-002
 feature: special/compile/shift
@@ -870,7 +870,133 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: multi-shot continuation; k called twice with nesting; empty body outside hole yields 1
+notes: multi-shot continuation; k is called twice, nested; the region around the shift is the hole alone, so each call of k returns its argument and the result is 1
+---
+id: special-shift-handler-own-loop-004
+feature: special/compile/shift
+source: |-
+  (reset (shift k (while True (break 9))))
+
+verify:
+  read: (reset (shift k (while True (break 9))))
+  expand: (reset (shift k (while True (break 9))))
+  eval: "9"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-break.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: a shift handler has the loops written inside it; the break leaves the handler's own while, and 9 is the handler's value and so the reset's
+---
+id: special-shift-handler-return-in-callee-005
+feature: special/compile/shift
+source: |-
+  (reset ((lambda [] (+ 1 (shift k (return 5))))))
+
+verify:
+  read: (reset ((lambda [] (+ 1 (shift k (return 5))))))
+  expand: (reset ((lambda [] (+ 1 (shift k (return 5))))))
+  eval: "5"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-return.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: the handler is a function of k, so a return in it returns the handler's value, which is the reset's; where the shift was written makes no difference
+---
+id: special-reset-at-default-tag-001
+feature: special/compile/reset-at
+source: |-
+  (reset-at None (+ 1 (shift k (call k 5))))
+
+verify:
+  read: (reset-at None (+ 1 (shift k (call k 5))))
+  expand: (reset-at None (+ 1 (shift k (call k 5))))
+  eval: "6"
+references:
+  - reference/specials/compile-reset-at.md
+  - reference/specials/compile-shift.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: None is the default tag, so reset-at None is a plain reset and a plain shift captures up to it
+---
+id: special-reset-at-plain-shift-passes-002
+feature: special/compile/reset-at
+source: |-
+  (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift k 7))))))
+
+verify:
+  read: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift k 7))))))
+  expand: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift k 7))))))
+  eval: "107"
+references:
+  - reference/specials/compile-reset-at.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: a plain shift seeks the default tag and stops at the plain reset; 7 replaces that reset only, and the tagged delimiter around it is untouched
+---
+id: special-shift-at-default-tag-001
+feature: special/compile/shift-at
+source: |-
+  (reset (+ 1 (shift-at None k (call k 5))))
+
+verify:
+  read: (reset (+ 1 (shift-at None k (call k 5))))
+  expand: (reset (+ 1 (shift-at None k (call k 5))))
+  eval: "6"
+references:
+  - reference/specials/compile-shift-at.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: None is the default tag, so shift-at None is a plain shift and captures up to a plain reset
+---
+id: special-shift-at-crosses-reset-002
+feature: special/compile/shift-at
+source: |-
+  (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift-at t k (call k 1)))))))
+
+verify:
+  read: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift-at t k (call k 1)))))))
+  expand: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (shift-at t k (call k 1)))))))
+  eval: "111"
+references:
+  - reference/specials/compile-shift-at.md
+  - reference/specials/compile-reset-at.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift-at captures up to the delimiter carrying its tag and crosses the plain reset on the way; the crossed reset is part of k, so (call k 1) is 100 + (10 + 1)
+---
+id: special-shift-at-crosses-reset-at-003
+feature: special/compile/shift-at
+source: |-
+  (let [[a (gensym "a")] [b (gensym "b")]] (reset-at a (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+
+verify:
+  read: (let [[a (gensym "a")] [b (gensym "b")]] (reset-at a (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+  expand: (let [[a (gensym "a")] [b (gensym "b")]] (reset-at a (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+  eval: "111"
+references:
+  - reference/specials/compile-shift-at.md
+  - reference/specials/compile-reset-at.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: two private tags from gensym; the shift-at seeking a passes the delimiter tagged b, which becomes part of k
 ---
 id: special-dyn-with-no-binding-001
 feature: special/compile/dyn-with
@@ -889,7 +1015,7 @@ tags:
   - with
   - context-manager
   - cleanup
-notes: dynamic extent with no binding; context manager enter result discarded; async-safe variant of compile/with
+notes: no binding; context manager enter result discarded; unlike compile/with, a continuation transfer out of or back into the body runs exit and enter
 ---
 id: special-dyn-with-binding-002
 feature: special/compile/dyn-with
@@ -942,7 +1068,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: dyn-wind (before thunk after); calling the result runs before, body, after; returns body value 99
+notes: each part of the dyn-wind is a body, not a function to call; the body evaluates (lambda [] 99), which is the form's value, and (call r) calls it for 99. The before and after bodies run on entry and exit and only build functions here
 ---
 id: special-dyn-wind-events-002
 feature: special/compile/dyn-wind
@@ -957,7 +1083,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: dyn-wind calls the thunk (body) directly; before/after are invoked on continuation boundary events, not during normal execution
+notes: each part of the dyn-wind is a body, not a function to call; the before and after bodies run on entry and exit but only build lambdas that nothing calls, and the body's lambda is the form's value, so calling it records only "body"
 ---
 id: special-dyn-wind-expand-003
 feature: special/compile/dyn-wind
@@ -972,7 +1098,7 @@ stability: experimental
 tags:
   - special
   - continuation
-notes: dyn-wind takes three expressions; no macro expansion; lowers directly to WIND_WRAP opcode
+notes: dyn-wind takes three expressions; no macro expansion; compiles to a PUSH_WIND / POP_WIND pair around the body
 ---
 id: special-capture-cc-basic-001
 feature: special/compile/capture/cc
@@ -1413,7 +1539,7 @@ tags:
   - catch
   - cleanup
   - error-handling
-notes: finally peer always runs; exception caught, returns 99; finally form evaluates to None
+notes: finally peer runs on every local exit; exception caught, returns 99; finally form evaluates to None
 ---
 id: special-let-named-inner-loop-001
 feature: special/compile/let
@@ -1577,7 +1703,7 @@ tags:
   - return
   - variadic
   - idiom
-notes: return is variadic; two or more positional arguments return a tuple. koskari/compile/specials/continuations.py
+notes: return is variadic; two or more positional arguments return a tuple.
 ---
 id: special-return-multiple-values-destructure-001
 feature: special/compile/return
@@ -1603,7 +1729,7 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) return is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) return is consumed positionally with var over a pattern
 ---
 id: special-return-keyword-values-001
 feature: special/compile/return
@@ -1623,7 +1749,7 @@ tags:
   - keyword-argument
   - "surface:block"
   - idiom
-notes: keyword arguments to return produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py
+notes: keyword arguments to return produce a values object labelling each result; dict exposes its fields.
 ---
 id: special-yield-multiple-values-001
 feature: special/compile/yield
@@ -1641,7 +1767,7 @@ tags:
   - generator
   - variadic
   - idiom
-notes: yield is variadic; two or more positional arguments yield a tuple. koskari/compile/specials/continuations.py
+notes: yield is variadic; two or more positional arguments yield a tuple.
 ---
 id: special-yield-multiple-values-destructure-001
 feature: special/compile/yield
@@ -1665,7 +1791,7 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) yield is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) yield is consumed positionally with var over a pattern
 ---
 id: special-yield-keyword-values-001
 feature: special/compile/yield
@@ -1686,7 +1812,7 @@ tags:
   - keyword-argument
   - "surface:block"
   - idiom
-notes: keyword arguments to yield produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py
+notes: keyword arguments to yield produce a values object labelling each result; dict exposes its fields.
 ---
 id: special-return-bare-word-001
 feature: special/compile/return
@@ -2009,3 +2135,68 @@ tags:
   - namespace
   - local-binding
 notes: a namespace repr names the function, the enclosing module (corpus.test under the corpus harness), then name=value for each of the scope's own names
+---
+id: special-shift-resumed-return-006
+feature: special/compile/shift
+source: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+verify:
+  read: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+  expand: ((lambda [] (reset (+ 1 (shift k (call k 5)) (return 99)))))
+  eval: "99"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-return.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: the reset's body is a function of its own; (call k 5) resumes a copy of it, and the return there gives the copy's value, 99, to the call, which the handler returns as the reset's value
+---
+id: special-abort-basic-001
+feature: special/compile/abort
+source: (reset (+ 1 (abort 5)))
+verify:
+  read: (reset (+ 1 (abort 5)))
+  expand: (reset (+ 1 (abort 5)))
+  eval: "5"
+references:
+  - reference/specials/compile-abort.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: abort leaves the region and its value is the reset's; the pending (+ 1 ...) is discarded and no continuation is captured
+---
+id: special-abort-outside-operands-002
+feature: special/compile/abort
+source: (* 3 (reset (+ 1 (abort 4))))
+verify:
+  read: (* 3 (reset (+ 1 (abort 4))))
+  expand: (* 3 (reset (+ 1 (abort 4))))
+  eval: "12"
+references:
+  - reference/specials/compile-abort.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: only the region inside the reset is discarded; the (* 3 ...) around the reset goes on with the handler's value
+---
+id: special-abort-at-crosses-reset-001
+feature: special/compile/abort-at
+source: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (abort-at t 7))))))
+verify:
+  read: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (abort-at t 7))))))
+  expand: (let [[t (gensym "t")]] (reset-at t (+ 100 (reset (+ 10 (abort-at t 7))))))
+  eval: "7"
+references:
+  - reference/specials/compile-abort-at.md
+  - reference/specials/compile-reset-at.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: abort-at goes to the delimiter carrying its tag; the plain reset on the way is left with the rest of the region

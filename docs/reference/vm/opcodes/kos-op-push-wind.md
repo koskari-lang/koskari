@@ -1,6 +1,6 @@
 # KOS_OP_PUSH_WIND
-- **Style**: COUNT. Arg = 1 (before only) or 2 (both before and after).
-- **Stack**: For arg=2: `[..., before, after]` (before below, after above). Pops thunks; each must be callable or nil. For arg=1: `[..., before]`. Pushes KOS_DYN_WIND extent; runs before thunk on entry (via normal call path; may return KOS_DYN_UNWIND_ASYNC_STARTED).
+- **Style**: EXTRA (`ASIDE`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the before aside, or `None` for none, and `a1` = the after aside, or `None` for none. These two fields are the only ASIDE fields that accept `None`.
+- **Stack**: Unchanged. Pushes a wind node that records this code object and row, then enters it. With a before aside, a frame that runs it (see [Asides](../index.md#asides)) is pushed above the node, over the namespace live at PUSH_WIND; its return value is dropped and the body starts at the next instruction. With `None`, the node is entered at once.
 - **Pushes:** KOS_DYN_WIND (static extent KOS_EXT_WIND).
-- **Example:** See extent-wind-unwind.md; thunks are invoked via kos_callable_call.
-
+- **Invariants**: An entered node runs its after aside once when it is left: by [POP_WIND](kos-op-pop-wind.md), an exception, a return, break or continue across it, an abort, or a continuation transfer out. A transfer back into the extent runs the before aside again. Both asides run over the namespace recorded at PUSH_WIND, in a frame above the node, so a name either one binds is the enclosing function's. A node whose before aside raised was never entered, and its after aside does not run.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(before, after, 0, 0)`, each an aside or `None`. `compile/dyn-wind` compiles each segment it has as an aside, then emits PUSH_WIND carrying them, the body, and POP_WIND.

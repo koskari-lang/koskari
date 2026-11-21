@@ -1,5 +1,7 @@
 # Tail-call promotion as a compiler bytecode pass
 
+> Status note: this write-up references `PUSH_PROMPT`, `PUSH_SHIFT`, and `CompiledSpecial`, which the code no longer has.
+
 **Status:** Design proposal — not yet implemented.
 
 **Goal:** Remove tail-position awareness from special-form handlers. Specials
@@ -59,7 +61,7 @@ calls in lambda tail position are not tail-optimized today. (Since
 `27381299` it no longer consults `tc` for its var path either:
 `use_var_path = is_symbol(obj)` unconditionally, because no `TAIL_CALL_ATTR`
 exists and the frame survives to the call. The commit leaves a comment
-marking the guard for reinstatement if an attr tail form ever lands — this
+marking the guard for reinstatement if an attr tail form is ever implemented -- this
 pass is where that decision would move.)
 
 Related context: since `58f21bd3` (`compile_pair` re-emits raw pair heads
@@ -136,7 +138,7 @@ if self.tco_enabled and not stream_yields(instr):
 
 (or equivalently, the yield scan is the first step of `promote_tail_calls`
 itself). `Compiler.tco_enabled` stays on `__init__` until pragma wiring
-lands. Tests that need non-tail behavior keep passing `tco_enabled=False`.
+is implemented. Tests that need non-tail behavior keep passing `tco_enabled=False`.
 
 ---
 

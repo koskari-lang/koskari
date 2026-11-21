@@ -64,16 +64,26 @@ linking from design notes, PRs, or other docs.
   instruction interprets itself, such as `CHECK_COMPARE`'s negate
   flag or a matcher instruction's stack depth, width, count, flag or
   core type ordinal. Finalize leaves it unchanged.
+- **ASIDE** (field kind): An EXTRA row field holding an aside: a Code,
+  interned in the constant pool as a CONST field's value is, that the
+  instruction runs over the namespace live at the instruction.
+  Hardened, the field is the pool's Code (`KosExtra_ASIDE`). A PUSH_WIND
+  field may hold `None` instead, for no aside, which hardens to NULL.
+- **ASIDE_NS** (field kind): An ASIDE field whose aside the instruction
+  runs over a namespace built from the aside's own NamespaceSpec.
+  SHIFT's handler field is the only one. `KOSTYLE_IS_ASIDE` covers
+  both kinds.
 - **extent**: A statically described block (stored in the code object's extent
   table) with kind `KosExtentKind` (KOS_EXT_TRY, KOS_EXT_LOOP, KOS_EXT_FOREACH,
-  KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
+  KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
   kind-specific targets; see [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md).
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
-  nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_PROMPT, KOS_DYN_DELIM,
+  nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_PROMPT,
   KOS_DYN_WIND, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP, KOS_DYN_FOREACH,
   KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_CC, KOS_DYN_PARAM,
-  KOS_DYN_WITH, KOS_DYN_SHIFT, KOS_DYN_GEN). PUSH_* opcodes push a node onto this chain;
-  POP_* opcodes pop it.
+  KOS_DYN_WITH, KOS_DYN_GEN). PUSH_* opcodes push a node onto this chain;
+  POP_* opcodes pop it; RESET pushes a PROMPT that the return of the
+  frame run on it pops.
   Each opcode section that pushes onto the chain states **Pushes:** the chain node
   type and, when relevant, the static extent kind.
 - **pre-compile / post-compile**: Pre-compile = stream emitted by compiler (labels
@@ -164,7 +174,9 @@ document uses **finalize** for that VM-oriented stage to avoid confusion with
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
+| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY |
+| Code (an aside)        | the pool's Code         | RESET, ABORT, SHIFT, PUSH_WIND |
+| `None` in an ASIDE field | NULL                  | PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, ITEM_CONST* (key) |
 | `(name, value, …)`     | Extra-table index       | VAR_STORE_CONST (§12); may lower to FAST_STORE_CONST (§13) |
@@ -305,7 +317,7 @@ When adding or changing an opcode:
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) — OBJECT_COMPARE family, OBJECT_OPERAND and its named-operand fusions, OBJECT_INPLACE, and the general OBJECT_* opcodes
-- [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT
+- [20. Delimited continuations](#20-delimited-continuations) -- asides, RESET, ABORT, SHIFT
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND
 - [23. Parameterize extent](#23-parameterize-extent) — PUSH_PARAM, PARAM, POP_PARAM
@@ -607,10 +619,10 @@ When adding or changing an opcode:
 | TAIL_CALL_FAST_ATTR_NAMES | EXTRA | Tail call obj.name with keyword args; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_names) |
 | TAIL_CALL_FAST_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_star) |
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
-| PUSH_WITH | CONST | Pop the manager, call enter, bind the result, push a single-shot WITH node and a fresh segment | [§18](#kos_op_push_with) |
+| PUSH_WITH | CONST | Pop the manager, call enter, bind the result, push a WITH node local to its body and a fresh segment | [§18](#kos_op_push_with) |
 | POP_WITH | NOARG | Call exit, pop the owned segment and the node, push None | [§18](#kos_op_pop_with) |
-| PUSH_DYN_WITH | CONST | As PUSH_WITH, with a multi-shot node that takes part in continuation transfer plans | [§18](#kos_op_push_dyn_with) |
-| POP_DYN_WITH | NOARG | As POP_WITH, for the multi-shot node | [§18](#kos_op_pop_dyn_with) |
+| PUSH_DYN_WITH | CONST | As PUSH_WITH, with a WITH node carrying `KOS_DYN_CAP_WINDS`, which continuation transfers leave and re-enter | [§18](#kos_op_push_dyn_with) |
+| POP_DYN_WITH | NOARG | As POP_WITH, for the dyn-with node | [§18](#kos_op_pop_dyn_with) |
 | PUSH_COLLECT | CONST | Push collector namespace scope | [§18](#kos_op_push_collect) |
 | POP_COLLECT | NOARG | Pop collect scope, push ns | [§18](#kos_op_pop_collect) |
 | BUILD_CLASS | NOARG | Consume pos+ns, call metaclass | [§18](#kos_op_build_class) |
@@ -662,15 +674,14 @@ When adding or changing an opcode:
 | OBJECT_TRUTH | NOARG | Pop TOS, push its truth value | [§19](#kos_op_object_truth) |
 | OBJECT_TYPE | NOARG | Pop TOS, push `type(TOS)` | [§19](#kos_op_object_type) |
 | OBJECT_VARS | NOARG | Pop TOS, push its `__dict__` | [§19](#kos_op_object_vars) |
-| PUSH_PROMPT | CONST | Push prompt (delimited cont.) | [§20](#kos_op_push_prompt) |
-| PUSH_SHIFT | CONST | Capture continuation, enter shift block | [§20](#kos_op_push_shift) |
-| POP_SHIFT | NOARG | Return from shift block without invoking k | [§20](#kos_op_pop_shift) |
-| POP_PROMPT | NOARG | Pop prompt | [§20](#kos_op_pop_prompt) |
+| RESET | EXTRA | Push a prompt and run the body's aside in a frame above it; tag count 0 default tag, 1 tag from the stack | [§20](#kos_op_reset) |
+| ABORT | EXTRA | Abort to the prompt and run the handler's aside above it; tag count as RESET's | [§20](#kos_op_abort) |
+| SHIFT | EXTRA | Capture the continuation, then as ABORT with it on the handler's stack; tag count as RESET's | [§20](#kos_op_shift) |
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [§21](#kos_op_push_cc) |
-| POP_CC | NOARG | Pop the CC block; also the landing site when a captured continuation is invoked | [§21](#kos_op_pop_cc) |
+| POP_CC | NOARG | Pop the CC block; also the arrival point when a captured continuation is invoked | [§21](#kos_op_pop_cc) |
 | CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [§21](#kos_op_capture_cc) |
-| PUSH_WIND | COUNT | Pop the before (and after) thunks, push the wind extent, run before | [§22](#kos_op_push_wind) |
-| POP_WIND | NOARG | Pop the body result and the wind node, run the after thunk, deliver the result | [§22](#kos_op_pop_wind) |
+| PUSH_WIND | EXTRA | Push the wind extent naming its before and after asides, either one None, and run the before aside | [§22](#kos_op_push_wind) |
+| POP_WIND | NOARG | Pop the body result and the wind node, run the after aside, deliver the result | [§22](#kos_op_pop_wind) |
 | PUSH_PARAM | CONST | Pop N values, bind them to the pooled names, enter the parameterize extent | [§23](#kos_op_push_param) |
 | POP_PARAM | NOARG | Pop the param extent and restore the cells it displaced | [§23](#kos_op_pop_param) |
 | PARAM | EXTRA | Read a parameter by name; count 1 supplies a stacked default, count 0 raises NameError on a miss | [§23](#kos_op_param) |
@@ -1030,7 +1041,7 @@ bottom to top matches push order).
 ### KOS_OP_AWAIT
 
 - **Style**: COUNT (stack element count).
-- **Arg**: `1` — pop TOS (awaitable), dispatch; may return `EVAL_AWAIT(val)` or push the resolved value; on resume from a Python awaitable, result is pushed onto the operand stack. An awaitable whose type carries the await suite is taken on an await frame pushed above the current one, the handler hopping into the suite's kind with the owned awaitable; the frame's return lands the value where the push would have. `0` — bare cooperative suspend: no stack pop or push; returns `EVAL_AWAIT(Py_None)` (no `py_await_iter`); `revive_await` does not push the resume value onto the operand stack (e.g. next instruction may be `CONST None` for `(compile/await)`).
+- **Arg**: `1` — pop TOS (awaitable), dispatch; may return `EVAL_AWAIT(val)` or push the resolved value; on resume from a Python awaitable, result is pushed onto the operand stack. An awaitable whose type carries the await suite is taken on an await frame pushed above the current one, the handler hopping into the suite's kind with the owned awaitable; the frame's return delivers the value where the push would have. `0` — bare cooperative suspend: no stack pop or push; returns `EVAL_AWAIT(Py_None)` (no `py_await_iter`); `revive_await` does not push the resume value onto the operand stack (e.g. next instruction may be `CONST None` for `(compile/await)`).
 
 **Example:** Await a coroutine; TOS is the awaitable. On resume, result is pushed.
 
@@ -1116,11 +1127,11 @@ bottom to top matches push order).
 
 ### KOS_OP_BREAK
 
-- **Style**: COUNT. Arg = number of stack elements to pop before jumping.
-- **Stack**: Pops `arg` elements; control transfers to break target of innermost LOOP/FOREACH extent.
-- **Invariants**: Must be inside a LOOP or FOREACH extent.
+- **Style**: COUNT. Arg = result count: 0 for None, 1 for one popped value, N for a tuple of N.
+- **Stack**: Pops the result per `arg`. `kos_dyn_unwind_to_loop` finds the nearest enabled LOOP or FOREACH from `dyn_top` (`kos_dyn_find_loop`), unwinds each node above it (an enabled FINALLY consumes the break and re-issues it), pops the region, pushes the result on the block beneath, and continues at the region's break pc.
+- **Invariants**: The region found must be in the running frame. A reset's body and a shift's or an abort's handler run in frames of their own, so they reach only loops opened inside them. With no such region: `RuntimeError("break outside loop")`.
 
-**Example:** Inside a loop; pop 0 and jump to extent break_pc (instruction after the matching POP_LOOP or POP_FOREACH).
+**Example:** Inside a loop; no result value, jump to the region's break_pc (instruction after the matching POP_LOOP or POP_FOREACH).
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
@@ -1132,9 +1143,9 @@ bottom to top matches push order).
 
 ### KOS_OP_CONTINUE
 
-- **Style**: COUNT. Arg = number of stack elements to pop before jumping.
-- **Stack**: Pops `arg` elements; control transfers to continue target of innermost LOOP/FOREACH extent.
-- **Invariants**: Must be inside a LOOP or FOREACH extent. The back-edge of every compiled loop, and so a cooperation point (a matcher REPEAT's back-edge polls at `MATCH_APPEND`): the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
+- **Style**: COUNT. Arg = result count: 0 for None, 1 for one popped value, N for a tuple of N.
+- **Stack**: Pops the result per `arg`, stores it on the nearest enabled LOOP or FOREACH region, clears the region's segment, and continues at the region's continue pc. With the region at `dyn_top` that is the whole handler; nodes above the region take `kos_dyn_unwind_to_loop`.
+- **Invariants**: The loop is found as BREAK finds it, and with no region in the running frame it raises `RuntimeError("continue outside loop")`. The back-edge of every compiled loop, and so a cooperation point (a matcher REPEAT's back-edge polls at `MATCH_APPEND`): the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
 
 **Example:** Inside a loop; pop 0 and jump to extent continue_pc (e.g. loop head).
 
@@ -1163,7 +1174,7 @@ bottom to top matches push order).
 ### KOS_OP_RETURN
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
-- **Stack**: Pops the return value(s) per `arg` and tail-calls **`kos_return_deliver`**, which threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction); a **region** over such a parent (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook); a region with no hook over a **frame waiting on a resume** (**`kos_return_is_region_resume`** → **`eval_region_resume_return`** → **`RESUME_HOP`**); and a **resume-carrying parent** (**`kos_return_is_resume`** → **`kos_return_take_resume`** → **`RESUME_HOP`**). Every other shape goes to **`eval_event_return`**: **`kos_dyn_unwind_return`** over the extents above the frame, a return across a delimiting reset, or the delivery to the parent; a RESUME answer goes through the relay into the live frame's resume. A root frame, or a **GEN** that an adapter runs: **`KOS_RES_RETURN`** from **`koskari_eval`**. A GEN with a parent and no resume waiting is **`EVAL_FATAL`**.
+- **Stack**: Pops the return value(s) per `arg` and tail-calls **`kos_return_deliver`**, which threads its own common shapes. With the returning frame at `dyn_top` and `KOS_FRAME_PARENT_IS_FRAME` set: a **plain bytecode parent** (code, no resume) takes **`eval_plain_return`** (retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction), and a **resume-carrying parent** takes a settled value by **`RESUME_HOP`** after the same retarget. A **region** over a plain frame (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook); a region with no hook over a **frame waiting on a resume** (**`kos_return_is_region_resume`** → **`eval_region_resume_return`** → **`RESUME_HOP`**). The two region arms decline a frame whose parent is a PROMPT. Every other shape goes to **`eval_event_return`**, which runs **`kos_dyn_unwind_return`** over the extents above the frame, then dispatches on the frame's parent (**`eval_event_return_at_frame`**); a RESUME answer goes through the relay into the live frame's resume. A frame on a **PROMPT** (a reset's body, or a shift's handler) ends it: the frame and the prompt are popped and the value is delivered below as the reset's, as any callee's return is. A root frame, a root PROMPT, or a **GEN** that an adapter runs: **`KOS_RES_RETURN`** from **`koskari_eval`**. A GEN with a parent and no resume waiting is **`EVAL_FATAL`**.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 
@@ -1179,7 +1190,7 @@ bottom to top matches push order).
 ### KOS_OP_YIELD
 
 - **Style**: COUNT. Arg = number of values to yield (typically 1).
-- **Stack**: Pops the yielded value(s) and tail-calls **`kos_yield_deliver`**. Sets **`KOS_CODE_YIELDS`** on the code object. **`eval_event_yield`** freezes the running frame's GEN (**`kos_dyn_gen_freeze`**). When the live frame then has a resume -- a flattened consumer: a for-each step, a next request, a yield-from -- **`iter_deliver_to_resume`** hands it the value and **`kos_eval_resume_live`** threads into that resume without stopping **`koskari_eval`**. Otherwise the yield is terminal: **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the adapter that runs the generator.
+- **Stack**: Pops the yielded value(s) and tail-calls **`kos_yield_deliver`**. Sets **`KOS_CODE_YIELDS`** on the code object. **`kos_dyn_yield_gen`** finds the running frame's GEN, the nearest one outward, and with none raises `RuntimeError("yield outside generator")`. A yield written in a reset's body or a shift's handler is refused at compile time (`SpecialError`): those are functions, not generators. **`eval_event_yield`** freezes the GEN (**`kos_dyn_gen_freeze`**). When the live frame then has a resume -- a flattened consumer: a for-each step, a next request, a yield-from -- **`iter_deliver_to_resume`** hands it the value and **`kos_eval_resume_live`** threads into that resume without stopping **`koskari_eval`**. Otherwise the yield is terminal: **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the adapter that runs the generator.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
 
@@ -4208,7 +4219,7 @@ popped.
 ### KOS_OP_TAIL_CALL
 
 - **Style**: COUNT. Arg = number of positional arguments.
-- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Shares the CALL handler (`op_TAIL_CALL` is `op_CALL`); the opcode adds `KOS_CALL_TAIL`, which `kos_call_invoke` turns into a reset of the current frame instead of a push for a Koskari callable. For a Python callable the core calls it and the return settles a pending wind thunk.
+- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Shares the CALL handler (`op_TAIL_CALL` is `op_CALL`); the opcode adds `KOS_CALL_TAIL`, which `kos_call_invoke` turns into a reset of the current frame instead of a push for a Koskari callable. For a Python callable the core calls it and pushes the result.
 - **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install); an exact non-yielding KosFunction takes the bind-before-reset subpath. For all other callable types the core calls the callable and the result is pushed, with an awaitable result awaited in place.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
 - **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL in function-body code; never emitted by a special.
@@ -4390,7 +4401,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand segment.
 - **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new segment; look up WITH extent at current PC, compute `resume_pc = ext->pop_pc + 1`; push `KOS_DYN_WITH` with `resume_pc` stored on the node. On enter failure, no node or block is installed; exception propagates.
-- **Pushes:** KOS_DYN_WITH (single-shot: exits once on unwind or transfer, never re-entered). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
+- **Pushes:** KOS_DYN_WITH without `KOS_DYN_CAP_WINDS`: local to its body, so a continuation transfer runs neither its exit nor its enter; a raise or return unwinding through it runs exit. Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
 - **Invariants:** Node owns one operand segment; stack restoration is structural (segment pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
 ### KOS_OP_POP_WITH {#kos_op_pop_with}
@@ -4403,13 +4414,13 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
-- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. The node's shot is `KOS_DYN_WITH_SHOT_MULTI`: a transfer goal leaves through it and re-enters it when it lands the extent (a landing re-enters a **`KOS_DYN_CAP_CONTROL_HOOK`** node unless it is a single-shot WITH).
-- **Pushes:** KOS_DYN_DYN_WITH.
+- **Stack / behaviour:** Same as PUSH_WITH except the KOS_DYN_WITH node carries **`KOS_DYN_CAP_WINDS`**: a transfer goal leaving through it runs exit, and one attaching it runs enter (ENTERING).
+- **Pushes:** KOS_DYN_WITH with `KOS_DYN_CAP_WINDS` (static extent KOS_EXT_DYN_WITH).
 
 ### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
 
 - **Style**: NOARG.
-- **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops KOS_DYN_DYN_WITH.
+- **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops the dyn-with's KOS_DYN_WITH.
 
 ---
 ### KOS_OP_PUSH_COLLECT
@@ -5050,88 +5061,205 @@ back-edge increment is this single dispatch.
 
 ## 20. Delimited continuations
 
-Delimited continuations use a block-based layout: PUSH_PROMPT establishes the
-reset and owns the operand segment for the delimited region; PUSH_SHIFT and
-POP_SHIFT delimit the shift block (handler). The captured continuation is the
-delimited region with the shift expression as its hole -- a cloned chain
-segment, not a bytecode span -- so a shift hosted in a callee captures
-through the calling frames up to the prompt. Invoking k re-delimits, per
-Danvy/Filinski: every invocation runs under a fresh prompt *instance*, and
-prompts are resolved by instance identity (node_id), never by chain
-position. The SHIFT node records the instance it captured against, capture
-falsifies the ids of prompt clones in the template, the first invoke resumes
-the live region in place (an INPLACE delim plus a fresh invocation-prompt
-marker), and re-invokes graft a fresh copy of the template. An invocation
-prompt pairs with no POP_PROMPT instruction; its completion routes through
-the paired DELIM bookmark to the invoke site.
+A reset's body and a shift's or an abort's handler are asides (see
+JARGON.md), as are a dyn-wind's segments ([§22](#22-dynamic-wind)).
+Each is a Code of its own in the constant pool of the code it is
+written in, carried in an ASIDE or ASIDE_NS field of the instruction
+that runs it. A Code records nothing about being an aside: the
+instruction runs it in a frame of its own with no Function or
+Expression around it (`kos_dynframe_new_aside`), and the field kind
+chooses the namespace. An ASIDE field's aside runs over the live
+namespace; an ASIDE_NS field's, SHIFT's handler alone, over one the
+opcode builds from the aside's spec (`KosNamespace_FromSpec`), with
+its closure names resolved from the live one, which its frame
+introduces (`KOS_DYN_CAP_OWNS_NS`).
 
-### KOS_OP_PUSH_PROMPT
+The compiler holds an unfinished aside as an `Aside` in the
+instruction's field (`fragment.aside`), and the processor's passes
+recurse into it. `Compiler.build_asides` builds each into a Code when
+the enclosing code completes, with that code's name, filename and
+settings. The build of the code that runs an aside checks it
+(`check_aside`, in the fast slot walk): an ASIDE field's spec must lay
+a namespace out as the scope of the instruction does
+(`same_namespace_layout`), and an ASIDE_NS field's closure slots are
+recorded against that scope as a function constant's are. The code
+takes `KOS_CODE_YIELDS` and `KOS_CODE_TAIL_CALLS` from each aside it
+runs, and a code with both set is refused.
 
-- **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
-- **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pop_pc + 1), then pushes the prompt node onto the dynamic chain.
-- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
-- **Invariants**: PUSH_SHIFT captures up to this prompt. An exception unwinding past a PROMPT drops the segment and unlinks the node in one step: the raise walk unlinks a **`KOS_DYN_CAP_BARRIER`** node with the barrier allowed (`kos_dyn_unlink_top`), with no kind-specific check in the walk.
-- **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
+RESET pushes a **`KOS_DYN_PROMPT`** and the body's frame above it
+(`kos_dyn_push_aside`). The frame on a prompt ends it: when that frame
+returns, the frame and the prompt are popped together and the value is
+the reset's (`eval_event_return_at_frame`). A prompt at the root of a
+context ends the context with that value, as a root generator does.
 
-**Example:** reset (push prompt). Pool: 0 = prompt_id.
+A prompt carries a tag, any object, matched by identity; a NULL tag is the
+default tag, which `None` names. A shift or an abort finds the nearest
+prompt carrying its tag and crosses prompts of other tags, which a shift
+makes part of the continuation.
 
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | PUSH_PROMPT| 0   | 0 (pid)  | push prompt (owning its segment) onto chain |
-| 1     | …          | …   | …        | body before shift (continuation prefix) |
-| 2     | PUSH_SHIFT | 0   | 0 (pid)  | capture k; enter shift block with k on stack |
-| 3     | …          | …   | …        | shift body (k available) |
-| 4     | POP_SHIFT  | 0   | 0        | return from shift without invoking |
-| 5     | …          | …   | …        | continuation (body after shift) |
-| 6     | POP_PROMPT | 0   | 0        | drop segment; pop prompt |
+ABORT (`kos_abort_to_prompt`) makes the handler's frame, linked to
+nothing, and runs a transfer goal in place with the prompt as its seam
+and that frame as its target. LEAVING unlinks everything above the
+prompt, the running frame included; a node carrying
+`KOS_DYN_CAP_WINDS` runs its leave (a WIND after aside, a dyn-with exit,
+a PARAM restore), and a plain WITH, TRY or FINALLY is unlinked without
+running its exit or finally body. ATTACHING links the frame on the
+prompt. The caller supplies the handler's namespace. ABORT passes the
+live one, revealed (`KosNamespace_TrackChain`) first: the frame that
+owns it is released by the transfer, and a frame cache would otherwise
+reclaim it. SHIFT passes the one it built.
+
+SHIFT captures by keeping. `kos_shift_capture` seeks the prompt
+(`kos_prompt_seek`), refusing on the way any node
+`kos_dyn_node_capturable` refuses, flushes the live pc into the running
+frame, and makes the continuation with a clone of the prompt as its
+only node. The abort's goal carries the continuation (`goal->keep`),
+and its LEAVING (`goal_leave_keep`) takes each node with
+`kos_dyn_unlink_top_keep` and links it into the template under the node
+kept before it. That unlink shares nothing with `kos_dyn_unlink_top`.
+What a kept node's leaving does outside itself still happens, and what
+a clone would have recorded stays on the node:
+
+| Kind | Kept |
+|---|---|
+| FRAME | namespace revealed; a holder's cache slot and the links below dropped; resume left as it is |
+| NS, COLLECT | namespace revealed |
+| TRY, FINALLY | when handling an exception, frozen (`kos_dyn_region_exc_freeze`): its exception comes off the thread into the node, the displaced one goes back |
+| FOREACH | the request of a step in flight finished; the resume on the loop's frame left |
+| PARAM | outer cells swapped back |
+| WIND, dyn-with | after aside or exit run; a stored obligation discarded |
+| plain WITH | a call in flight discharged |
+
+DELIVERING pushes the continuation, the goal's payload, on the handler's
+stack, and the handler's first instruction stores it. An abort a
+raising after aside or exit abandons drops the payload, and the partial
+template with it.
+
+Every call of k clones the template in one pass (`kos_dyn_clone_segment`,
+which records the split points with their live registers in a
+`KosCloneShape`) and attaches the copy on the caller's `dyn_top` through
+a transfer goal. Nothing on the caller's side is left. ATTACHING and
+ENTERING alternate, outermost extent first, so each node a transfer runs
+(**`KOS_DYN_CAP_WINDS`**: a WIND, a PARAM, a dyn-with) re-enters with
+only the extents outside it on the chain. A clone that meets a frozen
+TRY or FINALLY sets `shape->frozen`, and ATTACHING then runs
+`kos_dyn_install_regions` on each piece, so a copy of an except body is
+handling its exception again. DELIVERING pushes k's argument on the
+stack of the copy's top frame, which stands at the instruction after
+its SHIFT. The copy's body frame returns into the copy's prompt, which
+pops both and delivers the value to the caller as a call's return. Every
+call is a fresh copy, so k is multi-shot.
+
+In the body or a handler, `return` ends that aside's frame and so gives
+the form its value. A `break` or `continue` reaches only loops opened
+inside it. A `yield` written in either is refused at compile time
+(`SpecialError`). A `var` in either is a name of the enclosing function;
+a shift's k alone is the handler's own.
+
+### Asides {#asides}
+
+- **Form**: A code object, built as any other is. What makes it an aside is the instruction that runs it, which carries it in an `ASIDE` or `ASIDE_NS` field of its extra row. The compiler gives an aside the name, filename and settings of the code object it is written in.
+- **Frame**: The instruction pushes a frame over the aside. The frame takes no arguments and starts at the aside's first instruction, and the aside's RETURN ends it as any callee's return does. The frame the instruction ran in goes on at the next instruction.
+- **Namespace**: The field kind chooses it. An aside in an `ASIDE` field runs over the namespace live at the instruction that runs it. Its NamespaceSpec is that scope's, so a FAST operand in it indexes that namespace. An aside in an `ASIDE_NS` field runs over a namespace built from its own NamespaceSpec, whose closure names are resolved from the live namespace. SHIFT's field is `ASIDE_NS`; RESET's, ABORT's and PUSH_WIND's are `ASIDE`.
+- **Invariants**: Two instructions may carry the same aside. A jump neither enters nor leaves an aside, and a tail call in an aside replaces the aside's frame. A code object that runs an aside yields where the aside does.
+- **Errors**: Refused when the code is built: an aside field that holds anything but a code object (`TypeError`), and an aside in an `ASIDE` field whose NamespaceSpec does not lay a namespace out as the scope of the instruction that runs it does (`ValueError`).
+- **Compiler form:** The pre-compile field is the aside's code object. `Code.soften` gives the same object back.
 
 ---
 
-### KOS_OP_PUSH_SHIFT
+### KOS_OP_RESET {#kos_op_reset}
 
-- **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
-- **Stack**: Captures the continuation: one walk from `dyn_top` locates the nearest matching prompt while offering `handle(SHIFT)` to each node crossed (GEN denies -- a shift cannot cross a generator boundary). Clones the chain segment from `dyn_top` through the prompt and its owning FRAME (including heritage nodes such as WIND); a capture bounded at an *invocation* prompt stops at the prompt and appends a compressed baseline frame instead. Prompt clones in the template are falsified -- fresh instance node_id plus KOS_DYNF_INVOCATION, with in-template SHIFT records remapped -- so grafted instances never collide with the live original. Pushes a KOS_DYN_SHIFT marker recording the captured prompt's node_id, pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt.
-- **Pushes:** KOS_DYN_SHIFT (bookmark recording the captured prompt instance; owns the handler body's operand segment, no handlers).
-- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. The region's operands stay on the PROMPT's block; the handler body's go on the SHIFT's, so an in-place invoke finds each where it belongs.
-- **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies `handle(SHIFT)` (GEN) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `prompt_id` and `operation` (see `koskari.exceptions`, [archive/continuation-capture-errors.md](archive/continuation-capture-errors.md)).
-- **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
+- **Style**: EXTRA (`COUNT`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = the aside that is the reset's body. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: Pops the tag when the count is `1`. Pushes a prompt carrying the tag, then a frame above the prompt that runs the aside (see [Asides](#asides)). The body's return, or the return of a handler run above the same prompt, unlinks the prompt and pushes the value on the stack of the frame RESET ran in, as a call's return does; that frame goes on at the next instruction.
+- **Pushes:** KOS_DYN_PROMPT, then the body's KOS_DYN_FRAME above it. The prompt owns no operand segment: the region's operands are in the frames above it.
+- **Invariants**: A shift captures up to this prompt, and an ABORT aborts to it. A prompt at the root of a context ends the context when the frame on it returns. An exception unwinding past a PROMPT unlinks it. The body runs over the namespace live at the RESET, so it reads and binds the enclosing function's names.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, aside, 0, 0)`; `NOARG` slots are ignored by the assembler. `reset` emits count `0`; `reset-at` compiles its tag first and emits count `1`.
 
-**Example:** shift k: body. Capture k in place, run shift body with k on stack. Pool: 0 = prompt_id.
+**Example:** `(+ 1 (reset (* x 2)))` as the body of a function of `x`. The RESET's extra row: `(0, aside c#1, 0, 0)`.
 
-| index | opcode    | arg | arg view | comment |
-|------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0 (pid)  | capture k in place; push SHIFT on dyn_top; enter shift block |
+| index | opcode         | arg | arg view           | comment |
+|------:|----------------|-----|--------------------|---------|
+| 0     | CONST          | 0   | 0 (1)              | stack: [1] |
+| 1     | RESET          | 0   | 0 (0, aside c#1)   | push prompt; run the aside in a frame above it |
+| 2     | OBJECT_OPERAND | 2   | ADD x2             | the function goes on with the reset's value |
+| 3     | RETURN         | 1   | 1                  | |
 
----
+The body, the aside at `c#1`:
 
-### KOS_OP_POP_SHIFT
-
-- **Style**: NOARG.
-- **Stack**: Pops TOS as result and resolves the delimiter by the instance id recorded on the SHIFT node -- never by chain position or the current code object's extent tree. Live reset: pushes a transfer goal with no target whose seam is the prompt's parent; LEAVING unlinks through the SHIFT and the PROMPT (crossing the barrier), DELIVERING pushes the result onto the outer frame's stack, and execution resumes at the pop_pc the prompt recorded at push, + 1. Invocation prompt (created by a k-invoke; no POP_PROMPT pairs with it): the result is the value of that k-invocation and is delivered at the invoke site through the paired DELIM bookmark below the prompt.
-- **Invariants**: Must be inside a PUSH_SHIFT extent. The resolved prompt carries everything the resume needs; no extent lookup happens at pop time.
-- **Compiler form:** No argument.
-
-**Example:** Shift handler returns value without invoking k.
-
-| index | opcode   | arg | arg view | comment |
-|------:|----------|-----|----------|---------|
-| 4     | POP_SHIFT| 0   | 0        | pop result; unwind through SHIFT+PROMPT; drop segment; inject result onto outer stack |
+| index | opcode             | arg | arg view                  | comment |
+|------:|--------------------|-----|---------------------------|---------|
+| 0     | FAST_OPERAND_CONST | 0   | MULTIPLY, fast 0 ("x"), 2 | reading the function's `x` |
+| 1     | RETURN             | 1   | 1                         | the body's value; ends the prompt |
 
 ---
 
-### KOS_OP_POP_PROMPT
+### KOS_OP_ABORT {#kos_op_abort}
 
-- **Style**: NOARG.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the walk down from the current node finds a **`KOS_DYN_DELIM`** bookmark (mode **`POP_PROMPT`** for a graft, **`INPLACE`** for an in-place invoke), passing invocation prompts and stopping at a live (non-invocation) PROMPT; it pops TOS as result, unwinds to the delim (freeing the invocation prompt and any remnants), delivers the result at the invoke site per the delim's return metadata (an INPLACE delim restitches the displaced state and re-links the stashed span first), and resumes there.
-- **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's segment and one is injected to the outer stack.
-- **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
-- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the raise walk drops the segment and unlinks the PROMPT in the same unlink that crosses the barrier (`kos_dyn_unlink_top` with the barrier allowed), then continues unwinding. No POP_PROMPT opcode executes in this path.
+- **Style**: EXTRA (`COUNT`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = the aside that is the handler. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: Pops the tag when the count is `1`. One walk from the top of the dynamic chain locates the nearest matching prompt (a generator boundary denies). ABORT then aborts to that prompt: every node above it is left, the frame ABORT ran in among them (a dyn-wind after aside and a `dyn-with` exit run; a `try` and a plain `with` are dropped without running their `finally` body or exit). When an after aside or exit raises, the abort is abandoned and the raise propagates from where it ran, with the region's operands still in place. Once the prompt is at the top of the chain, a frame that runs the aside (see [Asides](#asides)) is attached above it with an empty stack. The handler's return ends the prompt and is the RESET's value, as the body's return would have been. Nothing is captured.
+- **Pushes:** The handler's KOS_DYN_FRAME above the prompt, once the abort has left the region, so an ABORT or a SHIFT in the handler finds the same prompt. The frame holds the aside and its namespace itself, since the frame the ABORT ran in is gone by then.
+- **Invariants**: The handler runs over the namespace live at the ABORT: it shares its names with the function the abort is written in.
+- **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a generator boundary on the way raises `KoskariPromptUnreachable` with the boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`, `abort`.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, aside, 0, 0)`; `NOARG` slots are ignored by the assembler. `abort` emits count `0`; `abort-at` compiles its tag first and emits count `1`. Nothing comes back to an ABORT, so whatever the enclosing form emits after it is never reached.
 
-**Example:** End of reset body.
+**Example:** `(reset (+ 1 (abort 5)))` as a function's whole body.
 
-| index | opcode    | arg | arg view | comment |
-|------:|-----------|-----|----------|---------|
-| 6     | POP_PROMPT| 0   | 0        | pop result; drop segment; pop prompt; push result to outer stack |
+| index | opcode | arg | arg view         | comment |
+|------:|--------|-----|------------------|---------|
+| 0     | RESET  | 0   | 0 (0, aside c#0) | push prompt; run the body above it |
+| 1     | RETURN | 1   | 1                | the function's value, the reset's |
+
+The reset's body, the aside at `c#0`. The ABORT's extra row: `(0, aside c#1, 0, 0)`.
+
+| index | opcode         | arg | arg view         | comment |
+|------:|----------------|-----|------------------|---------|
+| 0     | CONST          | 0   | 0 (1)            | region operand; stack: [1] |
+| 1     | ABORT          | 0   | 0 (0, aside c#1) | abort to the prompt; run the handler above it |
+| 2     | OBJECT_OPERAND | 2   | ADD x2           | never reached |
+| 3     | RETURN         | 1   | 1                | |
+
+The handler, the body's aside at `c#1`:
+
+| index | opcode       | arg | arg view | comment |
+|------:|--------------|-----|----------|---------|
+| 0     | RETURN_CONST | 0   | 0 (5)    | the handler's value; ends the prompt |
+
+---
+
+### KOS_OP_SHIFT {#kos_op_shift}
+
+- **Style**: EXTRA (`COUNT`, `ASIDE_NS`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the tag count, `0` for the default prompt tag or `1` for a tag the instruction pops from the stack, where a popped `None` is the default tag, and `a1` = the aside that is the handler. Any other count is refused when the code is built. Tags match by identity.
+- **Stack**: Pops the tag when the count is `1`, ahead of the capture, so the tag is no part of the continuation. One walk from the top of the dynamic chain locates the nearest matching prompt (a generator boundary denies) and checks that each node on the way can be captured. The continuation is the delimited region with the shift expression as its hole: every node from the top of the chain down to the prompt, so a shift hosted in a callee captures through the calling frames up to the prompt. SHIFT then aborts to the prompt as [ABORT](#kos_op_abort) does, and the nodes that abort leaves are kept as the continuation instead of being freed. The frame attached above the prompt runs the aside (see [Asides](#asides)) with the continuation pushed on its stack. The handler's return ends the prompt and is the RESET's value, as the body's return would have been.
+- **Pushes:** The handler's KOS_DYN_FRAME above the prompt, once the abort has left the region, so a shift in the handler finds the same prompt. The frame holds the aside and its namespace itself, since the frame the SHIFT ran in is part of the continuation by then.
+- **Invariants**: The continuation holds whole frames up to and including the reset's body, and a copy of the prompt. Invoking it re-delimits: each invocation attaches a copy of them above the caller, so a shift inside that run aborts only to that copy's prompt, and the copy's body returns to the caller as a callee does; its value, or the value of a handler run above the copy's prompt, is the value of that invocation. The frame SHIFT ran in stands at the instruction after SHIFT, so each copy of it goes on there with the value the continuation was called with on its stack. The handler runs over a namespace built from its own NamespaceSpec. The compiler gives that spec one local, the continuation's name, and the handler's first instruction stores the continuation there: the name is the handler's alone, and each run of the handler has its own. Every other name the handler declares is the enclosing function's. A TRY or FINALLY region captured while it is handling an exception is handling that exception again in each copy, and gives the caller's back when the copy leaves the chain. The continuation reaches the handler only once the abort is complete: when a raising after aside or exit abandons the abort, the continuation is discarded.
+- **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a generator boundary on the way, or a `with`, `dyn-with` or dyn-wind node whose enter, exit, before or after call is running, raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `tag` (the prompt tag sought) and `operation`, `shift`. A native frame on the way whose pending step cannot be copied raises `RuntimeError`. Each is raised before any node leaves the chain.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(count, aside, 0, 0)`; `NOARG` slots are ignored by the assembler. The handler's first instruction is a `VAR_STORE` of the continuation's name, which lowers to `FAST_STORE`. `shift` emits count `0`; `shift-at` compiles its tag first and emits count `1`.
+
+**Example:** `(reset (+ 1 (shift k (k 5))))` as a function's whole body.
+
+| index | opcode | arg | arg view         | comment |
+|------:|--------|-----|------------------|---------|
+| 0     | RESET  | 0   | 0 (0, aside c#0) | push prompt; run the body above it |
+| 1     | RETURN | 1   | 1                | the function's value, the reset's |
+
+The reset's body, the aside at `c#0`. The SHIFT's extra row: `(0, aside c#1, 0, 0)`.
+
+| index | opcode         | arg | arg view         | comment |
+|------:|----------------|-----|------------------|---------|
+| 0     | CONST          | 0   | 0 (1)            | region operand; stack: [1] |
+| 1     | SHIFT          | 0   | 0 (0, aside c#1) | capture; abort to the prompt; run the handler above it |
+| 2     | OBJECT_OPERAND | 2   | ADD x2           | the continuation resumes here with the hole's value |
+| 3     | RETURN         | 1   | 1                | the body's value, or a copy's, ends its prompt |
+
+The handler, the body's aside at `c#1`. Its spec has `k` as its fast variable 0.
+
+| index | opcode         | arg | arg view        | comment |
+|------:|----------------|-----|-----------------|---------|
+| 0     | FAST_STORE     | 0   | 0 (local "k")   | bind the continuation SHIFT pushed |
+| 1     | CONST          | 0   | 0 (5)           | |
+| 2     | TAIL_CALL_FAST | 0   | fast 0 ("k"), 1 | (k 5) |
+| 3     | RETURN         | 1   | 1               | the handler's value; ends the prompt |
+
 
 ---
 
@@ -5165,7 +5293,7 @@ PUSH_CC resume target).
 | 1     | CAPTURE_CC | 0   | 0          | stack before: [...]; after: [..., continuation] |
 | 2     | CONST      | 0   | 0 (42)     | stack: [..., continuation, 42] |
 | 3     | CALL       | 1   | 1          | invoke continuation with one arg → jump to POP_CC (4) with [..., 42] |
-| 4     | POP_CC     | 0   | 0          | invoke lands here with value on stack; pop CC; next pc = 5 (resume) |
+| 4     | POP_CC     | 0   | 0          | invoke arrives here with value on stack; pop CC; next pc = 5 (resume) |
 | 5     | RETURN     | 1   | 1          | yield TOS (42) |
 
 ---
@@ -5203,19 +5331,34 @@ PUSH_CC resume target).
 
 The extent contract and the single unlink site are described in [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md): `kos_dyn_extent_enter` / `kos_dyn_extent_leave` on WIND and WITH, `kos_dyn_unlink_top` for every pop, walk, and transfer goal.
 
+A dyn-wind's before and after segments are asides over the live
+namespace (see [§20](#20-delimited-continuations)). The wind node
+holds the code object the PUSH_WIND is in (owned) and its EXTRA row
+(borrowed, kept alive by the code); `KosDynWind_BEFORE` and
+`KosDynWind_AFTER` read the row's two ASIDE fields. The node's
+`KosDynNode_NS` is the namespace live at the push. A segment fires by
+`kos_dyn_push_aside` over its aside and that namespace: its frame is pushed
+above the node, and its return settles the node (`kos_dyn_settle_top`),
+which drops the segment's value. A segment's frame is an ordinary frame,
+so a call, an await or a raise in it needs nothing from the node. A
+clone reveals the namespace (`KosNamespace_Reveal`) and takes its own
+reference to the code; the row is shared.
+
 ### KOS_OP_PUSH_WIND
 
-- **Style**: COUNT. Arg = 1 (before only) or 2 (both before and after).
-- **Stack**: For arg=2: `[..., before, after]` (before below, after above). Pops thunks; each must be callable or nil. For arg=1: `[..., before]`. Pushes KOS_DYN_WIND extent and asks it to enter (`kos_dyn_extent_enter`): the before thunk runs as a normal frame, and its return settles the node (`kos_dyn_settle_top`) before the body runs.
+- **Style**: EXTRA (`ASIDE`, `ASIDE`, `NOARG`, `NOARG`). Instruction arg = index into the code object's extra table; that row holds `a0` = the before aside, or `None`, and `a1` = the after aside, or `None`. Hardened, `None` is NULL. These are the only ASIDE fields that accept `None`.
+- **Stack**: Unchanged. Pushes a KOS_DYN_WIND recording the code and row (`kos_dyn_push_wind`), then enters it (`kos_dyn_extent_enter`). With a before aside the enter answers REPROLOGUE with the segment's frame current, and PUSH_WIND continues into it; its return settles the node and the body starts at the next instruction. With none, the node is entered at once and PUSH_WIND goes to the next instruction.
 - **Pushes:** KOS_DYN_WIND (static extent KOS_EXT_WIND).
-- **Example:** See extent-wind-unwind.md; thunks are invoked via kos_callable_call.
+- **Invariants**: An entered node runs its after aside once when it is left: by POP_WIND, a raise, return, break or continue across it, an abort, or a transfer out. A transfer back in runs the before aside again. A node whose before aside raised was never entered and does not run its after aside.
+- **Errors**: Refused when the code is built: an aside whose NamespaceSpec does not lay a namespace out as the scope of the PUSH_WIND does (`ValueError`).
+- **Compiler form:** Pre-compile extra operand is a 4-tuple `(before, after, 0, 0)`, each an aside or `None`. `compile/dyn-wind` compiles each segment it has as an aside, refusing a `yield` written in it, then emits PUSH_WIND carrying them, the body, and POP_WIND. `Code.soften` gives `None` back for an absent aside.
 
 ---
 
 ### KOS_OP_POP_WIND
 
 - **Style**: NOARG.
-- **Stack**: Stores TOS (the body result) on the wind node as a VALUE obligation (`kos_dyn_ob_store_value`) and unlinks it (`kos_dyn_unlink_top`): the leave runs the after thunk (if entered and non-null) as a normal frame, and the unlink delivers the body result to the revealed segment once the thunk has returned and settled (or at once when there is none). Answers REPROLOGUE while the thunk's frame is current, AWAIT when its call suspended.
+- **Stack**: Stores TOS (the body result) on the wind node as a VALUE obligation (`kos_dyn_ob_store_value`) and unlinks it (`kos_dyn_unlink_top`): an entered node with an after aside fires it, and the unlink delivers the body result to the revealed segment once that frame has returned and settled the node; otherwise at once. Answers REPROLOGUE while the after aside's frame is current.
 - **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
 
 
@@ -5286,7 +5429,7 @@ The extent contract and the single unlink site are described in [interpreter/ext
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | RETURN | 1   | 1        | normal exit |
-| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc lands here |
+| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc reaches here |
 
 
 ---

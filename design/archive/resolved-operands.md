@@ -144,7 +144,7 @@ jump's promise depends on it:
   pc, as today, through the base the install just loaded.
 
 `KosEvalState_OPS` stays for the places that thread from a pc they were
-handed (a raise landing, a continuation, a revive).
+handed (a raise target, a continuation, a revive).
 
 ## Relocation
 

@@ -13,7 +13,7 @@ reference pages and bootstrap scripts output).
 
 ## Documentation reorganization (2026-07)
 
-The reorg in [docs-reorg.md](../docs-reorg.md) has landed (branch `docs-reorg`):
+The reorg in [docs-reorg.md](../docs-reorg.md) is completed (branch `docs-reorg`):
 
 | Change | Status |
 |--------|--------|

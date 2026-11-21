@@ -29,12 +29,18 @@ value, and `RETURN N` (for `N > 1`) packages the values as a tuple. A keyword
 argument re-heads the form as `(values ...)`, so `(return a: 1 b: 2)` returns a
 `values` object; positional and keyword arguments must not be mixed.
 
-At runtime, when the frame has a parent (e.g. normal CALL), RETURN walks the
-dynamic chain with handle(RETURN), runs FINALLY if present, detaches the frame,
-and delivers the value to the parent (opcode returns `EVAL_CONTROL_RETURNED()`
-or `EVAL_NORMAL()`). When the frame has no parent or its parent is the generator
-node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
-delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
+At runtime, `return` leaves every `try` and `with` open in the current
+function, innermost first, running each `finally:` and exit, then gives the
+value to the caller. A `return` in a `finally:` replaces the pending value.
+In a generator, `return` ends the generator.
+
+The body of a [`reset`](compile-reset.md) and the handler of a
+[`shift`](compile-shift.md) or an [`abort`](compile-abort.md) each run in
+a frame of their own: a `return` in
+any of them gives the `reset` its value, and the function the `reset` is
+written in carries on after it. In a resumed delimited continuation, a
+`return` in the `reset`'s body gives that copy's value to the `(k ...)`
+call.
 
 **Consuming multiple values:** index the returned tuple with `(item result 0)`,
 or destructure it with [`var`](compile-var.md) over a pattern or with

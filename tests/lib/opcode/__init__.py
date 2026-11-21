@@ -104,13 +104,68 @@ def _lower_instr(op, arg):
     return [_op(op), arg]
 
 
+class AsideRows(list):
+    """
+    The rows of an aside, for an ASIDE field of a row given to
+    build_code, which builds them as a Code
+
+    :param rows: Sequence of [op, arg] as in build_code, ending in a
+        RETURN
+    :param nspec: the NamespaceSpec of a namespace of the aside's own,
+        or None for an aside over the namespace live at the row that
+        runs it
+    """
+
+    def __init__(self, rows, nspec=None):
+        super().__init__(rows)
+        self.nspec = nspec
+
+
+def lower_rows(code, scope, name, cache):
+    """
+    Lower [opname, arg] rows to (OpCode, arg), building each AsideRows
+    a row carries as a Code, over its own NamespaceSpec or over
+    the spec of the scope open at the row
+
+    :param code: Sequence of [op, arg] as in build_code
+    :param scope: the NamespaceSpec of the namespace live where the
+        rows start
+    :param name: Code name for the asides
+    :param cache: whether the asides allocate per-site cache slots
+    :return: tuple of lowered rows
+    """
+
+    def build_aside(rows):
+        nspec = scopes[-1] if rows.nspec is None else rows.nspec
+        return Code(
+            nspec, lower_rows(rows, nspec, name, cache), name, cache=cache)
+
+    scopes = [scope]
+    out = []
+    for op, arg in code:
+        if op == "PUSH_NS":
+            scopes.append(arg[0])
+        elif op == "PUSH_COLLECT":
+            scopes.append(arg)
+        elif op in ("POP_NS", "POP_COLLECT"):
+            scopes.pop()
+        elif isinstance(arg, (tuple, list)) and any(
+                isinstance(v, AsideRows) for v in arg):
+            arg = tuple(
+                build_aside(v) if isinstance(v, AsideRows) else v
+                for v in arg)
+        out.append(_lower_instr(op, arg))
+    return tuple(out)
+
+
 def build_code(code, local_syms=None, closure_syms=None, name="expr", cache=True):
     """
     Build Code from a list of [opname, arg] with string opcode names
 
     Consolidated per-operator arithmetic names (OBJECT_ADD, OBJECT_MODULO,
     ...) are accepted as sugar and lowered to OBJECT_OPERAND (see
-    _OPERAND_LOWER); the arg supplies the operand count.
+    _OPERAND_LOWER); the arg supplies the operand count. An AsideRows
+    in a row's fields is built as an aside Code.
 
     :param code: Sequence of [op, arg] (e.g. [["CONST", 42], ["RETURN", 1]])
     :param local_syms: Optional sequence of local names for the namespace spec
@@ -130,8 +185,7 @@ def build_code(code, local_syms=None, closure_syms=None, name="expr", cache=True
     elif not isinstance(closure_syms, (tuple, list)):
         closure_syms = (closure_syms,)
     nspec = NamespaceSpec(None, tuple(local_syms), tuple(closure_syms))
-    instr = tuple(_lower_instr(op, arg) for op, arg in code)
-    return Code(nspec, instr, name, cache=cache)
+    return Code(nspec, lower_rows(code, nspec, name, cache), name, cache=cache)
 
 
 def build_expr(code, local_syms=None, closure_syms=None, values=None, name="expr"):

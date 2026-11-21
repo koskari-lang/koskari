@@ -192,7 +192,7 @@ compile that dominates `import koskari`.
 - Which koskari-written combinators the `.ki` module carries beyond a
   native's reach (`flatten`, `partition`), so the module is the one
   place users look.
-- What happens to a `.ki` definition when a native lands under the same
+- What happens to a `.ki` definition when a native is implemented under the same
   name. `chain` and `takewhile` are both shipped as generators and
   listed as native candidates.
 

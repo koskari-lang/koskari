@@ -4,7 +4,7 @@
 
 **Stages 1-4 implemented; two decisions remain.**
 
-- **Stage 1 (§3)** — failed-pop taxonomy landed: FATAL passthrough,
+- **Stage 1 (§3)** — failed-pop taxonomy implemented: FATAL passthrough,
   barrier refusals classed as machinery noise (restore + recovery), user
   teardown failures supersede with `__context__` chaining and the walk
   continues (discard-on-stuck guarantees progress).
@@ -51,7 +51,7 @@ Maintainers working on the raise paths: `eval.c` (`process_raise`),
 
 | Document | Relationship |
 |----------|----------------|
-| [callcc.md](../interpreter/callcc.md) | Delimited continuation machinery the raise paths must respect |
+| [callcc.md](callcc.md) | Delimited continuation machinery the raise paths must respect |
 | [delimited-invoke-model.md](delimited-invoke-model.md) | Two-path invoke; the INPLACE DELIM restitch is folded into this design |
 | [boundary-control-reemit.md](boundary-control-reemit.md) | Capacity-driven dispatch precedent (§5.2) |
 | [../TODO.md](../TODO.md) | Single rollup entry pointing here |
@@ -219,7 +219,7 @@ red until fixed, never pinned to a defect.
 
 ---
 
-## Already landed (this branch)
+## Already implemented (this branch)
 
 Context for the reader; these are the localized fixes the design
 supersedes or absorbs:

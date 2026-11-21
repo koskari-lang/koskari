@@ -1,6 +1,6 @@
 # KosEvaluated type and the in-eval iteration interface
 
-Status: fully landed -- substrate, call suite, iter suite, the
+Status: fully implemented -- substrate, call suite, iter suite, the
 KosIterRequest sidecar, site dispatch, the native-frame typed wake,
 KosMap as a native frame program, and the Python adapters. The
 sections below describe the code as built; "History" records the
@@ -18,7 +18,7 @@ supplied that surface, and KosMap proved it; what the first cut got
 wrong is where the in-flight step state lives, and the redesign below
 fixes that.
 
-## The extended type (landed)
+## The extended type (implemented)
 
 One extended type object with the interface suites embedded inline,
 CPython's `tp_as_*` family design without the pointer hop. Lives in
@@ -51,7 +51,7 @@ Detection and resolution:
 Planned: a spare `tp_flags` user bit stamped on adopting static types,
 making the membership test O(1) and the resolve walk the only walk.
 
-## Call suite (landed)
+## Call suite (implemented)
 
 All ten adopters (Function, Expression, BoundMethod, KosPartial,
 Demand, Procedure, both continuations, Values, Apply) embed their suite
@@ -63,14 +63,14 @@ The call-suite slots carry the `kc_` prefix (`kc_vinstall`,
 `kc_wants_frame`, `kc_wants_frame_fn`, `kc_pycall`,
 `kc_pyvectorcall`); `ki_` is the iter-suite prefix.
 
-The two follow-ups once noted here have both landed: the dual install
+The two follow-ups once noted here have both been implemented: the dual install
 entries collapsed onto the single vector-shaped `kc_vinstall` with the
 central tuple spread in `KosCallable_CallArgsSlots`, and
 `demand_sync_ex` re-expressed over the shared call entries.
 
 ## History: the scattered first cut
 
-The first landing worked -- the full matrix was green under
+The first implementation worked -- the full matrix was green under
 test/asan/valgrind/gdb -- but the knowledge of "what does this
 in-flight step mean" existed in six cooperating copies:
 
@@ -244,7 +244,7 @@ before tearing through it; a handler that declines returns
 `EVAL_RAISE()` and the walk pops the frame.
 `KosNativeFrame_Return(es, value)` performs the return unwind walk,
 FINALLY/async-unwind outcomes, frame detach/free, and parent delivery;
-apply uses it. Node deliveries that land while a native frame is
+apply uses it. Node deliveries that arrive while a native frame is
 current arrive by stack push, and the entry-phase resume delivery
 hands a revive value to the handler as AWAITED.
 

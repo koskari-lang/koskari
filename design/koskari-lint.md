@@ -102,7 +102,7 @@ Bracketing and layout:
 * **Warn** when bracketed forms appear in a call (function head) position. The
   compiler pragma already supports this second check; the linter can surface it
   too.
-* Detect layout misuse that lands a keyword in a call-function position.
+* Detect layout misuse that puts a keyword in a call-function position.
 * Recommend consistent indentation.
 * Recommend spacing (blank lines) between top-level function definitions.
 
@@ -168,7 +168,7 @@ That discipline is what earns a second run of an opinionated tool.
 
 ## Coverage / drift concern
 
-If `validate` is a second behavior forked off each `@special` handler, landing a
+If `validate` is a second behavior forked off each `@special` handler, adding a
 new special without a matching validate arm silently falls through to "presume
 call" (a quiet false negative, not a crash). Worth deciding whether
 `@special(...)` registration should carry `validate` as a required sibling of
@@ -243,7 +243,7 @@ consults, not a set of hand-written checks.
    `request_global`) separable from bytecode emission, so the validator can call
    it directly instead of reimplementing dispatch?
 2. Should `validate` be a required sibling of `compile` on `@special`
-   registration, to catch missing coverage as new specials land?
+   registration, to catch missing coverage as new specials are added?
 3. What is the linter's own configuration format and precedence, and how does it
    read (observe, never share) the module pragma?
 

@@ -251,7 +251,7 @@ static KosOpResult kos_call_dispatch(
 
 
 /**
-   The CALL* opcodes' entry, whose result lands on the current frame's
+   The CALL* opcodes' entry, whose result goes on the current frame's
    stack: a value the dispatch reports in hand is pushed or awaited
    there and an installed callee is left current. A plain Python
    callable in tail position gives up the caller's frame before the
@@ -831,7 +831,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
        tail, which the install arity of -1 kept off the arm above: the
        arguments steal-move off the block into the ready frame, which
        goes under a new GEN, and the call completes in hand with the
-       AsyncGenerator, so the residue drops before it lands. An owned
+       AsyncGenerator, so the residue drops before it is pushed. An owned
        callable reference moves into the frame's tag, and the frame is
        freed with it when the record cannot be made. */
     if (! kwnames
@@ -859,9 +859,9 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
        non-simple arity, a prepended receiver, a generator function off
        the window): the function's own install, reading argv in place,
        an owned callable reference moving into the frame's tag. An
-       installed frame lands nothing on the caller's block, so the
+       installed frame pushes nothing on the caller's block, so the
        window drops after it; a generator function completes in hand
-       and its AsyncGenerator lands on the block, so the window drops
+       and its AsyncGenerator is pushed on the block, so the window drops
        first. */
     {
       KosOpResult r = KosFunction_InstallCall(
@@ -895,7 +895,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
   }
 
   /* Class: plain Python callable -- vectorcall reading argv in place;
-     the result lands on the caller's block, so the window drops first. */
+     the result is pushed on the caller's block, so the window drops first. */
   if (! KosCallable_Check(callable)) {
     PyObject *result = PyObject_Vectorcall(callable, argv, (size_t) nargs,
                                            kwnames);
@@ -908,7 +908,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
   /* Legacy classes: preserve steal-first ordering.  Spill the window
      into an owned vector (refs transfer out of the block), delegate,
-     release.  Tail flows land here too (py tails need
+     release.  Tail flows arrive here too (py tails need
      tail_prep_py_call; other-callable and deferred tails keep
      kos_call_push's semantics). */
 legacy:

@@ -15,7 +15,7 @@
 tests.importer.test_import_syntax
 
 Cross-module import of a syntax transformer. A transformer defined as
-NAME is bound under compile/NAME, and until family imports land
+NAME is bound under compile/NAME, and until family imports are implemented
 (design/language/prefix-aware-imports.md) the importer must name that
 binding explicitly: (import-from mod compile/NAME). These check the
 explicit-member contract: imported that way, the transformer is usable

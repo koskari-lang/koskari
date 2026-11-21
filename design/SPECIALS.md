@@ -802,6 +802,10 @@ or `EVAL_NORMAL()`). When the frame has no parent or its parent is the generator
 node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
 delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
+A `reset` body and a `shift` handler are functions, so a RETURN written in
+either returns from it, and its value is the reset's: the frame on a prompt
+ends the prompt when it returns, and the value goes below the prompt.
+
 **Examples:**
 
 ```scheme
@@ -1067,6 +1071,11 @@ optionally with a result value.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
+The target is the nearest enabled loop of the same frame, found at run time
+(`kos_dyn_find_loop`). A `reset` body and a `shift` handler are functions,
+so they, and an applied continuation's copy of the body, reach only loops
+opened inside them. With no loop found it raises
+`RuntimeError("break outside loop")`.
 
 **Examples:**
 
@@ -1086,7 +1095,9 @@ optionally with a result value.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits CONTINUE with
 count 0 or 1. Runtime jumps to the loop's continue target (loop head for while,
-ITER_NEXT for for-each).
+ITER_NEXT for for-each). The loop is found as BREAK finds it, and with no
+loop found it raises
+`RuntimeError("continue outside loop")`.
 
 **Examples:**
 
@@ -1134,6 +1145,13 @@ no parent, the generator consumes the yield: the dynamic chain is frozen, the
 generator suspends, and control returns to the driver as a yield. On resume,
 the sent value is pushed onto the stack and execution continues at the next
 instruction.
+
+The generator is the nearest GEN outward from the running frame
+(`kos_dyn_yield_gen`). With no GEN it raises
+`RuntimeError("yield outside generator")`. A `yield` written in a `reset`
+body or a `shift` handler is a `SpecialError` at compile time: those are
+functions, not generators. One in a function defined within either yields
+for that function.
 
 **Examples:**
 
@@ -1293,9 +1311,11 @@ a miss.
 - **Positional:** `(dyn-wind BEFORE BODY AFTER)` — three elements in fixed order; `BEFORE` and/or `AFTER` may be `nil`.
 - **Keyword:** `(dyn-wind [before: BEFOREBODY...] [body: BODY...] [after: AFTERBODY...])` — top-level lists with marker keywords; omitted segments default to nil; order is arbitrary.
 
-**Use-case:** Dynamic-wind extent: run before thunk on entry, body in the middle, after thunk on exit. Both thunks run on continuation transfer (multi-shot). Before and after are implicitly wrapped in null-arity lambdas; body is compiled as `(compile/begin ...)`.
+**Use-case:** Dynamic-wind extent: run the before segment on entry, the body in the middle, the after segment on exit. Both segments run again on each continuation transfer across the extent (multi-shot). Body is compiled as `(compile/begin ...)`.
 
-**Behaviour:** The form accepts either positional or keyword syntax. Detection: if any top-level element is a pair whose `car` is keyword `before:`, `body:`, or `after:`, keyword mode is used; otherwise positional mode. In keyword mode, segments are identified by their marker; missing segments are nil. Body is required; at least one of before or after is required. Emits: push before thunk (or CONST nil), push after thunk (or CONST nil), PUSH_WIND (arg 1 or 2), compile body, POP_WIND. Stack layout for PUSH_WIND 2: `[..., before, after]` (before below, after above).
+**Segments:** Each of before and after is compiled as an aside, a Code carried in the PUSH_WIND's ASIDE field, in the scope the `dyn-wind` is written in, and runs in a frame of its own over the namespace live at the PUSH_WIND. A `var` in a segment declares a name of the enclosing scope. A `return` ends the segment; a `break` or `continue` does not reach a loop around the `dyn-wind`. A `yield` written in a segment is refused at compile time (`SpecialError`, "before cannot yield" / "after cannot yield"); one in a function defined within it belongs to that function. A segment's value is discarded.
+
+**Behaviour:** The form accepts either positional or keyword syntax. Detection: if any top-level element is a pair whose `car` is keyword `before:`, `body:`, or `after:`, keyword mode is used; otherwise positional mode. In keyword mode, segments are identified by their marker; missing segments are nil. Body is required; at least one of before or after is required. A falsy literal such as `0` in a segment's place is a segment, not an absent one. Each present segment is compiled as an aside (its instructions, RETURN 1). Emits: PUSH_WIND with the extra row `(before, after, 0, 0)` carrying them, `None` for an absent one, the body, and POP_WIND.
 
 **Examples:**
 
@@ -1334,11 +1354,12 @@ a miss.
 Optional `name` binds the context manager's enter result for the body. If
 omitted, only `expr` and `body ...` are given (no binding).
 
-**Use-case:** Single-shot context manager: evaluate `expr` to get a manager,
-call enter (auto-await if needed), run body in a fresh operand stack block,
-then call exit on normal or exception exit. Safe for normal control-flow and
-exception unwind; **not** safe across continuation transfers (transfer across
-an active `with` raises a runtime error).
+**Use-case:** Context manager local to its body: evaluate `expr` to get a
+manager, call enter (auto-await if needed), run body in a fresh operand stack
+block, then call exit on normal or exception exit, and on a return, break or
+continue through it. A continuation transfer runs neither: a shift's abort
+or a continuation call that leaves an active `with` unlinks it without
+calling exit, and a continuation's copy does not call enter again.
 
 **Behaviour:** Compiles `expr`, emits PUSH_WITH with optional name (constant
 pool index or no-binding sentinel), compiles body with `helper_begin`, emits
@@ -1372,10 +1393,11 @@ enter/exit, normal completion, and exception propagation/swallow.
 
 Same syntax as `with`; optional `name` binds the enter result.
 
-**Use-case:** Multi-shot context manager that participates in continuation
-transfer (shift/reset, undelimited call/cc). On non-local transfer, exit
-runs as the goal leaves and enter runs again when a goal lands the extent;
-each landing is a fresh extent instance.
+**Use-case:** Context manager that continuation transfers run (shift/reset,
+undelimited call/cc): its node carries `KOS_DYN_CAP_WINDS`. Exit runs as
+the goal leaves the extent and enter runs again when a goal re-enters it,
+outermost extent first; each copy of a delimited continuation is a fresh
+extent instance.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 Expression value is always `None`. See
@@ -2945,12 +2967,26 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 **Syntax:** `(reset BODY ...)`
 
 **Use-case:** Establish a prompt delimiter for delimited continuations
-(`compile/shift`). The body is evaluated with a prompt on the dynamic chain;
-`compile/shift` inside the body can capture the continuation up to (but not
-including) this prompt.
+(`compile/shift`, `compile/abort`). The body runs with a prompt on the
+dynamic chain under it; a `compile/shift` in the body, or in a function it
+calls, captures the continuation up to this prompt.
 
-**Behaviour:** Emits `PUSH_PROMPT 0`, compiles the body with `helper_begin`,
-emits `POP_PROMPT 0`.
+**Behaviour:** `helper_reset_body` compiles `BODY` as an aside (JARGON.md)
+through `Fragment.aside` with no names of its own: the body is compiled
+with `helper_begin` in the enclosing fragment's scope and closed by
+`RETURN 1`. Nothing of it is emitted into the enclosing fragment, which
+gets one `RESET` instruction, an EXTRA row of the tag count 0 (the
+default tag) and the aside. The aside rides in that field as an `Aside`
+until the enclosing code completes, when it is built as a Code over the
+enclosing scope's NamespaceSpec. At run time
+RESET pushes the prompt and a frame above it that runs the aside over the
+live namespace; the body's return ends the prompt and is the form's value.
+
+The body runs in a frame of its own: `return` in it returns from the body
+and gives the reset its value; `break` and `continue` reach only loops
+opened inside it. Its names are the enclosing function's: a `var` in it is
+visible after the form. A `yield` written in the body is a `SpecialError`
+at compile time.
 
 **Examples:**
 
@@ -2962,6 +2998,10 @@ emits `POP_PROMPT 0`.
     (shift k (call k 5))))
 ```
 
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_reset_frame.py`,
+`tests/reproducers/test_break_across_reset.py`
+
 ## compile/shift
 
 **Symbol:** `compile/shift`
@@ -2969,13 +3009,46 @@ emits `POP_PROMPT 0`.
 **Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
-`compile/reset` prompt and bind it to `K`, then run `BODY`. `K` is a
-`DelimitedContinuation` that cannot be called from Python (only from within a
-Koskari eval loop, through CALL).
+`compile/reset` prompt, abort to that prompt, and run the handler `BODY`
+there with `K` bound to the continuation. The handler's value is the
+reset's. `K` is a `DelimitedContinuation` that cannot be called from
+Python (only from within a Koskari eval loop, through CALL).
 
-**Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
-`VAR_STORE K` (binds the captured delimited continuation), compiles body with
-`helper_begin`, emits `POP_SHIFT 0`.
+**Behaviour:** `helper_handler` compiles the handler as an aside that owns
+one name, `K`: `Fragment.aside` opens a resolution scope declaring `K`,
+and every other name the handler declares is moved to the enclosing
+fragment and reached from the handler as a closure name. The aside is
+a `VAR_STORE K`, the handler and `RETURN 1`, built as a Code over its
+own NamespaceSpec (local
+`K`, closures the enclosing names it uses). One `SHIFT` instruction
+is emitted, an EXTRA row of the tag count 0 (the default tag) and the
+aside, in an ASIDE_NS field.
+
+At run time SHIFT captures the continuation -- whole frames from the shift
+down to the prompt, the reset's body frame included, with the shift's own
+frame standing at the instruction after the SHIFT -- and aborts to the
+prompt. The nodes the abort leaves are kept as the continuation's template
+instead of being cloned and freed. A node carrying `KOS_DYN_CAP_WINDS`
+runs its leave (a dyn-wind after segment, a dyn-with exit, a parameterize
+restore), and a plain `with`, `try` or `finally` leaves without running
+anything of its own. The prompt stays, and a frame that runs the aside is
+attached above it over a namespace built from the spec, with the
+continuation pushed on its stack for the `VAR_STORE`. The handler is
+outside the region's extents: a `try` in the region does not catch its
+raises, and a `parameterize` in the region is not bound for it. Each call
+of `K` attaches a fresh copy of the captured frames, prompt included, on
+the caller, enters the copy's extents outermost first, and returns the
+copy's value to the caller as a call does. A copy of an except body the
+shift was written in is handling its exception again.
+
+The handler runs in a frame of its own: `return` in it returns from the
+handler and gives the reset its value; `break` and `continue` reach only
+loops opened inside it. `K` is the handler's own name, a new one for each
+run of the handler, and is not visible in the enclosing scope, so the
+continuation is not held by the enclosing function's namespace. Every
+other name is the enclosing function's: a `var` in the handler is visible
+after the form. A `yield` written in the handler is a `SpecialError` at
+compile time. A `shift` in the handler finds the same prompt.
 
 **Examples:**
 
@@ -2985,6 +3058,118 @@ Koskari eval loop, through CALL).
   (shift k
     (call k "value")))
 ```
+
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_shift_abort_first.py`,
+`tests/reproducers/test_shift_thunk.py`,
+`tests/reproducers/test_shift_in_regions.py`
+
+## compile/abort
+
+**Symbol:** `compile/abort`
+
+**Syntax:** `(abort BODY ...)`
+
+**Use-case:** Leave everything up to the nearest `compile/reset` prompt and
+give the reset a value, capturing nothing: a `compile/shift` whose
+continuation would go unused.
+
+**Behaviour:** `helper_handler` with no `K` compiles the handler as an
+aside with no names of its own, as a reset's body is, and emits one
+`ABORT` instruction, an EXTRA row of the tag count 0 and the aside.
+At run time ABORT finds the prompt, leaves every node above it as a shift's
+abort does, and runs the aside in a frame above the prompt over the
+namespace live at the ABORT, which is revealed first since the frame that
+owns it is released. The handler's return ends the prompt and is the
+reset's value.
+
+The handler's names are all the enclosing function's. `return`, `break`,
+`continue` and `yield` in it follow the rules of a shift's handler.
+
+**Examples:**
+
+```scheme
+;; the rest of the region is discarded => 5
+(reset (call + 1 (abort 5)))
+```
+
+**Tests:** `tests/reproducers/test_abort.py`
+
+## compile/reset-at
+
+**Symbol:** `compile/reset-at`
+
+**Syntax:** `(reset-at TAG BODY ...)`
+
+**Use-case:** Establish a prompt delimiter carrying `TAG`, for a
+`compile/shift-at` or `compile/abort-at` seeking the same tag.
+
+**Behaviour:** Compiles `TAG`, then the body as `compile/reset` does, and
+emits `RESET` with tag count 1 (the tag is popped from the stack). A tag is
+any object, matched by identity. `None` is the
+default tag: `(reset-at None BODY ...)` is `(reset BODY ...)`. `gensym`
+makes a tag no other code can name.
+
+**Examples:**
+
+```scheme
+(let [[t (gensym "t")]]
+  (reset-at t (+ 1 (shift-at t k (call k 5)))))
+```
+
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_reset_at_layout.py`
+
+## compile/shift-at
+
+**Symbol:** `compile/shift-at`
+
+**Syntax:** `(shift-at TAG K BODY ...)`
+
+**Use-case:** `compile/shift` with the delimiter chosen by tag: capture up to
+the nearest `compile/reset-at` carrying `TAG`.
+
+**Behaviour:** Compiles `TAG`, then the handler as `compile/shift` does, and
+emits `SHIFT` with tag count 1 (the tag is popped before the capture and is
+not among the captured operands). Prompts of other tags between the shift and its prompt are
+crossed and become part of the continuation. The capture failure
+`KoskariPromptNotFound` carries the tag sought as `tag`. Everything else is
+as `compile/shift`.
+
+**Examples:**
+
+```scheme
+;; k is (lambda [v] (reset-at a (+ 100 (reset-at b (+ 10 v))))) => 111
+(let [[a (gensym "a")] [b (gensym "b")]]
+  (reset-at a
+    (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1)))))))
+```
+
+**Tests:** `tests/compile/specials/test_reset_shift.py`,
+`tests/reproducers/test_reset_at_layout.py`
+
+## compile/abort-at
+
+**Symbol:** `compile/abort-at`
+
+**Syntax:** `(abort-at TAG BODY ...)`
+
+**Use-case:** `compile/abort` with the delimiter chosen by tag.
+
+**Behaviour:** Compiles `TAG`, then the handler as `compile/abort` does, and
+emits `ABORT` with tag count 1. Prompts of other tags between the abort and
+its prompt are left with the rest of the region. Everything else is as
+`compile/abort`.
+
+**Examples:**
+
+```scheme
+;; the inner reset is left with the rest of the region => 7
+(let [[a (gensym "a")]]
+  (reset-at a (+ 100 (reset (+ 10 (abort-at a 7))))))
+```
+
+**Tests:** `tests/reproducers/test_abort.py`
 
 ## import
 
@@ -3240,7 +3425,7 @@ echo hi
 ````
 
 ````scheme
-;; Opener-line keyword pairs land in options:
+;; Opener-line keyword pairs go into options:
 ```bash env: prod retries: 3
 deploy --now
 ```
@@ -3262,10 +3447,12 @@ deploy --now
 The following specials are implemented but are not given full sections above.
 See the cited modules for behaviour and examples.
 
-- **compile/with** — Single-shot context manager; `(with EXPR BODY ...)`.
+- **compile/with** -- Context manager local to its body, which continuation
+transfers do not run; `(with EXPR BODY ...)`.
 Emits `PUSH_WITH` / `POP_WITH`. Implementation:
 `koskari/compile/specials/context.py`.
-- **compile/dyn-with** — Multi-shot dynamic context manager; async enter/exit.
+- **compile/dyn-with** -- Context manager that continuation transfers leave
+and re-enter; async enter/exit.
 Emits `PUSH_DYN_WITH` / `POP_DYN_WITH`. Implementation:
 `koskari/compile/specials/context.py`.
 

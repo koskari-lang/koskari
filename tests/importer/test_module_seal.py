@@ -86,7 +86,7 @@ class TestSealMatrix(unittest.IsolatedAsyncioTestCase):
     """The four protect-code / pack-module combinations"""
 
     async def test_default_off_on(self):
-        """durable code lands in one sealed arena; still callable"""
+        """durable code goes into one sealed arena; still callable"""
 
         module = await load(SRC)
         ns = vars(module)
@@ -339,7 +339,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         detach_module_load_facets(module)
 
     async def test_deferred_seal_packs_union(self):
-        """codes from every load land in one arena, sealed once"""
+        """codes from every load go into one arena, sealed once"""
 
         module, arenas = await self.multi_load(
             "(def one [] 1)",

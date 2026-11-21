@@ -76,7 +76,7 @@ or a nested `begin`.
   every `...` is an element.
 - **Pattern side.** Nothing. Consecutive ellipses in a *pattern* are not
   R7RS and stay refused.
-- **Error message.** Whether or not flattening lands, the depth error
+- **Error message.** Whether or not flattening is implemented, the depth error
   can name the variable's captured depth and the depth it was used at.
 
 ## Invasiveness

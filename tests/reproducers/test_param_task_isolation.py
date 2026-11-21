@@ -91,9 +91,9 @@ var outcome (main)
 
 
 # Fork semantics without any interleaving. A store with no enclosing
-# extent lands in the domain's root scope, which parent and children
+# extent goes into the domain's root scope, which parent and children
 # share, so it crosses the fork in both directions. A parameterize
-# extent lands in the forking context's own table, so the fork captures
+# extent goes into the forking context's own table, so the fork captures
 # the extents applied at creation and nothing later.
 FORK_SRC = """
 (def run-checks []

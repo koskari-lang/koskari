@@ -50,8 +50,6 @@ KOS_OP_HANDLER(POP_FINALLY) {
   uint8_t pending = KosDynFinally_HANDLING_CONTROL((KosDynFinally *) region);
   if (pending)
     KosDynFinally_HANDLING_CONTROL((KosDynFinally *) region) = 0;
-  if (pending == KOS_PENDING_RETURN_TRANSFER)
-    kos_xfer_goal_resume_after_finally(ctx);
 
   {
     PyObject *promoted = KosStack_PopRef(&KosDynNode_STACK(region));
@@ -73,10 +71,6 @@ KOS_OP_HANDLER(POP_FINALLY) {
       case KOS_PENDING_RETURN_CONTINUE:
         RESULT_RELAY(ctx, kos_dyn_unwind_to_loop(
             ctx, KOS_XFER_EVENT_CONTINUE, promoted));
-      case KOS_PENDING_RETURN_TRANSFER:
-        /* The goal holds the payload; the prologue drives it on. */
-        Py_DECREF(promoted);
-        RESULT_REPROLOGUE(ctx);
       default:
         break;
     }

@@ -317,6 +317,110 @@ static PySequenceMethods nspec_seq = {
 };
 
 
+/* closure_slots: the recorded slots as a tuple, -1 for a name with no
+   slot, or None when no Code has recorded any. */
+static PyObject *nspec_get_closure_slots(PyObject *self, void *closure) {
+
+  const uint16_t *slots = KosNamespaceSpec_CLOSURE_SLOT(self);
+  Py_ssize_t count = PyTuple_GET_SIZE(KosNamespaceSpec_CLOSURE_SYMS(self));
+  PyObject *result;
+
+  if (! slots)
+    Py_RETURN_NONE;
+
+  result = PyTuple_New(count);
+  if (! result)
+    return NULL;
+
+  for (Py_ssize_t i = 0; i < count; i++) {
+    PyObject *item = PyLong_FromLong(
+        slots[i] == KOS_NS_NO_SLOT ? -1L : (long) slots[i]);
+
+    if (! item) {
+      Py_DECREF(result);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(result, i, item);
+  }
+  return result;
+}
+
+
+static PyGetSetDef nspec_getset[] = {
+  { "closure_slots", nspec_get_closure_slots, NULL,
+    "slot of each closure sym in the enclosing scope, or None", NULL },
+
+  { NULL },
+};
+
+
+int KosNamespaceSpec_RecordClosureSlots(PyObject *nspec, PyObject *enclosing) {
+
+  PyObject *names = KosNamespaceSpec_FAST_NAMES(nspec);
+  PyObject *outer = KosNamespaceSpec_FAST_NAMES(enclosing);
+  Py_ssize_t first = PyTuple_GET_SIZE(KosNamespaceSpec_LOCAL_SYMS(nspec));
+  Py_ssize_t count = PyTuple_GET_SIZE(KosNamespaceSpec_CLOSURE_SYMS(nspec));
+  Py_ssize_t limit = PyTuple_GET_SIZE(outer);
+  uint16_t *slots = KosNamespaceSpec_CLOSURE_SLOT(nspec);
+  int recorded = (slots != NULL);
+
+  if (! count)
+    return 0;
+
+  if (limit > (Py_ssize_t) KOS_NS_NO_SLOT)
+    limit = (Py_ssize_t) KOS_NS_NO_SLOT;
+
+  if (! slots) {
+    slots = PyMem_Malloc((size_t) count * sizeof(uint16_t));
+    if (! slots) {
+      PyErr_NoMemory();
+      return -1;
+    }
+    KosNamespaceSpec_CLOSURE_SLOT(nspec) = slots;
+  }
+
+  for (Py_ssize_t i = 0; i < count; i++) {
+    PyObject *name = PyTuple_GET_ITEM(names, first + i);
+    uint16_t slot = (uint16_t) KOS_NS_NO_SLOT;
+
+    /* names are interned, so the same name is the same object */
+    for (Py_ssize_t j = 0; j < limit; j++) {
+      if (PyTuple_GET_ITEM(outer, j) == name) {
+        slot = (uint16_t) j;
+        break;
+      }
+    }
+
+    /* a spec written under two scopes keeps a slot both agree on */
+    if (recorded && slots[i] != slot)
+      slot = (uint16_t) KOS_NS_NO_SLOT;
+    slots[i] = slot;
+  }
+  return 0;
+}
+
+
+int KosNamespaceSpec_CopyClosureSlots(PyObject *nspec, PyObject *from) {
+
+  const uint16_t *source = KosNamespaceSpec_CLOSURE_SLOT(from);
+  Py_ssize_t count = PyTuple_GET_SIZE(KosNamespaceSpec_CLOSURE_SYMS(from));
+  uint16_t *slots;
+
+  if (! source || ! count)
+    return 0;
+
+  slots = PyMem_Malloc((size_t) count * sizeof(uint16_t));
+  if (! slots) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  memcpy(slots, source, (size_t) count * sizeof(uint16_t));
+  PyMem_Free(KosNamespaceSpec_CLOSURE_SLOT(nspec));
+  KosNamespaceSpec_CLOSURE_SLOT(nspec) = slots;
+  return 0;
+}
+
+
 static PyObject *nspec_new(PyTypeObject *type,
                            PyObject *args, PyObject *kwds) {
 
@@ -341,6 +445,8 @@ static void nspec_dealloc(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_FAST_NAMES(self));
   PyMem_Free(KosNamespaceSpec_FAST_RAW_MORE(self));
   KosNamespaceSpec_FAST_RAW_MORE(self) = NULL;
+  PyMem_Free(KosNamespaceSpec_CLOSURE_SLOT(self));
+  KosNamespaceSpec_CLOSURE_SLOT(self) = NULL;
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -410,11 +516,22 @@ PyTypeObject KosNamespaceSpecType = {
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_members = nspec_members,
   .tp_methods = nspec_methods,
+  .tp_getset = nspec_getset,
   .tp_as_sequence = &nspec_seq,
   .tp_new = nspec_new,
   .tp_dealloc = nspec_dealloc,
   .tp_repr = nspec_repr,
 };
+
+
+/* A new reference to sym, interned when it is exactly a str. */
+static PyObject *nspec_interned(PyObject *sym) {
+
+  Py_INCREF(sym);
+  if (PyUnicode_CheckExact(sym))
+    PyUnicode_InternInPlace(&sym);
+  return sym;
+}
 
 
 PyObject *KosNamespaceSpec_New(
@@ -495,6 +612,7 @@ PyObject *KosNamespaceSpec_New(
   KosNamespaceSpec_FAST_RAW(self)[0] = 0;
   KosNamespaceSpec_FAST_RAW(self)[1] = 0;
   KosNamespaceSpec_FAST_RAW_MORE(self) = NULL;
+  KosNamespaceSpec_CLOSURE_SLOT(self) = NULL;
 
   // Build the cached fast_names tuple: every local, closure, and global
   // symbol in that order. Storage is unbounded; the compiler decides
@@ -510,22 +628,18 @@ PyObject *KosNamespaceSpec_New(
     return NULL;
   }
 
+  /* A str name is interned, so the same name is the same object in
+     every spec, and a recorded slot is checked by identity. */
   Py_ssize_t fi = 0;
-  for (Py_ssize_t li = 0; li < n_loc; fi++, li++) {
-    PyObject *sym = PyTuple_GET_ITEM(local_syms, li);
-    Py_INCREF(sym);
-    PyTuple_SET_ITEM(fast_names, fi, sym);
-  }
-  for (Py_ssize_t ci = 0; ci < n_clo; fi++, ci++) {
-    PyObject *sym = PyTuple_GET_ITEM(closure_syms, ci);
-    Py_INCREF(sym);
-    PyTuple_SET_ITEM(fast_names, fi, sym);
-  }
-  for (Py_ssize_t gi = 0; gi < n_glo; fi++, gi++) {
-    PyObject *sym = PyTuple_GET_ITEM(global_syms, gi);
-    Py_INCREF(sym);
-    PyTuple_SET_ITEM(fast_names, fi, sym);
-  }
+  for (Py_ssize_t li = 0; li < n_loc; fi++, li++)
+    PyTuple_SET_ITEM(fast_names, fi,
+                     nspec_interned(PyTuple_GET_ITEM(local_syms, li)));
+  for (Py_ssize_t ci = 0; ci < n_clo; fi++, ci++)
+    PyTuple_SET_ITEM(fast_names, fi,
+                     nspec_interned(PyTuple_GET_ITEM(closure_syms, ci)));
+  for (Py_ssize_t gi = 0; gi < n_glo; fi++, gi++)
+    PyTuple_SET_ITEM(fast_names, fi,
+                     nspec_interned(PyTuple_GET_ITEM(global_syms, gi)));
   KosNamespaceSpec_FAST_NAMES(self) = fast_names;
 
   // Precompute the raw-flag bits: locals occupy raw slots, closures and
@@ -590,6 +704,10 @@ static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
 }
 
 
+static PyObject *ns_slot_ref(PyObject *namespace, size_t index,
+                             PyObject *key);
+
+
 static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
   PyObject *binds = KosNamespace_BINDS(namespace);
 
@@ -605,6 +723,16 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
   int index = ns_fast_index(namespace, key);
   if (index < 0)
     return NULL;
+
+  return ns_slot_ref(namespace, (size_t) index, key);
+}
+
+
+/* The Ref of the fast slot at index, which holds key: borrowed, or
+   NULL with an exception set. A raw slot is promoted in place. */
+static PyObject *ns_slot_ref(PyObject *namespace, size_t index,
+                             PyObject *key) {
+  PyObject *binds = KosNamespace_BINDS(namespace);
 
   // A non-raw slot already carries its Ref in fast[]; hand it back borrowed.
   if (! kos_ns_is_raw(namespace, (size_t) index))
@@ -742,12 +870,34 @@ static int ns_init_syms_from_nspec(
   PyObject *closure_syms = KosNamespaceSpec_CLOSURE_SYMS(nspec);
   if (closure_syms) {
     size_t target = (size_t) PyTuple_GET_SIZE(closure_syms);
+
+    /* The Code a spec is written in records each name's slot in the
+       namespace of the enclosing scope. The record holds when parent is that
+       namespace: a plain one with no dict of dynamic binds, whose slot
+       carries the very name. Any other parent is searched by name. */
+    const uint16_t *slots = KosNamespaceSpec_CLOSURE_SLOT(nspec);
+    PyObject *pnames = NULL;
+    size_t pcount = 0;
+
+    if (slots && parent && KosNamespace_CheckExact(parent)
+        && ! KosNamespace_BINDS(parent)) {
+      pnames = KosNamespace_FAST_NAMES(parent);
+      pcount = pnames ? (size_t) KosNamespace_FAST_COUNT(parent) : 0;
+    }
+
     for (size_t i = 0; i < target; i++) {
       PyObject *ref_name = PyTuple_GET_ITEM(closure_syms, i);
-
       PyObject *ref = NULL;
-      if (KosNamespace_FindRef(parent, ref_name, &ref))
+
+      if (pnames && slots[i] < pcount
+          && PyTuple_GET_ITEM(pnames, slots[i])
+              == PyTuple_GET_ITEM(fn, count)) {
+        ref = ns_slot_ref(parent, slots[i], ref_name);
+        if (! ref)
+          return -1;
+      } else if (KosNamespace_FindRef(parent, ref_name, &ref)) {
         return -1;
+      }
 
       if (! ref) {
         PyErr_Format(PyExc_NameError, "No such reference: %S", ref_name);

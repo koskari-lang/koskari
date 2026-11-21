@@ -15,11 +15,12 @@
 """
 tests.reproducers.test_inplace_invoke_operands
 
-The first invoke of a delimited continuation runs in place on the live
-chain. The slice resumes over the region's own pending operands, the
-handler's pending operands wait on the shift node for the invoke to
-return, and a region node between the reset and the shift that the
-slice pops on its way out takes nothing the handler still needs.
+A delimited continuation invoked in its handler attaches a copy above
+the handler's frame. The copy resumes over the region's own pending
+operands, the handler's pending operands wait in the handler's frame
+for the invoke to return, and a region node between the reset and the
+shift that the copy pops on its way out takes nothing the handler
+still needs.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -105,8 +106,8 @@ class TestInplaceInvokeOperands(SpecialsTestCase):
     async def test_escape_from_the_resumed_slice_abandons_the_handler(self):
         """
         A let/cc escape captured in the region and invoked from inside
-        the resumed slice delivers to the let/cc point: the shift
-        handler's pending work is abandoned with the stashed span
+        the resumed copy delivers to the let/cc point: the shift
+        handler's pending work is left with the handler's frame
         """
 
         src = """
@@ -129,9 +130,9 @@ class TestInplaceInvokeOperands(SpecialsTestCase):
 
 class TestCaptureInsideResumedSlice(SpecialsTestCase):
     """
-    An undelimited continuation captured inside a slice an in-place
-    invoke resumed carries the shift handler's pending work: re-entering
-    it after the region has finished runs the slice to its end, then the
+    An undelimited continuation captured inside the copy a handler's
+    invoke attached carries the shift handler's pending work: re-entering
+    it after the region has finished runs the copy to its end, then the
     handler's remainder, and delivers where the region's value went
     """
 

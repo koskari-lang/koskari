@@ -329,7 +329,7 @@ annotation (`[ref :: str]`) means required, a `value:` default
 validated and coerced against the signature -- unknown keys, missing
 required keys, and uncoercible values are a `400` -- and the handler is
 called with named args. The same declaration drives the UI's manual-trigger
-form, and the coerced args land in `trigger.json` so re-trigger replays
+form, and the coerced args go into `trigger.json` so re-trigger replays
 them.
 
 `WebhookConfig` extends the shared server shape (`host`, `port`, `prefix`)
@@ -677,7 +677,7 @@ The surface lowers in two symmetric halves that meet at real module bindings.
 ### Dispatch: three separated responsibilities
 
 Sub-items are variety-specific, but the machinery that reads them stays
-generic. Three concerns land in three places:
+generic. Three concerns go in three places:
 
 1. **Layout** (per sub-item head) folds a block into a form. `config:` uses
    `inline-block` (its `key: value` lines splice in flat); everything else uses

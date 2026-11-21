@@ -29,7 +29,7 @@
 
    Each in-eval interface family is a suite embedded inline, mirroring
    CPython's tp_as_* design without the indirection: the call suite
-   here, the iter suite when it lands. Membership in a family is by its
+   here, the iter suite once it exists. Membership in a family is by its
    defining slot (a callable has kc_vinstall), not by a
    pointer being non-NULL.
 

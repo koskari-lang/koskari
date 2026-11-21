@@ -196,7 +196,7 @@ dict before the exec, so replacing `sys.modules["__main__"]` is safe, and
 What lines up without work: `sys.argv[0]` is the origin, as `koskari -m`
 sets it; `sys.path[0]` is the working directory under both; a package's
 `__init__.ki` is imported through the ordinary loader before `runpy`
-looks for `pkg.__main__`; `python -i -m mod` lands in Python's prompt
+looks for `pkg.__main__`; `python -i -m mod` arrives at Python's prompt
 with the koskari module as `__main__`, so its names are inspectable
 there.
 

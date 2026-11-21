@@ -1,0 +1,345 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+tests.reproducers.test_transfer_caught_raise
+
+A transfer that runs a dyn-wind thunk or a dyn-with's __enter__ or
+__exit__ on its way waits for it to return. A raise inside that call
+which the call catches itself, in its own body or in a function it
+calls, is the call's own business: the transfer goes on once it
+returns, as if nothing had been raised. Only a raise that leaves the
+call ends the transfer, at the point the raise is caught.
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+import unittest
+
+import pytest
+
+from koskari.lib import KoskariContinuationApply
+from koskari.module import load_module_source_async, new_module
+
+
+pytestmark = pytest.mark.phase_reproducers
+
+
+SRC = """
+def raiser []:
+    (raise (ValueError "callee"))
+
+class ExitCatches []:
+    def __init__ [self log]:
+        (set! self.log log)
+    def __enter__ [self]:
+        (self.log.append "enter")
+        self
+    def __exit__ [self *: args]:
+        (try (raise (ValueError "exit"))
+             [[e ValueError] (self.log.append "exit")])
+        False
+
+class EnterCatches []:
+    def __init__ [self log]:
+        (set! self.log log)
+    def __enter__ [self]:
+        (try (raise (ValueError "enter"))
+             [[e ValueError] (self.log.append "enter")])
+        self
+    def __exit__ [self *: args]:
+        (self.log.append "exit")
+        False
+
+def after_catches []:
+    var log #[]
+    var r (reset
+        (+ 1 (dyn-wind (log.append "before")
+                       (shift k (begin (log.append "handler") 10))
+                       (try (raise (ValueError "after"))
+                            [[e ValueError] (log.append "after")]))))
+    #[r log]
+
+def before_catches []:
+    var log #[]
+    var n #[0]
+    var r (reset
+        (+ 1 (dyn-wind (begin
+                         (set! n[0] (+ n[0] 1))
+                         (try (raise (ValueError "before"))
+                              [[e ValueError] (log.append #("before" n[0]))]))
+                       (shift k (k 10))
+                       (log.append "after"))))
+    #[r log]
+
+def exit_catches []:
+    var log #[]
+    var r (reset
+        (+ 1 (dyn-with [c (ExitCatches log)]
+               (shift k (begin (log.append "handler") 20)))))
+    #[r log]
+
+def enter_catches []:
+    var log #[]
+    var r (reset
+        (+ 1 (dyn-with [c (EnterCatches log)]
+               (shift k (k 5)))))
+    #[r log]
+
+def callee_raises []:
+    var log #[]
+    var r (reset
+        (+ 1 (dyn-wind nil
+                       (shift k (begin (log.append "handler") 30))
+                       (try (raiser)
+                            [[e ValueError] (log.append "caught")]))))
+    #[r log]
+
+def nested []:
+    var log #[]
+    var m #[0]
+    var j (reset
+        (dyn-wind (begin
+                    (set! m[0] (+ m[0] 1))
+                    (when (> m[0] 1)
+                      (try (raise (ValueError "inner"))
+                           [[e ValueError] (log.append "inner-caught")])))
+                  (shift j j)
+                  nil))
+    var r (reset
+        (+ 1 (dyn-wind nil
+                       (shift k (begin (log.append "handler") 40))
+                       (log.append (j 7)))))
+    #[r log]
+
+def after_escapes []:
+    var log #[]
+    var r:
+        try:
+            (reset
+                (+ 1 (dyn-wind nil
+                               (shift k (begin (log.append "handler") 50))
+                               (raise (ValueError "escape")))))
+        except [e ValueError]:
+            "escaped"
+    #[r log]
+
+def both [a b]:
+    #[a b]
+
+def abort_escapes_during_reentry []:
+    var log #[]
+    var n #[0]
+    var r (reset
+      (both 10
+        (try
+            (dyn-wind (log.append "outer-before")
+                      (dyn-wind (begin
+                                  (set! n[0] (+ n[0] 1))
+                                  (when (> n[0] 1)
+                                    (abort (log.append "abort"))))
+                                (dyn-wind (log.append "body-before")
+                                          (shift k (k 1))
+                                          (log.append "body-after"))
+                                (log.append "inner-after"))
+                      (begin
+                        (log.append "outer-after")
+                        (when (> n[0] 1)
+                          (raise (ValueError "escape")))))
+            [[e ValueError] "escaped"])))
+    #[r log]
+
+def enter_escapes [manager]:
+    var log #[]
+    var box #[None]
+    var r (+ 100 (let/cc esc
+                   (set! box[0] esc)
+                   (reset (+ 1 (dyn-with [c (manager log box)]
+                                 (shift k (k 5)))))))
+    #[r log]
+
+def invoke_fails [spoiled]:
+    var log #[]
+    var r (let/cc k
+            (dyn-wind (log.append "before")
+                      (try (spoiled k)
+                           [[e TypeError] (begin (log.append (str e)) 3)])
+                      (log.append "after")))
+    #[r log]
+
+def invoke_fails_in_thunk [spoiled]:
+    var log #[]
+    var box #[None]
+    (let/cc j (set! box[0] j))
+    var r (reset
+        (+ 1 (dyn-wind (log.append "before")
+                       (shift k (begin (log.append "handler") 10))
+                       (try (spoiled box[0])
+                            [[e TypeError] (log.append "after")]))))
+    #[r log]
+
+def invoke_fails_uncaught [spoiled log]:
+    (let/cc k
+      (dyn-wind (log.append "before")
+                (spoiled k)
+                (log.append "after")))
+"""
+
+
+def spoiled(k):
+    """
+    Call the continuation k from Python, and send its signal on with
+    nothing the evaluator can invoke in it
+    """
+
+    try:
+        k(1)
+    except KoskariContinuationApply as signal:
+        signal.continuation = 42
+        raise
+
+
+class EnterEscapes:
+    """
+    A context manager whose second __enter__ calls the continuation in
+    its box
+    """
+
+    def __init__(self, log, box):
+        self.log = log
+        self.box = box
+
+    def __enter__(self):
+        self.log.append("enter")
+        if self.log.count("enter") > 1:
+            self.box[0](7)
+        return self
+
+    def __exit__(self, *args):
+        self.log.append("exit")
+        return False
+
+
+class TestTransferCaughtRaise(unittest.IsolatedAsyncioTestCase):
+
+    async def load(self):
+        module = new_module("transfer_caught_raise")
+        vars(module)["__file__"] = "<transfer_caught_raise>"
+        await load_module_source_async(module, SRC)
+        return vars(module)
+
+
+    async def test_after_thunk_catches_during_an_abort(self):
+        mod = await self.load()
+        self.assertEqual(
+            [10, ["before", "after", "handler"]],
+            await mod["after_catches"]())
+
+
+    async def test_before_thunk_catches_during_reentry(self):
+        mod = await self.load()
+        self.assertEqual(
+            [11, [("before", 1), "after", ("before", 2), "after"]],
+            await mod["before_catches"]())
+
+
+    async def test_exit_catches_during_an_abort(self):
+        mod = await self.load()
+        self.assertEqual(
+            [20, ["enter", "exit", "handler"]],
+            await mod["exit_catches"]())
+
+
+    async def test_enter_catches_during_reentry(self):
+        mod = await self.load()
+        self.assertEqual(
+            [6, ["enter", "exit", "enter", "exit"]],
+            await mod["enter_catches"]())
+
+
+    async def test_thunk_catches_its_callee_raise(self):
+        mod = await self.load()
+        self.assertEqual(
+            [30, ["caught", "handler"]],
+            await mod["callee_raises"]())
+
+
+    async def test_nested_transfer_inside_a_waited_thunk(self):
+        mod = await self.load()
+        self.assertEqual(
+            [40, ["inner-caught", 7, "handler"]],
+            await mod["nested"]())
+
+
+    async def test_raise_escaping_the_thunk_ends_the_transfer(self):
+        mod = await self.load()
+        self.assertEqual(
+            ["escaped", []],
+            await mod["after_escapes"]())
+
+
+    async def test_raise_ends_the_reentry_its_abort_cut_short(self):
+        # the inner before thunk, re-entered, aborts; that abort runs the
+        # outer after thunk, whose raise ends the abort and with it the
+        # re-entry the abort had already cut short; the try the re-entry
+        # brought back catches it
+        mod = await self.load()
+        self.assertEqual(
+            [[10, "escaped"],
+             ["outer-before", "body-before", "body-after", "inner-after",
+              "outer-after", "outer-before", "outer-after"]],
+            await mod["abort_escapes_during_reentry"]())
+
+
+    async def test_continuation_called_from_enter_ends_the_reentry(self):
+        # the re-entry calls __enter__ itself; a continuation that call
+        # invokes replaces the re-entry
+        mod = await self.load()
+        self.assertEqual(
+            [107, ["enter", "exit", "enter"]],
+            await mod["enter_escapes"](EnterEscapes))
+
+
+    async def test_failed_invoke_is_caught_where_python_called_it(self):
+        # the signal of a continuation called from Python cannot be
+        # invoked; the failure raises at that call, where the try
+        # around it catches it
+        mod = await self.load()
+        self.assertEqual(
+            [3, ["before",
+                 "KoskariContinuationApply.continuation must be"
+                 " Continuation or DelimitedContinuation, got 42",
+                 "after"]],
+            await mod["invoke_fails"](spoiled))
+
+
+    async def test_failed_invoke_caught_in_a_thunk_leaves_the_transfer(self):
+        # the after thunk an abort waits on catches the failure; the
+        # abort goes on once the thunk returns
+        mod = await self.load()
+        self.assertEqual(
+            [10, ["before", "after", "handler"]],
+            await mod["invoke_fails_in_thunk"](spoiled))
+
+
+    async def test_failed_invoke_runs_the_after_thunk_on_its_way(self):
+        mod = await self.load()
+        log = []
+        with self.assertRaises(TypeError):
+            await mod["invoke_fails_uncaught"](spoiled, log)
+        self.assertEqual(["before", "after"], log)
+
+
+# The end.

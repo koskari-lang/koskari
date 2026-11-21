@@ -294,7 +294,7 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         wide["v199"] = 9
         self.assertEqual(wide["v199"], 9)
 
-    async def test_wide_scope_closures_land_after_the_locals(self):
+    async def test_wide_scope_closures_come_after_the_locals(self):
         """
         Closure refs follow the locals in slot order even when the locals
         alone pass 128; they used to be written past the allocation

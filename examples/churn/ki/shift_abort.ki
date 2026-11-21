@@ -1,0 +1,21 @@
+;; churn_shift_abort -- one reset per step whose body calls a function
+;; that aborts to it, so the abort through one call dominates.  No
+;; continuation is captured.
+
+(var MASK32 0xffffffff)
+
+
+def escape [x]:
+    abort:
+        (& (+ (* x 1664525) 1013904223) MASK32)
+
+
+def churn_shift_abort [n x]:
+    var i 0
+    while (< i n):
+        set! x (reset (+ 1 (escape x)))
+        set! i (+ i 1)
+    x
+
+
+;; The end.

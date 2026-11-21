@@ -447,7 +447,7 @@ OP(name, cache, EXTRA, f0, f1, f2, f3)
 non-consumer. It is a count from the start, not a bool: the allocator treats
 `0`, `1`, and `N` uniformly, so a single opcode can later reserve a
 contiguous run (see *Monomorphic by law; the counter as growth path*). The
-initial landing sets **every** opcode to `0` — the framework ships first,
+initial implementation sets **every** opcode to `0` -- the framework ships first,
 then individual opcode implementations are switched on one at a time. The
 count is a static per-opcode fact, exposed through a
 `kos_opcode_cache_count(op)` accessor parallel to `kos_opcode_style` /
@@ -525,7 +525,7 @@ site), is to widen the flag from a boolean into a small **count**:
 - The only new bound: a run of `N` must fit under the sentinel, so the last
   legal first-index is `0xFFFE - (N - 1)`.
 
-This is recorded as future-sanctioned, not current. The landing flag is
+This is recorded as future-sanctioned, not current. The flag as implemented is
 `0`/`1`; the counter is the pre-agreed shape if the need arises.
 
 ### Table storage: trailing array on the KosCode object
@@ -678,7 +678,7 @@ allocation, tagged-union slot, pragma gate) is fully in place.
 
 GC-tracking is deliberately **not** part of the framework: while every slot
 is `KOS_CACHE_EMPTY` the table holds no references, so KosCode keeps its
-standing non-GC invariant. It moves to Phase 4, landing with the first
+standing non-GC invariant. It moves to Phase 4, implemented with the first
 ref-holding layout.
 
 ### Phase 4: Activate consumers — DONE
@@ -713,7 +713,7 @@ sets `kind`.
   resolve -- is what keeps the raw `field_slot_store` off a stale offset. On a
   cache miss or when caches are gated off, the whole thing degrades to the
   generic `kos_attr_inplace_reduce` (getattr / fold / setattr).
-- **GC-tracking of KosCode** landed with the method layout (the first
+- **GC-tracking of KosCode** was implemented with the method layout (the first
   ref-holding layout): KosCode is a GC type with `tp_traverse` / `tp_clear`
   that `switch (kind)` over the slots, matching `cache_slot_release`.
 - **Version guard**: `kos_type_version` / `kos_type_version_assign`

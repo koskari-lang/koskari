@@ -15,7 +15,7 @@
 ;; Process memory sampling for a long-lived runner. `memory-report` is
 ;; meant to be the whole body of a cron job's handler: each fire logs one
 ;; line of process totals plus the types that grew since the last fire,
-;; and because it logs to a `kosrunner.*` logger the report lands in that
+;; and because it logs to a `kosrunner.*` logger the report goes into that
 ;; run's own output.log alongside every other run in the history.
 
 import gc

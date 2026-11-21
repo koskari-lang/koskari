@@ -59,7 +59,7 @@ syntax list-each:
   collection happens inside the conditional, so skipped elements
   contribute nothing (no None gaps). This applies only when the
   conditional encompasses the whole body, and filters do not compose --
-  a nested `when` is an ordinary expression whose None lands in the
+  a nested `when` is an ordinary expression whose None goes into the
   list. Write `(when (and a b) ...)` for a composite check, or
   `(if rule x None)` to collect the None deliberately.
 

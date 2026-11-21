@@ -19,7 +19,7 @@ Continuation resume-stack aliasing was audited: originals alias
 chain-owned segments and are cleared without release; clones and plans
 always hold heap deep-copies, so inline aliases never escape their
 node's lifetime.  Remaining stages: telemetry/sizing, then the end
-state.  Builds on the landed simplification pass (archived spec:
+state.  Builds on the completed simplification pass (archived spec:
 [archive/stack-segment-simplification.md](../archive/stack-segment-simplification.md)).**
 
 ## Purpose
@@ -43,7 +43,7 @@ spills to a heap `KosSegment` on overflow.  Two goals:
    is always `&dyn_top->stack`.
 
 2. **Locality.**  A node's intrinsic fields and its operand values
-   land in one allocation instead of two heap objects, shrinking the
+   go into one allocation instead of two heap objects, shrinking the
    pointer spread on the hot push/pop paths and dropping the separate
    `NewEmpty` allocation (freelist hit or not) per owning node.
 
@@ -102,7 +102,7 @@ operands on their own segment.
 
 **Transfer bookmarks stay transparent**: cc, cc_raise, delim, shift,
 gen, next, yield_from.  The compiler emits their pushes
-mid-expression -- `PUSH_CC` lands inside an open call window with the
+mid-expression -- `PUSH_CC` arrives inside an open call window with the
 callable already on the stack; `OBJECT_NEXT` sits between operand
 loads -- so their extents legitimately straddle operand windows on the
 enclosing segment and must not capture them.  The suite fails within
@@ -201,7 +201,7 @@ push and pop with no walk, by a mechanism chosen per fact:
    slices, and clones carry strong refs that stay valid wherever the
    span goes, so the entire ns detach-hygiene class (and the
    resumed-region namespace-loss bug family) disappears.
-   As landed: ownership is centralized -- release in
+   As implemented: ownership is centralized -- release in
    `kos_dynnode_return_to_freelist`, GC visit in the
    `kos_dynnode_traverse` dispatcher, fill-copy in `kos_dyn_clone` --
    with the per-kind decrefs/visits deleted.  The pop side follows the
@@ -221,9 +221,9 @@ push and pop with no walk, by a mechanism chosen per fact:
    traverse, and every per-kind clone treat the base `ns` field as
    uniformly owned; and -- the one silent hazard -- `NS(node) !=
    NULL` stops meaning "introduces a namespace scope".
-   The discriminator audit is DONE and, with the fill landed, mostly
+   The discriminator audit is DONE and, with the fill implemented, mostly
    retired: `kos_dynnode_introduces_ns` (dynchain.h) pinned the old
-   truth transitionally so the fill could land without silent drift,
+   truth transitionally so the fill could be implemented without silent drift,
    and now survives in exactly one place -- the snapshot display,
    where "introduces a scope" is genuinely what introspection reports.
    Every retarget/walk reader uses the plain first-non-NULL read,

@@ -27,7 +27,7 @@ The annotation is an ordinary expression evaluated in the defining
 scope. A string annotation, `:: "Request"`, stays a lazily resolved
 forward reference as it does in Python.
 
-## Where it lands
+## Where it is stored
 
 A function's annotations go to `__annotations__` and `inspect.signature`
 reports them:

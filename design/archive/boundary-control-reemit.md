@@ -1,7 +1,7 @@
 # Boundary Control Re-emit Model
 
 **Status: COMPLETE and ARCHIVED (2026-07-18).**  Every migration step
-landed: the frame-crossing vs consumer-delivery split (thin **`RETURN`**,
+is complete: the frame-crossing vs consumer-delivery split (thin **`RETURN`**,
 **`eval_event_*`**, **`apply_kos_op_result`**), the unified RAISE ingress
 (§5.3), and finally the generic dynnode boundary dispatch (§5.2) as the
 capability-keyed dispatcher in `koskari/lib/dynchain/dyn_boundary.c`.

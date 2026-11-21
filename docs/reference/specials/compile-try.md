@@ -12,9 +12,9 @@ or binding.
 In addition, two keyword-head clauses are accepted:
 
 - `(else: BODY...)` -- run when the try body completed without exception
-- `(finally: BODY...)` -- always run; must be last
+- `(finally: BODY...)` -- run on every local exit; must be last
 
-**Use-case:** Exception handling. Runs BODY; on exception, matches against clauses in order and runs the first matching handler. Optional `else:` runs when no exception occurred. Optional `finally:` runs on every exit from the form: normal completion, an exception, a `return`, `break` or `continue`, and a continuation transfer that leaves it (a `call/cc` escape, or a `shift` handler that abandons the captured slice), in order with the `__exit__` of any `with` and the after thunk of any `dyn-wind` on the same path, innermost first. A slice re-entered through its continuation runs the `finally:` again when that run leaves. An escape issued from inside a running `finally:` body abandons the rest of that body. At least one except-style clause or `finally:` is required.
+**Use-case:** Exception handling. Runs BODY; on exception, matches against clauses in order and runs the first matching handler. Optional `else:` runs when no exception occurred. Optional `finally:` runs on every local exit from the form: normal completion, an exception, and a `return`, `break` or `continue` written in it. A continuation transfer does not run it: a `call/cc` escape out of the try, or a `shift` that aborts the region the try is in, leaves the `finally:` unrun. Use [`dyn-wind`](compile-dyn-wind.md) for cleanup that a transfer must run. A slice re-entered through its continuation runs a copy of the try, and that copy runs the `finally:` when it exits locally. An escape issued from inside a running `finally:` body abandons the rest of that body. At least one except-style clause or `finally:` is required.
 
 **Behaviour:** Uses PUSH_TRY, CLEAR_TRY, POP_TRY, PUSH_FINALLY, POP_FINALLY.
 Exception handlers use EXCEPTION_MATCH, EXCEPTION_CLEAR, EXCEPTION opcodes.

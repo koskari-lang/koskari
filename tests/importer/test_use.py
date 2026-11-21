@@ -173,7 +173,7 @@ class TestUse(UseCase):
 
     async def test_use_prefixed_bind_is_literal(self):
         # a rename onto a facet-prefixed bind is a literal single
-        # binding: the bare candidate lands there, and no doubled-prefix
+        # binding: the bare candidate goes there, and no doubled-prefix
         # facet keys the compiler never declared are stored
         self.write_ki('ki_use_prov10', """
         (syntax spoken (syntax-rules [] [(spoken x) x]))

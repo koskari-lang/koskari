@@ -16,7 +16,7 @@
 /**
    POP_WIND: arg unused. Pop the top wind node from the dynamic chain.
    Stores TOS (body result) in the wind node, then unlinks it: the after
-   thunk runs if entered and non-null, and the body result lands on the
+   thunk runs if entered and non-null, and the body result is pushed on the
    revealed block once the node is gone.
 */
 

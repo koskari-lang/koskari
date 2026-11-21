@@ -229,7 +229,7 @@ reference.
    (`VAR_INPLACE_CONST`, where `_CONST` marks a constant RHS
    operand rather than a constant key). Both spellings survive the
    FAST/VAR name mapping; pick one story for "constant key" vs
-   "constant operand" before the enum lands.
+   "constant operand" before the enum is implemented.
 3. **Further fusion**: a constant single RHS could later fold into the
    EXTRA row (the analog of `VAR_INPLACE_CONST`), reaching a
    fully stack-free `d[k] += 1`. Out of scope here; noted so the row

@@ -134,12 +134,13 @@ class PoolKind(IntEnum):
     ELLIPSIS = 21
     FROZENSET = 22
     SLICE = 23
+    CODE = 24
 
 
 class CodeFlags(IntEnum):
     """
-    Bits of the flags word on a CODE body record and a FUNCTION_SPEC pool
-    record
+    Bits of the flags word on a CODE body record and on a FUNCTION_SPEC
+    or CODE pool record
     """
 
     YIELDS = 0x01
@@ -802,6 +803,13 @@ def intern_for_pool(pb, obj):
         intern_instruction_args(pb, pb.soften(code))
         return pb.add(obj)
 
+    if isinstance(obj, Code):
+        intern_for_pool(pb, obj.namespace_spec)
+        intern_for_pool(pb, obj.name)
+        intern_for_pool(pb, obj.filename)
+        intern_instruction_args(pb, pb.soften(obj))
+        return pb.add(obj)
+
     if isinstance(obj, (tuple, frozenset)):
         for val in obj:
             intern_for_pool(pb, val)
@@ -1062,6 +1070,20 @@ def encode_pool_record_value(val, index_of, pb=None):
             code.self_slot,
             ic) + instr_b
 
+    if isinstance(val, Code):
+        if pb is None:
+            raise TypeError('Code pool encoding requires a PoolBuilder')
+        instr = pb.soften(val)
+        instr_b = encode_softened_instructions(pb, instr)
+        return struct.pack(
+            '<BIIIII',
+            PoolKind.CODE,
+            index_of(val.namespace_spec),
+            index_of(val.name),
+            index_of(val.filename),
+            code_flags(val),
+            len(instr)) + instr_b
+
     if val is nil:
         return struct.pack('<B', PoolKind.NIL)
 
@@ -1255,6 +1277,24 @@ def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
         code = code_from_record(
             nspec, instr, code_name, code_fn, flg, ss, allocator)
         return FunctionSpec(name, formals, code), off
+
+    if kind == PoolKind.CODE:
+        nsi, cni, cfi, flg, ic = struct.unpack_from('<IIIII', buf, off)
+        off += 20
+        if off + ic * INSTRUCTION_SIZE > len(buf):
+            raise ValueError(
+                f".kio code of {ic} instructions at {off}"
+                f" overruns its section")
+        ib = buf[off:off + ic * INSTRUCTION_SIZE]
+        off += ic * INSTRUCTION_SIZE
+        instr = []
+        ioff = 0
+        for _ in range(ic):
+            (op, arg), ioff = decode_instruction(ib, ioff, prior)
+            instr.append((op, arg))
+        code = code_from_record(
+            prior[nsi], instr, prior[cni], prior[cfi], flg, -1, allocator)
+        return code, off
 
     raise ValueError(f'unknown pool kind {kind}')
 

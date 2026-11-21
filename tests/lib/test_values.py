@@ -453,7 +453,7 @@ class TestValuesAdd(unittest.IsolatedAsyncioTestCase):
 
     async def test_add_dict_normalizes_str_subclass_keys(self):
         """
-        a str-subclass key lands as an exact str, as values(**kwds) does
+        a str-subclass key is stored as an exact str, as values(**kwds) does
         """
 
         class S(str):

@@ -19,7 +19,7 @@ An undelimited continuation re-enters a region that is still live but
 has moved on since the capture: a dyn-wind running its after thunk, a
 try running its handler, a finally handling a raise, a for-each with a
 step in flight. Such a node is not the state the continuation
-describes, so the invoke leaves it and lands the template's copy fresh,
+describes, so the invoke leaves it and attaches the template's copy fresh,
 with the enter replay that implies.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

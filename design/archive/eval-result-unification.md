@@ -18,9 +18,9 @@ and to build the eval dispatch switch around that struct so behavior is
 derivable from one table lookup rather than three cascading dispatch phases.
 
 **Implementation status: all phases complete** (branch `eval_event_again`).
-Phases 0–4 landed in commit `e5c37cc`; Phase 5 (native handler protocol) in
+Phases 0–4 were implemented in commit `e5c37cc`; Phase 5 (native handler protocol) in
 `e2bd983`; Phase 6 (full legacy deletion) in `0174120`. §10 contains the
-original feasibility assessment; §15–§19 contain the landing record and
+original feasibility assessment; §15–§19 contain the implementation record and
 follow-up plan executed in the same branch.
 
 Companion documents:
@@ -746,13 +746,13 @@ if-ladder and must be faithfully replicated in `eval_event_return`.
   proposal, eval loop dispatch, val ownership, out_ev fate, native handler
   protocol, transfer plan analysis, POST_OPCODE elimination, implementation
   phases, edge cases, honest risk assessment.
-- **2026-06-22** — Supplementary §15–§19 added: Phases 0–4 landing record,
+- **2026-06-22** — Supplementary §15–§19 added: Phases 0–4 implementation record,
   deviations from plan, remaining work plan (Steps 1–4), and implementation
   notes for Phase 5 native handler migration.
 
 ---
 
-## 15. Landing record: Phases 0–4 (commit e5c37cc, branch eval_event_again)
+## 15. Implementation record: Phases 0–4 (commit e5c37cc, branch eval_event_again)
 
 Phases 0–4 from §11 are complete as of commit `e5c37cc`. This section records
 what was implemented, deviations from the design, and bugs caught in testing.
@@ -874,7 +874,7 @@ deferred path until Phase 5 converts it.
 ### Step 1 — Minor housekeeping ✓ DONE (branch eval_event_again, post-e5c37cc)
 
 All three sub-tasks implemented and tested (3212 passed, 10 skipped, 24
-subtests passed — same baseline as Phase 0–4 landing).
+subtests passed — same baseline as Phase 0–4 implementation).
 
 #### 1a. Remove dead `case KOS_RES_NORMAL:` from `cg_handle_op_result` ✓
 

@@ -41,7 +41,20 @@ typedef struct KosNamespaceSpec {
   PyObject *fast_names;      // tuple of local+closure+global syms, every name
   uint64_t fast_raw[2];      // initial raw-flag bits for slots 0-127: locals set
   uint64_t *fast_raw_more;   // bits for slots 128 and up, PyMem-owned, or NULL
+
+  /* Where each closure sym lives in the namespace of the scope this
+     spec's scope is written in: slot indices parallel to closure_syms,
+     KOS_NS_NO_SLOT for a name that scope holds in no slot, PyMem-owned,
+     or NULL when nothing was recorded. Filled when the Code holding
+     the spec is built (KosNamespaceSpec_RecordClosureSlots), never
+     given or stored. A record, checked at use: a namespace built from
+     another spec is searched by name instead. */
+  uint16_t *closure_slot;
 } KosNamespaceSpec;
+
+
+/* a closure sym with no recorded slot */
+#define KOS_NS_NO_SLOT 0xFFFFu
 
 
 PyObject *KosNamespaceSpec_New(
@@ -49,6 +62,25 @@ PyObject *KosNamespaceSpec_New(
     PyObject *local_syms,
     PyObject *closure_syms,
     PyObject *global_syms);
+
+
+/**
+   Record where nspec's closure syms live in the namespace built from
+   enclosing, the spec of the scope nspec's scope is written in. Both
+   are exact NamespaceSpecs. A spec recorded against a second scope
+   keeps only the slots the two agree on. Callers: the Code build, for
+   each inline scope's spec it meets. Returns 0, or -1 with PyErr set.
+*/
+int KosNamespaceSpec_RecordClosureSlots(PyObject *nspec, PyObject *enclosing);
+
+
+/**
+   Give nspec the closure slots recorded on from, a spec with the same
+   closure syms: the spec a function's formals derive from its code's.
+   Callers: the formals' spec derivation. Returns 0, or -1 with PyErr
+   set.
+*/
+int KosNamespaceSpec_CopyClosureSlots(PyObject *nspec, PyObject *from);
 
 
 #define KosNamespaceSpec_NAME(nspec)            \
@@ -62,6 +94,9 @@ PyObject *KosNamespaceSpec_New(
 
 #define KosNamespaceSpec_GLOBAL_SYMS(nspec)     \
   (((KosNamespaceSpec *) nspec)->global_syms)
+
+#define KosNamespaceSpec_CLOSURE_SLOT(nspec)    \
+  (((KosNamespaceSpec *) nspec)->closure_slot)
 
 #define KosNamespaceSpec_FAST_NAMES(nspec)      \
   (((KosNamespaceSpec *) nspec)->fast_names)
@@ -843,7 +878,7 @@ extern PyTypeObject KosModuleNamespaceType;
    never read; the module's bindings live in the core's binds dict.
    The core sits at the same offset as on the other kinds.
 
-   Raw writes land in the scratch and stay there: exec's __builtins__
+   Raw writes go into the scratch and stay there: exec's __builtins__
    insertion, STORE_GLOBAL from a global statement in exec'd code, and
    popitem. Mirrored dunders (mdl_ns_mirror) are written there on
    purpose. A purge is planned and not yet implemented: every relayed

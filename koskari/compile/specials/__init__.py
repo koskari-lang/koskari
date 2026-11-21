@@ -33,8 +33,8 @@ from .context import (
     special_dyn_with, special_parameter, special_parameterize, special_with)
 from .continuations import (
     special_await, special_call_cc, special_capture_cc, special_let_cc,
-    special_reset, special_return, special_shift, special_yield,
-    special_yield_from)
+    special_reset, special_reset_at, special_return, special_shift,
+    special_shift_at, special_yield, special_yield_from)
 from .dyn_wind import special_dyn_wind
 from .exceptions import (
     special_check_exception, special_clear_exception, special_load_exception,
@@ -191,12 +191,14 @@ __all__ = (
     "special_refq",
     "special_repr",
     "special_reset",
+    "special_reset_at",
     "special_return",
     "special_set_attr",
     "special_set_item",
     "special_setq",
     "special_setq_values",
     "special_shift",
+    "special_shift_at",
     "special_str",
     "special_switch",
     "special_subtract",

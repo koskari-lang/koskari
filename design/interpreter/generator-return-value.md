@@ -12,7 +12,7 @@ among them.
 **See also:** [yield-from-close.md](yield-from-close.md) (the close
 side of the same relay),
 [generator-extent-freeze.md](generator-extent-freeze.md),
-[demand-flattening.md](demand-flattening.md),
+[demand-flattening.md](../archive/demand-flattening.md),
 [../language/generators.md](../language/generators.md).
 
 ## What exists today

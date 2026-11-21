@@ -17,14 +17,14 @@
 /**
   koskari/lib/eval/eval_chain.c
 
-  Transfer plan and delimited-return paths; included into eval.c.
+  Context accessors and the transfer goal step; included into eval.c.
 
   :author: Christopher O'Brien <obriencj@preoccupied.net>
   :license: GNU General Public License v3
 */
 
 
-/* --- Transfer plan and delimited return --- */
+/* --- Context accessors and the transfer goal --- */
 
 int KosContext_ThrowIntoResume(KosContext *ctx) {
 

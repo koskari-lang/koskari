@@ -48,11 +48,13 @@ class TestContinuationErrorHierarchy(unittest.TestCase):
         self.assertFalse(
             issubclass(KoskariPromptUnreachable, KoskariPromptNotFound))
 
-    def test_family_is_not_runtime_error(self):
+    def test_category_and_not_found_are_not_runtime_errors(self):
         for cls in (KoskariContinuationError,
-                    KoskariPromptNotFound,
-                    KoskariPromptUnreachable):
+                    KoskariPromptNotFound):
             self.assertFalse(issubclass(cls, RuntimeError))
+
+    def test_unreachable_is_a_runtime_error(self):
+        self.assertTrue(issubclass(KoskariPromptUnreachable, RuntimeError))
 
 
 class TestContinuationErrorAttributes(unittest.TestCase):
@@ -60,18 +62,18 @@ class TestContinuationErrorAttributes(unittest.TestCase):
     def test_base_attributes(self):
         exc = KoskariContinuationError("nope", 5, "shift")
         self.assertEqual(exc.message, "nope")
-        self.assertEqual(exc.prompt_id, 5)
+        self.assertEqual(exc.tag, 5)
         self.assertEqual(exc.operation, "shift")
         self.assertEqual(str(exc), "nope")
 
     def test_base_attribute_defaults(self):
         exc = KoskariContinuationError("nope")
-        self.assertIsNone(exc.prompt_id)
+        self.assertIsNone(exc.tag)
         self.assertIsNone(exc.operation)
 
     def test_unreachable_boundary(self):
         exc = KoskariPromptUnreachable("nope", 0, "shift", "generator")
-        self.assertEqual(exc.prompt_id, 0)
+        self.assertEqual(exc.tag, 0)
         self.assertEqual(exc.operation, "shift")
         self.assertEqual(exc.boundary, "generator")
 

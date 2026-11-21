@@ -193,7 +193,7 @@ from `.ki`.
 Alternative v1 simplification: one monolithic **`builtins.kio`** containing all
 bodies in order. Sharded `.kio` matches source files and allows incremental
 regen when one bootstrap file changes; pick sharded unless monolith is easier
-for first landing.
+for the first implementation.
 
 ### Prerequisites inside the wheel build env
 
@@ -313,7 +313,7 @@ The koskari setuptools plugin already adds `*.ki` / `*.kio` to author
 
 Out of scope for koskari core v1 except documenting the pattern in
 [archive/koskari-scripts-packaging.md](../archive/koskari-scripts-packaging.md) once
-landed.
+implemented.
 
 ---
 

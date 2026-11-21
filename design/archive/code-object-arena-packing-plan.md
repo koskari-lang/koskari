@@ -25,7 +25,7 @@ Status: implemented. Deviations from the plan as written:
   before sealing, so a module's final ephemeral top-level expression is
   not swept into the arena.
 * Module completion became two explicit loader flags (follow-up to the
-  initial landing, replacing both the original `interactive=` flag and
+  initial implementation, replacing both the original `interactive=` flag and
   an interim `collect=` registry-handoff): `seal=True` runs
   `compiler.seal()` on successful completion, `detach=True` removes the
   load facets in the `finally`. `build_module_load_facets` reuses facets
@@ -429,7 +429,7 @@ Consequences that need no further code:
 * **Bootstrap builtins**: `make_builtins` / `make_builtins_demand`
   (`koskari/bootstrap/__init__.py`) call `load_module_demand` once per
   `_BUILTINS_SOURCES` file with a fresh compiler each time, so the builtins
-  land in one sealed arena per bootstrap file under the defaults.
+  go into one sealed arena per bootstrap file under the defaults.
 * **`.ki` imports** via the import hook route through these loaders.
 
 Untouched in v1:
@@ -475,7 +475,7 @@ Mapped to the ordered phases in `tools/pyphase.py`:
   (`max-count`, `max-bytes`, underscore spellings, rejection of unknowns).
 * `Compiler.reload_pragma` picks both settings up; `complete()` passes
   `protect` through (observable via `allocation_bytes`).
-* Registry: every `complete()` (root, nested lambda, class body) lands one
+* Registry: every `complete()` (root, nested lambda, class body) adds one
   weakref; ephemeral codes drop off once unreferenced.
 * `seal()`: definition order preserved; partition behavior for `max_count`,
   `max_bytes`, oversize singleton; disabled pack returns `()`; idempotence;

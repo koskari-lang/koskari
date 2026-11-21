@@ -2,7 +2,7 @@
 
 How a call from Python enters the evaluator and what it costs, for the
 sync (`Demand`) and async (`Coroutine`) paths, against a
-CPython-to-CPython call. Related: [demand-flattening.md](demand-flattening.md)
+CPython-to-CPython call. Related: [demand-flattening.md](../archive/demand-flattening.md)
 (the `CallInto` boundary, step 6 on C stack depth).
 
 ## The two paths

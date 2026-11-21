@@ -97,13 +97,63 @@ KosDynFrame *kos_dynframe_new(
 
 
 /**
-   Clone a frame with its operand segment (continuation capture, delim
-   return-frame snapshot, capture baseline). Callers: kos_dyn_clone
-   and the direct snapshot sites; the segment copy happens here so the
-   direct callers stay faithful without the dispatcher.
+   Whether a frame can be part of a continuation's template: one with
+   a resume whose kind cannot clone its state (a provider step, whose
+   state is the step's own) cannot. Returns 0, or -1 with the refusal
+   set, naming the frame.
+*/
+static int kos_dynframe_capturable(KosDynFrame *frame) {
+
+  if (KosDynFrame_RESUME_KIND(frame)
+      && ! KosDynFrame_RESUME_KIND(frame)->clone) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "cannot capture a continuation across native"
+                 " frame '%s'",
+                 KosDynFrame_RESUME_NAME(frame)
+                     ? KosDynFrame_RESUME_NAME(frame) : "?");
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+   What a frame kept for a continuation gives up as it leaves the
+   chain: a holder's cache slot it was to return to, which may be gone
+   by the time the template is freed, and the links to the frame and
+   segment below it. Its namespace is revealed, since the continuation
+   can be stored back into scope, and the function's frame cache takes
+   no frame with a revealed namespace, so the frame gives up its
+   function reference too, as a clone does. Callers:
+   kos_dyn_keep_node.
+*/
+static void kos_dynframe_keep(KosDynFrame *frame) {
+
+  KosNamespace_TrackChain(KosDynFrame_NS(frame));
+
+  /* only prevents the frame cache offer kos_dynframe_free would make:
+     the namespace was just revealed, so the cache would refuse it */
+  Py_CLEAR(KosDynFrame_FN(frame));
+
+  KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_RETURN_TO_CACHE;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
+  if (KosDynNode_STACK((KosDynNode *) frame))
+    KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) = NULL;
+}
+
+
+/**
+   Clone a frame with its operand segment (continuation capture).
+   Callers: kos_dyn_clone and kos_frame_clone; the segment copy happens
+   here so a direct caller stays faithful without the dispatcher.
 */
 KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
+
   if (! frame)
+    return NULL;
+
+  if (kos_dynframe_capturable(frame) < 0)
     return NULL;
 
   KosDynFrame *clone = kos_dynnode_clone_base(frame);
@@ -127,8 +177,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame)
       & ~KOS_FRAME_RETURN_TO_CACHE;
-  /* A snapshot stands where its source stood until a splice renumbers
-     it: a landed template, or the restitch of a stashed span. */
+  /* A snapshot stands where its source stood; kos_dyn_clone_segment
+     renumbers a copy cloned for an attach. */
   KosDynFrame_DEPTH(clone) = KosDynFrame_DEPTH(frame);
   KosDynFrame_CACHE_SLOT(clone) = NULL;
   /* clones opt out of the per-function frame cache */
@@ -136,26 +186,14 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
 
-  /* A resume whose kind can clone its state copies; one whose kind
-     cannot (a provider step, whose state is the step's own) refuses
-     the capture by name. The clone's resume starts empty so the
-     refusal's free finds nothing to clear. */
+  /* a resume copies through its kind, which kos_dynframe_capturable
+     found able to */
   KosDynFrame_RESUME_KIND(clone) = NULL;
   KosDynFrame_RESUME_STATE(clone) = NULL;
-  if (KosDynFrame_RESUME_KIND(frame) && KosDynFrame_RESUME_KIND(frame)->clone) {
+  if (KosDynFrame_RESUME_KIND(frame)) {
     KosDynFrame_RESUME_KIND(clone) = KosDynFrame_RESUME_KIND(frame);
     KosDynFrame_RESUME_STATE(clone) =
         KosDynFrame_RESUME_KIND(frame)->clone(KosDynFrame_RESUME_STATE(frame));
-    return clone;
-  }
-  if (KosDynFrame_RESUME_KIND(frame)) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "cannot capture a continuation across native"
-                 " frame '%s'",
-                 KosDynFrame_RESUME_NAME(frame)
-                     ? KosDynFrame_RESUME_NAME(frame) : "?");
-    kos_dynframe_free(clone);
-    return NULL;
   }
 
   return clone;
@@ -332,6 +370,98 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
   KosContext_LoadFrame(ctx, frame, &KosDynNode_STACK((KosDynNode *) frame),
                        KosDynNode_NS((KosDynNode *) frame));
 
+  return frame;
+}
+
+
+/**
+   Allocate the frame of an aside: one that takes no arguments and runs
+   aside, a code, over ns, with no function around it. With owns_ns
+   unset, ns is the namespace live where the aside was run, and the
+   frame holds it as its fill, as a native frame does. With owns_ns
+   set, ns was built from the aside's spec: the frame introduces it
+   and carries KOS_DYN_CAP_OWNS_NS, so the collector learns what an
+   unrevealed one holds through this frame. Either way ns is not
+   measured against the code again: the build of the code that runs
+   the aside checked the two.
+   Its return is any frame's. Every frame field is written, since the
+   general free and clone read them all. base is the frame the aside
+   stands above once linked, the source of its depth and demand flag,
+   or NULL when it will stand on a prompt at the root of a context;
+   parent is the node it is linked on, or NULL for one linked later.
+   aside is borrowed; ns is consumed, on failure too: the frame holds
+   the caller's reference. Callers: kos_dyn_push_aside,
+   kos_abort_to_prompt.
+   Returns the frame, or NULL with PyErr set.
+*/
+KosDynFrame *kos_dynframe_new_aside(
+    KosDynNode *parent,
+    KosDynFrame *base,
+    KosCode *aside,
+    PyObject *ns,
+    int owns_ns) {
+
+  KosDynFrame *frame = kos_dynnode_alloc();
+  KosOp *entry = kos_code_entry(aside);
+
+  if (! frame) {
+    Py_DECREF(ns);
+    return NULL;
+  }
+
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
+                   owns_ns ? KOS_DYN_CAP_OWNS_NS : 0);
+  Py_INCREF(aside);
+  KosDynFrame_CODE(frame) = aside;  /* owned */
+  KosDynFrame_PC(frame) = entry;
+  KosDynFrame_ACTING_PC(frame) = entry;
+  kos_dynnode_use_inline_segment((KosDynNode *) frame);
+  KosDynFrame_NS(frame) = ns;  /* owned fill, the caller's reference */
+  KosDynFrame_FLAGS(frame) =
+      base ? KosDynFrame_FLAGS(base) & KOS_FRAME_DEMAND : 0;
+  kos_dynframe_note_parent(frame);
+  KosDynFrame_DEPTH(frame) = base ? KosDynFrame_DEPTH(base) + 1 : 1;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_FN(frame) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) base;
+  return frame;
+}
+
+
+/**
+   Push a frame that runs aside over ns, the namespace live at the
+   instruction that runs it, as dyn_top and the live frame. The build
+   of the code that runs the aside checked the aside's spec against
+   the scope of that instruction. Callers:
+   opcode RESET, for the body it runs above its prompt, with the live
+   namespace; the wind node, for a segment, with the one live at its
+   PUSH_WIND. Returns the frame, or NULL with PyErr set.
+*/
+KosDynFrame *kos_dyn_push_aside(
+    KosContext *ctx,
+    KosCode *aside,
+    PyObject *ns) {
+
+  KosDynFrame *cur = KosContext_FRAME(ctx);
+  KosDynFrame *frame;
+
+  if (unlikely(kos_eval_check_frame_room(ctx, cur, 1) < 0))
+    return NULL;
+
+  /* the frame takes the reference; ns is read through it below */
+  frame = kos_dynframe_new_aside(KosContext_DYN_TOP(ctx), cur, aside,
+                                 Py_NewRef(ns), 0);
+  if (! frame)
+    return NULL;
+
+  KosContext_FlushLiveRegsToFrame(ctx);
+  kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
+                                  KosContext_BLOCK(ctx));
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_LoadFrame(ctx, frame, &KosDynNode_STACK((KosDynNode *) frame),
+                       ns);
   return frame;
 }
 
@@ -560,16 +690,6 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
 /* === Frame depth === */
 
 
-unsigned kos_dyn_frame_depth_at(KosDynNode *node) {
-
-  for (; node; node = KosDynNode_PARENT(node)) {
-    if (KosDynNode_IS_FRAME(node))
-      return KosDynFrame_DEPTH(node);
-  }
-  return 0;
-}
-
-
 unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base) {
 
   unsigned count = 0;
@@ -597,16 +717,6 @@ void kos_dyn_renumber_frames_counted(
     if (KosDynNode_IS_FRAME(node))
       KosDynFrame_DEPTH(node) = (uint16_t) depth--;
   }
-}
-
-
-void kos_dyn_renumber_frames(
-    KosDynNode *top,
-    KosDynNode *base,
-    unsigned base_depth) {
-
-  kos_dyn_renumber_frames_counted(top, base, base_depth,
-                                  kos_dyn_frame_count(top, base));
 }
 
 

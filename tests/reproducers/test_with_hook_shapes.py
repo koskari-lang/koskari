@@ -355,11 +355,12 @@ class TestWithHookShapes(SpecialsTestCase):
                          ["enter-start", "enter", "exit-start", "exit"])
 
 
-    async def test_single_shot_exit_once_across_capture(self):
+    async def test_each_copy_of_a_captured_with_body_exits(self):
         """
         A continuation captured inside a with body and invoked after the
-        block completed re-enters the body through a clone of the node;
-        the clone shares the exit-done fact, so __exit__ runs once
+        block completed resumes a copy of the body, which is still
+        entered: the copy runs __exit__ when it completes, so the
+        manager sees one exit per run of the body
         """
 
         mgr = PlainManager()
@@ -381,15 +382,16 @@ class TestWithHookShapes(SpecialsTestCase):
         expr, _ = self.compile_expr(src, ctx=mgr, stash=stash,
                                     invoke_saved=invoke_saved, saved=saved)
         self.assertEqual(await expr(), 99)
-        self.assertEqual(mgr.calls, ["enter", ("exit", None)])
+        self.assertEqual(
+            mgr.calls, ["enter", ("exit", None), ("exit", None)])
 
 
-    async def test_single_shot_exit_runs_after_grafted_clone_leaves(self):
+    async def test_with_exit_runs_when_the_resumed_copy_completes(self):
         """
-        A continuation invoked under an inner reset grafts a clone of the
-        with node that is never entered; the clone leaving must not mark
-        the shared exit-done fact, so the live node still runs __exit__
-        when the handler returns
+        The shift's abort leaves the with without running __exit__; the
+        continuation invoked under an inner reset resumes a copy of the
+        body, still entered, and that copy runs __exit__ when it
+        completes, so the manager sees one enter and one exit
         """
 
         mgr = PlainManager()

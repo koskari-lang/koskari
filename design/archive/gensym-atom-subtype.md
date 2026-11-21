@@ -98,7 +98,7 @@ decoded from a `.kio` from colliding with a locally minted one.
 ### Equality and hash
 
 `tp_hash` returns `PyObject_Hash(base)`, the hash of the base object,
-not of its name string. A gensym and its base must land in the same
+not of its name string. A gensym and its base must go into the same
 dict bucket or a lookup keyed by one misses an entry keyed by the
 other.
 

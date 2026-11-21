@@ -1,6 +1,6 @@
 # KosEvalState live authority and chain-transition funnel
 
-**Status:** Phase 1 **landed** (live authority + Tier-1 funnel); Phase 2 **open** (§10)  
+**Status:** Phase 1 **implemented** (live authority + Tier-1 funnel); Phase 2 **open** (§10)  
 **Audience:** Agents and humans implementing performance work on the evaluator  
 **Repository root:** `sibilant-ng/`  
 **Code survey:** `koskari/lib` as of 2026-05-26 (post Phase 1)  
@@ -104,7 +104,7 @@ This refactor is **bookkeeping only**. The running program must behave identical
 | No `SyncFromContext` in `koskari/lib` | **Met** | `grep` gate zero; mismatch pops return `-1` |
 | `kos_dyn_rebuild_live_from_chain` only at Tier-2 + fallback | **Met** (grep) | Optional: reduce Tier-2 rebuild count |
 
-**Performance follow-up (human-driven, after correctness lands):**
+**Performance follow-up (human-driven, after correctness is implemented):**
 
 - Rebuild with `KOS_TRACE_EVAL_SYNC=1` and compare `eval_state_sync` in `get_trace_report()` ([tracing.md](../api/tracing.md)) to quantify time lost to dyn cache updates before vs after
 
@@ -222,8 +222,8 @@ Sites where **incremental pop/push rules are insufficient**. Each calls **`kos_d
 
 | Site | File | Lines (approx.) | Why |
 |------|------|-----------------|-----|
-| `xfer_step_install` | `dynchain/xfer_plan.c` | static | Replaces entire `dyn_top` segment via `xfer_step_land_segment` (`graft_parent == NULL`) |
-| `xfer_step_push` | `dynchain/xfer_plan.c` | static | Grafts segment onto `dyn_top` via `xfer_step_land_segment` (non-NULL `graft_parent`) |
+| `xfer_step_install` | `dynchain/xfer_plan.c` | static | Replaces entire `dyn_top` segment via `xfer_step_attach_segment` (`graft_parent == NULL`) |
+| `xfer_step_push` | `dynchain/xfer_plan.c` | static | Grafts segment onto `dyn_top` via `xfer_step_attach_segment` (non-NULL `graft_parent`) |
 | `kos_dyn_finish_delimited_pop_return` | `dynchain.c` | ~4301+ | After `pop_delim`: `kos_dyn_load_live_regs_from_frame` when `es->frame == ret_frame`, else rebuild; else-branch when DELIM not dyn_top |
 | `kos_dyn_unlink_next_node` (non–dyn_top) | `dyn_next.c` | ~130–141 | Splices parent links without `commit_dyn_top`; no pre-flush before rewire (P4; H20) |
 | `KosContext_New` bootstrap | `eval.c` | ~985 | Thaw/freeze bootstrap after `KosEvalState_Init` |

@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for delimited and undelimited continuations (PUSH_PROMPT, SHIFT,
-CALL on DelimitedContinuation, POP_PROMPT, PUSH_CC, CAPTURE_CC, POP_CC)
-and evaluator token.
+Tests for delimited and undelimited continuations (RESET, SHIFT, CALL
+on DelimitedContinuation, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator
+token.
 Includes cross-context continuation pass-through tests verifying the
 segmented transfer path (foreign-token KoskariContinuationApply handling).
 
@@ -22,54 +22,242 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 :license: GNU General Public License v3
 """
 
-import pytest
 
-from koskari.lib import Code, FormalsSpec, NamespaceSpec
+import pytest
+import sys
+
+from koskari.exceptions import KoskariPromptNotFound
+from koskari.lib import Code, FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
-from tests.lib.opcode import CevalTest, _op, build_code, build_expr
+from tests.lib import opcode as opcode_tests
+from tests.lib.opcode import AsideRows, CevalTest, _op
 
 
 pytestmark = pytest.mark.phase_lib
 
 
-class TestDelimitedContinuations(CevalTest):
+_RETURN_K = [
+    ["VAR", "k"],
+    ["RETURN", 1],
+]
+
+_APPLY_K_5 = [
+    ["VAR", "k"],
+    ["CONST", 5],
+    ["CALL", 1],
+    ["RETURN", 1],
+]
+
+
+class ShiftHandler(list):
     """
-    Tests for PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, CALL, POP_PROMPT
+    The rows of a shift's handler, which expand_asides makes the aside
+    the SHIFT row runs, with the names of the aside's own namespace
     """
 
-    async def test_reset_shift_invoke(self):
+    def __init__(self, rows, local_syms):
+        super().__init__(rows)
+        self.local_syms = tuple(local_syms)
+
+
+def expand_asides(code):
+    """
+    Make each shift's handler the aside its SHIFT row takes. A SHIFT
+    row carrying a ShiftHandler and the name the continuation is bound
+    to becomes a SHIFT row carrying an aside with a namespace of the
+    handler's names, whose first row stores the continuation to that
+    name. A body or a handler may hold further rows written the same
+    way
+
+    :param code: Sequence of [op, arg], a RESET row's second field being
+        an AsideRows and a SHIFT row's a ShiftHandler
+    :return: the rows, each aside an AsideRows
+    """
+
+    rows = []
+    for op, arg in code:
+        if op == "SHIFT" and isinstance(arg[1], ShiftHandler):
+            nspec = NamespaceSpec("handler", arg[1].local_syms, ())
+            handler = AsideRows(
+                [["VAR_STORE", arg[2]], *expand_asides(arg[1])], nspec)
+            rows.append(["SHIFT", (arg[0], handler, 0, 0)])
+        elif op == "RESET" and isinstance(arg[1], AsideRows):
+            body = AsideRows(expand_asides(arg[1]), arg[1].nspec)
+            rows.append(["RESET", (arg[0], body, 0, 0)])
+        else:
+            rows.append([op, arg])
+    return rows
+
+
+def build_code(code, local_syms=None, **kwds):
+    """
+    tests.lib.opcode.build_code over rows whose shift handlers are
+    made asides
+    """
+
+    return opcode_tests.build_code(
+        expand_asides(code), local_syms=local_syms, **kwds)
+
+
+def build_expr(code, local_syms=None, **kwds):
+    """
+    tests.lib.opcode.build_expr over rows whose shift handlers are
+    made asides
+    """
+
+    return opcode_tests.build_expr(
+        expand_asides(code), local_syms=local_syms, **kwds)
+
+
+def handler_spec(code, local_syms=("k",)):
+    """
+    The rows of a shift's handler, for the second field of a SHIFT
+    row: they run as an aside with a namespace of its own, in which
+    the continuation is stored to k, and end in a RETURN
+
+    :param code: Sequence of [op, arg] as in build_code
+    :param local_syms: the names of the aside's namespace, k first
+    :return: ShiftHandler
+    """
+
+    return ShiftHandler(code, local_syms)
+
+
+def body_spec(code):
+    """
+    The rows of a reset's body, for the second field of a RESET row:
+    they run as an aside over the namespace the RESET is in, and end
+    in a RETURN
+
+    :param code: Sequence of [op, arg] as in build_code
+    :return: AsideRows
+    """
+
+    return AsideRows(code)
+
+
+class TestReset(CevalTest):
+    """
+    Tests for RESET: the body runs in a frame above its prompt, and
+    its return, or the return of a shift's handler called above the
+    same prompt, is the value of the RESET
+    """
+
+    async def test_reset_body_value(self):
         """
-        Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT,
-        PUSH_SHIFT, CALL, POP_SHIFT, POP_PROMPT for continuation invocation
+        A body that returns 7 with no shift: the RESET's value is 7
         """
 
         code = [
-            ["PUSH_PROMPT", 0],
-            ["CONST", 1],
-            ["PUSH_SHIFT", 0],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
-            ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RESET", (0, body_spec([["CONST", 7], ["RETURN", 1]]), 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
-        expr = make_callable(code_obj, ns)
-        result = await expr()
-        self.assertEqual(result, 6)
+        self.assertEqual(7, await make_callable(code_obj, ns)())
 
+
+    async def test_reset_value_lands_on_the_caller(self):
+        """
+        The RESET's value goes on the caller's operands like a call's:
+        (+ 1 (reset 7)) is 8
+        """
+
+        code = [
+            ["CONST", 1],
+            ["RESET", (0, body_spec([["CONST", 7], ["RETURN", 1]]), 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        self.assertEqual(8, await make_callable(code_obj, ns)())
+
+
+    async def test_reset_shift_invoke(self):
+        """
+        (reset (+ 1 (shift k (k 5)))) is 6: the handler's value, which
+        is the copy's, is the RESET's
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        self.assertEqual(6, await make_callable(code_obj, ns)())
+
+
+    async def test_k_applied_after_the_reset(self):
+        """
+        (reset (shift k k)) then (k 42): the copy's body returns 42 to
+        the call
+        """
+
+        body = body_spec([
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["CONST", 42],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        self.assertEqual(42, await make_callable(code_obj, ns)())
+
+
+    async def test_tagged_reset(self):
+        """
+        A tag taken from the stack: the body's value is the RESET's
+        """
+
+        code = [
+            ["VAR", "tag"],
+            ["RESET", (1, body_spec([["CONST", 5], ["RETURN", 1]]), 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag": object()})
+        self.assertEqual(5, await make_callable(code_obj, ns)())
+
+
+    async def test_reset_count_above_1_refused_at_build(self):
+        """
+        The tag count is 0 or 1; building code with another fails
+        """
+
+        code = [
+            ["RESET", (2, body_spec([["CONST", 5], ["RETURN", 1]]), 0, 0)],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 EXTRA field 0 2 is not 0 or 1",
+            str(caught.exception))
+
+
+class TestDelimitedContinuations(CevalTest):
+    """
+    Tests for SHIFT and CALL on a DelimitedContinuation, under RESET
+    """
 
     async def test_delimited_continuation_cannot_be_called_from_python(self):
         """
         (reset (shift k k)) returns k; calling k from Python raises TypeError
         """
-        # Shift body returns k without invoking via POP_SHIFT (empty body)
+
+        body = body_spec([
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["RETURN", 1],
+        ])
         code = [
-            ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
-            ["POP_PROMPT", 0],
+            ["RESET", (0, body, 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -83,23 +271,29 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_var_store_then_var_call_invokes_delimited(self):
         """
-        Shift body stores cont in ns, then VAR and CALL invoke it with value.
-        (+ 1 (shift k (do (var-store k k) (k 5)))) => 6
+        The handler stores k in a local, then VAR and CALL invoke it with
+        a value. (+ 1 (shift k (do (var-store j k) (j 5)))) => 6
         """
-        code = [
-            ["PUSH_PROMPT", 0],
-            ["CONST", 1],
-            ["PUSH_SHIFT", 0],
-            ["VAR_STORE", "k"],
+
+        stored = handler_spec([
             ["VAR", "k"],
+            ["VAR_STORE", "j"],
+            ["VAR", "j"],
             ["CONST", 5],
             ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["RETURN", 1],
+        ], local_syms=("k", "j"))
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, stored, "k", 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code, local_syms=("k",))
+        code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 6)
@@ -107,14 +301,16 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_delimited_continuation_stored_and_invoked_outside_shift(self):
         """
-        (reset (shift k (pop-shift k))) stores k; then (k 42) invokes from
-        outside the shift body. Result 42 returns to call site.
+        (reset (shift k k)) stores k; then (k 42) invokes it from outside
+        the handler. Result 42 returns to call site.
         """
+
+        body = body_spec([
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["RETURN", 1],
+        ])
         code = [
-            ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
-            ["POP_PROMPT", 0],
+            ["RESET", (0, body, 0, 0)],
             ["VAR_STORE", "k"],
             ["VAR", "k"],
             ["CONST", 42],
@@ -129,15 +325,18 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_delimited_result_from_outside_shift(self):
         """
-        (reset (shift k (pop-shift k))) then (k 99) => 99. When invoking from
-        outside (after POP_SHIFT), the continuation's first op is POP_SHIFT
-        which yields the value; the result 99 flows to the call site.
+        (reset (shift k k)) then (k 99) => 99. When invoking from outside
+        the handler, the continuation's first op is the body's RETURN
+        after SHIFT, which takes the value; the copy of the body returns
+        99 to the call site.
         """
+
+        body = body_spec([
+            ["SHIFT", (0, handler_spec(_RETURN_K), "k", 0)],
+            ["RETURN", 1],
+        ])
         code = [
-            ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
-            ["POP_PROMPT", 0],
+            ["RESET", (0, body, 0, 0)],
             ["VAR_STORE", "k"],
             ["VAR", "k"],
             ["CONST", 99],
@@ -150,54 +349,38 @@ class TestDelimitedContinuations(CevalTest):
         self.assertEqual(result, 99)
 
 
-    async def test_invoke_delimited_continuation_after_pop_prompt_returns_value(self):
-        """
-        (reset (shift k k)) then (k 42): shift returns k via POP_SHIFT, then
-        we invoke k(42) after the prompt is gone. Push model allows invoke
-        from outside; result 42 returns to call site.
-        """
-        # (reset (shift k k)) returns k; (k 42) invokes from outside the reset
-        code = [
-            ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP_SHIFT", 0],
-            ["POP_PROMPT", 0],
-            ["CONST", 42],
-            ["CALL", 1],
-            ["RETURN", 1],
-        ]
-        code_obj, ns = build_expr(code)
-        expr = make_callable(code_obj, ns)
-        result = await expr()
-        self.assertEqual(result, 42)
-
-
     async def test_tagged_shift_passes_inner_prompt_graft(self):
         """
-        A shift with tag 1 inside a prompt with tag 0 inside a prompt
-        with tag 1: the handler's value k is delivered at the outer
+        A shift tagged A inside a default-tag reset inside a reset
+        tagged A: the handler's value k is delivered at the outer
         prompt, and invoking k from there re-enters the region through
-        the inner prompt, whose own POP_PROMPT pops it as a reset.
+        the inner reset, whose body's return ends its prompt.
         (+ 1 5) then (+ 6 10): 16. Delivery at the inner prompt would
         add 10 to k; an early return at the inner prompt would give 6.
         """
 
-        code = [
-            ["PUSH_PROMPT", 1],
-            ["PUSH_PROMPT", 0],
+        tag_a = object()
+        inner = body_spec([
             ["CONST", 1],
-            ["PUSH_SHIFT", 1],
-            ["POP_SHIFT", 0],
+            ["CONST", tag_a],
+            ["SHIFT", (1, handler_spec(_RETURN_K), "k", 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        outer = body_spec([
+            ["RESET", (0, inner, 0, 0)],
             ["CONST", 10],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, outer, 0, 0)],
             ["CONST", 5],
             ["CALL", 1],
             ["RETURN", 1],
         ]
-        code_obj, ns = build_expr(code)
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 16)
@@ -205,32 +388,370 @@ class TestDelimitedContinuations(CevalTest):
 
     async def test_tagged_shift_passes_inner_prompt_inplace(self):
         """
-        The same shape with k invoked inside the handler: the slice
-        resumes on the live chain, the inner prompt pops as a reset, and
-        the outer prompt's POP_PROMPT returns 16 to the handler, which
-        delivers it at the outer prompt. Delivery at the inner prompt
-        would give 26.
+        The same shape with k invoked inside the handler: the copy
+        attaches on the live chain, the inner body's return ends the
+        inner prompt, and the outer body's return of 16 reaches the
+        handler, which delivers it at the outer prompt. Delivery at the
+        inner prompt would give 26.
         """
 
-        code = [
-            ["PUSH_PROMPT", 1],
-            ["PUSH_PROMPT", 0],
+        tag_a = object()
+        inner = body_spec([
             ["CONST", 1],
-            ["PUSH_SHIFT", 1],
-            ["CONST", 5],
-            ["CALL", 1],
-            ["POP_SHIFT", 0],
+            ["CONST", tag_a],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), "k", 0)],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        outer = body_spec([
+            ["RESET", (0, inner, 0, 0)],
             ["CONST", 10],
             ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, outer, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 16)
+
+
+    async def test_shift_inside_a_copy_attached_from_a_handler(self):
+        """
+        A shift tagged A crosses a default-tag reset, and its handler
+        invokes k. In the copy that is attached, a second shift seeks the
+        default tag: it stops at the copy's inner prompt, which is region
+        content and ends with its body, while the copy's outer body
+        returns to the invoke site. (+ 10 5), then (+ 15 100) from the
+        second handler, then (+ 1 115): 116
+        """
+
+        tag_a = object()
+        apply_k_100 = handler_spec([
+            ["VAR", "k"],
+            ["CONST", 100],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ])
+        inner = body_spec([
+            ["CONST", 10],
+            ["CONST", tag_a],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["SHIFT", (0, apply_k_100, "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        outer = body_spec([
+            ["CONST", 1],
+            ["RESET", (0, inner, 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, outer, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 116)
+
+
+    async def test_prompt_tags_match_by_identity(self):
+        """
+        Two tags that compare equal are different tags: a shift seeking
+        one does not stop at a prompt carrying the other, and the
+        failure names the tag it sought
+        """
+
+        tag_a = [1]
+        tag_b = [1]
+        body = body_spec([
+            ["CONST", tag_b],
+            ["SHIFT", (1, handler_spec(_RETURN_K), "k", 0)],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag_a"],
+            ["RESET", (1, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag_a": tag_a})
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await expr()
+        self.assertIs(caught.exception.tag, tag_b)
+
+
+    async def test_stack_tag_is_not_a_captured_operand(self):
+        """
+        A tag an instruction takes from the stack is gone before the
+        continuation is captured: the region's one pending operand is
+        the 1, so (k 5) is 6. None taken from the stack is the default
+        tag, so it reaches the prompt a count of 0 made
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["CONST", None],
+            ["SHIFT", (1, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         result = await expr()
-        self.assertEqual(result, 16)
+        self.assertEqual(result, 6)
+
+
+    async def test_none_stack_tag_makes_a_default_prompt(self):
+        """
+        A prompt pushed with None taken from the stack carries the
+        default tag: a shift whose count is 0 captures up to it, and the
+        tag is not an operand under the reset's value
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["VAR", "tag"],
+            ["RESET", (1, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, values={"tag": None})
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 6)
+
+
+    async def test_shift_count_above_1_refused_at_build(self):
+        """
+        A shift's count is 0 for the default tag or 1 for a tag from the
+        stack; building code with any other count fails
+        """
+
+        code = [
+            ["SHIFT", (2, handler_spec(_RETURN_K), "k", 0)],
+            ["RETURN", 0],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            build_expr(code)
+        self.assertEqual(
+            "Code instruction 0 EXTRA field 0 2 is not 0 or 1",
+            str(caught.exception))
+
+
+class TestAsides(CevalTest):
+    """
+    Tests for the aside fields: an aside is a Code a RESET, ABORT or
+    SHIFT runs in a frame of its own with no function around it
+    """
+
+    def aside_code(self, rows, local_syms=()):
+        """
+        A Code from lowered rows, over a spec of the given locals
+        """
+
+        nspec = NamespaceSpec(None, tuple(local_syms), ())
+        return Code(nspec, [(_op(op), arg) for op, arg in rows], "a")
+
+
+    async def test_one_aside_run_by_two_rows(self):
+        """
+        Two RESET rows carry the same aside: 7 and 7 are 14
+        """
+
+        aside = self.aside_code([["CONST", 7], ["RETURN", 1]])
+        code = [
+            ["RESET", (0, aside, 0, 0)],
+            ["RESET", (0, aside, 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        self.assertEqual(1, code_obj.constants_pool.count(aside))
+        self.assertEqual(14, await make_callable(code_obj, ns)())
+
+
+    async def test_abort_inside_a_try_block(self):
+        """
+        An ABORT with a try block of its own frame open around it: the
+        abort leaves the block, and the handler's 5 is the reset's
+        """
+
+        found = AsideRows([
+            ["CONST", 5],
+            ["RETURN", 1],
+        ])
+        body = AsideRows([
+            ["PUSH_TRY", "except"],
+            ["ABORT", (0, found, 0, 0)],
+            ["LABEL", "except"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 42],
+            ["POP_TRY", 0],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        self.assertEqual(5, await make_callable(code_obj, ns)())
+
+
+    def shift_code(self):
+        """
+        A Code and namespace with a reset body and a shift handler,
+        the handler an aside with a namespace of its own
+        """
+
+        body = body_spec([
+            ["CONST", 1],
+            ["SHIFT", (0, handler_spec(_APPLY_K_5), "k", 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        return build_expr([
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ])
+
+
+    async def test_softened_asides_build_again(self):
+        """
+        Code.soften gives each row that runs an aside the aside's Code,
+        and the softened rows build a Code that runs the same
+        """
+
+        code_obj, ns = self.shift_code()
+        soft = code_obj.soften()
+        body = [
+            arg[1] for op, arg in soft if OpCode(op).name == "RESET"].pop()
+        self.assertIsInstance(body, Code)
+        handler = [
+            arg[1] for op, arg in body.soften()
+            if OpCode(op).name == "SHIFT"].pop()
+        self.assertIsInstance(handler, Code)
+
+        again = Code(code_obj.namespace_spec, soft, "again")
+        self.assertEqual(6, await make_callable(again, ns)())
+
+
+    def test_soften_holds_no_reference_to_a_pool_object(self):
+        """
+        Softened rows that have been dropped leave the count of a pool
+        object they carried where it was
+        """
+
+        code_obj, ns = self.shift_code()
+        aside = [
+            arg[1] for op, arg in code_obj.soften()
+            if OpCode(op).name == "RESET"].pop()
+        self.assertIsInstance(aside, Code)
+
+        before = sys.getrefcount(aside)
+        for _ in range(10):
+            code_obj.soften()
+        self.assertEqual(before, sys.getrefcount(aside))
+
+
+    async def test_aside_run_past_its_end_raises(self):
+        """
+        An aside whose rows do not end in a RETURN runs off the end of
+        its code, which raises
+        """
+
+        body = AsideRows([
+            ["CONST", 1],
+            ["POP", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        with self.assertRaises(SystemError) as caught:
+            await make_callable(code_obj, ns)()
+        self.assertIn("program counter out of bounds", str(caught.exception))
+
+
+    async def test_aside_field_takes_only_a_code(self):
+        """
+        A name and None are refused at build
+        """
+
+        refused = (("a", "str"), (None, "NoneType"))
+        for value, kind in refused:
+            code = [
+                ["RESET", (0, value, 0, 0)],
+                ["RETURN", 1],
+            ]
+            with self.assertRaises(TypeError) as caught:
+                opcode_tests.build_expr(code)
+            self.assertEqual(
+                f"Code instruction 0 aside must be a Code, not {kind}",
+                str(caught.exception))
+
+
+    async def test_aside_over_another_namespace_refused_at_build(self):
+        """
+        A RESET runs its aside over the live namespace, so the aside is
+        built against the spec of the scope the RESET is in: one built
+        against another is refused
+        """
+
+        aside = self.aside_code([["RETURN", 0]], local_syms=("x",))
+        code = [
+            ["RESET", (0, aside, 0, 0)],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(ValueError) as caught:
+            opcode_tests.build_expr(code)
+        self.assertEqual(
+            "instruction 0 runs an aside written against another namespace",
+            str(caught.exception))
+
+
+    async def test_shift_runs_its_aside_over_a_namespace_of_its_own(self):
+        """
+        A SHIFT builds its aside a namespace from the aside's spec, so
+        the aside is not held to the spec of the scope the SHIFT is in:
+        its own name is 3, and the reset's
+        """
+
+        handler = self.aside_code([
+            ["POP", 1],
+            ["CONST", 3],
+            ["VAR_STORE", "x"],
+            ["VAR", "x"],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        body = AsideRows([
+            ["SHIFT", (0, handler, 0, 0)],
+            ["RETURN", 1],
+        ])
+        code = [
+            ["RESET", (0, body, 0, 0)],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = opcode_tests.build_expr(code)
+        self.assertEqual(3, await make_callable(code_obj, ns)())
 
 
 class TestUndelimitedContinuations(CevalTest):
@@ -312,8 +833,8 @@ class TestUndelimitedContinuations(CevalTest):
         Invoking a continuation from a nested koskari context (different eval
         token) raises KoskariContinuationApply in the nested context, which
         propagates upward through the Python awaitable chain until it reaches
-        the owning eval loop. The owning loop catches it via
-        eval_phase_post_opcode, matches the token, applies the continuation,
+        the owning eval loop. The owning loop catches it in its raise
+        ingress, matches the token, applies the continuation,
         and resumes normally. The result is the value passed to the
         continuation.
         """
@@ -468,7 +989,7 @@ class TestUndelimitedContinuations(CevalTest):
         A KoskariContinuationApply delivered into a suspended generator via
         asend.throw() reaches the unified RAISE ingress on the revive-throw
         path and is dispatched as a continuation signal: the generator's
-        local extents unwind through the cc-unwind plan (dyn-with __exit__
+        local extents unwind through the cc-unwind goal (dyn-with __exit__
         runs with no exception info) and the apply re-raises unchanged so it
         can travel onward to its owner.
         """

@@ -20,7 +20,7 @@ one whose topic has come up in your code.
 | [Bindings and refs](bindings-and-refs.md) | `var`, `def`, `let`, `set!`, shadowing; namespaces, bind versus store, ref, deref, resolve, unpack |
 | [References and storage indirection](references-and-storage-indirection.md) | Refs as location handles, `&`, writing through a ref, `bind!`, `take!`, dynamic refs |
 | [Data structures](data-structures.md) | Python containers, pairs, quote and quasiquote, symbols and keywords |
-| [Types and annotations](types-and-annotations.md) | `::` annotations, where they land, checking values at runtime |
+| [Types and annotations](types-and-annotations.md) | `::` annotations, where they are stored, checking values at runtime |
 
 ## Functions and control
 

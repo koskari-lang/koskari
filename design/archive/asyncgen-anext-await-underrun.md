@@ -114,7 +114,7 @@ Whatever the repair, the reproducer matrix is already written above:
 await-first single anext, yield-then-await second anext, plain-yield
 control, and the flattened/demand paths as no-regression pins. The
 mischaracterized note in tests/reproducers/test_demand_gen_await.py
-should be corrected when this lands.
+should be corrected when this is implemented.
 
 ## Resolution
 

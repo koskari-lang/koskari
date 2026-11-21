@@ -213,6 +213,42 @@ class TestTailCallExtentValidation(unittest.TestCase):
         self.assertIsInstance(code, Code)
 
 
+class TestAsideYieldsAndTailCalls(unittest.TestCase):
+    """
+    An aside is part of the code that runs it: that code yields where
+    the aside does, and a code that yields runs no aside that
+    tail-calls
+    """
+
+    def test_code_yields_where_its_aside_does(self):
+        aside = make([
+            [OpCode.CONST, None],
+            [OpCode.YIELD, 1],
+            [OpCode.RETURN, 1],
+        ])
+        code = make([
+            [OpCode.RESET, (0, aside, 0, 0)],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertTrue(aside.yields)
+        self.assertTrue(code.yields)
+
+    def test_yielding_code_refuses_an_aside_that_tail_calls(self):
+        aside = make([
+            [OpCode.CONST, None],
+            [OpCode.TAIL_CALL, 0],
+            [OpCode.RETURN, 1],
+        ])
+        with self.assertRaises(ValueError) as caught:
+            make([
+                [OpCode.RESET, (0, aside, 0, 0)],
+                [OpCode.YIELD, 1],
+                [OpCode.RETURN, 1],
+            ])
+        self.assertIn(
+            "cannot use TAIL_CALL family opcodes", str(caught.exception))
+
+
 class TestExtentStructureValidation(unittest.TestCase):
     """
     Every PUSH_* must be closed by its POP_* before the stream ends
@@ -226,6 +262,43 @@ class TestExtentStructureValidation(unittest.TestCase):
                 [OpCode.RETURN, 1],
             ])
         self.assertIn("unclosed extent", str(caught.exception))
+
+
+class TestForeachStepValidation(unittest.TestCase):
+    """
+    A for-each step belongs to a PUSH_FOREACH of the code it is in. An
+    aside is a code of its own, so a PUSH_FOREACH around the
+    instruction that runs the aside is not the step's
+    """
+
+    def test_step_in_an_aside_run_inside_a_foreach_is_refused(self):
+        with self.assertRaises(RuntimeError) as caught:
+            make([
+                [OpCode.ITER_NEXT, "done"],
+                [OpCode.LABEL, "done"],
+                [OpCode.RETURN, 1],
+            ])
+        self.assertIn(
+            "must be inside a PUSH_FOREACH block", str(caught.exception))
+
+    def test_foreach_inside_an_aside_builds(self):
+        aside = make([
+            [OpCode.CONST, ()],
+            [OpCode.PUSH_FOREACH, 0],
+            [OpCode.ITER_NEXT, "done"],
+            [OpCode.LABEL, "done"],
+            [OpCode.POP_FOREACH, 0],
+            [OpCode.CONST, None],
+            [OpCode.RETURN, 1],
+        ])
+        code = make([
+            [OpCode.CONST, ()],
+            [OpCode.PUSH_FOREACH, 0],
+            [OpCode.RESET, (0, aside, 0, 0)],
+            [OpCode.POP_FOREACH, 0],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
 
 
 # The end.

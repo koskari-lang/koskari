@@ -152,7 +152,7 @@ fail jumps to the next arm with the subject left in place:
 
 ```text
 TEST   (MATCH_CASE)         matched? → BIND, else → ADVANCE
-BIND   (MATCH_STORE_NAMES)  land the captures
+BIND   (MATCH_STORE_NAMES)  store the captures
 GUARD  (when / unless)      predicate holds? → COMMIT, else → ADVANCE
 COMMIT (body)               run it; the subject is consumed here
 ```

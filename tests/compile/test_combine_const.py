@@ -116,7 +116,7 @@ class TestCombineConst(unittest.TestCase):
         ])
 
     def test_process_packs_fold_products(self):
-        # the compare fold's CONST bool lands adjacent to another CONST
+        # the compare fold's CONST bool ends up adjacent to another CONST
         # and the final pack claims the pair
         out = process_ops([
             (C, "tag"),

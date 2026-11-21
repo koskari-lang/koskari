@@ -44,7 +44,7 @@ tuple, an optional keyword dict and a cached hash.
   opcode. A single value still rides as itself.
 - **Receivers** unpack a pack: `define-values`, `setq-values`,
   `let-values` and the loop targets read the pack's slots, keywords
-  landing by name as a formals apply does
+  stored by name as a formals apply does
   ([seq-values-kwargs-formals-apply.md](seq-values-kwargs-formals-apply.md)).
   A receiver fed a plain sequence keeps today's unpack.
 

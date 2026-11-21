@@ -230,7 +230,7 @@ def load_corpus_cases(records_dir=None, schema_path=None, root=None):
     for record_id in sorted(index):
         verify = index[record_id].get('verify') or {}
         for stage in sorted(verify):
-            if stage in ('invalid', 'warning'):
+            if stage in ('invalid', 'warning', 'gc_collect'):
                 continue
             cases.append((record_id, stage))
 
@@ -613,15 +613,21 @@ def verify_eval(case, expected):
     """
     Verify eval stage expectation for the bound corpus record
 
+    A record whose verify.gc_collect is true gets a full collection
+    after its eval, inside the warning capture, so a warning raised at
+    the finalization of something the eval dropped belongs to it.
+
     :param case: CorpusTestCase instance
     :param expected: verify.eval string
     """
 
     kind, payload = parse_eval_expected(expected)
+    collect = case.record['verify'].get('gc_collect') is True
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         got = case.eval_source(case.record['source'])
-        gc.collect()
+        if collect:
+            gc.collect()
     verify_eval_warnings(case, caught)
     if kind == 'marked':
         run_marked_eval_check(case, got, payload)

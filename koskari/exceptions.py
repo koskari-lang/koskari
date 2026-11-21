@@ -490,43 +490,47 @@ class KoskariContinuationError(KoskariException):
 
     The catch target for the whole category. Deliberately not a
     RuntimeError subclass: an overbroad except RuntimeError around a
-    continuation-using call must not silently swallow these
+    continuation-using call must not silently swallow these.
+    KoskariPromptUnreachable is the one member that is a RuntimeError
     """
 
-    def __init__(self, message, prompt_id=None, operation=None):
+    def __init__(self, message, tag=None, operation=None):
         super().__init__(message)
         self.message = message
-        self.prompt_id = prompt_id
+        self.tag = tag
         self.operation = operation
 
 
 @builtin("KoskariPromptNotFound")
 class KoskariPromptNotFound(KoskariContinuationError):
     """
-    No prompt matching the requested id exists on the dynamic chain.
+    No prompt with the requested tag exists on the dynamic chain.
 
     The construct in operation (shift) has no enclosing delimiter;
-    establish one. prompt_id identifies the delimiter the capture was
-    seeking, letting a library recognize a failure against its own
-    delimiter and leave foreign failures alone
+    establish one. tag is the prompt tag the capture was seeking,
+    compared by identity, letting a library recognize a failure against
+    its own delimiter and leave foreign failures alone
     """
 
     pass
 
 
 @builtin("KoskariPromptUnreachable")
-class KoskariPromptUnreachable(KoskariContinuationError):
+class KoskariPromptUnreachable(KoskariContinuationError, RuntimeError):
     """
-    A matching prompt exists but a crossed node denied capture.
+    A boundary stands between a capture and its target.
 
+    A matching prompt exists but a crossed node denied the capture.
     Adding a delimiter will not help; the region between the capture
     point and the delimiter must be restructured. boundary describes
-    the denying node (for example a generator boundary)
+    the denying node (for example a generator boundary, or the before
+    or after thunk of a dyn-wind in flight). Also a RuntimeError, as a
+    break outside a loop is
     """
 
-    def __init__(self, message, prompt_id=None, operation=None,
+    def __init__(self, message, tag=None, operation=None,
                  boundary=None):
-        super().__init__(message, prompt_id, operation)
+        super().__init__(message, tag, operation)
         self.boundary = boundary
 
 

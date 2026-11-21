@@ -27,7 +27,7 @@ Two invariants carry the design:
 - **A read creates nothing.** No step materializes a cell, and no default is
   ever written into a store. Reading a name cannot change what a later read
   sees, here or in any other context.
-- **A store with no enclosing extent lands in the root scope.** `parameterize`
+- **A store with no enclosing extent goes into the root scope.** `parameterize`
   is the only thing that writes the shadow table.
 
 Cross-context sharing therefore has exactly two sources: the root scope, which

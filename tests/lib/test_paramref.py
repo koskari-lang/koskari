@@ -95,9 +95,9 @@ class TestParamRefNoDomain(unittest.TestCase):
         with self.assertRaises(NameError):
             p.deref()
 
-    def test_store_no_domain_lands_in_thread_default(self):
+    def test_store_no_domain_goes_into_thread_default(self):
         """
-        store outside a with lands in the thread default's root scope
+        store outside a with goes into the thread default's root scope
         """
 
         p = ParamRef("paramref_no_domain_store", 0)
@@ -261,7 +261,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
 
     async def test_deref_default_does_not_store(self):
         """
-        A default answers the ref that declares it and never lands in a
+        A default answers the ref that declares it and never goes into a
         store, so a same-key ParamRef with no default of its own still
         raises NameError.
         """
@@ -313,7 +313,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("untouched", seen[1]["root"])
 
 
-    async def test_store_lands_in_root_scope(self):
+    async def test_store_goes_into_root_scope(self):
         """
         With no enclosing parameterize extent, a store creates its cell
         in the root scope rather than the context's shadow table.
@@ -341,7 +341,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
     async def test_parameter_fn_default_is_local_fallback(self):
         """
         parameter(name, default) is a value query: the fallback answers
-        the caller and never lands in the store. A later parameter(name)
+        the caller and never goes into the store. A later parameter(name)
         with no default still finds nothing.
         """
 

@@ -14,8 +14,9 @@
 """
 Tests for koskari.compile dyn-with special form.
 
-Multi-shot context manager: enter runs before body, exit runs after (or on
-exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
+Context manager: enter runs before body, exit runs after (or on
+exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. A continuation transfer runs
+its exit and enter.
 """
 
 import sys
@@ -180,8 +181,8 @@ class TestDynWithShiftUnwind(SpecialsTestCase):
 
     async def test_shift_result_delivery_runs_exit_once(self):
         """
-        a shift body completing inside a dyn-with delivers its value to
-        the reset and runs the manager's __exit__ exactly once
+        a shift's abort out of a dyn-with runs the manager's __exit__
+        exactly once, and the handler's value is the reset's
         """
 
         events = []
@@ -227,10 +228,9 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
 
     async def test_shift_result_delivery_awaits_exit(self):
         """
-        a shift body completing inside a dyn-with whose __aexit__
-        suspends leaves the transfer waiting on the node; the second
-        send finishes __aexit__ and delivers the shift result to the
-        reset
+        a shift's abort out of a dyn-with whose __aexit__ suspends
+        leaves the transfer waiting on the node; the second send
+        finishes __aexit__, and the handler's value is the reset's
         """
 
         events = []
@@ -287,7 +287,7 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
 class TestDynWithTransferWindReproducer(SpecialsTestCase):
     """
     Minimal reproducer: continuation invoke into a dyn-with body should
-    re-run __enter__ as part of the transfer plan wind step.
+    re-run __enter__ as the transfer goal enters the node.
     """
 
     async def test_enter_runs_on_transfer_into_dyn_with_body(self):
@@ -362,16 +362,16 @@ class TestDynWithTransferWindReproducer(SpecialsTestCase):
 class TestDynWithTransferFailures(SpecialsTestCase):
     """
     Failed transfer abandonment across dyn-with extents: when a transfer
-    plan wind step fails synchronously, local handler dispatch must honor
-    an async dyn-with exit on the manifested chain (suspend and complete
-    __aexit__) instead of dropping it.
+    goal's enter step fails synchronously, local handler dispatch must
+    honor an async dyn-with exit on the chain as the transfer left it
+    (suspend and complete __aexit__) instead of dropping it.
     """
 
     async def test_async_exit_completes_when_transfer_wind_step_fails(self):
         """
         Nested dyn-withs inside a try: the outer manager has async
         __aenter__/__aexit__, the inner manager's sync __enter__ raises on
-        transfer re-entry (a synchronous plan-step failure).  The abandon
+        transfer re-entry (a synchronous enter-step failure).  The abandon
         path must run the outer manager's async __aexit__ to completion
         before the enclosing try/except catches. The inner manager's
         __exit__ does not run: its __enter__ never returned.
@@ -485,7 +485,7 @@ class TestDynWithTransferFailures(SpecialsTestCase):
 class TestReenteredWithBindsItsOwnScope(SpecialsTestCase):
     """
     When a transfer re-enters a dyn-with, __enter__ runs while the
-    landed frame above the with is current. The result must bind into
+    attached frame above the with is current. The result must bind into
     the with's own scope, the namespace the with was pushed in, not the
     namespace that happens to be live at dyn_top.
     """

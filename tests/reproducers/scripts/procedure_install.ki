@@ -102,8 +102,8 @@ def async_partial []:
 
 
 ;; Python's list drives the map on the transform's own context, so k is
-;; applied outside the context that captured it: it grafts, delimiter
-;; included, onto the call site there.
+;; applied outside the context that captured it: it attaches a copy,
+;; prompt included, on the call site there.
 (def map_shift_boundary []
   (reset (* 2 (shift k (list (map k #[1 2]))))))
 

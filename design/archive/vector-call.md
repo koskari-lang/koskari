@@ -1,7 +1,7 @@
 # Vectorcall Integration Design
 
 **Status**: implemented, then superseded. The borrowed-window call path
-landed, and the per-handler sequence below was later replaced by the shared
+was implemented, and the per-handler sequence below was later replaced by the shared
 call core `kos_call_invoke` and `kos_op_call_star` (`eval/eval_call.c`,
 `eval.c`); the TAIL_CALL handlers are now aliases of their CALL twins. The
 stack layout section remains accurate; the rest is historical.

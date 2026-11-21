@@ -128,6 +128,25 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(nspec.local_syms, ("a", "b", "foo", "bar"))
         self.assertEqual(nspec.closure_syms, ())
 
+    async def test_namespace_spec_base_leading_with_formals(self):
+        """FormalsSpec.namespace_spec() of a base whose locals lead with
+        the formals is that base"""
+
+        fspec = FormalsSpec(("a",), None, ("b",), ("k",), "args", "kwargs")
+        base = NamespaceSpec(
+            "<ns>", ("a", "b", "args", "k", "kwargs", "foo"), ("c",))
+        self.assertIs(fspec.namespace_spec(base), base)
+
+    async def test_namespace_spec_base_in_another_order(self):
+        """FormalsSpec.namespace_spec() of a base holding the formals in
+        another order lays the formals out first"""
+
+        fspec = FormalsSpec(("a", "b"))
+        base = NamespaceSpec("<ns>", ("b", "a", "foo"), ())
+        nspec = fspec.namespace_spec(base)
+        self.assertIsNot(nspec, base)
+        self.assertEqual(nspec.local_syms, ("a", "b", "foo"))
+
     async def test_namespace_spec_with_star(self):
         """FormalsSpec.namespace_spec() includes star args"""
 

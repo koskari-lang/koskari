@@ -144,7 +144,8 @@ static int test_formals_spec_refcount(void) {
       Test that FormalsSpec properly manages reference counts.
 
       PySequence_Tuple on a tuple returns the same tuple with incremented
-      refcount, so our original pos gets retained by the FormalsSpec.
+      refcount, so our original pos gets retained by the FormalsSpec,
+      and again by the defaults-free Formals the spec builds and shares.
     */
     PyObject *pos = Py_BuildValue("(ss)", "x", "y");
     TEST_ASSERT_NOT_NULL(pos, "create pos tuple");
@@ -154,8 +155,9 @@ static int test_formals_spec_refcount(void) {
                                          NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec");
 
-    /* FormalsSpec retains the tuple, so refcount should be incremented */
-    TEST_ASSERT_EQ(Py_REFCNT(pos), initial_refcnt + 1, "pos refcount incremented");
+    /* the spec holds the tuple, and so does its shared Formals */
+    TEST_ASSERT_EQ(Py_REFCNT(pos), initial_refcnt + 2,
+                   "pos refcount incremented twice");
 
     Py_DECREF(fspec);
 

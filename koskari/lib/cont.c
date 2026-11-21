@@ -161,8 +161,9 @@ static int continuation_raise_apply(
 
 /**
    call_call_continuation: callable and resume_val are borrowed (we
-   INCREF resume_val; we own that ref only).  Plan INCREFs callable on
-   same-evaluator path; handler releases callable and args.
+   INCREF resume_val; we own that ref only).  On the invoke path the
+   transfer goal takes its own references to callable and resume_val
+   (kos_xfer_goal_new); handler releases callable and args.
 */
 static KosOpResult call_call_continuation(
     KosContext *ctx,
@@ -184,7 +185,7 @@ static KosOpResult call_call_continuation(
   }
 
   /* Undelimited: check liveness before apply or raise. */
-  if (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED) {
+  if (! KosContinuation_DELIMITED(k)) {
     PyObject *token_ref = KosContinuation_TOKEN_REF(k);
     int target_dead = 0;
     if (! token_ref) {
@@ -206,22 +207,19 @@ static KosOpResult call_call_continuation(
     }
   }
 
-  /* Delimited: two-path invoke on the current chain, whatever context
-   * captured it. In-place resume when the capture-time prompt is live
-   * in ancestry; otherwise the push model grafts a clone of the
-   * template, delimiter included, onto the call site. Both return to
-   * the call site on POP_PROMPT. Undelimited on a foreign context goes
-   * to its owner through KoskariContinuationApply below. */
+  /* Delimited: invoke on the current chain, whatever context captured
+   * it. Every invoke attaches a fresh clone of the template, prompt
+   * included, onto the call site, and the copy of the reset's body
+   * returns to the call site as a call does. Undelimited on a foreign
+   * context goes to its owner through KoskariContinuationApply below. */
 
   if (KosPyDelimitedContinuation_Check(callable)
       || KosContinuation_TOKEN_REF(k)
           == (PyObject *) KosContext_Token(ctx)) {
-    if (kos_invoke_continuation(ctx, k, resume_val, callable) < 0) {
-      Py_DECREF(resume_val);
-      return EVAL_RAISE();
-    }
+    KosOpResult r = kos_call_continuation(ctx, k, resume_val, callable);
+
     Py_DECREF(resume_val);
-    return EVAL_NORMAL();
+    return r;
   }
 
   (void) continuation_raise_apply(

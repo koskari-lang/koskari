@@ -65,7 +65,7 @@ class TestWebhookReply [SchedulerAsyncTestCase]:
         var row (self.js.store.get-run runid)
         (self.assertEqual (item row "status") "running")
 
-        ;; release and drain, then it lands success with its log captured --
+        ;; release and drain, then it finishes as success with its log captured --
         ;; proving the capture buffer moved into the task's own context
         (gate.set)
         (await (asyncio.gather *: (list self.js._inflight)))

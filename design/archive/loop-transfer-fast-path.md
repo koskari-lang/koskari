@@ -122,7 +122,7 @@ node. Two routes to a single-dispatch step:
 The first route is small and local; the second is where the
 electors work is already headed. The recommendation is to take the
 first as the measurable step and let the second replace it when the
-FOREACH elector lands.
+FOREACH elector is implemented.
 
 ### 3. Result handling
 

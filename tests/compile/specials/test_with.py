@@ -14,7 +14,7 @@
 """
 Tests for koskari.compile with special form.
 
-Single-shot context manager: enter runs before body, exit runs after (or on
+Local context manager: enter runs before body, exit runs after (or on
 exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
 (auto-await).
 """

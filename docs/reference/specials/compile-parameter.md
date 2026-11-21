@@ -14,7 +14,7 @@ expression is compiled and `PARAM` is emitted with a count of 1, so the stacked
 value answers a miss.
 
 **Defaults declare, they do not store.** The `DEFAULT` answers this read site
-only. It never lands in a parameter store, so it cannot change what any other
+only. It never goes into a parameter store, so it cannot change what any other
 read sees.
 
 **Examples:**

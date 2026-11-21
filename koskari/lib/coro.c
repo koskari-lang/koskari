@@ -1069,7 +1069,7 @@ static KosOpResult coroutine_splice(KosContext *ctx, KosCoroutine *coro) {
    The await suite's kind: the coroutine's chain, in whatever state it
    is, continues under the await frame. Not started, its prepared frame
    replaces the await frame, as a tail call's does, and its return
-   lands where the await's value would; the await frame was pushed
+   is delivered where the await's value would; the await frame was pushed
    uncounted, so the room for the program is checked here, at the
    frame's own depth, and a refusal releases the taken frame to its
    function's cache with the coroutine finished, as CPython's is when

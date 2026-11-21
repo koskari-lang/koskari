@@ -680,4 +680,4 @@ centralizes the write.
 | 2026-04-27 | Third pass: TOC, glossary, Appendix B, IN_TRANSFER vs ArmTransferPlan, naming alignment, phase ordering (**C** after **B1**), removed redundant **`LeaveTransfer`** from public §10.2 |
 | 2026-04-27 | Fourth pass: §10 **Current / New / refactor** tables; **`KReturnDelimited`** (§10.12), **`TailKoscallReplaceFrame`** (§10.13), opcode plan builders §10.14; **`DisarmTransferPlan`** ↔ **`clear_and_free_transfer_plan`**. |
 | 2026-05-26 | Cross-link: [eval-state-live-authority.md](../interpreter/eval-state-live-authority.md) (choke-point funnel, parity constraints; orthogonal to opcode `ctx` macro migration). |
-| 2026-05-26 | §1.3: incremental Tier-1 retarget landed; Tier 2 rebuild deferred per live-authority Phase 2. |
+| 2026-05-26 | §1.3: incremental Tier-1 retarget implemented; Tier 2 rebuild deferred per live-authority Phase 2. |

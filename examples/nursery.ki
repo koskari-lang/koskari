@@ -351,7 +351,7 @@ def demo-timeout []:
 
     (print f"    elapsed: {(watch.split):.2f}s")
 
-    ; The "slow-N cancelled" lines land AFTER this one. wait_for cancels
+    ; The "slow-N cancelled" lines appear AFTER this one. wait_for cancels
     ; the awaitable it wrapped, which cancels the nursery's own join
     ; before the join can drain its children -- so the timeout returns
     ; while the cleanup is still in flight. A real cancel scope is an

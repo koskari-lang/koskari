@@ -216,7 +216,7 @@ The `KosDomain` object keeps one piece of parameter state: `base_refs`
 - **Post-return observation**: Python reads results through the same
   shared refs after Koskari returns. The contract narrows in one
   documented way: a parameter **first created inside** a Koskari context
-  lands in that context's dict and is not visible to Python afterward.
+  goes into that context's dict and is not visible to Python afterward.
   Refs that existed in `base_refs` when the root context copied are the
   channel; pre-define what you intend to observe.
 

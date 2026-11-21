@@ -145,7 +145,7 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         """
         The awaiter suspends on the value the parked coroutine handed
         its driver, and the awaiter's driver completes that await: the
-        result lands at the coroutine's suspend point and its return is
+        result is delivered at the coroutine's suspend point and its return is
         the awaiter's value
         """
 
@@ -200,7 +200,7 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done.exception.value, "inner")
 
 
-    def test_throw_from_the_awaiters_driver_lands_at_the_suspend_point(self):
+    def test_throw_from_the_awaiters_driver_arrives_at_the_suspend_point(self):
         mod = asyncio.run(self.load_module())
         c = mod.wait_guarded()
         self.assertEqual(c.send(None), "suspended")

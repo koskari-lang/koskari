@@ -366,7 +366,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 ## References
 
 - [execution-invariants.md](../interpreter/execution-invariants.md): Koskari execution model and boundary semantics
-- [callcc.md](../interpreter/callcc.md): Continuation capture and transfer
+- [callcc.md](callcc.md): Continuation capture and transfer
 - [evaluator-token-continuation.md](../interpreter/evaluator-token-continuation.md): Evaluator token and context ownership
 - [bytecode.md](../interpreter/bytecode.md): Bytecode format; [OPCODES.md](../OPCODES.md): Opcode catalog (PARAM, PUSH_PARAM, POP_PARAM to be added)
 - [language/special-forms.md](../language/special-forms.md): Special forms (parameterize will extend this)

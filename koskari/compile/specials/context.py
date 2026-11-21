@@ -145,7 +145,8 @@ def emit_with(compiler, called_by, binding, body, push_op, pop_op):
 @special("compile/with", patterns=_WITH_PATTERNS, unpack="kwargs")
 def special_with(compiler, called_by, binding, body):
     """
-    Compile (compile/with [name? expr] BODY...). Single-shot context manager
+    Compile (compile/with [name? expr] BODY...). Context manager local to
+    its body: a continuation transfer runs neither exit nor enter.
     """
 
     return emit_with(
@@ -156,8 +157,8 @@ def special_with(compiler, called_by, binding, body):
 @special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="kwargs")
 def special_dyn_with(compiler, called_by, binding, body):
     """
-    Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
-    that participates in transfer plans (exit on unwind, enter on wind).
+    Compile (compile/dyn-with [name? expr] BODY...). Context manager that
+    a continuation transfer runs (exit on unwind, enter on wind).
     """
 
     return emit_with(

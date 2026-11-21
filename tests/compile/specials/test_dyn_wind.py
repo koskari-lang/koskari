@@ -14,13 +14,14 @@
 """
 Tests for koskari.compile dyn-wind special form.
 
-Dynamic-wind runs before/after thunks on extent entry and exit.
+Dynamic-wind runs before/after segments on extent entry and exit.
 """
 
 
 import pytest
 
-from koskari.lib import OpCode
+from koskari.exceptions import SpecialError
+from koskari.lib import Code, OpCode
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -220,16 +221,51 @@ class TestDynWindSpecial(SpecialsTestCase):
         self.assertEqual(log, ["before", "body", "after"])
 
 
-    async def test_falsy_before_is_a_thunk_not_an_absence(self):
+    async def test_falsy_before_is_a_segment_not_an_absence(self):
         """
         A falsy literal in the before position is an expression the
-        thunk returns, so both thunks are pushed
+        segment returns, so the PUSH_WIND carries both segments
         """
 
         code = self.compile_to_code("(dyn-wind 0 (b) (c))")
-        ops = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertEqual(ops.count(OpCode.BUILD_FUNCTION), 2)
-        self.assertEqual(ops.count(OpCode.PUSH_WIND), 1)
+        rows = [
+            code.extra_tuple(arg)
+            for op, arg in map(code.oparg, range(code.length()))
+            if op == OpCode.PUSH_WIND]
+        self.assertEqual(len(rows), 1)
+        before, after = rows[0][:2]
+        self.assertIsInstance(code.constants_pool[before], Code)
+        self.assertIsInstance(code.constants_pool[after], Code)
+
+
+    async def test_segment_var_is_the_enclosing_scope_name(self):
+        """
+        A var written in a segment declares a name of the scope the
+        dyn-wind is written in, so the code after the wind reads it
+        """
+
+        expr, mod = self.compile_expr(
+            "(begin (dyn-wind (var seen 1) 0 []) seen)")
+        self.assertEqual(1, await expr())
+
+
+    async def test_return_in_a_segment_ends_the_segment(self):
+        expr, mod = self.compile_expr("(dyn-wind (return 5) 1 nil)")
+        self.assertEqual(1, await expr())
+
+
+    async def test_break_in_a_segment_does_not_reach_a_loop(self):
+        expr, mod = self.compile_expr(
+            "(while True (dyn-wind (break 9) 0 nil))")
+        with self.assertRaises(RuntimeError) as caught:
+            await expr()
+        self.assertEqual("break outside loop", str(caught.exception))
+
+
+    async def test_yield_in_a_segment_is_refused(self):
+        with self.assertRaises(SpecialError) as caught:
+            self.compile_expr("(lambda [] (dyn-wind (yield 1) 0 []))")
+        self.assertIn("before cannot yield", str(caught.exception))
 
 
     async def test_dyn_wind_body_value_is_expression_result(self):
@@ -283,16 +319,16 @@ class TestDynWindSpecial(SpecialsTestCase):
 class TestDynWindContinuations(SpecialsTestCase):
     """
     Tests for interactions between dyn-wind and let/cc.
-    These exercise the interrupted-transfer machinery: when a wind thunk
-    invokes a continuation while an outer transfer plan is already active,
-    the outer plan must be suspended, the inner transfer must complete, and
-    then the outer plan must be replanned and finished.
+    These exercise nested transfer goals: a wind thunk that invokes a
+    continuation while an outer goal waits on it pushes an inner goal,
+    and the outer goal is retired when the inner's leave unlinks the
+    node the outer waits on.
     """
 
     async def test_after_thunk_fires_on_continuation_caused_unwind(self):
         """
         When a continuation captured outside a dyn-wind is invoked from
-        inside the body, the after-thunk runs before the continuation lands.
+        inside the body, the after-thunk runs before the continuation attaches.
         """
 
         log = []
@@ -318,7 +354,7 @@ class TestDynWindContinuations(SpecialsTestCase):
         """
         Invoking a second continuation from a dyn-wind after-thunk that an
         outer transfer is running supersedes that transfer: the inner
-        continuation lands, the chain it replaced included the outer
+        continuation is attached, the chain it replaced included the outer
         transfer's target, and the outer never delivers its value. The
         program's value is the inner continuation's.
         """
@@ -339,8 +375,8 @@ class TestDynWindContinuations(SpecialsTestCase):
     async def test_continuation_invoked_from_before_thunk_during_transfer(self):
         """
         Invoking an escape continuation from a dyn-wind before-thunk (which
-        fires on re-entry during a transfer plan) also exercises the interrupted
-        transfer path.  The escape wins and the outer transfer is replanned.
+        fires on re-entry during a transfer) also exercises nested transfer
+        goals.  The escape wins and the outer transfer is retired.
         """
 
         log = []
@@ -371,7 +407,7 @@ class TestDynWindContinuations(SpecialsTestCase):
 class TestDynWindTransferWindReproducer(SpecialsTestCase):
     """
     Minimal reproducer: continuation invoke into a dyn-wind body should
-    re-run the before-thunk as part of the transfer plan wind step.
+    re-run the before-thunk as the transfer goal enters the node.
     """
 
     async def test_before_thunk_runs_on_transfer_into_dyn_wind_body(self):
@@ -528,9 +564,9 @@ class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
 
 class TestDynWindTransferFailures(SpecialsTestCase):
     """
-    Failed transfer abandonment: when a transfer plan step raises during
-    dyn-wind before-thunk execution, the plan nest is abandoned and the
-    exception is dispatched through try/except on the manifested chain.
+    Failed transfer abandonment: when a dyn-wind before-thunk raises
+    during a transfer, the transfer is abandoned and the exception is
+    dispatched through try/except on the chain as the transfer left it.
     """
 
     async def test_try_except_catches_python_error_in_before_thunk_during_transfer(

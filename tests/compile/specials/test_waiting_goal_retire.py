@@ -15,7 +15,7 @@
 tests.compile.specials.test_waiting_goal_retire
 
 A delimited invoke made from inside a wind thunk that an earlier invoke
-is entering leaves the earlier invoke waiting. Each landing settles
+is entering leaves the earlier invoke waiting. Each attachment settles
 which waiting invokes are still live, so a run of nested invokes that
 leaves one more waiting per pass must cost the same per pass however
 many are waiting.
@@ -71,7 +71,7 @@ class Bound(Exception):
 class TestWaitingGoalRetire(SpecialsTestCase):
     """
     Every pass re-enters the cloned wind's before-thunk, which invokes k
-    again: the invoke entering that wind waits while the new one lands
+    again: the invoke entering that wind waits while the new one attaches
     above it, so after p passes p - 1 invokes wait
     """
 
@@ -91,7 +91,7 @@ class TestWaitingGoalRetire(SpecialsTestCase):
         "the frame depth cap is below the passes the timing needs")
     async def test_cost_per_pass_does_not_grow_with_waiting_invokes(self):
         """
-        Four times the passes takes about four times as long. A landing
+        Four times the passes takes about four times as long. An attachment
         that visited every waiting invoke would take sixteen times as
         long, and one that walked the chain to each of them sixty-four
         times

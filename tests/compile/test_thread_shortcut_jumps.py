@@ -13,8 +13,8 @@
 
 """
 Tests for the short-circuit jump threading pass of the bytecode
-processor: a JUMP_AND or JUMP_OR whose label lands on a conditional
-jump becomes the jump that landing performs on the value the
+processor: a JUMP_AND or JUMP_OR whose label leads to a conditional
+jump becomes the jump that destination performs on the value the
 short-circuit jump pushes, and only labels the pass orphans are dropped
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -62,16 +62,16 @@ def thread(instr):
     return proc.instructions
 
 
-class TestLandings(unittest.TestCase):
+class TestDestinations(unittest.TestCase):
     """
-    The eight landings: each short-circuit jump becomes the landing's
-    jump on the value it pushes, to the landing's target when the
-    outcome is the same jump, and to the landing's fall-through when
+    The eight destinations: each short-circuit jump becomes the destination's
+    jump on the value it pushes, to the destination's target when the
+    outcome is the same jump, and to the destination's fall-through when
     the pushed value would fall through
     """
 
 
-    def test_and_lands_on_jump_false(self):
+    def test_and_reaches_jump_false(self):
         out = thread([
             (V, "a"), (JA, "done"),
             (V, "b"),
@@ -88,7 +88,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_and_lands_on_jump_true(self):
+    def test_and_reaches_jump_true(self):
         out = thread([
             (V, "a"), (JA, "done"),
             (V, "b"),
@@ -105,7 +105,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_and_lands_on_jump_and(self):
+    def test_and_reaches_jump_and(self):
         out = thread([
             (V, "a"), (JA, "inner"),
             (V, "b"),
@@ -122,7 +122,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_and_lands_on_jump_or(self):
+    def test_and_reaches_jump_or(self):
         out = thread([
             (V, "a"), (JA, "inner"),
             (V, "b"),
@@ -139,7 +139,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_or_lands_on_jump_true(self):
+    def test_or_reaches_jump_true(self):
         out = thread([
             (V, "a"), (JO, "done"),
             (V, "b"),
@@ -156,7 +156,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_or_lands_on_jump_false(self):
+    def test_or_reaches_jump_false(self):
         out = thread([
             (V, "a"), (JO, "done"),
             (V, "b"),
@@ -173,7 +173,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_or_lands_on_jump_or(self):
+    def test_or_reaches_jump_or(self):
         out = thread([
             (V, "a"), (JO, "inner"),
             (V, "b"),
@@ -190,7 +190,7 @@ class TestLandings(unittest.TestCase):
         ])
 
 
-    def test_or_lands_on_jump_and(self):
+    def test_or_reaches_jump_and(self):
         out = thread([
             (V, "a"), (JO, "inner"),
             (V, "b"),
@@ -209,7 +209,7 @@ class TestLandings(unittest.TestCase):
 
 class TestChains(unittest.TestCase):
     """
-    A nested form threads once its inner landing has been rewritten
+    A nested form threads once its inner destination has been rewritten
     """
 
 
@@ -297,7 +297,7 @@ class TestChains(unittest.TestCase):
         ])
 
 
-    def test_landing_on_a_self_loop_terminates(self):
+    def test_arriving_at_a_self_loop_terminates(self):
         instr = [
             (V, "a"),
             (L, "top"), (JA, "top"),
@@ -389,10 +389,10 @@ class TestLabels(unittest.TestCase):
         ])
 
 
-class TestLandingSearch(unittest.TestCase):
+class TestDestinationSearch(unittest.TestCase):
     """
-    The landing is the first instruction after the label that is not
-    POSITION, NOOP or LABEL; any landing that is not a conditional jump
+    The destination is the first instruction after the label that is not
+    POSITION, NOOP or LABEL; any destination that is not a conditional jump
     leaves the jump alone
     """
 
@@ -414,7 +414,7 @@ class TestLandingSearch(unittest.TestCase):
         ])
 
 
-    def test_value_consumer_landing_stays(self):
+    def test_value_consumer_destination_stays(self):
         # (f (and a b))
         instr = [
             (V, "f"),
@@ -425,7 +425,7 @@ class TestLandingSearch(unittest.TestCase):
         self.assertEqual(thread(instr), instr)
 
 
-    def test_pop_landing_stays(self):
+    def test_pop_destination_stays(self):
         instr = [
             (V, "a"), (JO, "done"),
             (V, "b"),
@@ -434,7 +434,7 @@ class TestLandingSearch(unittest.TestCase):
         self.assertEqual(thread(instr), instr)
 
 
-    def test_return_landing_stays(self):
+    def test_return_destination_stays(self):
         instr = [
             (V, "a"), (JA, "done"),
             (V, "b"),
@@ -443,7 +443,7 @@ class TestLandingSearch(unittest.TestCase):
         self.assertEqual(thread(instr), instr)
 
 
-    def test_label_landing_threads_through(self):
+    def test_label_destination_threads_through(self):
         out = thread([
             (V, "a"), (JA, "done"),
             (V, "b"),
@@ -483,14 +483,14 @@ class TestLandingSearch(unittest.TestCase):
         self.assertEqual(thread(instr), instr)
 
 
-class TestNotLanding(unittest.TestCase):
+class TestNotDestination(unittest.TestCase):
     """
-    A landing OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
+    A destination OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
     as the opposite jump
     """
 
 
-    def test_and_behind_not_lands_on_jump_false(self):
+    def test_and_behind_not_reaches_jump_false(self):
         # (if (not (and a b)) 1 2): a falsy a takes the then branch
         out = thread([
             (V, "a"), (JA, "done"),
@@ -508,7 +508,7 @@ class TestNotLanding(unittest.TestCase):
         ])
 
 
-    def test_or_behind_not_lands_on_jump_false(self):
+    def test_or_behind_not_reaches_jump_false(self):
         # (if (not (or a b)) 1 2): a truthy a takes the else branch
         out = thread([
             (V, "a"), (JO, "done"),
@@ -526,7 +526,7 @@ class TestNotLanding(unittest.TestCase):
         ])
 
 
-    def test_and_behind_not_lands_on_jump_true(self):
+    def test_and_behind_not_reaches_jump_true(self):
         out = thread([
             (V, "a"), (JA, "done"),
             (V, "b"),
@@ -577,7 +577,7 @@ class TestNotLanding(unittest.TestCase):
         self.assertEqual(thread(instr), instr)
 
 
-    def test_plain_jump_landing_stays(self):
+    def test_plain_jump_destination_stays(self):
         instr = [
             (V, "a"), (JA, "done"),
             (V, "b"),

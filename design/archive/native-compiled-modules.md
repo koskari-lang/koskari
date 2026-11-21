@@ -269,7 +269,7 @@ What it does not touch: the cost the churn work identified as dominant on
 the method-call path -- frame + namespace allocation per call -- and
 PyObject boxing generally. Koskari code is call-heavy, segments are short,
 and every call still round-trips the trampoline. Realistic code likely
-sees single-digit to ~20%; CPython's copy-and-patch JIT landing at ~5-10%
+sees single-digit to ~20%; CPython's copy-and-patch JIT arriving at ~5-10%
 initially is the sobering comparable. If the motivation were only startup
 time, plain `.kio` caching is the cheap 80%.
 
@@ -388,7 +388,7 @@ stack cache, a per-emitted-function choice unrelated to the handler signature.
 **The joint decision: one handler signature.** Phase 1 changes the opcode
 handler signature from `(KosEvalState *es, KosOp *insn)` to
 `(KosEvalState *es, KosSlot *cur)`. The capsule table's element type and the
-emitter's generated calls must match whatever phase 1 lands. The `(es, insn)`
+emitter's generated calls must match whatever phase 1 implements. The `(es, insn)`
 snippets in "The compilation model" and "What already exists" above, and the
 `KosNativeHandlerFn`-adjacent references, are written against the pre-phase-1
 signature and are updated to the slot form once phase 1 settles it. Deciding

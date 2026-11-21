@@ -130,7 +130,7 @@ static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
 /* struct _ceval_state and struct _is prefixes:
    https://github.com/python/cpython/blob/v3.11.0/Include/internal/pycore_interp.h */
 /* The pending-calls record through async_exc. Its leading lock gives
-   the struct the pointer alignment the real one has, so it lands at
+   the struct the pointer alignment the real one has, so it sits at
    the same offset after the interpreter prefix's final _Bool. */
 typedef struct {
   int recursion_limit;

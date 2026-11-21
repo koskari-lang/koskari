@@ -172,8 +172,6 @@ with examples, see [Guide](../guide/index.md).
 **thunk**
 : Brace syntax `{ ... }` for a short anonymous function with inferred formals
   (`%1`, `%2`, ...); expands to [compile/gensym-thunk](specials/compile-gensym-partial.md).
-  Dyn-wind before/after bodies are also described as null-arity thunks in
-  [compile/dyn-wind](specials/compile-dyn-wind.md).
 
 **unpack**
 : Assign several names from one value using a list pattern (including `*:` rest).

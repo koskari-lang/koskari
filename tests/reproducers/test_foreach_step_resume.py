@@ -88,7 +88,7 @@ class TestForeachStepResume(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([0, 1, 2],
                          await ns['collect_source'](py_async_source(3)))
 
-    async def test_end_lands_on_the_else_clause(self):
+    async def test_end_reaches_the_else_clause(self):
         ns = await self.load()
         self.assertEqual([0, 1, "end"], await ns['collect_else'](2))
 

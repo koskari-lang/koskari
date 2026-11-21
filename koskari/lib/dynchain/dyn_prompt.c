@@ -15,8 +15,9 @@
 
 
 /**
-  Included by dynchain.c. The KOS_DYN_PROMPT node: the reset delimiter
-  owning its region's operand segment.
+  Included by dynchain.c. The KOS_DYN_PROMPT node: the reset delimiter.
+  The frame called on it, the reset's body or a shift's handler, ends
+  it when it returns.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -26,13 +27,11 @@
 
 
 /**
-   Allocate PROMPT delimiter owning the delimited region's operand-stack
-   block. The region's operands live in that block, so dropping the node
-   leaves the parent block at the depth it had on entry, and capture takes
-   the region's operands without needing to know where they start.
+   Allocate a PROMPT delimiter. It owns no operands: the region's are
+   in the frames above it, the reset's body first among them.
    Callers: kos_dyn_push_prompt.
 */
-KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
+KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
 
   KosDynPrompt *prompt = kos_dynnode_alloc();
   if (! prompt)
@@ -40,43 +39,14 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER);
-  KosDynPrompt_ID(prompt) = prompt_id;
-  KosDynPrompt_POP_PC(prompt) = NULL;
-  kos_dynnode_use_inline_segment((KosDynNode *) prompt);
+  KosDynPrompt_TAG(prompt) = Py_XNewRef(tag);
   return prompt;
 }
 
 
 /**
-   Allocate a fresh invocation-prompt instance for an in-place delimited
-   invoke: the delimiter the resumed slice runs under, per Danvy/Filinski
-   (k = lambda x. <E[x]> -- every invocation re-delimits). Born without
-   a stack block; the in-place invoke gives it a copy of the live
-   prompt's pending operands, so the slice resumes over the region's
-   own operands and POP_SHIFT resolves to this instance. No pop_pc --
-   completion routes through the paired DELIM (KOS_DYNF_INVOCATION),
-   never through a POP_PROMPT resume. Its own node id, not the live prompt's.
-   Callers: kos_delimited_invoke_inplace.
-*/
-static KosDynPrompt *kos_dynprompt_new_invocation(
-    KosDynNode *parent,
-    uint32_t prompt_id) {
-
-  KosDynPrompt *prompt = kos_dynnode_alloc();
-  if (! prompt)
-    return NULL;
-
-  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
-                   KOS_DYN_CAP_BARRIER);
-  KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
-  KosDynPrompt_ID(prompt) = prompt_id;
-  KosDynPrompt_POP_PC(prompt) = NULL;
-  return prompt;
-}
-
-
-/**
-   Clone prompt id for captured segments.
+   Clone a prompt for captured segments: the same tag, by a reference
+   of its own.
 */
 static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
@@ -86,52 +56,50 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! clone)
     return NULL;
 
-  KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
-  KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
+  KosDynPrompt_TAG(clone) = Py_XNewRef(KosDynPrompt_TAG(prompt));
   return clone;
 }
 
 
 /**
-   Return node to freelist.
+   Release the tag and return the node to the freelist.
 */
 void kos_dynprompt_free(KosDynPrompt *prompt) {
   if (! prompt)
     return;
 
+  Py_CLEAR(KosDynPrompt_TAG(prompt));
   kos_dynnode_return_to_freelist((KosDynNode *) prompt);
 }
 
 
 static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 
-  if (snapshot_set_uint(data, "prompt_id",
-                        KosDynPrompt_ID((KosDynPrompt *) node)) < 0)
-    return -1;
-  return 0;
+  return snapshot_set_obj(data, "tag",
+                          KosDynPrompt_TAG((KosDynPrompt *) node));
 }
 
 
 /**
-   Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
+   Push a prompt as dyn_top. A prompt owns no segment and introduces
+   no namespace, so no live register moves: the push is the link and
+   the namespace fill every non-frame node carries, a reference to the
+   live one. tag is consumed: the prompt holds the caller's reference.
+   Callers: opcode RESET. Returns the prompt, or NULL with PyErr set.
 */
-KosDynPrompt *kos_dyn_push_prompt(
-    KosContext *ctx,
-    uint32_t prompt_id,
-    KosOp *pop) {
+KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, PyObject *tag) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
-  if (! prompt)
-    return NULL;
-
-  KosDynPrompt_POP_PC(prompt) = pop;
-
-  if (kos_dyn_push(ctx, (KosDynNode *) prompt) < 0) {
-    kos_dynprompt_free(prompt);
+  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), NULL);
+  if (! prompt) {
+    Py_XDECREF(tag);
     return NULL;
   }
 
+  KosDynPrompt_TAG(prompt) = tag;
+  KosDynNode_NS((KosDynNode *) prompt) =
+      Py_XNewRef(KosContext_NAMESPACE(ctx));
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) prompt;
   return prompt;
 }
 
@@ -161,13 +129,10 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
 
 
 /**
-   GC traverse a KOS_DYN_PROMPT: nothing beyond the base node; the generic
-   traverse already covers the owned segment.
+   GC traverse a KOS_DYN_PROMPT: the tag. A prompt owns no segment.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  (void) node;
-  (void) visit;
-  (void) arg;
+  Py_VISIT(KosDynPrompt_TAG(node));
   return 0;
 }
 

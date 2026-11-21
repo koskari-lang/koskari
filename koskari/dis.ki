@@ -389,6 +389,11 @@ def _format_arg [code op_style arg cpool local_names closure_names
                 (_format_opcount val)
               case [OpStyle.LABEL]:
                 f"-> {val}"
+              case [OpStyle.ASIDE OpStyle.ASIDE_NS]:
+                if (is val None):
+                  "no aside"
+                else:
+                  f"aside c#{val}"
               else:
                 (str val)
 

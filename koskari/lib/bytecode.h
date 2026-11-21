@@ -119,7 +119,24 @@ typedef enum KosOpStyle {
       of stack operands, which is COUNT */
   KOSTYLE_RAW,
 
+  /** field is an aside: a pool constant that is a Code, which the
+      instruction runs in a frame of its own with no function around
+      it, over the namespace live at the instruction; the Code's spec
+      is that scope's. A field of PUSH_WIND may carry None instead,
+      for no aside: hardened, it is NULL. */
+  KOSTYLE_ASIDE,
+
+  /** field is an aside the instruction runs over a namespace built
+      from the Code's spec, its closure names resolved from the
+      namespace live at the instruction */
+  KOSTYLE_ASIDE_NS,
+
 } KosOpStyle;
+
+
+/** Whether a field kind holds an aside */
+#define KOSTYLE_IS_ASIDE(fk)                    \
+  ((fk) == KOSTYLE_ASIDE || (fk) == KOSTYLE_ASIDE_NS)
 
 
 /** Compose/decode a KOSTYLE_OPCOUNT value: operator selector + reduce count. */
@@ -221,9 +238,10 @@ typedef struct KosCacheSlot KosCacheSlot;
    OPCOUNT, CMP, CMPSRC, STAR, and OPERAND; ``obj`` for CONST and VAR,
    the pool object, borrowed (the cpool keeps it alive for the life of
    the code); ``target`` for LABEL, the target record, whose own pc
-   names the index. Resolved at finalize and on every load, never
-   serialized: soften recovers a constant's index by identity against
-   the pool and a label's pc off the target.
+   names the index. An ASIDE field is read through ``obj`` too: the
+   aside's Code, or NULL for no aside. Resolved at finalize and on
+   every load, never serialized: soften recovers a constant's index by
+   identity against the pool and a label's pc off the target.
    See design/archive/resolved-operands.md.
 */
 typedef union KosExtraField {
@@ -246,6 +264,7 @@ typedef struct KosExtra {
 #define KosExtra_IMM(row, i)     ((row)->f[i].imm)
 #define KosExtra_OBJ(row, i)     ((row)->f[i].obj)
 #define KosExtra_TARGET(row, i)  ((row)->f[i].target)
+#define KosExtra_ASIDE(row, i)   ((KosCode *) (row)->f[i].obj)
 
 /* A row whose schema is all CONST or VAR read as the vector of its
    pool objects: a field is one pointer wide, so the four fields are
@@ -298,6 +317,8 @@ typedef enum KosCodeFlag {
   /** per-site opcode caches are enabled for this code object (pragma gate);
       when unset, no cache slots are allocated and every index stays unset */
   KOS_CODE_CACHE = 0x08,
+  /** code contains TAIL_CALL family opcodes */
+  KOS_CODE_TAIL_CALLS = 0x10,
 } KosCodeFlag;
 
 
@@ -429,9 +450,7 @@ typedef struct KosPosition {
 typedef enum KosExtentKind {
   KOS_EXT_TRY,
   KOS_EXT_LOOP,
-  KOS_EXT_PROMPT,
   KOS_EXT_CC,
-  KOS_EXT_SHIFT,
   KOS_EXT_FINALLY,
   KOS_EXT_WIND,
   KOS_EXT_WITH,
@@ -819,13 +838,6 @@ int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
 uint32_t kos_extent_top(PyObject *code, uint32_t pc);
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
-
-
-/**
-   The resume record for the innermost SHIFT extent at pc: the
-   instruction after its POP_SHIFT. NULL when none encloses pc.
-*/
-KosOp *kos_shift_ic_for(PyObject *code, uint32_t pc);
 
 
 /**

@@ -300,12 +300,12 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 /**
   Build a 4-tuple of Python soften arguments for one EXTRA opcode row.
 
-  A resolved row holds pool objects, immediates, and label pcs. This
-  reverses emit: CONST/VAR are the pool objects themselves; LABEL slots
-  look up the destination PC in ``label_map``; other slots stay as integers
-  (FAST,
-  COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
-  phase default.
+  A resolved row holds pool objects, immediates and label pcs. This
+  reverses emit: CONST/VAR are the pool objects themselves; LABEL
+  slots look up the destination PC in ``label_map``; ASIDE slots are
+  the aside's Code, or None for no aside; other
+  slots stay as integers (FAST, COUNT, STAR, etc.). NOARG schema slots
+  become 0, matching the collect phase default.
 
   :param self: KosCode (for constant pool lookup)
   :param op: opcode (selects EXTRA field schema)
@@ -321,53 +321,57 @@ static PyObject *soften_extra_tuple(
     PyObject *label_map) {
 
   KosExtraSchema schema = extra_row_schema(op, KosExtra_IMM(row, 0));
-  PyObject *items[4];
+  PyObject *result = PyTuple_New(4);
 
+  if (! result)
+    return NULL;
+
+  /* the tuple takes each field's reference as it is stored, so a
+     failure releases the fields before it with the tuple */
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = schema_field(schema, slot);
+    PyObject *item;
 
     /* Mirror code_collect: skip NOARG (emit uses 0); else decode by kind */
     if (fk == KOSTYLE_NOARG) {
-      items[slot] = PyLong_FromLong(0);
+      item = PyLong_FromLong(0);
 
     } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR
                || fk == KOSTYLE_VAR) {
-      PyObject *v = KosExtra_OBJ(row, slot);
-      Py_INCREF(v);
-      items[slot] = v;
+      item = KosExtra_OBJ(row, slot);
+      Py_INCREF(item);
 
     } else if (fk == KOSTYLE_LABEL) {
       uint32_t dest_pc = KosExtra_TARGET(row, slot)->pc;
       PyObject *key = PyLong_FromUnsignedLong((unsigned long) dest_pc);
-      if (! key) {
-        for (int j = 0; j < slot; j++)
-          Py_DECREF(items[j]);
-        return NULL;
-      }
-      PyObject *lab = PyDict_GetItem(label_map, key);
-      Py_DECREF(key);
-      if (! lab) {
-        for (int j = 0; j < slot; j++)
-          Py_DECREF(items[j]);
+
+      item = key ? PyDict_GetItem(label_map, key) : NULL;
+      if (key && ! item)
         PyErr_Format(PyExc_RuntimeError,
                      "label pc %u missing from label map", (unsigned) dest_pc);
-        return NULL;
-      }
-      Py_INCREF(lab);
-      items[slot] = lab;
+      Py_XDECREF(key);
+      Py_XINCREF(item);
+
+    } else if (KOSTYLE_IS_ASIDE(fk) && ! KosExtra_ASIDE(row, slot)) {
+      item = Py_None;
+      Py_INCREF(item);
+
+    } else if (KOSTYLE_IS_ASIDE(fk)) {
+      item = KosExtra_OBJ(row, slot);
+      Py_INCREF(item);
 
     } else {
-      items[slot] = PyLong_FromLong((long) KosExtra_IMM(row, slot));
+      item = PyLong_FromLong((long) KosExtra_IMM(row, slot));
     }
 
-    if (! items[slot]) {
-      for (int j = 0; j < slot; j++)
-        Py_DECREF(items[j]);
+    if (! item) {
+      Py_DECREF(result);
       return NULL;
     }
+    PyTuple_SET_ITEM(result, slot, item);
   }
 
-  return PyTuple_Pack(4, items[0], items[1], items[2], items[3]);
+  return result;
 }
 
 
@@ -953,12 +957,20 @@ static PyObject *code_m_function_spec(PyObject *self, PyObject *formals_spec) {
 
 /**
    The index view of a resolved row, for introspection and soften's
-   callers: a CONST or VAR field reports its pool index, recovered by
-   identity against the identity-deduplicated pool; every other field
-   reports its immediate. The owning instruction supplies the schema;
-   rows are one per instruction.
+   callers: a CONST, VAR or ASIDE field reports its pool index,
+   recovered by identity against the identity-deduplicated pool; every
+   other field
+   reports its immediate. An ASIDE field that names no aside reports 0
+   and sets its bit in *absent. The owning instruction supplies the
+   schema; rows are one per instruction.
 */
-static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
+static int extra_row_indices(
+    PyObject *self,
+    uint32_t eidx,
+    uint16_t out[4],
+    unsigned *absent) {
+
+  *absent = 0;
 
   KosOp *code = KosCode_CODE(self);
   uint32_t code_len = KosCode_CODE_LEN(self);
@@ -983,7 +995,11 @@ static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = schema_field(schema, slot);
 
-    if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR) {
+    if (KOSTYLE_IS_ASIDE(fk) && ! KosExtra_ASIDE(row, slot)) {
+      out[slot] = 0;
+      *absent |= 1u << slot;
+    } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR
+               || fk == KOSTYLE_VAR || KOSTYLE_IS_ASIDE(fk)) {
       PyObject *obj = KosExtra_OBJ(row, slot);
       uint32_t cpool_len = KosCode_CPOOL_LEN(self);
       uint32_t ci = 0;
@@ -1023,12 +1039,32 @@ static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
   }
 
   uint16_t view[4];
-  if (extra_row_indices(self, (uint32_t) i, view))
+  unsigned absent;
+  PyObject *result;
+
+  if (extra_row_indices(self, (uint32_t) i, view, &absent))
     return NULL;
-  return Py_BuildValue("(HHHH)", (unsigned short) view[0],
-                       (unsigned short) view[1],
-                       (unsigned short) view[2],
-                       (unsigned short) view[3]);
+
+  /* an ASIDE field that names no aside reports None */
+  result = PyTuple_New(4);
+  if (! result)
+    return NULL;
+  for (int slot = 0; slot < 4; slot++) {
+    PyObject *item;
+
+    if (absent & (1u << slot)) {
+      Py_INCREF(Py_None);
+      item = Py_None;
+    } else {
+      item = PyLong_FromUnsignedLong(view[slot]);
+      if (! item) {
+        Py_DECREF(result);
+        return NULL;
+      }
+    }
+    PyTuple_SET_ITEM(result, slot, item);
+  }
+  return result;
 }
 
 
@@ -1717,6 +1753,32 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
+        /* an aside: a Code, interned as a constant. PUSH_WIND's
+           fields may carry None, no aside, interned the same way and
+           resolved to NULL. */
+        if (KOSTYLE_IS_ASIDE(fk)) {
+          if (! (elem == Py_None && op == KOS_OP_PUSH_WIND)
+              && ! KosCode_Check(elem)) {
+            PyErr_Format(PyExc_TypeError, "Code instruction %zd aside"
+                         " must be a Code, not %.100s",
+                         i, Py_TYPE(elem)->tp_name);
+            goto failure;
+          }
+          int idx = intern_const(coll, elem);
+          if (idx < 0) {
+            goto failure;
+          }
+          if (slot == 0) {
+            row.a0 = (uint16_t) idx;
+          } else if (slot == 1) {
+            row.a1 = (uint16_t) idx;
+          } else if (slot == 2) {
+            row.a2 = (uint16_t) idx;
+          } else {
+            row.a3 = (uint16_t) idx;
+          }
+          continue;
+        }
         /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC,
            OPERAND, RAW: store raw integer (slot, argc, bitflags, packed
            op-type+count, comparison selector, packed
@@ -1768,6 +1830,16 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                 "Code instruction %zd EXTRA field %d %R names more"
                 " operands than a segment holds (%u)",
                 i, slot, elem, (unsigned) KOS_SEGMENT_MAX_SLOTS);
+            goto failure;
+          }
+
+          /* a prompt instruction's tag count names no tag or the one
+             tag */
+          if ((op == KOS_OP_RESET || op == KOS_OP_ABORT
+               || op == KOS_OP_SHIFT)
+              && slot == 0 && val > 1) {
+            PyErr_Format(PyExc_ValueError, "Code instruction %zd EXTRA"
+                         " field %d %R is not 0 or 1", i, slot, elem);
             goto failure;
           }
           uint16_t v = (uint16_t) val;
@@ -2053,8 +2125,9 @@ static void code_fill_derived(
    Resolve one row from collect's index form: CONST and VAR fields become
    the pool object (borrowed; the cpool array holds the owned reference),
    every other field its immediate. A LABEL field keeps its placeholder
-   for the pending-label pass. A CMPSRC row's source bits mark the
-   operand fields that hold constants.
+   for the pending-label pass. An ASIDE field is the pool's Code, or
+   NULL where the pool object is None, for no aside. A CMPSRC row's
+   source bits mark the operand fields that hold constants.
 */
 static void resolve_extra_row(
     CodeCollect *coll,
@@ -2070,7 +2143,10 @@ static void resolve_extra_row(
 
     if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR)
       out->f[slot].obj = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
-    else
+    else if (KOSTYLE_IS_ASIDE(fk)) {
+      PyObject *aside = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
+      out->f[slot].obj = aside == Py_None ? NULL : aside;
+    } else
       out->f[slot].imm = idx[slot];
   }
 }
@@ -2158,6 +2234,9 @@ static int code_emit(
     /* Record YIELDS flag for generators */
     if (kos_op_yields(op))
       KosCode_FLAGS(self) |= KOS_CODE_YIELDS;
+    else if (op >= KOS_OP_TAIL_CALL
+             && op <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
+      KosCode_FLAGS(self) |= KOS_CODE_TAIL_CALLS;
 
     /* Emit position entry when this instruction has a position change */
     if (pi < coll->pos_count && coll->pos_entries[pi].index == di) {
@@ -2261,8 +2340,6 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
   { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
   { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
-  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT,   0 },
-  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT,    0 },
   { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
   { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
   { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },
@@ -2667,18 +2744,15 @@ static int validate_iter_next_in_foreach(
     uint32_t extent_len,
     const uint16_t *top_extent_id) {
 
-  if (! top_extent_id) {
-    return 0;
-  }
-
-  /* the step must be inside a PUSH_FOREACH; walk parent chain to find */
+  /* the step must be inside a PUSH_FOREACH; walk parent chain to
+     find. A code with no extents has no table, and no PUSH_FOREACH */
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
     if (op != KOS_OP_ITER_NEXT && op != KOS_OP_ITER_NEXT_STORE_VAR
         && op != KOS_OP_ITER_NEXT_STORE_FAST) {
       continue;
     }
-    uint32_t eid = top_extent_id[pc];
+    uint32_t eid = top_extent_id ? top_extent_id[pc] : KOS_EXTENT_NONE;
     int found = 0;
     while (eid != KOS_EXTENT_NONE && eid < extent_len) {
       if (extents[eid].kind == KOS_EXT_FOREACH) {
@@ -2691,54 +2765,6 @@ static int validate_iter_next_in_foreach(
       PyErr_Format(PyExc_RuntimeError,
                    "ITER_NEXT at pc %u must be inside a PUSH_FOREACH block",
                    pc);
-      return -1;
-    }
-  }
-
-  return 0;
-}
-
-
-/**
-   Reject streams that mix yield with tail-call opcodes. Generators must
-   not use tail-call frame reuse; the compiler demotes TAIL_* to CALL_* when
-   yields are present.
-
-   :param instr_fast: result of PySequence_Fast on the instruction list
-
-   :return: 0 if ok, -1 with ValueError set if both yields and tail calls
-*/
-static int validate_no_tail_with_yield(PyObject *instr_fast) {
-
-  int saw_yield = 0;
-  int saw_tail = 0;
-  Py_ssize_t instr_l = PySequence_Fast_GET_SIZE(instr_fast);
-
-  for (Py_ssize_t i = 0; i < instr_l; i++) {
-    PyObject *pair = PySequence_Fast_GET_ITEM(instr_fast, i);
-    if (! PySequence_Check(pair) || PySequence_Fast_GET_SIZE(pair) < 2) {
-      continue;
-    }
-
-    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
-    if (! PyLong_Check(a)) {
-      continue;
-    }
-
-    long lop = PyLong_AsLong(a);
-    if (kos_op_yields(lop)) {
-      saw_yield = 1;
-    } else if (lop >= KOS_OP_TAIL_CALL
-               && lop <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR) {
-      /* the TAIL_CALL family is one contiguous run in opcodes.incl;
-         additions belong inside the run so this range stays total */
-      saw_tail = 1;
-    }
-
-    if (saw_yield && saw_tail) {
-      PyErr_SetString(PyExc_ValueError,
-                      "code containing yield or yield-from cannot use "
-                      "TAIL_CALL family opcodes");
       return -1;
     }
   }
@@ -2845,7 +2871,123 @@ static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
 
 
 /**
-   Reject FASTVAR operands outside the active NamespaceSpec slot range.
+   Open an inline scope in the fast slot walk: push its spec and slot
+   limit, and record on the spec where its closure names live in the
+   scope open around it, the root spec when none is. The caller has
+   checked the stack has room. Callers: validate_fast_slots.
+
+   :return: 0, or -1 with PyErr set
+*/
+static int push_scope_spec(
+    PyObject *self,
+    uint32_t *ns_stack,
+    PyObject **spec_stack,
+    int *depth,
+    PyObject *nspec,
+    uint32_t limit) {
+
+  PyObject *enclosing =
+      *depth ? spec_stack[*depth - 1] : KosCode_NSPEC(self);
+
+  if (KosNamespaceSpec_RecordClosureSlots(nspec, enclosing) < 0)
+    return -1;
+
+  ns_stack[*depth] = limit;
+  spec_stack[*depth] = nspec;
+  (*depth)++;
+  return 0;
+}
+
+
+/**
+   A function constant met in the fast slot walk: record on its code's
+   spec where the function's closure names live in scope, the spec of
+   the scope the constant is written in, which is the namespace a
+   function built from it there closes over. Any other constant, NULL
+   included, is passed over. Callers: validate_fast_slots.
+
+   :return: 0, or -1 with PyErr set
+*/
+static int record_function_slots(PyObject *constant, PyObject *scope) {
+
+  if (! KosFunctionSpec_CheckExact(constant))
+    return 0;
+
+  return KosNamespaceSpec_RecordClosureSlots(
+      KosCode_NSPEC(KosFunctionSpec_CODE(constant)), scope);
+}
+
+
+/**
+   Whether two namespace specs lay a namespace out the same way: the
+   same local, closure and global names in the same order.
+
+   :return: 1 or 0, or -1 with PyErr set
+*/
+static int same_namespace_layout(PyObject *a, PyObject *b) {
+
+  int same;
+
+  if (a == b)
+    return 1;
+
+  same = PyObject_RichCompareBool(
+      KosNamespaceSpec_LOCAL_SYMS(a), KosNamespaceSpec_LOCAL_SYMS(b), Py_EQ);
+  if (same > 0)
+    same = PyObject_RichCompareBool(
+        KosNamespaceSpec_CLOSURE_SYMS(a), KosNamespaceSpec_CLOSURE_SYMS(b),
+        Py_EQ);
+  if (same > 0)
+    same = PyObject_RichCompareBool(
+        KosNamespaceSpec_GLOBAL_SYMS(a), KosNamespaceSpec_GLOBAL_SYMS(b),
+        Py_EQ);
+  return same;
+}
+
+
+/**
+   An aside met in the fast slot walk, at the instruction that runs it:
+   scope is the spec of the namespace live there. In an ASIDE_NS field
+   the instruction builds the aside a namespace from its spec, so its
+   closure slots are recorded against scope, as a function constant's
+   are. In an ASIDE field the aside runs over the live namespace
+   itself, so its spec must lay a namespace out as scope does. self
+   yields or tail-calls where its aside does. NULL, for no aside, is
+   passed over. Callers: validate_fast_slots.
+
+   :return: 0, or -1 with PyErr set
+*/
+static int check_aside(
+    PyObject *self,
+    KosCode *aside,
+    KosOpStyle fk,
+    PyObject *scope,
+    uint32_t pc) {
+
+  int same;
+
+  if (! aside)
+    return 0;
+
+  KosCode_FLAGS(self) |=
+      KosCode_FLAGS(aside) & (KOS_CODE_YIELDS | KOS_CODE_TAIL_CALLS);
+
+  if (fk == KOSTYLE_ASIDE_NS)
+    return KosNamespaceSpec_RecordClosureSlots(KosCode_NSPEC(aside), scope);
+
+  same = same_namespace_layout(KosCode_NSPEC(aside), scope);
+  if (! same)
+    PyErr_Format(PyExc_ValueError,
+                 "instruction %u runs an aside written against another"
+                 " namespace", (unsigned) pc);
+  return same > 0 ? 0 : -1;
+}
+
+
+/**
+   Reject FASTVAR operands outside the active NamespaceSpec slot range,
+   record each inline scope's and each function constant's closure
+   slots, and check each aside against the scope it is run in.
 
    Called after emit when ``code`` and ``extra`` are fully materialized so we
    can validate both scalar FAST opcodes and FAST slots embedded in EXTRA rows
@@ -2882,6 +3024,8 @@ static int validate_fast_slots(
   }
 
   uint32_t ns_stack[DERIVE_EXTENT_STACK_MAX];
+  /* the spec behind each limit, borrowed from the pool */
+  PyObject *spec_stack[DERIVE_EXTENT_STACK_MAX];
   int depth = 0;
 
   for (uint32_t i = 0; i < code_len; i++) {
@@ -2895,8 +3039,13 @@ static int validate_fast_slots(
     KosOpStyle st = opcode_styles[op].style;
 
     uint32_t active = (depth == 0) ? root_limit : (uint32_t) ns_stack[depth - 1];
+    PyObject *scope = depth ? spec_stack[depth - 1] : KosCode_NSPEC(self);
 
-    if (st == KOSTYLE_FASTVAR) {
+    if (st == KOSTYLE_CONST) {
+      if (code[i].arg < cpool_len
+          && record_function_slots(cpool[code[i].arg], scope))
+        return -1;
+    } else if (st == KOSTYLE_FASTVAR) {
       /* op.arg is the fast slot index */
       if (active == 0 || code[i].arg >= active) {
         PyErr_Format(PyExc_ValueError,
@@ -2925,6 +3074,14 @@ static int validate_fast_slots(
 
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = schema_field(schema, slot);
+
+        if (fk == KOSTYLE_CONST
+            && record_function_slots(KosExtra_OBJ(row, slot), scope))
+          return -1;
+
+        if (KOSTYLE_IS_ASIDE(fk)
+            && check_aside(self, KosExtra_ASIDE(row, slot), fk, scope, i))
+          return -1;
 
         if (fk != KOSTYLE_FASTVAR) {
           continue;
@@ -2973,7 +3130,8 @@ static int validate_fast_slots(
                      (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
-      ns_stack[depth++] = lim;
+      if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
+        return -1;
     } else if (op == KOS_OP_PUSH_COLLECT) {
       PyObject *ns = cpool[code[i].arg];
       if (! KosNamespaceSpec_CheckExact(ns)) {
@@ -2992,7 +3150,8 @@ static int validate_fast_slots(
                      (unsigned) DERIVE_EXTENT_STACK_MAX);
         return -1;
       }
-      ns_stack[depth++] = lim;
+      if (push_scope_spec(self, ns_stack, spec_stack, &depth, ns, lim))
+        return -1;
     } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
       /* Do not error on underflow; extent validation reports POP without PUSH */
       if (depth > 0) {
@@ -3059,11 +3218,6 @@ static int code_instr_init(
     return -1;
   }
 
-  if (validate_no_tail_with_yield(instr_fast)) {
-    Py_DECREF(instr_fast);
-    return -1;
-  }
-
   /* Phase 1: Collect — derive exact sizes, build label map, cpool, extra rows */
   CodeCollect coll = { 0 };
   if (code_collect(self, instr_fast, &coll)) {
@@ -3116,6 +3270,15 @@ static int code_instr_init(
   code_collect_clear(&coll);
   Py_DECREF(instr_fast);
 
+  /* an aside's yields and tail calls are this code's too */
+  if ((KosCode_FLAGS(self) & KOS_CODE_YIELDS)
+      && (KosCode_FLAGS(self) & KOS_CODE_TAIL_CALLS)) {
+    PyErr_SetString(PyExc_ValueError,
+                    "code containing yield or yield-from cannot use "
+                    "TAIL_CALL family opcodes");
+    goto reject;
+  }
+
   /* Phase 4: Finalize — fill extent table, validate, seal. The
      buffers are NULL when no PUSH_* was counted, and the walk then
      validates alone, refusing a stray POP_*. */
@@ -3128,8 +3291,7 @@ static int code_instr_init(
                              extent_count, top_extent_id))
     goto reject;
 
-  if (extents && top_extent_id &&
-      validate_iter_next_in_foreach(code, code_len, extents,
+  if (validate_iter_next_in_foreach(code, code_len, extents,
                                     extent_count, top_extent_id))
     goto reject;
 
@@ -3783,22 +3945,6 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
 }
 
 
-KosOp *kos_shift_ic_for(PyObject *code, uint32_t pc) {
-
-  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_SHIFT);
-  if (eid == KOS_EXTENT_NONE) {
-    return NULL;
-  }
-
-  const KosExtentDesc *const e = kos_extent_desc(code, eid);
-  if (! e) {
-    return NULL;
-  }
-
-  return &KosCode_CODE(code)[e->pop_pc + 1];
-}
-
-
 PyCodeObject *KosCode_Faux(PyObject *self) {
 
   if (! self) {
@@ -3921,6 +4067,8 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, CMPSRC);
   int_enum(enum_dict, KOSTYLE_, OPERAND);
   int_enum(enum_dict, KOSTYLE_, RAW);
+  int_enum(enum_dict, KOSTYLE_, ASIDE);
+  int_enum(enum_dict, KOSTYLE_, ASIDE_NS);
 
   return create_int_enum("OpStyle", enum_dict);
 

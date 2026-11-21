@@ -121,7 +121,7 @@ offset/DLQ semantics are out of scope for a micro-jenkins).
 
 ## Plan
 
-Sequenced so each phase lands something runnable; the keystone first.
+Sequenced so each phase delivers something runnable; the keystone first.
 
 ### Phase 0 -- store foundation (no behavior change yet)
 
@@ -354,10 +354,10 @@ documented "for production gitops" note, not built here.
 
 ### Phase 5 -- front-end auth, webhook doors & reply model -- DONE (2026-07-20)
 
-> **All five requirements landed 2026-07-20**, in the planned order, plus a
+> **All five requirements were implemented 2026-07-20**, in the planned order, plus a
 > koskari-authored unittest suite (`tests/`, tox-driven -- see "Verifying as
 > we go") that arrived ahead of the fork-time schedule. Each requirement
-> below carries a *Landed:* note recording what shipped and where it
+> below carries an *Implemented:* note recording what was built and where it
 > deviated from the sketch. The two deliberate deviations: R3 dropped the
 > `input:` sub-item for the handler's own typed formals, and R4 made groups
 > first-class values instead of string keys.
@@ -390,13 +390,13 @@ authority that authors everything below; it is never a runtime role.
 - *Surface:* a per-job `token:` (idiomatically `(reqenv "…")`, matching the
   secrets pattern), enforced only when set, so an unset webhook stays open and
   backward-compatible.
-- *Lands:* `WebhookJob` ([webhook.ki](../kosrunner/webhook.ki)) holds the token;
+- *Where:* `WebhookJob` ([webhook.ki](../kosrunner/webhook.ki)) holds the token;
   the check runs at the route boundary in `add-route`, before `self.run`. This
   is the first handler that must read a **header** off the `Request` -- it
   births the request-context seam.
 - *Choice:* where the token rides -- header (`X-Kosrunner-Token`), path segment,
   or query. Header keeps it out of URLs and logs.
-- *Landed:* as sketched. `WebhookConfig` gained `token` (None = open);
+- *Implemented:* as sketched. `WebhookConfig` gained `token` (None = open);
   `check-token` compares the `X-Kosrunner-Token` header in constant time at
   the route boundary, before `record-start`, so a rejected call leaves no
   run. The seam is `RequestContext` in [server.ki](../kosrunner/server.ki);
@@ -409,7 +409,7 @@ authority that authors everything below; it is never a runtime role.
   await-and-return-the-result.
 - *Surface:* a per-webhook `wait:` / `mode:` flag; sync returns the callback
   result, async returns the receipt.
-- *Lands:* `Job.run` ([job.ki](../kosrunner/job.ki)) splits. Today it does
+- *Where:* `Job.run` ([job.ki](../kosrunner/job.ki)) splits. Today it does
   record-start -> invoke -> record-finish -> return, all inline. Async records
   the start (getting `runid`), spins the invoke+finish as a `create-task`, and
   returns the receipt now. The `_current-run` contextvar Phase 1 was careful to
@@ -420,7 +420,7 @@ authority that authors everything below; it is never a runtime role.
   the handle the read surface polls, so R2 wires here to status-visibility.
 - *Note:* independent of the request-context seam; it touches execution, not the
   request. Can be built in parallel with R1.
-- *Landed:* sync-default, per-webhook `wait:` on `WebhookConfig`. `Job.run`
+- *Implemented:* sync-default, per-webhook `wait:` on `WebhookConfig`. `Job.run`
   split exactly as sketched -- `_tracked-invoke` is the recorded body and
   the `_current-run` contextvar set/invoke/flush stays together inside it,
   so the log buffer survives the move into the task's context. `JobSet`
@@ -437,15 +437,15 @@ authority that authors everything below; it is never a runtime role.
   gets the whole raw payload as one positional; with a spec the framework coerces
   the payload and binds named args, so `handler [ref force]` works and malformed
   input is a `400`.
-- *Lands:* `webhook.ki` (the new sub-item + coercion), `job.ki` (arg binding into
+- *Where:* `webhook.ki` (the new sub-item + coercion), `job.ki` (arg binding into
   `run`), `ui.ki` (render a form from the spec; render stored args on the
-  run-detail page). Normalized args already land in `trigger.json`, so retrigger
+  run-detail page). Normalized args already go into `trigger.json`, so retrigger
   and past-run reveal ride existing storage; R3 adds *fresh typed input*.
 - *Reuse lever:* the annotations / `inspect` FastAPI work may allow building a
   dynamic Pydantic model from the spec instead of hand-rolled coercion.
 - *Note:* needs no auth, but produces the trigger forms and typed-args reveal
   that R5 later projects. Build before R5 so R5 has something concrete to filter.
-- *Landed (deviation):* there is no `input:` sub-item. The handler's own
+- *Implemented (deviation):* there is no `input:` sub-item. The handler's own
   typed formals ARE the input contract -- `handler [[ref :: str]
   [force :: bool value: False]]:` -- read off the callback via
   `inspect.signature` when `WebhookJob.handler` stores it (the reuse lever,
@@ -463,11 +463,11 @@ authority that authors everything below; it is never a runtime role.
 - *Surface:* `config access:` (groups -> member emails, mapped to levels) plus
   per-job `allow:`. A small `access.ki`: `resolve-identity [request]` (read
   `X-Forwarded-Email`), `resolve-level`, `member-of?`.
-- *Lands:* the action handlers in `ui.ki` / `admin.ki` gain a check before acting
+- *Where:* the action handlers in `ui.ki` / `admin.ki` gain a check before acting
   -- `403` HTML for the UI, `403` JSON for admin. The membership test is trivial;
   the work is plumbing identity to the check point, which **widens the R1 seam**
   from "read a token header" to "carry resolved identity."
-- *Landed (deviation):* groups are first-class VALUES, keyed by binding
+- *Implemented (deviation):* groups are first-class VALUES, keyed by binding
   rather than string. `group deployers:` (a `Group` macro in
   [access.ki](../kosrunner/access.ki), named after its own binding) defines
   the value; `config access:` lists `groups: #[deployers]` and a job says
@@ -486,13 +486,13 @@ authority that authors everything below; it is never a runtime role.
 - *Surface:* a `visible-jobs [identity]` filtering `list-jobs` through per-job
   `allow:` intersected with the user's groups (operator sees all; anonymous sees
   the read-only floor).
-- *Lands:* the UI **GET** handlers ([ui.ki](../kosrunner/ui.ki)) -- so identity is
+- *Where:* the UI **GET** handlers ([ui.ki](../kosrunner/ui.ki)) -- so identity is
   needed at render time, not just on actions, threading it through the read
   surface too. Templates render the filtered set and the R3 trigger forms.
 - *The edge:* projection is display only. Hiding a button without R4 enforcing
   the action is a leak -- a user could POST the hidden trigger. R5's filter and
   R4's enforcement are two halves of one guarantee; neither stands alone.
-- *Landed (interpretation):* the jobs/runs tables stay visible to everyone
+- *Implemented (interpretation):* the jobs/runs tables stay visible to everyone
   -- that IS the anonymous read floor, matching the admin API's open reads;
   a control-level user must never see less than anonymous. What projects is
   the ACTIONABLE surface: `JobSet.visible-jobs [identity]` annotates rows
@@ -509,7 +509,7 @@ authority that authors everything below; it is never a runtime role.
 
 #### Approach
 
-One seam, born small, widened twice; the rest lands on it in detachment order.
+One seam, born small, widened twice; the rest builds on it in detachment order.
 
 1. **R1 births the request-context seam.** `add-route` and kin begin passing a
    context (headers now, room for identity later) to handlers. Build it minimal
@@ -533,7 +533,7 @@ One seam, born small, widened twice; the rest lands on it in detachment order.
 - **R5 display always paired with R4 enforcement.** Filtering the view is not a
   control; the action check is.
 - **R2 receipt + run store + status view is one poll loop**, and **R3 args flow
-  through it from either door** -- machine POST or UI form -- landing in the same
+  through it from either door** -- machine POST or UI form -- arriving in the same
   `trigger.json`.
 - **Token, `wait:`, `input:`, and `access:` / `allow:` are all Layer-0 committed
   config**, authored in the same definitions and shipped by the same rebuild the
@@ -575,5 +575,5 @@ drives the real HTTP surface over ASGI, no uvicorn, via the AdminJob/UiJob
 `mount` split.
 
 The `fake` variety ([fake.ki](../kosrunner/fake.ki)) remains the local
-exercise loop: run a jobset of fake jobs, watch runs land in the store and
+exercise loop: run a jobset of fake jobs, watch runs arrive in the store and
 render in the UI.

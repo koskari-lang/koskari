@@ -14,25 +14,15 @@
 """
 Delimited capture where the shift is not in the reset's own code object.
 
-Chain order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so a
-cross-frame shift's owning frame sits ABOVE the prompt. Capture records
-RESUME_PC and RESUME_STACK against that frame (kos_shift_capture takes the
-first frame walking down from the captured chain's top), so the in-place
-invoke has to resolve the same one. Resolving the frame at-or-below the
-prompt instead installs the callee's pc and stack into the caller's frame,
-which surfaced as "program counter out of bounds", silent control loss, or
-SIGSEGV depending on shape.
+Chain order root..top at the shift is caller FRAME, PROMPT, reset body
+FRAME, callee FRAME, so the shift's own frame sits above the reset's
+body frame. The capture takes whole frames from dyn_top down through the
+prompt, and an invoke resumes in the copy's innermost frame, the
+callee's, with its pending operands; the body frame's copy carries the
+reset body's own. apply and partial push no frame of their own, so a
+capture through them succeeds.
 
-Every pre-existing reset/shift test places the shift lexically inside the
-reset body; the deeper-frame tests there invoke k from a deeper frame,
-which is the opposite direction. Capture from a callee frame was
-uncovered, which is why this went unnoticed.
-
-The last two cases were quarantined in a separate uncollected module while
-they SIGSEGV'd, since a crash takes the whole pytest process down rather
-than failing one test. They pass now and are collected normally.
-
-Note these shapes are order-sensitive under compile_expr: define-global
+These shapes are order-sensitive under compile_expr: define-global
 bindings do not persist across a fresh module per test, so running this
 file alone yields extra NameErrors that the phased runner does not show.
 The VM behaviour is the same either way; only the binding lookup differs.
@@ -139,9 +129,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
     async def test_let_bound_lambda_shift_whole_body(self):
         """
-        Let-bound lambda whose whole body is the shift. This shape
-        SIGSEGV'd under the coroutine-driven test harness while the
-        equivalent .ki program merely misbehaved.
+        Let-bound lambda whose whole body is the shift
         """
 
         src = """

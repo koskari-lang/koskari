@@ -190,7 +190,7 @@ KOS_OP_INLINE int kos_as_ll2(
 
 /* Per-operator two-operand PyLong fast paths.  Each is self-contained and
    written out explicitly -- no shared operator switch -- so a caller that
-   already knows its operator lands straight in the one arithmetic it needs.
+   already knows its operator goes straight to the one arithmetic it needs.
    When both operands are exact ints and the operation cannot lose precision,
    compute it directly and skip the PyNumber slot dispatch and longobject digit
    loops.

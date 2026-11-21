@@ -200,7 +200,7 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
 
     async def test_bracket_suffix_attaches_in_field(self):
         # a bare index-bracket suffix in a slot must attach as a subscript,
-        # not land in the format-spec position as a separate form.
+        # not end up in the format-spec position as a separate form.
         form = read_fstring_pragma('f"{foo[0]}"')
         parts = fstring_parts(form)
         args = format_field_args(parts[0])

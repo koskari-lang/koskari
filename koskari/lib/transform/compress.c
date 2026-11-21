@@ -86,7 +86,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
   if (PyErr_Occurred())
     return kos_transform_decline(ctx, t);
 
-  /* the element lands in compress_resume_deliver, which files it
+  /* the element goes to compress_resume_deliver, which files it
      and hops back here; either source running out ends the
      compress through its StopIteration */
   {

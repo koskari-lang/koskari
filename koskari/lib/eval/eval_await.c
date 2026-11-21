@@ -269,7 +269,7 @@ static inline KosOpResult push_or_fuse(
    await suite is taken on its await frame: the frame is installed
    with the suite's kind as its resume and the awaitable staged for
    the prologue's delivery, so the kind runs on the next pass and the
-   frame's return lands the value where the push would have. Any
+   frame's return delivers the value where the push would have. Any
    other awaitable is eagerly stepped to its result, or suspends with
    the iterator stored on the context. NORMAL with *out the settled
    value (new reference), REPROLOGUE with a frame installed whose
@@ -357,7 +357,7 @@ static inline KosOpResult kos_settle_value(
    Push val. An awaitable val is settled first through
    kos_settle_value: its result is pushed, a suspension returns
    KOS_RES_AWAIT, and an awaitable with an await suite is taken on its
-   await frame instead, reported as REPROLOGUE, whose return lands the
+   await frame instead, reported as REPROLOGUE, whose return delivers the
    value where the push would have. Use only for the result of a call
    (a CALL opcode whose callable returned a coroutine) and for the
    AWAIT opcode (explicitly awaiting TOS). Every other path must use

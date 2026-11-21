@@ -167,7 +167,7 @@ differ from calling the same name as a value.
 |---|---|---|
 | `[[KoskariException] ...]` around a demand call | `KoskariSyncViolation` subclasses `TypeError` only | `[[KoskariSyncViolation] ...]` or `[[TypeError] ...]` |
 | `[[SyntaxError] ...]` around `evaluate` or `compile` | compile errors such as `SyntaxMatchError` are `CompilerError`, not `SyntaxError` | `[[CompilerError] ...]` |
-| `[[RuntimeError] ...]` around `shift` | continuation errors are not `RuntimeError` | `[[KoskariContinuationError] ...]` |
+| `[[RuntimeError] ...]` around `shift` | `KoskariPromptNotFound` is not a `RuntimeError`; `KoskariPromptUnreachable` is the one continuation error that is | `[[KoskariContinuationError] ...]` |
 
 ## Async handles
 

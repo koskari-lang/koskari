@@ -29,6 +29,33 @@ caller. Futures and Tasks are exempt at implicit sites (they are
 handles by convention; only explicit await drives them), as are Defer
 objects. Contrast: the demand path.
 
+## aside
+
+A Code that an instruction runs directly on the chain, in a frame of
+its own that takes no arguments, with no Function or Expression layer
+around it. The word names the invocation: the Code is an ordinary Code
+in the constant pool of the code it is written in, and records nothing
+about being an aside. The instruction that carries it (`RESET`,
+`ABORT`, `SHIFT`, `PUSH_WIND`) runs it, and its frame leaves by its
+`RETURN` like a callee. A reset's body, a shift's or an abort's
+handler, and a dyn-wind's before and after segments are asides.
+
+What a lambda would give the same code is a closure built on every
+pass and a call through the general call path; an aside gives a frame
+at the moment it is needed and nothing before.
+
+An aside runs over one of two namespaces, chosen by the kind of the
+field that carries it. In an `ASIDE_NS` field it gets a namespace built
+from its own spec when it is run, whose closure names come from the
+namespace live at the instruction that runs it (a shift's handler,
+whose one local is the continuation's name). In an `ASIDE` field it
+runs over that live namespace itself (a reset's body, an abort's
+handler), so its spec is that scope's and its names are the enclosing
+function's. A dyn-wind's segments are in `ASIDE` fields and run over
+the namespace live at the `PUSH_WIND`, which the wind node records,
+since a transfer can fire them long after that instruction.
+Reference: OPCODES.md, EVALUATOR.md §6.
+
 ## await frame
 
 The native frame an await of a Koskari awaitable runs on: pushed above
@@ -36,7 +63,7 @@ the awaiter, uncounted against the frame limit, with the awaitable's
 await kind (its type's await suite) as the resume. The kind continues
 the awaitable's chain under it, a fresh coroutine's frame swapped in,
 a parked chain spliced beneath it, a step requested on it, and the
-frame's return lands the awaited value where the awaiter's push would
+frame's return delivers the awaited value where the awaiter's push would
 have. Reference: FLATTENING.md.
 
 ## boundary
@@ -66,7 +93,7 @@ at four points, the places that close a cycle: `CONTINUE`, a frame
 install in the call core, a resume hop, and the prologue re-entry. On
 a trip `CONTINUE` returns `EVAL_NORMAL`, the call core returns
 `EVAL_REPROLOGUE`, and a resume hop stages through `DISPATCH`; each
-lands in the trampoline's poll, which yields the GIL if requested,
+arrives at the trampoline's poll, which yields the GIL if requested,
 runs `Py_MakePendingCalls`, and re-enters where the point left off.
 With the breaker down the point threads straight on. Reference:
 EVALUATOR.md §1.6.
@@ -145,7 +172,8 @@ site re-elects on an interval. "Elect" is the one-time choice,
 A dynamic extent: the span of execution during which a construct is
 active, represented by a node on the chain (a with body, a wind, a
 parameterize, a loop). "Discardable extents" (NS, LOOP, FOREACH) are
-those whose removal is pure reference release.
+those whose removal is pure reference release. The code object's
+extent table describes each `PUSH_*`/`POP_*` pair statically.
 
 ## flatten (flattened)
 
@@ -161,14 +189,18 @@ awaits pass through invisibly.
 What a koskari generator does at every yield: its frame chain detaches
 from the running context into the generator node's own storage
 (`GEN.active`). The next step re-splices (installs) it. Nothing may
-assume a yielded generator is still on any chain.
+assume a yielded generator is still on any chain. A try or finally
+region freezes with the span it is in: it takes the exception it is
+handling off the thread and holds it until it is installed again. A
+region kept for a continuation freezes the same way, and each copy of
+it is installed when it is attached.
 
 ## graft
 
-Older transfer-plan vocabulary for landing: splicing a cloned chain
-segment onto another chain. Say "land" and "seam": a goal lands its
-target on the seam, the DELIM a delimited invoke pushed or the root for
-an undelimited one. Reference: EVALUATOR.md §6.
+Older transfer-plan vocabulary for attaching: splicing a cloned chain
+segment onto another chain. Say "attach" and "seam": a goal attaches its
+target to the seam, the caller's `dyn_top` for a delimited invoke or the
+lowest common ancestor for an undelimited one. Reference: EVALUATOR.md §6.
 
 ## host (host context)
 
@@ -188,6 +220,16 @@ a resume-frame install (`KosResumeFrame_Install`) pushes a code-less
 frame for a resume to be set on. "Installed work" is work now runnable
 on the chain, as opposed to work completed synchronously.
 
+## keep (kept)
+
+What a shift's abort does with the nodes it leaves: each one comes off
+the chain as a transfer has it leave (a wind's after aside runs, a
+param puts the outer cells back) and is linked into the continuation
+as its template instead of being freed. A kept node never runs again;
+each call of the continuation clones the template. Contrast: clone
+(copy a node that stays where it is), freeze (a generator's span
+detached to be installed again). Reference: EVALUATOR.md §6.
+
 ## layout
 
 The indentation-based surface syntax that the reader converts into
@@ -204,7 +246,7 @@ resumes (below); the term survives only in archived design notes.
 
 What a WIND or WITH node owes when it is unlinked, held in the node's
 one `KosObligation` slot: a VALUE (the body result), an EXCEPTION set
-aside while the after thunk or `__exit__` runs, or a RETURN crossing a
+aside while the after segment or `__exit__` runs, or a RETURN crossing a
 leave in flight. Released at unlink by kind and by event. Reference:
 EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
 
@@ -249,7 +291,7 @@ before compilation.
 
 ## stored obligation
 
-An obligation stored on a WIND or WITH node while its after thunk or
+An obligation stored on a WIND or WITH node while its after segment or
 `__exit__` runs: the raise walk stores the exception, the return walk
 the value. Reference: EVALUATOR.md §4.4, §6.3. Iteration and await
 suspension are not stored obligations; say "suspended" or name the
@@ -282,26 +324,31 @@ or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 ## seam
 
-The node a transfer goal leaves down to and lands on: the DELIM a
-delimited invoke pushed (nothing below the invoker leaves), the prompt's
-parent for POP_SHIFT, the root GEN for a foreign cc-unwind, an
-undelimited invoke's lowest common ancestor with the template (matched
-by node id), or NULL when an undelimited invoke's chains share no node
-and the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
+The node a transfer goal leaves down to and attaches its target to: the
+caller's `dyn_top` for a delimited invoke (nothing leaves), the prompt
+for an abort or a shift's abort (which attaches the handler's frame
+above it), the root GEN for a foreign cc-unwind, an undelimited invoke's
+lowest common ancestor with the template (matched by node id and
+phase), or NULL when an undelimited invoke's chains share no node and
+the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
 
 ## transfer goal
 
-The record a continuation invoke pushes and the evaluator's prologue
-drives to move execution between chains: where control is going (seam,
+The record a continuation invoke or a shift's abort pushes and the
+evaluator's prologue drives to move execution between chains: where control is going (seam,
 target clone, payload, resume pc), never what to do. The driver
-re-derives LEAVING, LANDING, ENTERING, and DELIVERING from the live
+re-derives LEAVING, ATTACHING, ENTERING, and DELIVERING from the live
 chain on every pass. Replaced the transfer plan's precomputed step list.
 Reference: EVALUATOR.md §6.
 
 ## waiting goal
 
 A transfer goal waiting on a node whose leave or enter is in flight:
-the node's thunk frame or awaitable is running, and the goal acts
-again only when `dyn_top` is back where it was. Reference:
+a wind's segment frame, or a with's enter or exit call or its
+awaitable, is running, the node carries
+`KOS_DYNF_GOAL_WAIT`, and the goal acts again only when `dyn_top` is
+back at that node. A raise leaves a waiting goal in place while that
+work is above the node, and frees it when the raise walk unlinks the
+node. Reference:
 EVALUATOR.md §6.2. Iteration and await suspension are "suspended",
 not waiting.

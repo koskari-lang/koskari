@@ -33,7 +33,9 @@ contributes no solutions; the search continues with the next choice.
 **Syntax:** `(fail)`
 
 Abandon the current branch unconditionally. `(require test)` is
-`(unless test (fail))`.
+`(unless test (fail))`. The branch is left with an
+[`abort-at`](../specials/compile-abort-at.md), so a failure captures
+nothing.
 
 ## solve
 
@@ -57,6 +59,15 @@ before returning, and `solve-first` stops early by skipping rather than
 by suspending. A lazy, one-solution-at-a-time enumerator is a
 non-goal for this module: it would require yielding across choice
 points, and a `shift` cannot cross a generator boundary (see the Errors section).
+
+The search delimits with a tag of its own (see
+[`reset-at`](../specials/compile-reset-at.md)). A `reset` in the thunk
+being solved is therefore not a search delimiter: `amb` and `fail` reach
+past it to the search, and a `shift` in the thunk stops at the thunk's own
+`reset`, never at the search. A `shift` in the thunk with no `reset` of its
+own crosses the search delimiter: it captures up to a `reset` around the
+`solve` or `solve-first` call, the search included, and with none it raises
+`KoskariPromptNotFound`, not `NoActiveSearch`.
 
 ## Errors
 

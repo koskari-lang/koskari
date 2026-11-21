@@ -8,7 +8,7 @@
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | RETURN | 1   | 1        | normal exit |
-| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc lands here |
+| 1     | THEEND | 0   | 0        | unreachable; VM raises if pc reaches here |
 
 
 ---

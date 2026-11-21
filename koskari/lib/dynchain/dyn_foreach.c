@@ -147,7 +147,7 @@ int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
    resume: the frame halted inside this region deferring the step, and
    anything else that halts the frame sits in a frame or region above.
    The region owns the iterator, so it finishes the request and clears
-   the frame's resume; a landing that follows then finds a frame with
+   the frame's resume; a transfer that follows then finds a frame with
    no halt to serve.
 */
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
@@ -157,6 +157,21 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
     kos_dyn_iter_request_finish_req(KosDynForeach_REQ(node), 0);
     kos_dynframe_clear_resume(frame);
   }
+}
+
+
+/**
+   The region leaves the chain kept for a continuation. A step still
+   in flight has its request finished, as kos_dyn_foreach_unwind does,
+   since the iterator is told the step is over either way. The resume
+   it left on the loop's frame stays: that frame is kept next, and the
+   step in flight is what its copies resume.
+*/
+static void kos_dyn_foreach_keep(KosContext *ctx, KosDynForeach *node) {
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  if (frame && KosDynFrame_RESUME_KIND(frame))
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(node), 0);
 }
 
 

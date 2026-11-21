@@ -19,6 +19,6 @@
 | 1     | CAPTURE_CC | 0   | 0          | stack before: [...]; after: [..., continuation] |
 | 2     | CONST      | 0   | 0 (42)     | stack: [..., continuation, 42] |
 | 3     | CALL       | 1   | 1          | invoke continuation with one arg → jump to POP_CC (4) with [..., 42] |
-| 4     | POP_CC     | 0   | 0          | invoke lands here with value on stack; pop CC; next pc = 5 (resume) |
+| 4     | POP_CC     | 0   | 0          | invoke arrives here with value on stack; pop CC; next pc = 5 (resume) |
 | 5     | RETURN     | 1   | 1          | yield TOS (42) |
 

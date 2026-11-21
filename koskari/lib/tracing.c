@@ -226,7 +226,7 @@ void kos_trace_eval_push(void) {
 
 /**
    A nested evaluator ends: resume the slot it suspended, timing from
-   now, so the outer opcode's remaining work lands on it.
+   now, so the outer opcode's remaining work is charged to it.
 */
 void kos_trace_eval_pop(void) {
   uint64_t now = kos_trace_ticks();

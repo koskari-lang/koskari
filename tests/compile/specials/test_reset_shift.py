@@ -15,7 +15,7 @@
 Tests for koskari.compile reset and shift special forms.
 
 reset establishes a prompt; shift captures the continuation and runs a
-handler. Mirrors the semantics in design/language/control-flow.md.
+handler above the prompt; the handler's return is the reset's value.
 """
 
 import gc
@@ -212,8 +212,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
         k, stores it in stolen, invokes k(10). Continuation resumes: add(10)
         = 10 + amt = 10 + 100 = 110.
 
-        Second seq branch: parameterize amt=200, invoke stolen(9). Continuation
-        resumes and transfers back to original param scope: add(9) = 9 + 100 = 109.
+        Second seq branch: parameterize amt=200, invoke stolen(9). The
+        parameterize around the reset is outside the continuation, so the
+        resumed region reads the application site's amt: add(9) = 9 + 200
+        = 209.
         """
 
         def seq(*args):
@@ -242,13 +244,13 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertIs(vars(mod).resolve("seq"), seq)
 
         result = await expr()
-        self.assertEqual(result, (None, 101, 110, 109, 102))
+        self.assertEqual(result, (None, 101, 110, 209, 102))
 
 
     async def test_dyn_wind_around_shift_captures_in_place(self):
         """
-        dyn-wind wrapping shift captures in place; shift body POP_SHIFT and
-        POP_WIND complete without extent or wind topology errors.
+        A shift inside a dyn-wind captures k and its abort leaves the
+        dyn-wind; the handler's return, k, is the reset's value
         """
 
         src_str = """
@@ -307,11 +309,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_thunk_count_invoke_inside_shift_body(self):
         """
-        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5, and
-        an in-shift invoke runs the dyn-wind thunks exactly once: a single
-        [before, after] lifecycle. Regression guard for Path A in
-        design/interpreter/delimited-invoke-model.md (resume in place when
-        the prompt is in live ancestry; no graft, no wind replay).
+        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5.
+        The shift aborts to the reset before its handler runs, leaving
+        the dyn-wind, and the invoke in the handler enters a copy of it:
+        one [before, after] for the abort and one for the invoke.
         """
 
         events = []
@@ -330,15 +331,14 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, rec=rec)
         result = await expr()
         self.assertEqual(result, 5)
-        self.assertEqual(events, ["before", "after"])
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
     async def test_dyn_wind_thunk_count_remote_invoke(self):
         """
-        Remote invoke (reset finished before call) winds the graft exactly
-        once: natural [before, after] during capture, then one [before,
-        after] replay around the invoke. Regression guard for Path B in
-        design/interpreter/delimited-invoke-model.md.
+        Remote invoke (reset finished before call) enters the attached
+        copy's dyn-wind once: [before, after] for the body and the abort,
+        then one [before, after] around the invoke
         """
 
         events = []
@@ -400,8 +400,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
         A parameterize established in a caller frame outside the reset's
         owning frame is not captured by the bounded template: remote invoke
         resolves it from the invoke-time dynamic environment (here amt=200,
-        so 7 + 200 = 207). Params between the prompt and its owning frame
-        remain captured (test_delimited_param_outside_reset_not_captured).
+        so 7 + 200 = 207). A param between the prompt and its owning frame
+        is outside the reset too
+        (test_delimited_param_outside_reset_not_captured).
         """
 
         def add(a):
@@ -423,13 +424,116 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(result, 207)
 
 
+    async def test_call_cc_from_an_attached_copy_returns_below_its_delim(self):
+        """
+        A full continuation captured inside an attached delimited copy holds
+        that copy's prompt and the invoke site's frame below it. Applied
+        after the copy has returned, it attaches the copy again, and the
+        copy's body returns its value once more to the frame below the
+        prompt, at the first invoke site: 1 + 10 the first time, 1 + 100
+        the second
+        """
+
+        calls = []
+
+        def fewer(seq, n):
+            # a wrong return would re-run the application without end
+            calls.append(list(seq))
+            if len(calls) > 4:
+                raise AssertionError(f"re-entered without end: {calls}")
+            return len(seq) < n
+
+        src_str = """
+        (let [[captured nil] [saved nil] [seen #[]]]
+          (begin
+            (setq captured
+              (reset
+                (+ 1 (begin (shift k k)
+                            (let/cc c (setq saved c) 10)))))
+            (seen.append (call captured 0))
+            (cond ((fewer seen 2) (call saved 100)) (else: nil))
+            seen))
+        """
+        expr, mod = self.compile_expr(src_str, fewer=fewer)
+        result = await expr()
+        self.assertEqual(result, [11, 101])
+
+
+    async def test_wind_outside_reset_same_frame_not_reentered(self):
+        """
+        A dyn-wind around the reset, in the reset's own frame, is outside
+        the continuation: a later application runs neither thunk again
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (let [[captured nil]]
+          (begin
+            (dyn-wind
+              (rec "before")
+              (setq captured (reset (+ 1 (shift k k))))
+              (rec "after"))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 6)
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_try_outside_reset_same_frame_not_reentered(self):
+        """
+        A try around the reset, in the reset's own frame, is outside the
+        continuation: a raise in a later application reaches the
+        application site, not that try's handler
+        """
+
+        def boom():
+            raise ValueError("boom")
+
+        src_str = """
+        (let [[captured nil]]
+          (begin
+            (try
+              (setq captured (reset (begin (shift k k) (boom))))
+              ((e ValueError) "handled"))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, ValueError=ValueError)
+        with self.assertRaises(ValueError):
+            await expr()
+
+
+    async def test_let_around_reset_read_by_remote_application(self):
+        """
+        A let around the reset, in the reset's own frame, binds names the
+        region reads after it resumes: a later application still sees them
+        """
+
+        src_str = """
+        (let [[captured nil]]
+          (begin
+            (let [[x 7]]
+              (setq captured (reset (+ (shift k k) x))))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, 12)
+
+
     async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
         """
-        Same single-lifecycle guarantee as
-        test_dyn_wind_thunk_count_invoke_inside_shift_body, but the in-shift
-        invoke happens in a deeper frame (k passed to and called from a
-        lambda inside the shift body). Regression guard for Path A in
-        design/interpreter/delimited-invoke-model.md.
+        Same two lifecycles as
+        test_dyn_wind_thunk_count_invoke_inside_shift_body, with the
+        in-shift invoke happening in a deeper frame (k passed to and
+        called from a lambda inside the shift body)
         """
 
         events = []
@@ -449,15 +553,15 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, rec=rec)
         result = await expr()
         self.assertEqual(result, 5)
-        self.assertEqual(events, ["before", "after"])
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
     async def test_dyn_wind_thunk_count_multishot_in_shift(self):
         """
-        Multi-shot in-shift invoke: the first call runs in place on the live
-        slice (Path A); each re-invoke instantiates the captured template
-        via the PUSH graft (Path B fallback). Every invoke gets exactly one
-        before/after pair, and add(3, 4) = 7 flows out of the reset.
+        Multi-shot in-shift invoke: the abort to the reset leaves the
+        dyn-wind once, and each invoke attaches its own copy of the captured
+        region and gets one before/after pair: three pairs in all, and
+        add(3, 4) = 7 flows out of the reset.
         """
 
         events = []
@@ -480,19 +584,19 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, rec=rec, add=add)
         result = await expr()
         self.assertEqual(result, 7)
-        self.assertEqual(events, ["before", "after", "before", "after"])
+        self.assertEqual(
+            events,
+            ["before", "after", "before", "after", "before", "after"])
 
 
     async def test_recursive_invoke_in_slice_path(self):
         """
-        Recursive delimited invoke: the shift body stashes k in a module
-        global and the slice conditionally re-invokes it, so k runs in the
-        path of k. Recursion is permitted and structurally safe: in-path
-        invokes can never take Path A (the live SHIFT node sits in the
-        INPLACE delim's stash during the slice, so readiness fails) and
-        route to the bounded PUSH graft, one template instance per level.
-        Levels unwind independently: guard sees 0, 1, 2, 3 and every level
-        returns the base value 3.
+        Recursive delimited invoke: the handler stashes k in a binding of
+        the enclosing let and the slice conditionally re-invokes it, so k
+        runs in the path of k. Recursion is permitted and structurally
+        safe, one template instance per level. Levels unwind
+        independently: guard sees 0, 1, 2, 3 and every level returns the
+        base value 3.
         """
 
         events = []
@@ -505,11 +609,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return n + 1
 
         src_str = """
-        (begin
-          (setq g nil)
+        (let [[g nil]]
           (reset
             (begin
-              (setq n
+              (var n
                 (shift k
                   (begin
                     (setq g k)
@@ -526,9 +629,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_inplace_slice_exception_caught_at_invoke_site(self):
         """
-        An exception raised inside an in-place (Path A) slice restitches the
-        invoke span and propagates to the invoke call site, where the
-        enclosing try in the shift body catches it.
+        An exception raised inside the copy the handler's invoke attaches
+        propagates to the invoke call site, where the enclosing try in the
+        shift body catches it.
         """
 
         def boom(v):
@@ -550,9 +653,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_inplace_slice_raise_runs_after_thunk(self):
         """
-        When an in-place (Path A) slice raises, the dyn-wind after thunk
-        wrapping the slice runs exactly once during the raise unwind, before
-        the exception reaches the invoke-site handler.
+        The shift's abort leaves the dyn-wind once. When the slice the
+        handler then invokes raises, the after thunk of its copy of the
+        dyn-wind runs once during the raise unwind, before the exception
+        reaches the invoke-site handler.
         """
 
         events = []
@@ -579,7 +683,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
             src_str, rec=rec, boom=boom, ValueError=ValueError)
         result = await expr()
         self.assertEqual(result, "caught")
-        self.assertEqual(events, ["before", "after"])
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
     async def test_remote_invoke_slice_exception_propagates(self):
@@ -645,7 +749,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
     async def test_shift_without_reset_raises_prompt_not_found(self):
         """
         shift with no enclosing reset raises KoskariPromptNotFound
-        carrying the sought prompt id and the operation name
+        carrying the sought prompt tag and the operation name
         """
 
         src_str = """
@@ -654,7 +758,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(KoskariPromptNotFound) as caught:
             await expr()
-        self.assertEqual(caught.exception.prompt_id, 0)
+        self.assertIsNone(caught.exception.tag)
         self.assertEqual(caught.exception.operation, "shift")
 
     async def test_shift_inside_enter_refuses_with_message(self):
@@ -694,7 +798,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         src_str = """
         (reset
           (begin
-            (setq g
+            (var g
               (call
                 (lambda [] (yield (shift k 1)))))
             (next g)))
@@ -704,15 +808,135 @@ class TestShiftCaptureErrors(SpecialsTestCase):
             await expr()
         self.assertEqual(caught.exception.boundary, "generator")
         self.assertEqual(caught.exception.operation, "shift")
-        self.assertEqual(caught.exception.prompt_id, 0)
+        self.assertIsNone(caught.exception.tag)
+
+
+class TestTaggedResetShift(SpecialsTestCase):
+    """
+    reset-at and shift-at take an evaluated tag. A shift-at captures up
+    to the nearest reset-at carrying the same object, crossing resets
+    of other tags, which become part of the continuation. None is the
+    default tag, the one reset and shift use.
+    """
+
+    async def test_shift_at_finds_its_reset_at(self):
+        src_str = """
+        (reset-at tag (+ 1 (shift-at tag k (call k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, tag=object())
+        self.assertEqual(await expr(), 6)
+
+
+    async def test_shift_at_crosses_a_reset_of_another_tag(self):
+        """
+        k = (lambda [v] (reset-at a (+ 100 (reset-at b (+ 10 v))))), so
+        (k 1) is 111, and that is the value of the outer reset-at
+        """
+
+        src_str = """
+        (reset-at a
+          (+ 100 (reset-at b (+ 10 (shift-at a k (call k 1))))))
+        """
+        expr, mod = self.compile_expr(src_str, a=object(), b=object())
+        self.assertEqual(await expr(), 111)
+
+
+    async def test_shift_at_crosses_a_plain_reset(self):
+        src_str = """
+        (reset-at a
+          (+ 100 (reset (+ 10 (shift-at a k (call k 1))))))
+        """
+        expr, mod = self.compile_expr(src_str, a=object())
+        self.assertEqual(await expr(), 111)
+
+
+    async def test_plain_shift_stops_at_the_plain_reset(self):
+        """
+        the shift seeks the default tag and is delimited by the inner
+        reset: its handler's value 7 replaces that reset only
+        """
+
+        src_str = """
+        (reset-at a
+          (+ 100 (reset (+ 10 (shift k 7)))))
+        """
+        expr, mod = self.compile_expr(src_str, a=object())
+        self.assertEqual(await expr(), 107)
+
+
+    async def test_none_is_the_default_tag(self):
+        src_str = """
+        (+ (reset-at None (+ 1 (shift k (call k 5))))
+           (reset (+ 1 (shift-at None k (call k 50)))))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(await expr(), 57)
+
+
+    async def test_tags_match_by_identity(self):
+        """
+        two equal lists are two tags: the shift-at finds no reset-at
+        and the failure carries the tag it sought
+        """
+
+        seek = [1]
+        src_str = """
+        (reset-at held (+ 1 (shift-at seek k (call k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, held=[1], seek=seek)
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await expr()
+        self.assertIs(caught.exception.tag, seek)
+        self.assertEqual(caught.exception.operation, "shift")
+
+
+    async def test_prompt_not_found_names_the_forms(self):
+        """
+        the failure's message names the forms written: a shift-at with a
+        tag has no reset-at carrying it, a plain shift no reset
+        """
+
+        tagged, _ = self.compile_expr(
+            "(+ 1 (shift-at seek k (call k 5)))", seek=object())
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await tagged()
+        self.assertEqual(
+            "shift-at has no enclosing reset-at carrying its tag",
+            str(caught.exception))
+
+        plain, _ = self.compile_expr("(+ 1 (shift k (call k 5)))")
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await plain()
+        self.assertEqual(
+            "shift has no enclosing reset", str(caught.exception))
+
+
+    async def test_tag_expression_is_evaluated_once_per_form(self):
+        calls = []
+
+        def make(name):
+            calls.append(name)
+            return tags[name]
+
+        tags = {"a": object()}
+        src_str = """
+        (reset-at (make "a") (+ 1 (shift-at (make "a") k (call k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, make=make)
+        self.assertEqual(await expr(), 6)
+        self.assertEqual(calls, ["a", "a"])
 
 
 class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
     """
-    A delimited return that meets an after thunk on its way to the
-    invoke site waits on the wind and finishes once the thunk returns,
-    landing the value at the invoke site inside the evaluator; it must
-    never surface at the boundary as a bare result.
+    A shift whose abort meets an after thunk inside an attached copy
+    waits on the wind and calls its handler once the thunk returns; the
+    handler's value ends the copy's prompt and is delivered at the
+    invoke site inside the evaluator, never surfacing at the boundary as
+    a bare result. Each shift aborts
+    to its reset and leaves the dyn-wind on the way: the first leaves
+    the original, the second leaves the copy the invoke entered, so the
+    after thunk runs twice.
     """
 
     async def test_second_shift_value_reaches_first_invoke_site(self):
@@ -727,7 +951,7 @@ class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=log.append)
         result = await expr()
         self.assertEqual(result, 10)
-        self.assertEqual(log, ["cleanup"])
+        self.assertEqual(log, ["cleanup", "cleanup"])
 
 
 # The end.

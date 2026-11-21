@@ -110,7 +110,7 @@ def shape_remote_invoke_twice []:
         (#tuple (captured 5) (captured 30))))
 
 
-;; escaped k replays a dyn-wind around the graft on invoke
+;; escaped k enters and leaves the dyn-wind in its copy on invoke
 def shape_remote_invoke_wound []:
     var log (#list)
     var r:
@@ -143,7 +143,7 @@ def shape_nested_resets []:
     (reset (+ 1 (shift k (k (reset (+ 2 (shift j (j 3))))))))
 
 
-;; inner shift abandons inside invoked k; value lands at the invoke site
+;; inner shift abandons inside invoked k; value is delivered at the invoke site
 def shape_reentrant_inner_abandon []:
     (reset (+ (shift k (+ (k 1) (k 2))) (shift j 100)))
 
@@ -153,16 +153,17 @@ def shape_reentrant_k_of_k []:
     (reset (+ 1 (shift k (k (k (k 0))))))
 
 
-;; k re-invoked from an inner handler while a graft of k is still live
+;; k re-invoked from an inner handler while a copy of k is still attached
 def shape_reentrant_nested_same_k []:
     var log (#list)
+    var ks #[None]
     (reset
-      (+ (shift k (+ (k 1) (k 2)))
+      (+ (shift k (begin (set! ks[0] k) (+ (k 1) (k 2))))
          (shift j
            (cond
              ((== (len log) 1)
                (log.append "re")
-               (+ (j 100) (k 7)))
+               (+ (j 100) (ks[0] 7)))
              (else:
                (log.append "x")
                (j 100))))))
@@ -182,8 +183,9 @@ def shape_reentrant_amb_product []:
 
 ;; === 1d. Bindings read back inside a resumed region ===
 ;;
-;; A let around the reset puts its bindings in an NS node that capture
-;; clones into the template. Reading one back inside the region after a
+;; A let around the reset binds names the reset's body closes over; its
+;; NS node sits below the prompt, outside the template. Reading one
+;; back inside the region after a
 ;; multi-shot re-invoke once found the cell empty or holding the raw
 ;; dict, and inside a function frame the same shape took the process
 ;; down. Module globals were unaffected, the module namespace never
@@ -388,6 +390,52 @@ def shape_param_ends_before_resume []:
               (shift k (begin (k "a") (k "b") "done")))
             (seen.append p)
             "z"))
+    (#tuple r seen)
+
+
+def step_shift [x]:
+    (shift k (k x))
+
+
+class StepManager []:
+    def __init__ [self seen]:
+        (set! self.seen seen)
+    def __enter__ [self]:
+        (self.seen.append "enter")
+        self
+    def __exit__ [self *: args]:
+        (self.seen.append "exit")
+        False
+
+
+;; the shift is in a for-each step, with an operand of the dyn-wind's
+;; body waiting under the loop
+def shape_dynwind_over_step []:
+    var seen (#list)
+    var r:
+        (reset
+          (dyn-wind (seen.append "in")
+                    (+ 1000
+                       (begin
+                         (for-each [v (map step_shift (#list 1 2))]
+                           (seen.append v))
+                         5))
+                    (seen.append "out")))
+    (#tuple r seen)
+
+
+;; the same under a dyn-with, whose name each re-entry binds again
+def shape_dynwith_over_step []:
+    var seen (#list)
+    var m (StepManager seen)
+    var r:
+        (reset
+          (dyn-with [c m]
+            (+ 1000
+               (begin
+                 (for-each [v (map step_shift (#list 1 2))]
+                   (seen.append v))
+                 (if (is c m) 5 0)))))
     (#tuple r seen)
 
 

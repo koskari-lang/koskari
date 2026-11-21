@@ -86,13 +86,19 @@ static int test_dynframe_clone(void) {
 
 static int test_dynprompt_new_free(void) {
     /* Test prompt allocation and freeing */
-    KosDynPrompt *prompt = kos_dynprompt_new(NULL, 123);
+    PyObject *tag = PyLong_FromLong(300123);
+    TEST_ASSERT_NOT_NULL(tag, "create tag");
+
+    KosDynPrompt *prompt = kos_dynprompt_new(NULL, tag);
     TEST_ASSERT_NOT_NULL(prompt, "create prompt");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(prompt), KOS_DYN_PROMPT, "prompt kind is PROMPT");
-    TEST_ASSERT_EQ(KosDynPrompt_ID(prompt), 123, "prompt id is set");
+    TEST_ASSERT_SAME(KosDynPrompt_TAG(prompt), tag, "prompt tag is set");
+    TEST_ASSERT_EQ(Py_REFCNT(tag), 2, "the prompt owns a tag reference");
 
     kos_dynprompt_free(prompt);
+    TEST_ASSERT_EQ(Py_REFCNT(tag), 1, "the free releases the tag");
+    Py_DECREF(tag);
 
     return 0;
 }
@@ -107,8 +113,8 @@ static int test_dynwind_new_free(void) {
     TEST_ASSERT_NOT_NULL(wind, "create wind");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(wind), KOS_DYN_WIND, "wind kind is WIND");
-    TEST_ASSERT(KosDynWind_BEFORE_THUNK(wind) == NULL, "wind before_thunk is NULL");
-    TEST_ASSERT(KosDynWind_AFTER_THUNK(wind) == NULL, "wind after_thunk is NULL");
+    TEST_ASSERT(KosDynWind_CODE(wind) == NULL, "wind code is NULL");
+    TEST_ASSERT(KosDynWind_ROW(wind) == NULL, "wind row is NULL");
     TEST_ASSERT_EQ(KosDynWind_ENTERED(wind), 0, "wind entered is 0");
 
     kos_dynwind_free(wind);
@@ -243,9 +249,9 @@ static int test_dynforeach_new_free(void) {
 
 static int test_chain_free(void) {
     /* Test freeing a chain of nodes */
-    KosDynPrompt *p1 = kos_dynprompt_new(NULL, 1);
-    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, 2);
-    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, 3);
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, NULL);
+    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
+    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, Py_False);
 
     TEST_ASSERT_NOT_NULL(p1, "create prompt 1");
     TEST_ASSERT_NOT_NULL(p2, "create prompt 2");
@@ -260,27 +266,33 @@ static int test_chain_free(void) {
 
 static int test_chain_clone_segment(void) {
     /* Test cloning a chain segment */
-    KosDynPrompt *p1 = kos_dynprompt_new(NULL, 1);
-    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, 2);
-    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, 3);
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, NULL);
+    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
+    KosDynPrompt *p3 = kos_dynprompt_new((KosDynNode *) p2, Py_False);
 
     TEST_ASSERT_NOT_NULL(p1, "create prompt 1");
     TEST_ASSERT_NOT_NULL(p2, "create prompt 2");
     TEST_ASSERT_NOT_NULL(p3, "create prompt 3");
 
-    /* Clone from p3 down to (but not including) p1 */
+    /* Clone from p3 down to (but not including) p1, keeping ids as a
+       call/cc capture does */
+    KosCloneShape shape;
     KosDynNode *cloned = kos_dyn_clone_segment((KosDynNode *) p3,
-                                                 (KosDynNode *) p1);
+                                                 (KosDynNode *) p1, 0,
+                                                 0, 0, &shape);
     TEST_ASSERT_NOT_NULL(cloned, "clone segment");
+    TEST_ASSERT_EQ(kos_dynnode_id(cloned), kos_dynnode_id((KosDynNode *) p3),
+                   "a clone that keeps ids has its source's");
 
     /* Verify clone structure */
     TEST_ASSERT_EQ(KosDynNode_KIND(cloned), KOS_DYN_PROMPT, "cloned top is prompt");
-    TEST_ASSERT_EQ(KosDynPrompt_ID(cloned), 3, "cloned has p3 id");
+    TEST_ASSERT_SAME(KosDynPrompt_TAG(cloned), Py_False,
+                     "cloned has p3 tag");
 
     KosDynNode *cloned_parent = KosDynNode_PARENT(cloned);
     TEST_ASSERT_NOT_NULL(cloned_parent, "cloned has parent");
-    TEST_ASSERT_EQ(KosDynPrompt_ID(cloned_parent), 2,
-                   "cloned parent has p2 id");
+    TEST_ASSERT_SAME(KosDynPrompt_TAG(cloned_parent), Py_True,
+                     "cloned parent has p2 tag");
 
     /* The bottom of the clone should point to p1 (the stop node) */
     TEST_ASSERT_SAME(KosDynNode_PARENT(cloned_parent), p1, "clone bottom points to stop");
@@ -290,6 +302,45 @@ static int test_chain_clone_segment(void) {
 
     /* Free original chain */
     kos_dynchain_free((KosDynNode *) p3, NULL);
+
+    return 0;
+}
+
+
+static int test_chain_clone_segment_fresh_ids(void) {
+    /*
+      A delimited continuation's template, and each copy attached from
+      it, clone with fresh ids: every clone is a new instance, told
+      from its source and from every other copy.
+    */
+    KosDynPrompt *p1 = kos_dynprompt_new(NULL, NULL);
+    KosDynPrompt *p2 = kos_dynprompt_new((KosDynNode *) p1, Py_True);
+    KosCloneShape shape;
+    KosDynNode *first;
+    KosDynNode *second;
+    uint32_t source;
+
+    TEST_ASSERT_NOT_NULL(p1, "create prompt 1");
+    TEST_ASSERT_NOT_NULL(p2, "create prompt 2");
+    source = kos_dynnode_id((KosDynNode *) p2);
+
+    first = kos_dyn_clone_segment((KosDynNode *) p2, (KosDynNode *) p1, 1,
+                                  0, 0, &shape);
+    second = kos_dyn_clone_segment((KosDynNode *) p2, (KosDynNode *) p1, 1,
+                                   0, 0, &shape);
+    TEST_ASSERT_NOT_NULL(first, "clone once");
+    TEST_ASSERT_NOT_NULL(second, "clone twice");
+
+    TEST_ASSERT(kos_dynnode_id(first) != source,
+                "a fresh clone is not its source's instance");
+    TEST_ASSERT(kos_dynnode_id(second) != source,
+                "nor is the second");
+    TEST_ASSERT(kos_dynnode_id(first) != kos_dynnode_id(second),
+                "two fresh clones are two instances");
+
+    kos_dynchain_free(first, (KosDynNode *) p1);
+    kos_dynchain_free(second, (KosDynNode *) p1);
+    kos_dynchain_free((KosDynNode *) p2, NULL);
 
     return 0;
 }
@@ -402,7 +453,7 @@ static int test_dyngen_chain_free_leaves_the_owner_alone(void) {
 }
 
 
-/* === WITH / DELIM / region payload tests === */
+/* === WITH / region payload tests === */
 
 
 static int test_dynwith_free_exc_unconditional(void) {
@@ -434,7 +485,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     TEST_ASSERT_NOT_NULL(exit, "exit");
 
     with_node = kos_dyn_push_with_provisional(
-        ctx, mgr, enter, exit, 0, NULL, 0, KOS_DYN_WITH_SHOT_MULTI);
+        ctx, mgr, enter, exit, 0, NULL, 0, KOS_DYN_CAP_WINDS);
     TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
 
     KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
@@ -457,123 +508,6 @@ static int test_dynwith_free_exc_unconditional(void) {
     Py_DECREF(ctx);
 
     return 0;
-}
-
-
-static int test_dyndelim_clone_owns_chain_copy(void) {
-    /*
-      A DELIM clone carries a copy of the owned RETURN_CHAIN, never the
-      original: a captured in-place invoke resumes over its own copy of
-      the handler span, and freeing either DELIM leaves the other whole.
-    */
-
-    PyObject *ns;
-    KosDynFrame *inner;
-    KosDynDelim *delim;
-    KosDynNode *clone;
-    KosDynNode *chain_copy;
-
-    ns = PyDict_New();
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-
-    inner = kos_dynframe_new(NULL, NULL, ns);
-    TEST_ASSERT_NOT_NULL(inner, "create inner frame chain");
-
-    delim = kos_dyndelim_new(
-        NULL, KOS_DYN_DELIM_MODE_INPLACE, (KosDynNode *) inner, FAKE_INSN(3),
-        NULL, NULL);
-    TEST_ASSERT_NOT_NULL(delim, "create DELIM with owned chain");
-
-    clone = kos_dyn_clone((KosDynNode *) delim);
-    TEST_ASSERT_NOT_NULL(clone, "clone DELIM");
-    chain_copy = KosDynDelim_RETURN_CHAIN((KosDynDelim *) clone);
-    TEST_ASSERT_NOT_NULL(chain_copy, "clone carries a RETURN_CHAIN");
-    TEST_ASSERT(chain_copy != (KosDynNode *) inner,
-                "clone's RETURN_CHAIN is a copy, not the original");
-    TEST_ASSERT(KosDynNode_IS_FRAME(chain_copy),
-                "the copy is the same kind of node");
-
-    kos_dyndelim_free(delim);
-    kos_dyndelim_free((KosDynDelim *) clone);
-
-    return 0;
-}
-
-
-static int test_shift_capture_at_invocation_prompt_frames_inside(void) {
-  /*
-    A shift bound at an invocation prompt takes a clone of the frame
-    below the prompt as the template's bottom. A delim of the segment
-    returning into that live frame, in place or as a graft's return,
-    names the clone instead: every delim of the template has a return
-    frame of the template, never a node of the capturing chain.
-  */
-
-  PyObject *ns;
-  KosDynFrame *frame;
-  KosContext *ctx;
-  KosDynPrompt *invocation;
-  KosContinuation *k = NULL;
-  KosDynNode *node;
-  int delims = 0;
-
-  ns = PyDict_New();
-  TEST_ASSERT_NOT_NULL(ns, "create ns");
-  frame = kos_dynframe_new(NULL, NULL, ns);
-  TEST_ASSERT_NOT_NULL(frame, "create frame");
-  ctx = KosContext_New(frame, kos_tls_current());
-  TEST_ASSERT_NOT_NULL(ctx, "create context");
-  KosContext_EvalEnter(ctx, NULL);
-
-  /* frame <- invoke's delim <- invocation prompt (tag 1) <- prompt
-     (tag 0) <- in-place delim <- graft return delim; the last two
-     return into frame */
-  TEST_ASSERT_NOT_NULL(
-      kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT, NULL,
-                         FAKE_INSN(1), frame, NULL),
-      "push the invoke's delim");
-  invocation = kos_dyn_push_prompt(ctx, 1, NULL);
-  TEST_ASSERT_NOT_NULL(invocation, "push the invocation prompt");
-  KosDynNode_FLAGS((KosDynNode *) invocation) |= KOS_DYNF_INVOCATION;
-  TEST_ASSERT_NOT_NULL(kos_dyn_push_prompt(ctx, 0, FAKE_INSN(2)),
-                       "push a tag 0 prompt");
-  TEST_ASSERT_NOT_NULL(
-      kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_INPLACE, NULL,
-                         FAKE_INSN(1), frame, NULL),
-      "push an in-place delim returning into frame");
-  TEST_ASSERT_NOT_NULL(
-      kos_dyn_push_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT, NULL,
-                         FAKE_INSN(1), frame, NULL),
-      "push a graft return delim returning into frame");
-
-  TEST_ASSERT_EQ(kos_shift_capture(ctx, 1, FAKE_INSN(0), &k), 0,
-                 "the shift binds at the invocation prompt");
-  TEST_ASSERT_NOT_NULL(k, "a continuation is captured");
-
-  for (node = KosContinuation_CAPTURED_CHAIN(k); node;
-       node = KosDynNode_PARENT(node)) {
-    KosDynNode *want;
-    KosDynNode *cand;
-
-    if (! KosDynNode_IS_DELIM(node))
-      continue;
-    delims++;
-    want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
-    if (! want)
-      continue;
-    for (cand = KosContinuation_CAPTURED_CHAIN(k); cand && cand != want;
-         cand = KosDynNode_PARENT(cand))
-      ;
-    TEST_ASSERT(cand && KosDynNode_IS_FRAME(cand),
-                "a template delim returns into a frame of the template");
-  }
-  TEST_ASSERT_EQ(delims, 2, "the template holds both delims");
-
-  kos_continuation_free(k);
-  KosContext_EvalExit(ctx);
-  Py_DECREF(ctx);
-
-  return 0;
 }
 
 
@@ -627,6 +561,7 @@ int run_dynchain_tests(void) {
     /* Chain operation tests */
     RUN_TEST(test_chain_free);
     RUN_TEST(test_chain_clone_segment);
+    RUN_TEST(test_chain_clone_segment_fresh_ids);
 
     /* Continuation tests */
     RUN_TEST(test_continuation_free_null);
@@ -635,8 +570,6 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dyngen_borrows_owner);
     RUN_TEST(test_dyngen_chain_free_leaves_the_owner_alone);
     RUN_TEST(test_dynwith_free_exc_unconditional);
-    RUN_TEST(test_dyndelim_clone_owns_chain_copy);
-    RUN_TEST(test_shift_capture_at_invocation_prompt_frames_inside);
     RUN_TEST(test_dynforeach_free_with_iter);
 
     return 0;

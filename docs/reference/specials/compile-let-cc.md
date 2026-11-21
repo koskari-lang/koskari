@@ -14,10 +14,10 @@ evaluation is suspended on an `await`, the continuation raises
 `KoskariContinuationDead`; each top-level form of a module is its own
 evaluation.
 
-**Behaviour:** Emits `PUSH_CC`, then opens a `child_namespace` that declares
+**Behaviour:** Emits `PUSH_CC`, then opens a child namespace that declares
 `K` as a local. Inside the namespace: `CAPTURE_CC` captures the continuation
 and pushes it; `VAR_STORE K` binds it to the declared name; the body is
-compiled with `helper_begin`. Finally `POP_CC` closes the CC block outside the
+compiled as a `begin`. Finally `POP_CC` closes the CC block outside the
 namespace. `K` is not visible after the `compile/let/cc` form.
 
 **Examples:**

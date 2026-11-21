@@ -1,6 +1,6 @@
 # Koskari Design Note: Freeze/Thaw Context Segments and C-Local Execution State
 
-**ARCHIVED 2026-07-14.** Items 1-3 and 5 below are LANDED: `KosEvalState`
+**ARCHIVED 2026-07-14.** Items 1-3 and 5 below are IMPLEMENTED: `KosEvalState`
 is the C-local live authority (pc/acting_pc/code/namespace/block) with
 freeze/thaw at eval boundaries and retarget choke points -- see
 [eval-state-live-authority.md](../interpreter/eval-state-live-authority.md)
@@ -8,7 +8,7 @@ for the implementation spec, which remains current. CoW stack blocks are
 gone. Item 4, the **fast inline stack block**, was built to completion
 and SHELVED; the full experiment lives on the `maybe-fast-stack` branch
 (commit 1a5df775). The inline fast paths for the hot block-level stack
-ops (a byproduct of the same work) landed on master separately
+ops (a byproduct of the same work) were implemented on master separately
 (87ad90ce).
 
 ## Findings from the fast inline stack experiment
@@ -33,7 +33,7 @@ runs. Measured on the churn suite:
   scoping cannot be applied to the operand stack: a non-innermost
   frame's segment must be heap-valid at all times, because capture, GC
   traverse, and dynnode teardown read it.
-- **Transition counters** (`KOS_TE_ES_STACK_*`, landed with the
+- **Transition counters** (`KOS_TE_ES_STACK_*`, implemented with the
   experiment) showed 32 slots ample -- zero overgrows on every
   benchmark -- and zero transitions in steady-state call loops once
   steal/tail-prepend had fast-segment paths. Sizing was never the

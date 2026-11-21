@@ -34,6 +34,8 @@ Block heads: `NAME ...:` followed by an indented body.
 
 Handled by the compiler when the name heads a form.
 
+- [`abort`](../reference/specials/compile-abort.md)
+- [`abort-at`](../reference/specials/compile-abort-at.md)
 - [`and`](../reference/specials/compile-and.md)
 - [`apply-fence`](../reference/specials/compile-apply-fence.md)
 - [`attr`](../reference/specials/compile-attr.md)
@@ -129,12 +131,14 @@ Handled by the compiler when the name heads a form.
 - [`refq`](../reference/specials/compile-refq.md)
 - [`repr`](../reference/specials/object-operators/index.md#unary-and-inspection-operators)
 - [`reset`](../reference/specials/compile-reset.md)
+- [`reset-at`](../reference/specials/compile-reset-at.md)
 - [`return`](../reference/specials/compile-return.md)
 - [`set-attr`](../reference/specials/compile-set-attr.md)
 - [`set-item`](../reference/specials/compile-set-item.md)
 - [`setq`](../reference/specials/compile-setq.md)
 - [`setq-values`](../reference/specials/compile-setq-values.md)
 - [`shift`](../reference/specials/compile-shift.md)
+- [`shift-at`](../reference/specials/compile-shift-at.md)
 - [`special-match`](../reference/specials/compile-special-match.md)
 - [`special-rules`](../reference/specials/compile-special-rules.md)
 - [`==`](../reference/specials/compile-eqeq.md)

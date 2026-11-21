@@ -578,7 +578,7 @@ def _promote_repeat_frame_bindings(
     Each frame is promoted first, so a pair sub-pattern under a further
     ellipsis, which the matcher captured as a nested frame vector inside
     the frame, becomes named columns of that frame before the frames are
-    transposed. A variable under N ellipses then lands N lists deep, the
+    transposed. A variable under N ellipses then sits N lists deep, the
     shape template ellipsis indexing peels one level at a time.
 
     Keys already present in ``bindings`` are left alone so outer captures and

@@ -1411,7 +1411,7 @@ tags:
   - surprising
   - pitfall
   - iterate
-notes: "filters do NOT compose: only the outermost whole-body when is the filter; the nested when is an ordinary expression whose None lands in the list when its condition fails. corrective: one composite check -- (list-each [x seq] (when (and a b) body))."
+notes: "filters do NOT compose: only the outermost whole-body when is the filter; the nested when is an ordinary expression whose None goes into the list when its condition fails. corrective: one composite check -- (list-each [x seq] (when (and a b) body))."
 ---
 id: iter-list-each-multiform-no-injection-002
 feature: macro/compile/list-each
@@ -1601,6 +1601,7 @@ verify:
   read: "(len (list (py-filter (lambda [x] False) (#list 1 2 3))))"
   eval: "3"
   warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
+  gc_collect: true
 references:
   - reference/runtime/map-and-filter.md
 stability: evolving
@@ -1636,6 +1637,7 @@ verify:
   read: "(getattr (type (next (py-map (lambda [x] (* x 2)) (#list 1)))) \"__name__\")"
   eval: '"Coroutine"'
   warning: "RuntimeWarning: coroutine '<lambda>' was never awaited"
+  gc_collect: true
 references:
   - reference/runtime/map-and-filter.md
 stability: evolving

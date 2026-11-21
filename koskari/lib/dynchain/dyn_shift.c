@@ -15,100 +15,80 @@
 
 
 /**
-  Included by dynchain.c. The KOS_DYN_SHIFT node: the shift handler
-  bookmark.
+  Included by dynchain.c. An abort to a prompt.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
 */
 
-/* === KosDynShift implementation === */
+/* === Abort === */
 
 
 /**
-   Marker for shift handler extent (no frame). Owns the handler body's
-   operand segment: the region's own pending operands stay on the
-   prompt and the region nodes below, as they were at capture, so an
-   in-place invoke of the continuation runs the slice over them and
-   finds the handler's operands waiting on this node when it returns.
-   Callers: kos_dyn_push_shift.
+   Leave everything up to a prompt and run an aside above it. See
+   dynchain.h for the contract. Callers: opcodes ABORT, SHIFT.
 */
-static KosDynShift *kos_dynshift_new(
-    KosDynNode *parent,
-    uint32_t prompt_node_id) {
-  KosDynShift *shift = (KosDynShift *) kos_dynnode_alloc();
-  if (! shift)
-    return NULL;
+KosOpResult kos_abort_to_prompt(
+    KosContext *ctx,
+    KosDynPrompt *prompt,
+    KosCode *aside,
+    PyObject *ns,
+    int owns_ns,
+    PyObject *payload,
+    KosContinuation *keep) {
 
-  kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, parent, 0);
-  KosDynShift_PROMPT_NODE_ID(shift) = prompt_node_id;
-  kos_dynnode_use_inline_segment((KosDynNode *) shift);
-  return shift;
-}
+  KosDynNode *base;
+  KosDynNode *frame;
+  KosXferGoal goal;
 
+  if (! ns) {
+    Py_XDECREF(payload);
+    return EVAL_RAISE();
+  }
 
-/**
-   Clone for captured chain segments.
-*/
-static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
-  if (! shift)
-    return NULL;
+  /* it will stand above the frame under the prompt, linked by the
+     transfer: its back link and its segment's are open for the seam's
+     registers */
+  base = KosDynNode_PARENT((KosDynNode *) prompt);
+  while (base && ! KosDynNode_IS_FRAME(base))
+    base = KosDynNode_PARENT(base);
 
-  KosDynShift *clone = (KosDynShift *) kos_dynnode_clone_base(
-      (KosDynNode *) shift);
-  if (! clone)
-    return NULL;
+  frame = (KosDynNode *) kos_dynframe_new_aside(
+      NULL, (KosDynFrame *) base, aside, ns, owns_ns);
+  if (! frame) {
+    Py_XDECREF(payload);
+    return EVAL_RAISE();
+  }
+  KosDynFrame_BACK_FRAME(frame) = NULL;
+  KosSegment_BACK(KosDynNode_STACK(frame)) = NULL;
 
-  KosDynShift_PROMPT_NODE_ID(clone) = KosDynShift_PROMPT_NODE_ID(shift);
-  return clone;
-}
+  /* The target is the one frame, which ATTACHING links on the prompt,
+     the seam, and which belongs to the goal until then. No resume pc:
+     the frame starts at the aside's first instruction, and the frame below the
+     prompt already stands after the reset, where the aside's return,
+     which ends the prompt, is delivered. The transfer runs here, from
+     a goal in this frame, and is kept only if a leave on the way
+     pauses or fails. */
+  kos_xfer_goal_init(&goal, frame, (KosDynNode *) prompt, NULL, NULL, NULL,
+                     0);
+  goal.payload = payload;  /* the caller's reference */
+  goal.keep = keep;
 
-
-/**
-   Return shift node to freelist.
-*/
-static void kos_dynshift_free(KosDynShift *shift) {
-  if (! shift)
-    return;
-
-  kos_dynnode_return_to_freelist(shift);
-}
-
-
-/**
-   Push SHIFT node via kos_dyn_push. Callers: opcode PUSH_SHIFT.
-*/
-int kos_dyn_push_shift(KosContext *ctx, uint32_t prompt_node_id) {
-  // CONTEXT: dirty, touches context directly
-  KosDynShift *shift = kos_dynshift_new(KosContext_DYN_TOP(ctx),
-                                        prompt_node_id);
-  if (! shift)
-    return -1;
-
-  return kos_dyn_push(ctx, (KosDynNode *) shift);
-}
-
-
-/* === GC traversal === */
-
-
-/**
-   GC traverse a KOS_DYN_SHIFT: no PyObject refs on the node.
-*/
-static int dynnode_traverse_shift(KosDynNode *node, visitproc visit, void *arg) {
-  (void) node;
-  (void) visit;
-  (void) arg;
-  return 0;
-}
-
-
-static int dynnode_to_dict_shift(KosDynNode *node, PyObject *data) {
-
-  if (snapshot_set_uint(data, "prompt_node_id",
-                        KosDynShift_PROMPT_NODE_ID(node)) < 0)
-    return -1;
-  return 0;
+  /* what a clone for an attach records, for a copy of one frame: the
+     whole record, which the goal's fill leaves to its caller */
+  goal.shape.bottom = frame;
+  goal.shape.frames = 1;
+  goal.shape.top.top = frame;
+  goal.shape.top.frame = frame;
+  goal.shape.top.block = &KosDynNode_STACK(frame);
+  goal.shape.top.ns = KosDynNode_NS(frame);
+  goal.shape.open_frame = frame;
+  goal.shape.open_segment = KosDynNode_STACK(frame);
+  goal.shape.ns_open = NULL;
+  goal.shape.pieces = NULL;
+  goal.shape.piece_count = 0;
+  goal.shape.frozen = 0;
+  return kos_xfer_goal_run(ctx, &goal);
 }
 
 

@@ -118,7 +118,7 @@ class TestListEachFilter(unittest.IsolatedAsyncioTestCase):
     async def test_nested_when_does_not_compose(self):
         """
         filters do not compose: a nested when is an ordinary expression
-        whose None lands in the list -- (when (and a b) ...) is the
+        whose None goes into the list -- (when (and a b) ...) is the
         composite check
         """
 

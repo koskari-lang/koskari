@@ -37,7 +37,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (prompt/SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
+   POP_*), continuations (RESET, ABORT, SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first
@@ -421,10 +421,9 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(PUSH_PROMPT, 1, CONST)         // arg = prompt_id constant pool index; cache: extent close pc
-OP(POP_PROMPT, 0, NOARG)          // pop prompt from dynamic chain
-OP(PUSH_SHIFT, 0, CONST)          // arg = prompt_id; capture continuation, enter shift block
-OP(POP_SHIFT, 0, NOARG)           // pop shift block; return from handler without invoking k
+OP(RESET, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count (0, or 1 popped), the body; push the prompt and run the aside above it
+OP(ABORT, 0, EXTRA, COUNT, ASIDE, NOARG, NOARG)  // tag count, the handler; leave everything up to the prompt and run the aside above it
+OP(SHIFT, 0, EXTRA, COUNT, ASIDE_NS, NOARG, NOARG)  // tag count, the handler; capture up to the prompt, then as ABORT with the continuation on the aside's stack
 
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, 1, NOARG)             // cache: extent close pc
@@ -432,7 +431,7 @@ OP(POP_CC, 0, NOARG)              // pop CC block from dynamic chain
 OP(CAPTURE_CC, 0, COUNT)          // capture undelimited continuation, push on stack; 1 = set the callee on TOS aside first
 
 // dynamic wind control
-OP(PUSH_WIND, 0, COUNT)           // arg = 1 (before only) or 2 (both); stack: [..., before, after]
+OP(PUSH_WIND, 0, EXTRA, ASIDE, ASIDE, NOARG, NOARG)  // the before and after asides, either one None; push a wind node that runs them
 OP(POP_WIND, 0, NOARG)            // pop wind from dynamic chain
 
 // parameterize extent and parameter reads

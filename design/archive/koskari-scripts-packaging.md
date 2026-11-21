@@ -1,7 +1,7 @@
 # Koskari scripts packaging (`koskari_scripts`)
 
 **Status:** Implemented (archived). v1 launcher, setuptools plugin, unit tests,
-**`examples/life`**, and user-facing packaging recipe are landed.
+**`examples/life`**, and user-facing packaging recipe are implemented.
 
 **Canonical summary:** [FEATURES.md](../FEATURES.md) § Packaging: installed
 commands (`koskari_scripts`).
@@ -47,7 +47,7 @@ Deferred after Phase A:
 * Optional native **`koskari`** binary in RPM or other system packaging (not
   wheel/sdist)
 
-Also done since initial v1 landing:
+Also done since initial v1 implementation:
 
 * **`examples/life`** migrated to **`koskari_scripts`** ( **`setup.cfg`** + minimal **`setup.py`** )
 * User-facing packaging guide: **`docs/patterns/recipes/packaging-installed-scripts.md`**
@@ -367,7 +367,7 @@ sys.exit(run_resolved_script('myapp==1.0', 'koslife'))
 When **`configure_koskari_scripts`** runs, it registers **`KoskariInstallScripts`**
 which writes one stub per **`koskari_scripts`** entry during **`install_scripts`**.
 Wheel builds set **`no_ep=True`** (skip stock **`console_scripts`** generation)
-but koskari stubs still land in **`.data/scripts/`**.
+but koskari stubs still go into **`.data/scripts/`**.
 
 This matches setuptools' dist-scoped resolve model: one **`dist-info`** read,
 no global **`entry_points()`** scan. Other **`console_scripts`** on the same

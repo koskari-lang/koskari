@@ -14,7 +14,7 @@ delivery coming.
 
 **See also:** [generator-extent-freeze.md](generator-extent-freeze.md)
 (the other yield-time question), [extent-wind-unwind.md](extent-wind-unwind.md),
-[demand-flattening.md](demand-flattening.md).
+[demand-flattening.md](../archive/demand-flattening.md).
 
 ## What exists today
 

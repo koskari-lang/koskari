@@ -16,8 +16,8 @@ koskari.tests.reproducers.test_frame_resume_clear_order
 
 A frame's resume is cleared with the frame no longer naming the state
 being released. A continuation invoked from inside a generator that a
-next is stepping lands on the frame waiting on that next, and the
-landing clears the frame's resume while the context still names the
+next is stepping arrives at the frame waiting on that next, and the
+transfer clears the frame's resume while the context still names the
 frame. The release of the generator runs a finalizer that asks for the
 referents of every context; the process died by SIGSEGV when the frame
 still reported the generator being deallocated.
@@ -53,7 +53,7 @@ SRC = """
 
 class Probe:
     """
-    Released with the generator the landing lets go of; its finalizer
+    Released with the generator the transfer lets go of; its finalizer
     asks every context for its referents, which reports a frame's
     resume state through the kind's traverse
     """
@@ -66,9 +66,9 @@ class Probe:
 
 class TestFrameResumeClearOrder(unittest.TestCase):
 
-    def test_landing_clears_next_resume_unnamed(self):
+    def test_transfer_clears_next_resume_unnamed(self):
         """
-        A landing that clears a next's resume does not report the
+        A transfer that clears a next's resume does not report the
         generator it releases
         """
 

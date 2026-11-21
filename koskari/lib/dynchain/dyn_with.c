@@ -16,13 +16,14 @@
 
 /**
   Included by dynchain.c. The KOS_DYN_WITH node: the context manager
-  extent for with and dyn-with, told apart by the shot field.
+  extent for with and dyn-with, told apart by KOS_DYN_CAP_WINDS, which a
+  dyn-with carries.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
 */
 
-/* === KosDynWith (context manager; multi/single via u.with.shot) === */
+/* === KosDynWith (context manager; dyn-with carries KOS_DYN_CAP_WINDS) === */
 
 
 static void kos_dynwith_free(KosDynWith *node);
@@ -30,7 +31,9 @@ static void kos_dyn_with_abort_impl(KosDynWith *node);
 
 
 /**
-   Allocate a WITH node: kind KOS_DYN_WITH, caps from shot (multi vs single).
+   Allocate a WITH node: kind KOS_DYN_WITH. winds is KOS_DYN_CAP_WINDS
+   for a dyn-with, which a transfer runs, and 0 for a plain with, which
+   is local to its body.
 */
 static KosDynWith *kos_dyn_with_allocate(
     KosDynNode *parent,
@@ -40,18 +43,16 @@ static KosDynWith *kos_dyn_with_allocate(
     uint8_t self_bind,
     PyObject *name,
     KosOp *resume_pc,
-    uint8_t shot) {
+    uint32_t winds) {
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
 
   if (! node)
     return NULL;
 
-  {
-    kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
-                     KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK);
-  }
-
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
+                   KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK
+                   | (winds & KOS_DYN_CAP_WINDS));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
@@ -59,42 +60,31 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_SELF_BIND(node) = self_bind;
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  KosDynWith_SHOT(node) = shot;
-  KosDynWith_EXIT_DONE(node) = NULL;
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
   KosDynWith_EXC_SAVED(node) = 0;
   KosExc_Init(KosDynWith_SAVED(node));
-
-  /* Single-shot: the exit-done bit lives in the node's own shot field
-     until a continuation clones the node; the clone then makes the
-     shared cell (see kos_dyn_with_clone). */
   return node;
 }
 
 
-static void kos_dyn_with_shot_after_exit_done(KosDynWith *node) {
-  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE) {
-    KosDynWith_SHOT(node) = KOS_DYN_WITH_SHOT_SINGLE_DONE;
-    if (KosDynWith_EXIT_DONE(node))
-      KosRef_Store(KosDynWith_EXIT_DONE(node), Py_True);
-  }
-}
-
-
 /**
-   True when this node's single-shot __exit__ has already run, on this
-   node or on any clone sharing its exit-done cell. Multi-shot is never
-   done.
+   Whether a with can be part of a continuation's template. A pending
+   node has an __enter__ or __exit__ in flight, which no template can
+   carry; nor can what was stored for its completion. Returns 0, or -1
+   with the refusal set.
 */
-static int kos_dyn_with_single_exit_done(KosDynWith *node) {
-  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_MULTI)
-    return 0;
-  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE)
-    return 1;
-  if (KosDynWith_EXIT_DONE(node))
-    return KosRef_IsEmpty(KosDynWith_EXIT_DONE(node)) == 0;
+static int kos_dyn_with_capturable(KosDynWith *src) {
+
+  if (KosDynWith_ENTER_PENDING(src) || KosDynWith_EXIT_PENDING(src)
+      || KosDynWith_OB(src)->kind != KOS_OB_NONE) {
+    kos_raise_prompt_unreachable(
+        NULL, KosDynWith_ENTER_PENDING(src) ? "enter" : "exit",
+        "cannot capture a continuation from inside a with whose %s is"
+        " in flight");
+    return -1;
+  }
   return 0;
 }
 
@@ -105,30 +95,8 @@ static int kos_dyn_with_single_exit_done(KosDynWith *node) {
 KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   if (! src)
     return NULL;
-  /* A pending node has an __enter__ or __exit__ in flight, which no
-     template can carry; nor can what was stored for its completion. */
-  if (KosDynWith_ENTER_PENDING(src) || KosDynWith_EXIT_PENDING(src)
-      || KosDynWith_OB(src)->kind != KOS_OB_NONE) {
-    kos_raise_prompt_unreachable(
-        NULL, KosDynWith_ENTER_PENDING(src) ? "enter" : "exit",
-        "cannot capture a continuation from inside a with whose %s is"
-        " in flight");
+  if (kos_dyn_with_capturable(src) < 0)
     return NULL;
-  }
-
-  /* A single-shot extent's exit-done fact is shared, not copied: the
-     live twin's exit must be visible to every clone. The cell is made
-     here, on first clone, so a with that is never captured (nearly all
-     of them) allocates nothing; every reader treats a missing cell as
-     not done and the node's own shot field still records the live
-     twin's exit. Made before the clone exists, so nothing fallible
-     sits between the clone's allocation and its complete arm. */
-  if (KosDynWith_SHOT(src) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE
-      && ! KosDynWith_EXIT_DONE(src)) {
-    KosDynWith_EXIT_DONE(src) = KosRef_New(NULL, NULL);
-    if (! KosDynWith_EXIT_DONE(src))
-      return NULL;
-  }
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_clone_base(
       (KosDynNode *) src);
@@ -142,11 +110,12 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
   Py_XINCREF(KosDynWith_EXIT(node));
   KosDynWith_SELF_BIND(node) = KosDynWith_SELF_BIND(src);
-  KosDynWith_ENTERED(node) = 0;
+  /* A transfer enters a dyn-with's copy afresh. A plain with's copy is
+     the extent its body already entered, and runs __exit__ when that
+     copy exits locally. */
+  KosDynWith_ENTERED(node) = KosDynNode_HAS_CAP(src, KOS_DYN_CAP_WINDS)
+      ? 0 : KosDynWith_ENTERED(src);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
-  KosDynWith_EXIT_DONE(node) = KosDynWith_EXIT_DONE(src);
-  Py_XINCREF(KosDynWith_EXIT_DONE(node));
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
@@ -175,8 +144,6 @@ static void kos_dynwith_free(KosDynWith *node) {
   KosDynWith_NAME(node) = NULL;
   kos_dyn_ob_clear(KosDynWith_OB(node));
   KosExc_Clear(KosDynWith_SAVED(node));
-  Py_XDECREF(KosDynWith_EXIT_DONE(node));
-  KosDynWith_EXIT_DONE(node) = NULL;
 
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -197,13 +164,8 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_int(data, "phase", (int) KosDynWith_PHASE(with_node)) < 0)
     return -1;
-  if (snapshot_set_int(data, "shot", (int) KosDynWith_SHOT(with_node)) < 0)
-    return -1;
   if (snapshot_set_int(data, "self_bind",
       (int) KosDynWith_SELF_BIND(with_node)) < 0)
-    return -1;
-  if (snapshot_set_int(data, "exit_done",
-      kos_dyn_with_single_exit_done(with_node)) < 0)
     return -1;
   if (snapshot_set_uint(data, "resume_pc",
                         kos_insn_pc(KosDynWith_RESUME_PC(with_node))) < 0)
@@ -229,11 +191,11 @@ KosDynWith *kos_dyn_push_with_provisional(
     uint8_t self_bind,
     PyObject *name,
     KosOp *resume_pc,
-    uint8_t shot) {
+    uint32_t winds) {
 
   KosDynWith *node = kos_dyn_with_allocate(
       KosContext_DYN_TOP(ctx), mgr, enter, exit, self_bind, name,
-      resume_pc, shot);
+      resume_pc, winds);
   if (! node)
     return NULL;
 
@@ -272,17 +234,20 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 
 
 /**
-   Complete an __enter__ whose result is TOS: pop it, bind the with name
-   when there is one, and mark the node entered and idle. The name binds
+   Complete an __enter__ whose result is staged or is TOS: take it, bind
+   the with name when there is one, and mark the node entered and idle.
+   The name binds
    in the node's own namespace, the one the with was pushed in: on a
    plain push that is the live namespace too, but a transfer re-enters
-   the node with the landed frame above it current, and the binding
+   the node with the attached frame above it current, and the binding
    belongs to the with's scope, not to whatever frame sits at dyn_top.
 */
 static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
-  PyObject *result = KosContext_StackPopRef(ctx);
+  PyObject *result = kos_dyn_take_staged_result(ctx);
   PyObject *name;
 
+  if (! result)
+    result = KosContext_StackPopRef(ctx);
   if (! result)
     return -1;
 
@@ -360,7 +325,6 @@ static int kos_dyn_with_classify_exit(
       KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   }
   Py_DECREF(result);
-  kos_dyn_with_shot_after_exit_done(node);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
   return 0;
 }
@@ -371,8 +335,7 @@ static int kos_dyn_with_classify_exit(
 */
 static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
 
-  if (KosDynWith_LEFT(node) || kos_dyn_with_single_exit_done(node)
-      || KosDynWith_ENTERED(node))
+  if (KosDynWith_LEFT(node) || KosDynWith_ENTERED(node))
     return EVAL_NORMAL();
   if (KosDynWith_ENTER_PENDING(node))
     return EVAL_REPROLOGUE();  /* __enter__ in flight */
@@ -386,7 +349,7 @@ static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
             ctx, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0, NULL, NULL)
       : KosContext_Call(ctx, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
 
-  /* A value in hand lands on the block, or is awaited there; settled,
+  /* A value in hand is pushed on the block, or is awaited there; settled,
      the entry completes now. */
   if (kr.kind == KOS_RES_RETURN) {
     kr = KosContext_PushOrAwait(ctx, kr.val);
@@ -429,19 +392,8 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   if (! KosDynWith_ENTERED(node)) {
-    /* never entered: no __exit__. A grafted clone lands this way, and
-       the exit-done cell it shares with the live twin records only an
-       __exit__ that ran, so the cell and the shot field stay as they
-       are; the live twin's own leave still fires its __exit__. */
-    KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
-    return EVAL_NORMAL();
-  }
-
-  if (kos_dyn_with_single_exit_done(node)) {
-    /* __exit__ already ran, possibly on a twin sharing the exit-done
-       cell; complete the extent without re-firing it. */
-    if (! PyErr_Occurred() && KosContext_FRAME(ctx))
-      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
+    /* never entered: no __exit__. A dyn-with's copy that a transfer
+       attached and has not yet entered arrives this way. */
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
     return EVAL_NORMAL();
   }
@@ -520,8 +472,8 @@ static KosOpResult kos_dyn_with_leave(
 
 
 /**
-   The pending __enter__ or __exit__ returned; its result is the top of
-   the live block.
+   The pending __enter__ or __exit__ returned; its result is staged or
+   is the top of the live block.
 */
 static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
 
@@ -538,7 +490,10 @@ static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
     return kos_dyn_with_bind_entered(ctx, node);
 
   if (KosDynWith_EXIT_PENDING(node)) {
-    PyObject *result = KosContext_StackPopRef(ctx);
+    PyObject *result = kos_dyn_take_staged_result(ctx);
+
+    if (! result)
+      result = KosContext_StackPopRef(ctx);
     if (! result)
       return -1;
     return kos_dyn_with_classify_exit(ctx, node, result);
@@ -554,7 +509,6 @@ static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
 static void kos_dyn_with_abort_impl(KosDynWith *node) {
   /* what was stored stays for the unlink to chain or discard */
   kos_dyn_with_exit_done_exc(node);
-  kos_dyn_with_shot_after_exit_done(node);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
 }
 
@@ -577,7 +531,6 @@ static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynWith_MGR(with_node));
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));
-  Py_VISIT(KosDynWith_EXIT_DONE(with_node));
   Py_VISIT(KosDynWith_NAME(with_node));
   if (KosExc_Traverse(KosDynWith_SAVED(with_node), visit, arg) < 0)
     return -1;

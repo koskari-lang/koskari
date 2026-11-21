@@ -1,5 +1,7 @@
 # Demand path flattening
 
+> Status note: this write-up references `POP_PROMPT` (`opcode/POP_PROMPT.c`), `kos_eval_route_delim_return`, `kos_dyn_inplace_restitch`, `kos_delimited_inplace_ready`, and the in-place invoke of a delimited continuation, which the code no longer has.
+
 Status: in progress, uncommitted. Started 2026-09-25 from the design
 TODO entry "Recursion guard at the Python boundary". Reviewed by two
 independent passes (plan review, implementation advice); their verified
@@ -208,12 +210,12 @@ and flattens. The text below records the gap as it stood.
 `Koskari_DemandSync`. A Koskari predicate or APP extractor in a
 runtime `match` nested an eval.
 The comment there names it a flattening gap and points at
-[resumable-reads.md](resumable-reads.md) section 8, the match row.
+[resumable-reads.md](../interpreter/resumable-reads.md) section 8, the match row.
 
 **D11. Composable continuations invoked from a code-less resume frame.**
 Fixed in the working tree; the transform case predates this work. When
 a `shift` continuation's resumed slice completes, `POP_PROMPT`
-(`opcode/POP_PROMPT.c:67`) lands the value at the recorded invoke site
+(`opcode/POP_PROMPT.c:67`) delivers the value at the recorded invoke site
 through `kos_eval_route_delim_return` (`eval.c:~1488`). Two faults:
 
 - The in-place restitch (`kos_dyn_inplace_restitch`, `dynchain.c`)
@@ -596,7 +598,7 @@ tail position.
   stays dead), `matcher/datum.c:485`, `object.c:163`,
   `callable.c:295/319`, `demand.c:830/862`. Borrowed tuple and dict; NULL
   args and NULL kwargs both occur.
-- Resolves D4 and D6. The `demand_call` contract changes land here.
+- Resolves D4 and D6. The `demand_call` contract changes are implemented here.
 
 ### 5. Tests
 

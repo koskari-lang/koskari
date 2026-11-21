@@ -134,7 +134,7 @@ sandbox.
 What it does is put code out of reach of the memory bugs that occur in
 practice, which are relative, not arbitrary: a bounded overflow from a
 neighbouring allocation, a stale pointer into storage since reused. A
-write that reaches sealed code faults instead of landing.
+write that reaches sealed code faults instead of taking effect.
 
 It also doubles as a debugging tool. A buggy native extension that
 scribbles over live code is caught at the offending write, with that

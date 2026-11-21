@@ -14,7 +14,7 @@ Proposal — not implemented.
   keyword slots.
 - **Standalone** language/VM feature: useful beyond a single consumer.
 - **Foundation** for **runtime `match`** / **match/case** arm binding: matched
-  subvalues need a stable way to land under names in an arm-local environment;
+  subvalues need a stable way to be stored under names in an arm-local environment;
   kwargs-shaped application matches that need.
 
 ## Related

@@ -39,7 +39,7 @@ compiles as before. Brackets remain recommended, never required.
 - The `( )` vs `[ ]` distinction already carries author intent, but the intent
   is discarded at read time. Preserving it lets tooling (repr, the compiler, a
   future style linter / LSP) act on it.
-- A `[ ]` that lands in operator position is a high-confidence mistake: the
+- A `[ ]` that appears in operator position is a high-confidence mistake: the
   author signalled "data" but wrote it where a call will be emitted.
 - The mechanism is cheap and additive — it does not change how any existing,
   correctly-written program reads, compiles, or evaluates.
@@ -129,7 +129,7 @@ fleshed out) selects one of three modes for the `compile_pair` path:
    `bracket-nil`. The last argument is still the explicit tail, so the terminator
    flavor is the caller's choice (`(bracket-cons 1 2 nil)` vs
    `(bracket-cons 1 2 bracket-nil)`).
-   - **Landmine: `CheckExact` truncation (audited in `pair.c`).** Exact-type
+   - **Hazard: `CheckExact` truncation (audited in `pair.c`).** Exact-type
      checks (`KosPair_CheckExact`, `ob_type == &KosPairType`) silently truncate
      a list at the first bracket cell because a subclass fails `CheckExact`.
      **Done:** every `pair.c` site is migrated — spine walks and nested-list
@@ -155,7 +155,7 @@ fleshed out) selects one of three modes for the `compile_pair` path:
      requested type via `Py_SET_TYPE` (and both `KosPair_New` /
      `KosBracketPair_New` are thin wrappers; both types use `pair_dealloc`). The
      type stamp is what keeps a recycled cell from ever leaking out as the wrong
-     kind, so the original "give bracket-pairs their own allocation path" landmine
+     kind, so the original "give bracket-pairs their own allocation path" hazard
      is handled in one place rather than avoided. Free-list tracing stays unified
      under `"pair"`.
 2. **Reader dispatch.** *Done.* `_read_pair` (`koskari/reader/parser.py`)

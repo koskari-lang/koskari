@@ -26,7 +26,7 @@ What is the `[]`?
 +++
 The base list. Empty means no explicit base, as `class Point:` does.
 `class Child (Parent):` subclasses. The `::` carries an
-annotation, and it lands in `__annotations__` as the real type object.
+annotation, and it is stored in `__annotations__` as the real type object.
 :::
 
 ## Methods
