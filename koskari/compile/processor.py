@@ -541,40 +541,20 @@ def carries_asides(op):
     return bool(op.extra) and any(fk in ASIDE_STYLES for fk in op.extra)
 
 
-def asides_of(op, arg):
+def find_asides(rows):
     """
-    The Aside bodies an instruction carries in its aside fields
+    Each Aside the rows carry in their aside fields. The asides an
+    aside carries in turn are not walked
 
-    :param op: the instruction's OpCode
-    :param arg: the instruction's argument
-    :return: a tuple of Aside
-    """
-
-    if not carries_asides(op):
-        return ()
-    return tuple(
-        v for v, fk in zip(arg, op.extra)
-        if fk in ASIDE_STYLES and isinstance(v, Aside))
-
-
-def map_asides(op, arg, change):
-    """
-    The argument of an instruction with change applied to each Aside
-    body in its aside fields
-
-    :param op: the instruction's OpCode
-    :param arg: the instruction's argument
-    :param change: callable taking an Aside, returning the field's new
-        value
-    :return: the argument, a new tuple when the instruction has aside
-        fields
+    :param rows: instruction rows
+    :return: generator of Aside
     """
 
-    if not carries_asides(op):
-        return arg
-    return tuple(
-        change(v) if fk in ASIDE_STYLES and isinstance(v, Aside) else v
-        for v, fk in zip(arg, op.extra))
+    for op, arg in rows:
+        if carries_asides(op):
+            for value in arg:
+                if isinstance(value, Aside):
+                    yield value
 
 
 def merge_function_constant_needs(fragment, instructions):
@@ -598,8 +578,8 @@ def merge_function_constant_needs(fragment, instructions):
             request_for_write_syms = reso.get_request_for_write_syms(code)
             reso.cpool_merge(fragment, nspec, request_for_write_syms)
 
-        for aside in asides_of(op, arg):
-            merge_function_constant_needs(fragment, aside.instructions)
+    for aside in find_asides(instructions):
+        merge_function_constant_needs(fragment, aside.instructions)
 
 
 def stringify_namespace_spec(nspec):
@@ -628,12 +608,6 @@ def stringify_operands(rows):
     :return: a new list of rows
     """
 
-    def stringify_aside(aside):
-        nspec = aside.nspec
-        if nspec is not None:
-            nspec = stringify_namespace_spec(nspec)
-        return Aside(stringify_operands(aside.instructions), nspec)
-
     out = []
     for op, arg in rows:
         if op == OpCode.PUSH_NS:
@@ -646,7 +620,16 @@ def stringify_operands(rows):
             arg = stringify_namespace_spec(arg)
 
         elif carries_asides(op):
-            arg = map_asides(op, arg, stringify_aside)
+            fields = []
+            for value in arg:
+                if isinstance(value, Aside):
+                    nspec = value.nspec
+                    if nspec is not None:
+                        nspec = stringify_namespace_spec(nspec)
+                    value = Aside(
+                        stringify_operands(value.instructions), nspec)
+                fields.append(value)
+            arg = tuple(fields)
 
         elif op.style == OpStyle.VAR:
             arg = str(arg)
@@ -1538,7 +1521,9 @@ class ByteCodeProcessor:
                 pop_nspec()
 
             elif carries_asides(op):
-                for aside in asides_of(op, arg):
+                for aside in arg:
+                    if not isinstance(aside, Aside):
+                        continue
                     scope = aside.nspec
                     if scope is None and nstack:
                         scope = nstack[-1]
@@ -1965,28 +1950,16 @@ class ByteCodeProcessor:
         return sym
 
 
-    def each_aside(self, step):
-        """
-        Run step on a processor over the rows of each aside the stream
-        carries, and leave the aside with the rows it finishes with
-
-        :param step: callable taking the aside's ByteCodeProcessor
-        """
-
-        for op, arg in self.instructions:
-            for aside in asides_of(op, arg):
-                sub = ByteCodeProcessor(self.fragment, aside.instructions)
-                step(sub)
-                aside.instructions = sub.instructions
-
-
     def reduce(self):
         """
         The passes that read no scope and no setting of the code as a
         whole, over the asides the stream carries and then the stream
         """
 
-        self.each_aside(ByteCodeProcessor.reduce)
+        for aside in find_asides(self.instructions):
+            sub = ByteCodeProcessor(self.fragment, aside.instructions)
+            sub.reduce()
+            aside.instructions = sub.instructions
 
         # a short-circuit jump leading to a conditional jump becomes
         # that jump, so the clause's predicate and the branch sit
@@ -2016,7 +1989,10 @@ class ByteCodeProcessor:
             calls already written
         """
 
-        self.each_aside(lambda sub: sub.settle_tail_calls(promote, yields))
+        for aside in find_asides(self.instructions):
+            sub = ByteCodeProcessor(self.fragment, aside.instructions)
+            sub.settle_tail_calls(promote, yields)
+            aside.instructions = sub.instructions
 
         if promote:
             self.promote_tail_calls()
@@ -2033,7 +2009,10 @@ class ByteCodeProcessor:
         the stream
         """
 
-        self.each_aside(ByteCodeProcessor.finish)
+        for aside in find_asides(self.instructions):
+            sub = ByteCodeProcessor(self.fragment, aside.instructions)
+            sub.finish()
+            aside.instructions = sub.instructions
 
         # combine runs of consecutive bare CONST, VAR, FAST
         self.pack_runs()

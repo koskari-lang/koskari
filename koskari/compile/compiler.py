@@ -40,7 +40,7 @@ from .pragma import (
     StrayHash)
 from .pragma.settings import CODE_PROTECTION
 from .processor import (
-    Aside, ByteCodeProcessor, asides_of, carries_asides, map_asides,
+    Aside, ByteCodeProcessor, carries_asides, find_asides,
     merge_function_constant_needs)
 
 
@@ -87,6 +87,48 @@ _symbol_hash = symbol("#")
 ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
 
 
+def map_closure_names(nspec, choose, scopes):
+    """
+    The NamespaceSpec with each closure name replaced by choose(name,
+    scopes), a name chosen twice kept once
+
+    :param nspec: the NamespaceSpec of an inline scope or an aside
+    :param choose: callable taking an atom and the open scopes,
+        returning the atom to emit
+    :param scopes: the spelling sets of the inline scopes open around
+        the spec, innermost first
+    :return: nspec itself when no closure name changes, else a new
+        NamespaceSpec
+    """
+
+    closure = []
+    for name in nspec.closure_syms:
+        chosen = choose(name, scopes)
+        if chosen not in closure:
+            closure.append(chosen)
+
+    if tuple(closure) == tuple(nspec.closure_syms):
+        return nspec
+
+    return NamespaceSpec(
+        nspec.name, nspec.local_syms, tuple(closure), nspec.global_syms)
+
+
+def map_scope_names(nspec):
+    """
+    The spellings an inline scope makes visible within it: its locals,
+    and the globals it declares, which are bound in the module and
+    visible in the scope under that spelling as its locals are
+
+    :param nspec: the scope's NamespaceSpec
+    :return: a set of str
+    """
+
+    names = {str(name) for name in nspec.local_syms}
+    names.update(str(name) for name in nspec.global_syms)
+    return names
+
+
 def rewrite_rows(instructions, choose, scopes):
     """
     The rows with each variable operand replaced by choose(name,
@@ -106,43 +148,16 @@ def rewrite_rows(instructions, choose, scopes):
     :return: a new list of rows
     """
 
-    def rebuild_nspec(nspec):
-        closure = []
-        for name in nspec.closure_syms:
-            chosen = choose(name, scopes)
-            if chosen not in closure:
-                closure.append(chosen)
-        if tuple(closure) == tuple(nspec.closure_syms):
-            return nspec
-        return NamespaceSpec(
-            nspec.name, nspec.local_syms, tuple(closure),
-            nspec.global_syms)
-
-    def scope_names(nspec):
-        # a global an inline scope declares is bound in the module
-        # and visible within the scope under that spelling, as its
-        # locals are
-        return {str(n) for n in nspec.local_syms} | {
-            str(n) for n in nspec.global_syms}
-
-    def rewrite_aside(aside):
-        nspec = aside.nspec
-        inner = list(scopes)
-        if nspec is not None:
-            nspec = rebuild_nspec(nspec)
-            inner.insert(0, scope_names(nspec))
-        return Aside(rewrite_rows(aside.instructions, choose, inner), nspec)
-
     out = []
     for op, arg in instructions:
         if op == OpCode.PUSH_NS:
-            nspec = rebuild_nspec(arg[0])
+            nspec = map_closure_names(arg[0], choose, scopes)
             arg = (nspec,) + tuple(arg[1:])
-            scopes.insert(0, scope_names(nspec))
+            scopes.insert(0, map_scope_names(nspec))
 
         elif op == OpCode.PUSH_COLLECT:
-            arg = rebuild_nspec(arg)
-            scopes.insert(0, scope_names(arg))
+            arg = map_closure_names(arg, choose, scopes)
+            scopes.insert(0, map_scope_names(arg))
 
         elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
             scopes.pop(0)
@@ -151,7 +166,19 @@ def rewrite_rows(instructions, choose, scopes):
             arg = choose(arg, scopes)
 
         elif carries_asides(op):
-            arg = map_asides(op, arg, rewrite_aside)
+            fields = []
+            for value in arg:
+                if isinstance(value, Aside):
+                    nspec = value.nspec
+                    inner = list(scopes)
+                    if nspec is not None:
+                        nspec = map_closure_names(nspec, choose, scopes)
+                        inner.insert(0, map_scope_names(nspec))
+                    value = Aside(
+                        rewrite_rows(value.instructions, choose, inner),
+                        nspec)
+                fields.append(value)
+            arg = tuple(fields)
 
         elif op.extra and OpStyle.VAR in op.extra:
             arg = tuple(
@@ -1525,17 +1552,22 @@ class Compiler:
 
         # an aside is part of this code: it takes its name, filename
         # and settings
-        def make(nspec, rows, **kwds):
-            return Code(nspec, rows, fragment.name, filename,
-                        protect=self.protect_code, cache=cache,
-                        allocator=allocator, **kwds)
+        settings = {
+            'name': fragment.name,
+            'filename': filename,
+            'protect': self.protect_code,
+            'cache': cache,
+            'allocator': allocator,
+        }
 
         # Build Code and register with pragma for position lookup on errors
         try:
-            code = make(base_nspec, self.build_asides(instr, base_nspec, make),
-                        self_slot=proc.self_slot)
+            rows = self.map_asides(instr, base_nspec, settings)
+            code = Code(
+                base_nspec, rows, self_slot=proc.self_slot, **settings)
         except (ValueError, OverflowError) as ex:
             raise self.limit_error(fragment, ex) from ex
+
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
         reso.register_code_fragment(code, fragment, ancestors)
@@ -1565,11 +1597,12 @@ class Compiler:
         for i, (op, arg) in enumerate(rows):
             if op is OpCode.CONST and isinstance(arg, Deferred):
                 rows[i] = (op, arg.complete(self, fragment, ancestors))
-            for aside in asides_of(op, arg):
-                self.complete_deferred(aside.instructions, fragment, ancestors)
+
+        for aside in find_asides(rows):
+            self.complete_deferred(aside.instructions, fragment, ancestors)
 
 
-    def build_asides(self, rows, scope, make):
+    def map_asides(self, rows, scope, settings):
         """
         The rows with each Aside they carry replaced by its Code,
         built over a NamespaceSpec of its own or over the spec of the
@@ -1578,15 +1611,10 @@ class Compiler:
         :param rows: finished instruction rows
         :param scope: the NamespaceSpec of the namespace live where
             rows start
-        :param make: callable building a Code from a NamespaceSpec
-            and rows
+        :param settings: dict of the Code keyword arguments an aside
+            shares with the code it is written in
         :return: a new list of rows
         """
-
-        def aside_code(aside):
-            nspec = scopes[-1] if aside.nspec is None else aside.nspec
-            return make(
-                nspec, self.build_asides(aside.instructions, nspec, make))
 
         scopes = [scope]
         out = []
@@ -1597,8 +1625,20 @@ class Compiler:
                 scopes.append(arg)
             elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 scopes.pop()
-            else:
-                arg = map_asides(op, arg, aside_code)
+            elif carries_asides(op):
+                fields = []
+                for value in arg:
+                    if isinstance(value, Aside):
+                        nspec = value.nspec
+                        if nspec is None:
+                            nspec = scopes[-1]
+                        value = Code(
+                            nspec,
+                            self.map_asides(
+                                value.instructions, nspec, settings),
+                            **settings)
+                    fields.append(value)
+                arg = tuple(fields)
             out.append((op, arg))
         return out
 
