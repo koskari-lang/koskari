@@ -155,19 +155,23 @@ typedef struct KosTransit {
 } KosTransit;
 
 
-/**
-   Take dyn_top off the chain and free it, for a node with no skip
-   bit: one that is offered nothing, runs nothing and holds nothing
-   outside itself, so its leaving is its release. A FOREACH finishes
-   the request of a step in flight, by kind on the node in hand.
-*/
-static inline void kos_dyn_release_top(KosContext *ctx, KosDynNode *node) {
+void kos_dyn_release_top(KosContext *ctx, KosDynNode *node) {
 
   if (KosDynNode_KIND(node) == KOS_DYN_FOREACH)
     kos_dyn_foreach_unwind(ctx, (KosDynForeach *) node);
   kos_dyn_commit_dyn_top(ctx, KosDynNode_PARENT(node));
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
+}
+
+
+void kos_dyn_keep_top(KosContext *ctx, KosDynNode *node) {
+
+  if (KosDynNode_KIND(node) == KOS_DYN_FOREACH)
+    kos_dyn_foreach_keep(ctx, (KosDynForeach *) node);
+  kos_dyn_commit_dyn_top(ctx, KosDynNode_PARENT(node));
+  KosDynNode_PARENT(node) = NULL;
+  kos_dyn_keep_node(node);
 }
 
 

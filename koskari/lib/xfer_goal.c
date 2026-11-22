@@ -521,6 +521,18 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
       return EVAL_RAISE();
     }
 
+    /* A node with no skip bit runs nothing and no goal waits on it:
+       it is freed or kept in one step. */
+    if (! (KosDynNode_CAPS(top) & KOS_DYN_CAP_SKIP)) {
+      if (goal->keep) {
+        kos_dyn_keep_top(ctx, top);
+        goal_keep_node(goal, top);
+      } else {
+        kos_dyn_release_top(ctx, top);
+      }
+      continue;
+    }
+
     /* an outer waits on this node: its id is read now, as the unlink
        frees the node, or takes the mark off one it keeps */
     waited_id = (KosDynNode_FLAGS(top) & KOS_DYNF_GOAL_WAIT)

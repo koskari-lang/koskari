@@ -1833,6 +1833,23 @@ KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept);
 
 
 /**
+   Take node, which is dyn_top and carries no skip bit
+   (KOS_DYN_CAP_SKIP), off the chain. Such a node is offered nothing,
+   runs nothing and holds nothing outside itself, and no goal waits on
+   one, so its leaving is one step with no answer to read: release
+   frees it, as kos_dyn_unlink_top would, and keep hands it to the
+   caller with no parent, as kos_dyn_unlink_top_keep would. A FOREACH
+   finishes the request of a step in flight either way, by kind on the
+   node in hand. Every walk that takes nodes off the chain tests the
+   skip bits first and comes here for a node without one. Implemented
+   in dynchain/dyn_walk.c.
+*/
+void kos_dyn_release_top(KosContext *ctx, KosDynNode *node);
+
+void kos_dyn_keep_top(KosContext *ctx, KosDynNode *node);
+
+
+/**
    Put the handled exception of each frozen TRY or FINALLY from top
    down to stop (not included) back on the thread, outermost first:
    the region's exception becomes handler-visible and the region
