@@ -425,7 +425,8 @@ static PyObject *transform_chain_gens(KosContext *ctx) {
     PyErr_Clear();
     return NULL;
   }
-  for (; n; n = KosDynNode_PARENT(n)) {
+  /* every GEN carries a skip bit: the skip links reach them all */
+  for (; n; n = KosDynNode_SKIP(n)) {
     if (KosDynNode_IS_GEN(n)
         && PyList_Append(owners, KosDynGen_OWNER((KosDynGen *) n)) < 0) {
       PyErr_Clear();

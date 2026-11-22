@@ -3165,7 +3165,11 @@ static KosContinuation *kos_continuation_capture_segment(
    Reachability is implied by the walk itself. Returns NULL with an
    exception set. With capturing set, for a shift, each node crossed
    before the prompt is also one the continuation will hold, and one
-   that cannot be (kos_dyn_node_capturable) fails the seek.
+   that cannot be (kos_dyn_node_capturable) fails the seek: that walk
+   visits every node. An abort asks nothing of the nodes it crosses,
+   and both deciding caps are skip bits' company (a barrier and a
+   generator's node each carry INTERCEPT), so its walk follows the
+   skip links.
 */
 static KosDynPrompt *kos_prompt_seek(
     KosContext *ctx,
@@ -3173,7 +3177,9 @@ static KosDynPrompt *kos_prompt_seek(
     const char *operation,
     int capturing) {
 
-  KosDynNode *node = KosContext_DYN_TOP(ctx);
+  KosDynNode *node = capturing
+      ? KosContext_DYN_TOP(ctx)
+      : kos_dyn_skip_from(KosContext_DYN_TOP(ctx));
 
   while (node) {
     if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
@@ -3186,9 +3192,14 @@ static KosDynPrompt *kos_prompt_seek(
       return NULL;
     }
 
+    if (! capturing) {
+      node = KosDynNode_SKIP(node);
+      continue;
+    }
+
     /* a node the capture will keep: what its clone would refuse is
        refused here, while every node is still on the chain */
-    if (capturing && kos_dyn_node_capturable(node) < 0) {
+    if (kos_dyn_node_capturable(node) < 0) {
       kos_capture_note(tag, operation);
       return NULL;
     }

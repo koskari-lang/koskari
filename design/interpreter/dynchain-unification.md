@@ -608,6 +608,31 @@ loop it replaces:
 A port that misses its budget after one optimization attempt keeps its
 own loop over the shared per-bit functions, and the gap is reported.
 
+As implemented:
+
+- `KosTransit` is the event and the `offer` mask. `run` and `fate` are
+  not fields: `kos_dyn_unlink_top` already runs, aborts or restores a
+  node by the event it is given, and that dispatch is not copied into
+  the walker.
+- The shared step is the test of the skip bits. A node with none
+  leaves through `kos_dyn_release_top` (freed) or `kos_dyn_keep_top`
+  (kept for a continuation): no offer, no unlink dispatch, no
+  obligation, no goal bookkeeping. A node with a skip bit goes through
+  `kos_dyn_handle`, the offer, and `kos_dyn_unlink_top` as before.
+- `kos_dyn_walk` serves the return walk, the loop walk and
+  `kos_dyn_unwind_to_node`.
+- The raise walk keeps its loop, for the frame crossing, the GEN
+  teardown and the wind exception preserve, and takes the same release
+  for a node with no skip bit.
+- `goal_leave` keeps its loop, in `xfer_goal.c`, a unit of its own,
+  and takes the release or the keep for a node with no skip bit. FREE
+  and KEEP are one port.
+- The offer and the leave keep their names, `kos_dyn_handle` and
+  `kos_dyn_extent_leave`; no `kos_dyn_offer` or `kos_dyn_leave` is
+  added over them.
+- Skipping walks: the abort's prompt seek, `kos_dyn_find_gen` and
+  `transform_chain_gens` follow `skip`.
+
 ### 6.6 Stage 6: two node sizes
 
 - `dynchain.c`: `kos_dynnode_alloc` (`:180`) takes the `MAJOR` bit;

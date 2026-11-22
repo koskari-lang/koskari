@@ -129,9 +129,12 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 
 
 KosDynGen *kos_dyn_find_gen(KosContext *ctx) {
-  KosDynNode *n = (KosDynNode *) KosContext_FRAME(ctx);
 
-  for (; n; n = KosDynNode_PARENT(n)) {
+  /* a GEN carries a skip bit, so the walk follows the skip links and
+     meets only the nodes that carry one */
+  KosDynNode *n = kos_dyn_skip_from((KosDynNode *) KosContext_FRAME(ctx));
+
+  for (; n; n = KosDynNode_SKIP(n)) {
     if (KosDynNode_IS_GEN(n))
       return (KosDynGen *) n;
   }
