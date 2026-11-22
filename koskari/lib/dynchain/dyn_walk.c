@@ -632,6 +632,14 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
          (void *) top,
          kos_dynnode_kind_name(KosDynNode_KIND(top)));
 
+    /* A node with no skip bit intercepts nothing, runs nothing and
+       holds nothing a raise must give back: its leaving is its
+       release, as in kos_dyn_walk. */
+    if (! (KosDynNode_CAPS(top) & KOS_DYN_CAP_SKIP)) {
+      kos_dyn_release_top(ctx, top);
+      continue;
+    }
+
     /* Cap fast check: nodes that intercept RAISE are dispatched to the
        handle phase; everything else goes straight to unwind/pop. */
     if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPT)) {
