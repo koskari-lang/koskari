@@ -129,6 +129,48 @@
   ((demand await_object) c))
 
 
+(def wait_then_shift_twice []
+  (await (Suspender))
+  (+ 1 (shift k (+ (k 10) (k 20)))))
+
+
+(def wait_then_shift_keep []
+  (await (Suspender))
+  (+ 1 (shift k k)))
+
+
+(def wait_then_shift_abandon []
+  (await (Suspender))
+  (+ 1 (shift k "abandoned")))
+
+
+(def wait_then_callcc []
+  (await (Suspender))
+  (+ 1 (call/cc (lambda [k] (k 10)))))
+
+
+(def reset_await [c]
+  (reset (+ 100 (await c))))
+
+
+(def reset_await_apply [c]
+  (define k (reset (+ 100 (await c))))
+  #((k 1) (k 2)))
+
+
+(def wait_shift_wait []
+  (await (Suspender))
+  (define v (shift k (k 5)))
+  (+ v (len (await (Suspender)))))
+
+
+(def await_twice [c]
+  (define r (await c))
+  (try
+    (await c)
+    ([e RuntimeError] #(r (str e)))))
+
+
 (def await_after_interrupt [c]
   (_thread.interrupt_main)
   (await c))

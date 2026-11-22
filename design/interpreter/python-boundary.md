@@ -178,9 +178,9 @@ to `KosCoroutine_NewFromFrame`; yielding code goes to
   awaiter's dynamic state. A record parked at a Python await after a
   Python send splices its whole chain under the await frame instead
   (`coroutine_splice`): the pending await iterator and the value it
-  yielded move to the awaiter's context, the record is active and
-  refuses every entry until the chain passes the await frame, whose
-  resume finishes it, and its own context is released at the splice.
+  yielded move to the awaiter's context, and the record is done and
+  its own context released at the splice, as a fresh record is at the
+  take.
 - Completion (`coroutine_settle`, `coroutine_close`, through
   `coroutine_finish`) marks the record done and releases its context
   then, so a gather holding finished coroutines holds no contexts.

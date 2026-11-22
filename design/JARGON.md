@@ -257,12 +257,13 @@ in when it is not fresh and not done. Parked: at rest on the object's
 own context, suspended at a Python await, with nothing running on it;
 a Python `send` drives it there, a Koskari await splices it. A
 coroutine suspended at a yield is driven through its Python protocol,
-which refuses a Koskari await of it. Active: on a chain being
-evaluated, its own under a Python drive or
-an awaiter's after a splice; every entry from anywhere is refused as
-already in progress until the chain passes the point it entered at.
-The object has no suspension state of its own while active: a
-suspension inside a spliced chain is the awaiter's context suspending.
+which refuses a Koskari await of it. Active: on its own chain, being
+evaluated under a Python drive; every entry from anywhere is refused
+as already in progress until the drive returns. A coroutine whose
+chain was spliced under an awaiter is neither: the object is done at
+the splice, and a suspension inside the spliced chain is the awaiter's
+context suspending. A generator's step spliced the same way is active
+on the consumer's chain until the step ends.
 
 ## provider
 

@@ -25,6 +25,7 @@ being driven on its own context.
 
 import asyncio
 import functools
+import gc
 import os
 import signal
 import sys
@@ -155,10 +156,6 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
 
         outer = mod.await_object(c)
         self.assertEqual(outer.send(None), "suspended")
-        with self.assertRaises(RuntimeError) as active:
-            c.send(None)
-        self.assertEqual(
-            str(active.exception), "coroutine already being awaited")
 
         with self.assertRaises(StopIteration) as done:
             outer.send(None)
@@ -167,6 +164,136 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
             c.send(None)
         self.assertEqual(
             str(spent.exception), "cannot reuse already awaited coroutine")
+
+
+    def spliced(self, mod, c, awaiter):
+        """
+        Start c from Python, await it from awaiter, and step the awaiter
+        to the await the coroutine was suspended on
+
+        :param mod: the loaded script module
+        :param c: a fresh coroutine that suspends on a Suspender
+        :param awaiter: the function of mod that awaits it
+        :return: the awaiter's coroutine, suspended
+        """
+
+        self.assertEqual(c.send(None), "suspended")
+        outer = awaiter(c)
+        self.assertEqual(outer.send(None), "suspended")
+        return outer
+
+
+    def finish(self, outer):
+        """
+        Step a suspended coroutine to its return
+
+        :param outer: the coroutine
+        :return: its value
+        """
+
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        return done.exception.value
+
+
+    def test_spliced_coroutine_is_done_from_the_splice(self):
+        """
+        The coroutine object is finished once its chain is the
+        awaiter's: with the awaiter still suspended it refuses a send
+        and a throw as a spent coroutine does, and its close does
+        nothing
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_value()
+        outer = self.spliced(mod, c, mod.await_object)
+
+        with self.assertRaises(RuntimeError) as sent:
+            c.send(None)
+        self.assertEqual(
+            str(sent.exception), "cannot reuse already awaited coroutine")
+        with self.assertRaises(RuntimeError) as thrown:
+            c.throw(ValueError("t"))
+        self.assertEqual(
+            str(thrown.exception), "cannot reuse already awaited coroutine")
+        self.assertIsNone(c.close())
+
+        self.assertEqual(self.finish(outer), "woken")
+
+
+    def test_spliced_coroutine_refuses_a_second_await(self):
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_value()
+        outer = self.spliced(mod, c, mod.await_twice)
+        self.assertEqual(
+            self.finish(outer),
+            ("woken", "cannot reuse already awaited coroutine"))
+
+
+    def test_spliced_coroutine_dropped_leaves_the_chain_running(self):
+        """
+        Nothing holds the coroutine object after the splice, and
+        dropping the last reference closes nothing
+        """
+
+        mod = asyncio.run(self.load_module())
+        log = []
+        c = mod.wait_in_extents(log)
+        outer = self.spliced(mod, c, mod.await_then_read)
+        del c
+        gc.collect()
+        self.assertEqual(log, ["before"])
+        self.assertEqual(self.finish(outer), ("coro", "root"))
+        self.assertEqual(log, ["before", "after"])
+
+
+    def test_shift_across_a_spliced_coroutine_applies_twice(self):
+        """
+        A shift in the spliced coroutine reaches a reset around the
+        await: the continuation holds the rest of the coroutine and of
+        the awaiter's reset body, and applies twice
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_then_shift_twice()
+        outer = self.spliced(mod, c, mod.reset_await)
+        self.assertEqual(self.finish(outer), 111 + 121)
+
+
+    def test_continuation_across_a_spliced_coroutine_outlives_the_reset(self):
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_then_shift_keep()
+        outer = self.spliced(mod, c, mod.reset_await_apply)
+        self.assertEqual(self.finish(outer), (102, 103))
+
+
+    def test_continuation_across_a_spliced_coroutine_is_dropped(self):
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_then_shift_abandon()
+        outer = self.spliced(mod, c, mod.reset_await)
+        self.assertEqual(self.finish(outer), "abandoned")
+        gc.collect()
+
+
+    def test_callcc_across_a_spliced_coroutine_captures(self):
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_then_callcc()
+        outer = self.spliced(mod, c, mod.await_object)
+        self.assertEqual(self.finish(outer), 11)
+
+
+    def test_applied_continuation_suspends_on_its_own_await(self):
+        """
+        The applied copy of a spliced coroutine's frames awaits as any
+        frame does: the awaiter suspends again and its driver completes
+        the await
+        """
+
+        mod = asyncio.run(self.load_module())
+        c = mod.wait_shift_wait()
+        outer = self.spliced(mod, c, mod.reset_await)
+        self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(self.finish(outer), 110)
 
 
     def test_splice_resuspends_on_the_latest_forwarded_value(self):

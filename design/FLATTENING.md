@@ -49,9 +49,14 @@ Current corrective work:
   `kos_dyn_span_attach`, `dynchain/dyn_gen.c`); the pending Python
   await moves to the awaiter's context, and the awaiter suspends on the
   value the coroutine had handed its driver, which the context records
-  at every suspension (`py_await_yielded`). The coroutine is active
-  until its chain passes the await frame, whose resume finishes it,
-  and refuses every entry meanwhile. A Defer delegating to an awaitable
+  at every suspension (`py_await_yielded`). The coroutine object is
+  finished at the splice, as one taken fresh is at the take: the
+  program is the awaiter's from there, and the object refuses `send`,
+  `throw` and a second await as a spent coroutine does. The frame the
+  chain is attached under is a coroutine frame: its resume holds no
+  state and returns the chain's value from the frame, and it clones,
+  keeps and moves as any frame does, so a `shift` or `call/cc` in the
+  coroutine captures across it. A Defer delegating to an awaitable
   with a suite hands it on and is spent (`defer.c`). An awaited
   `__anext__`, `asend`, `athrow` or `aclose` stepper over a Koskari
   async generator is a next or throw request on the await frame with

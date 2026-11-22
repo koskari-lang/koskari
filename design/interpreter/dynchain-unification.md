@@ -786,6 +786,37 @@ As implemented:
 `iterate.c:stepper_splice` (`:1054`): the same review for the stepper's
 resume kind.
 
+As implemented:
+
+- **`coroutine_frame_kind`** replaces `coroutine_stitched_kind`. Its
+  resume returns the value from the frame, it has no clear and no
+  traverse, and its clone is `kos_resume_clone_shared`.
+  `coroutine_splice` finishes the object and drops its reference once
+  the attach has succeeded; `in_send` is no longer set across the
+  splice.
+- **The object is done while the awaiter is still suspended.** A
+  `send` or `throw` there raises "cannot reuse already awaited
+  coroutine", where it raised "coroutine already being awaited", and
+  `close` returns None, where it raised. One existing assertion
+  changed for this, in `test_splice_resuspends_on_the_parked_await`.
+- **The await frame stays.** A fresh coroutine's frame replaces the
+  await frame; a spliced chain is attached above it, so the stack has
+  one native frame more than a call would leave. Its resume is the
+  same shape as any native frame's that returns its callee's value.
+- **`stepper_splice` needed nothing.** The stepper is spent at the
+  splice already, and the await frame's resume is the step kind with
+  the provider as its state, as for a flattened step. Capture across
+  it stops at the generator's GEN.
+- **No test for capture across a real await.** An await frame carries
+  the revive kind, which has no clone, only while its context is
+  suspended, and a suspended context runs no `shift`. The refusal is
+  not reachable from the language.
+- **Tests.** Eight added to
+  `tests/reproducers/test_coroutine_splice.py`: done from the splice,
+  a refused second await, the object dropped, a shift applied twice,
+  a continuation applied after its reset returned, one dropped,
+  `call/cc`, and an applied copy that awaits again.
+
 ### 6.9 Stage 9: template move
 
 - Determine the reference count the invoke path holds on the
