@@ -39,7 +39,7 @@ KosDynWind *kos_dynwind_new(
     return NULL;
 
   kos_dynnode_init(wind, KOS_DYN_WIND, parent,
-                   KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_WINDS);
+                   0);
   Py_XINCREF(code);
   KosDynWind_CODE(wind) = code;  /* owned */
   KosDynWind_ROW(wind) = row;

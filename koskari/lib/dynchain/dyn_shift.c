@@ -78,6 +78,7 @@ KosOpResult kos_abort_to_prompt(
      whole record, which the goal's fill leaves to its caller */
   goal.shape.bottom = frame;
   goal.shape.frames = 1;
+  goal.shape.tail = frame;
   goal.shape.top.top = frame;
   goal.shape.top.frame = frame;
   goal.shape.top.block = &KosDynNode_STACK(frame);

@@ -109,25 +109,23 @@ typedef enum KosDynFlags {
 
 
 /**
-   KosDynNode capability bits. Generic code checks these for behavior
-   instead of node type. Set at creation and copied on clone. Two
-   change at run time: CLEAR_LOOP and CLEAR_FOREACH take LOOP_REGION
-   away, and a frame's OWNS_NS follows its code object and moves with
-   it (a placeholder filled with code gains it, a cached function frame
-   keeps it).
+   KosDynNode capability bits: what a node does and what it is, in one
+   field. A node is found by a bit, never by its kind; the kind selects
+   a node's own behaviour once the node is in hand. Set at creation and
+   copied on clone. Two change at run time: CLEAR_LOOP and
+   CLEAR_FOREACH take LOOP_REGION away, and a frame's OWNS_NS follows
+   its code object and moves with it (a placeholder filled with code
+   gains it, a cached function frame keeps it). FRAME, GEN, MAJOR and
+   CC are never cleared while the node lives.
+
+   Bits 0 to 3 are the skip bits (KOS_DYN_CAP_SKIP): a node carrying
+   one has work to do when control crosses it, and is what a node's
+   skip link names.
 */
-#define KOS_DYN_CAP_CATCH                    (1u << 0)
 
-/* a LOOP or FOREACH region still running its body: the region a break
-   or continue targets. CLEAR_LOOP and CLEAR_FOREACH take it away when
-   the else clause starts, so a break or continue written there belongs
-   to the enclosing loop. The one record of the region's enabled state. */
-#define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
-
-/* a transfer runs this node: its leave on the way out, its enter on
-   re-entry. Carried by WIND, PARAM, and a WITH pushed by dyn-with; the
-   kind's own enter and leave do the work (kos_dyn_extent_enter) */
-#define KOS_DYN_CAP_WINDS                    (1u << 4)
+/* may consume or deny a control transit: the fast first check before
+   kos_dyn_handle. Carried by TRY, FINALLY, GEN and PROMPT. */
+#define KOS_DYN_CAP_INTERCEPT                (1u << 0)
 
 /* the node reacts when control returns into it from a frame it owns:
    the extent contract has work for it (WITH, WIND), and it carries an
@@ -136,19 +134,32 @@ typedef enum KosDynFlags {
    runs, or a return crossing a leave in flight; kos_dyn_node_ob is the
    accessor behind the cap. A node without it takes a callee's value on
    its segment and nothing more */
-#define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
+#define KOS_DYN_CAP_LEAVES                   (1u << 1)
+
+/* a transfer runs this node: its leave on the way out, its enter on
+   re-entry. Carried by WIND, PARAM, and a WITH pushed by dyn-with; the
+   kind's own enter and leave do the work (kos_dyn_extent_enter) */
+#define KOS_DYN_CAP_WINDS                    (1u << 2)
+
+/* the node holds runtime-owned state outside itself, which leaves with
+   it when its span rests: the parameter cells a PARAM swapped in, the
+   handled exception a TRY or FINALLY installed on the thread */
+#define KOS_DYN_CAP_EFFECT                   (1u << 3)
 
 /**
    A plain pop refuses to unlink the node (kos_dyn_unlink_top with
    allow_barrier 0); the raise walk crosses it. Carried by PROMPT.
 */
-#define KOS_DYN_CAP_BARRIER                  (1u << 7)
+#define KOS_DYN_CAP_BARRIER                  (1u << 4)
 
-/**
-   Node participates in raise-walk dispatch (handle); the fast
-   first check before kos_dyn_handle.
-*/
-#define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
+/* a LOOP or FOREACH region still running its body: the region a break
+   or continue targets. CLEAR_LOOP and CLEAR_FOREACH take it away when
+   the else clause starts, so a break or continue written there belongs
+   to the enclosing loop. The one record of the region's enabled state. */
+#define KOS_DYN_CAP_LOOP_REGION              (1u << 5)
+
+/* may swallow an exception during its unwind. Carried by WITH. */
+#define KOS_DYN_CAP_CATCH                    (1u << 6)
 
 /* The namespace in this node's ns field is its own: a scope the node
    introduced (a frame with code, a let, a collect), as opposed to the
@@ -156,7 +167,24 @@ typedef enum KosDynFlags {
    reference is owned either way; the cap says whose scope it is, and
    the collector reaches an untracked scope through its owner alone. A
    native or code-less frame carries a fill and does not have it. */
-#define KOS_DYN_CAP_OWNS_NS                 (1u << 11)
+#define KOS_DYN_CAP_OWNS_NS                  (1u << 7)
+
+/* an activation record. Carried by FRAME. */
+#define KOS_DYN_CAP_FRAME                    (1u << 8)
+
+/* a generator span's root marker. Carried by GEN. */
+#define KOS_DYN_CAP_GEN                      (1u << 9)
+
+/* the node owns an operand segment. Carried by every kind but PROMPT,
+   CC and GEN. */
+#define KOS_DYN_CAP_MAJOR                    (1u << 10)
+
+/* a call/cc block. Carried by CC. */
+#define KOS_DYN_CAP_CC                       (1u << 11)
+
+#define KOS_DYN_CAP_SKIP                                        \
+  (KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_LEAVES                   \
+   | KOS_DYN_CAP_WINDS | KOS_DYN_CAP_EFFECT)
 
 
 typedef enum KosDynWindPhase {
@@ -227,6 +255,10 @@ typedef struct KosCloneShape {
   struct KosDynNode *bottom;
   unsigned frames;
   KosLiveRegs top;
+  /* where the attach's skip-link repair starts: the clone's lowest
+     skip-bit node, or its top when it has none. The skip links that
+     reach below the clone are NULL until then (kos_dyn_repair_tail) */
+  struct KosDynNode *tail;
 
   /* for an attach only */
   struct KosDynNode *open_frame;
@@ -530,10 +562,17 @@ typedef struct KosDynRegionFields {
 
 struct KosDynNode {
   KosDynNode *parent;   /* enclosing node (toward root); reused as freelist link */
-  KosDynKind kind;      /* discriminator for node type */
-  uint32_t flags;       /* KosDynFlags bitfield */
-  uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
+  uint8_t kind;         /* KosDynKind: discriminator for the payload */
+  uint8_t flags;        /* KosDynFlags bitfield */
+  uint16_t caps;        /* capability bits (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
+  /* The nearest ancestor carrying a skip bit (KOS_DYN_CAP_SKIP), or
+     NULL: set with the parent by kos_dynnode_link. A walk that only
+     has work at such nodes follows this and re-tests caps on arrival,
+     since a node may lose a skip bit. A segment off the chain keeps
+     the links inside it; the ones that name a node outside it are
+     repaired when it is attached. */
+  KosDynNode *skip;
   /* Owned operand segment. Region kinds always own one (aimed at the
      embedded iseg at construction or push, heap after a spill); NULL
      marks a transfer bookmark (CC, PROMPT, GEN), which inherits the
@@ -1647,7 +1686,7 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
 /**
    Unlink dyn_top: the one site a node leaves the chain through.
 
-   1. A KOS_DYN_CAP_CONTROL_HOOK node is asked to leave
+   1. A KOS_DYN_CAP_LEAVES node is asked to leave
       (kos_dyn_extent_leave); any answer but NORMAL returns unchanged,
       with the node still on the chain -- the caller stores what it
       carries and asks again later. Under KOS_XFER_EVENT_TRANSFER a
@@ -1826,7 +1865,7 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
 
 
 /**
-  The extent contract for KOS_DYN_CAP_CONTROL_HOOK nodes (WIND, WITH).
+  The extent contract for KOS_DYN_CAP_LEAVES nodes (WIND, WITH).
   Total and re-entrant: asking again is always legal, the node never
   unlinks itself, and the node never reads the transfer state. enter
   also serves a PARAM, which a transfer re-enters as it does a WIND
@@ -1901,7 +1940,7 @@ KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return);
 
 
 /**
-  The obligation slot of a KOS_DYN_CAP_CONTROL_HOOK node. Callers
+  The obligation slot of a KOS_DYN_CAP_LEAVES node. Callers
   test the cap first; this is the per-kind dispatch behind it.
 */
 KosObligation *kos_dyn_node_ob(KosDynNode *node);
@@ -2225,6 +2264,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynNode_FLAGS(n)   (((KosDynNode *)(n))->flags)
 #define KosDynNode_CAPS(n)    (((KosDynNode *)(n))->caps)
 #define KosDynNode_NODE_ID(n) (((KosDynNode *)(n))->node_id)
+#define KosDynNode_SKIP(n)    (((KosDynNode *)(n))->skip)
 
 /* Mint a fresh, never-zero node id. */
 uint32_t kos_dynnode_mint_id(void);
@@ -2245,7 +2285,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 }
 #define KosDynNode_HAS_CAP(n, cap)  (KosDynNode_CAPS(n) & (cap))
 
-#define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
+#define KosDynNode_IS_FRAME(n)   (KosDynNode_CAPS(n) & KOS_DYN_CAP_FRAME)
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
 #define KosDynNode_IS_TRY(n)     (KosDynNode_KIND(n) == KOS_DYN_TRY)
@@ -2254,10 +2294,10 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynNode_IS_FOREACH(n) (KosDynNode_KIND(n) == KOS_DYN_FOREACH)
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_COLLECT(n) (KosDynNode_KIND(n) == KOS_DYN_COLLECT)
-#define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
+#define KosDynNode_IS_CC(n)      (KosDynNode_CAPS(n) & KOS_DYN_CAP_CC)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
-#define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
+#define KosDynNode_IS_GEN(n)      (KosDynNode_CAPS(n) & KOS_DYN_CAP_GEN)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_STATE(n)        (((KosDynNode *)(n))->u.gen.state)
@@ -2355,6 +2395,67 @@ static inline void kos_dynnode_note_parent(KosDynNode *node) {
   if (KosDynNode_IS_FRAME(node))
     kos_dynframe_note_parent((KosDynFrame *) node);
 }
+
+
+/**
+   The skip link of a node whose parent is parent: the parent itself
+   when it carries a skip bit, else whatever the parent names.
+*/
+static inline KosDynNode *kos_dynnode_skip_under(KosDynNode *parent) {
+  if (! parent)
+    return NULL;
+  return (KosDynNode_CAPS(parent) & KOS_DYN_CAP_SKIP)
+      ? parent : KosDynNode_SKIP(parent);
+}
+
+
+/**
+   Put node on parent: the parent link, the skip link that follows from
+   it, and a frame's record of its parent's kind. Every write of a
+   parent goes through here but three: a node going to a freelist or a
+   cache, whose next link sets both; a cut, a parent set to NULL to
+   take a segment off a chain, which leaves the skip links for the
+   attach to repair; and a segment's own interior, linked as it is
+   built (kos_dyn_clone_segment, a continuation's kept nodes).
+*/
+static inline void kos_dynnode_link(KosDynNode *node, KosDynNode *parent) {
+  KosDynNode_PARENT(node) = parent;
+  KosDynNode_SKIP(node) = kos_dynnode_skip_under(parent);
+  kos_dynnode_note_parent(node);
+}
+
+
+/**
+   Repair the skip links at the bottom of a segment just attached. The
+   nodes from tail down to bottom are the ones whose nearest skip-bit
+   ancestor lies below the segment: tail is the segment's lowest
+   skip-bit node, or its top when it has none. bottom is linked
+   already (kos_dynnode_link), so its skip link is the value they all
+   take.
+*/
+static inline void kos_dyn_repair_tail(KosDynNode *tail, KosDynNode *bottom) {
+  KosDynNode *outer = KosDynNode_SKIP(bottom);
+
+  for (KosDynNode *n = tail; n != bottom; n = KosDynNode_PARENT(n))
+    KosDynNode_SKIP(n) = outer;
+}
+
+
+/**
+   Recompute every skip link of the segment from top down to the node
+   resting on stop, which is linked already. For a segment whose
+   lowest skip-bit node is not known; proportional to the segment.
+   Implemented in dynchain.c.
+*/
+void kos_dyn_relink_skips(KosDynNode *top, KosDynNode *stop);
+
+
+/**
+   Whether every skip link from top down to the node resting on stop
+   is the one its parents give. For KOS_EVAL_SAFETYNET checks.
+   Implemented in dynchain.c.
+*/
+int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop);
 
 
 /* A resume is set when the kind is non-NULL; the name is a read-only

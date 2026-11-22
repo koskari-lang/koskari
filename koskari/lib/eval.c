@@ -2746,7 +2746,7 @@ KOS_OP_INLINE KosOpResult eval_plain_return(
    its step's element instead). Every retarget fact is cache-available:
    the back frame recorded at install, the freed segment's displaced
    owning slot, and the node's namespace fill. A node that reacts to
-   control returning into it says so with KOS_DYN_CAP_CONTROL_HOOK and
+   control returning into it says so with KOS_DYN_CAP_LEAVES and
    the transition runs its hook; the rest take the value and nothing
    more. Any missing fact falls through to the general path, mirroring
    the cache-or-walk split in kos_dyn_resync_after_pop.
@@ -2814,7 +2814,7 @@ KOS_OP_INLINE KosOpResult eval_region_return(
   if (KosContext_StackPUSH(ctx, val) < 0)
     return EVAL_FATAL();
 
-  if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
+  if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_LEAVES))
     return kos_eval_post_opcode_control_returned_after_hook(ctx);
   return kos_eval_delivery_done(ctx);
 }
@@ -2848,7 +2848,7 @@ KOS_OP_INLINE int kos_return_is_region_resume(
   if (! parent
       || KosDynNode_IS_FRAME(parent)
       || KosDynNode_IS_GEN(parent)
-      || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
+      || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_LEAVES))
     return 0;
 
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
@@ -2952,7 +2952,7 @@ KOS_OP_INLINE KosOpResult eval_prompt_return(
        and a node that hooks no control return has nothing to run */
     if (likely(KosDynFrame_CODE(ft)
                && ! KosDynFrame_RESUME_KIND(ft)
-               && ! KosDynNode_HAS_CAP(below, KOS_DYN_CAP_CONTROL_HOOK))) {
+               && ! KosDynNode_HAS_CAP(below, KOS_DYN_CAP_LEAVES))) {
       if (KosContext_StackPUSH(ctx, val) < 0)
         return EVAL_FATAL();
       return kos_eval_delivery_done(ctx);

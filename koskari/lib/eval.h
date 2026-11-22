@@ -1335,7 +1335,9 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosContext *ctx,
     KosDynFrame *frame) {
 
+  /* kos_dynnode_link, for a node known to be a frame */
   KosDynNode_PARENT(frame) = KosContext_DYN_TOP(ctx);
+  KosDynNode_SKIP(frame) = kos_dynnode_skip_under(KosContext_DYN_TOP(ctx));
   kos_dynframe_note_parent(frame);
   KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
 

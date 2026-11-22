@@ -522,9 +522,10 @@ int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
   /* The caps a fresh code-less FRAME node gets from kos_dynframe_new
-     (none: the fill it will carry is not an introduced scope), so the
-     reinstall is indistinguishable from a new allocation. */
-  KosDynNode_CAPS(frame) = 0;
+     (a frame's own and no more: the fill it will carry is not an
+     introduced scope), so the reinstall is indistinguishable from a
+     new allocation. */
+  KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
   KosDynFrame_PC(frame) = NULL;
   KosDynFrame_ACTING_PC(frame) = NULL;
   KosDynFrame_FLAGS(frame) = 0;
@@ -615,7 +616,10 @@ void kos_dyn_swap_frame_for_tail(KosContext *ctx, KosDynFrame *ready) {
   KosDynNode *live_node = (KosDynNode *) live;
   KosDynNode *ready_node = (KosDynNode *) ready;
 
+  /* the same parent, so the same skip link; a frame carries no skip
+     bit, so no node names the one going away */
   KosDynNode_PARENT(ready_node) = KosDynNode_PARENT(live_node);
+  KosDynNode_SKIP(ready_node) = KosDynNode_SKIP(live_node);
   KosDynNode_NODE_ID(ready_node) = 0;
   /* the demand bit and the parent-kind record are the live frame's,
      the same parent; assigned, not merged, so a ready frame that

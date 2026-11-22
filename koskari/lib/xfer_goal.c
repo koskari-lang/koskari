@@ -471,6 +471,13 @@ static void goal_keep_node(KosXferGoal *goal, KosDynNode *node) {
   KosContinuation *k = goal->keep;
   KosDynNode *tail = goal->keep_tail;
 
+  /* The kept nodes keep the skip links among them. One that named the
+     prompt the abort stops at names the template's copy of it, the
+     node every kept node goes onto. */
+  if (KosDynNode_SKIP(node) == goal->seam)
+    KosDynNode_SKIP(node) = kos_dynnode_skip_under(
+        tail ? KosDynNode_PARENT(tail) : KosContinuation_CAPTURED_CHAIN(k));
+
   if (tail) {
     KosDynNode_PARENT(node) = KosDynNode_PARENT(tail);
     KosDynNode_PARENT(tail) = node;
@@ -544,6 +551,16 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
       goal_wait(goal, top);
     return r;
   }
+
+#if KOS_EVAL_SAFETYNET
+  if (goal->keep
+      && ! kos_dyn_skips_hold(
+          KosContinuation_CAPTURED_CHAIN(goal->keep), NULL)) {
+    PyErr_SetString(PyExc_SystemError,
+        "transfer: the kept template's skip links are stale");
+    return EVAL_RAISE();
+  }
+#endif
   return EVAL_NORMAL();
 }
 
@@ -603,8 +620,12 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
       goal->target = NULL;
     }
 
-    KosDynNode_PARENT(bottom) = base;
-    kos_dynnode_note_parent(bottom);
+    /* A later piece goes back onto the split point it was cut from,
+       which its skip links name already. The first goes onto the seam,
+       and the links that reached below the copy are set from there. */
+    kos_dynnode_link(bottom, base);
+    if (first)
+      kos_dyn_repair_tail(shape->tail, bottom);
     kos_live_regs_apply(ctx, regs);
 
     /* a region captured while handling an exception handles it again */
@@ -612,6 +633,11 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
       kos_dyn_install_regions(ctx, regs->top, base);
 
 #if KOS_EVAL_SAFETYNET
+    if (! kos_dyn_skips_hold(regs->top, base)) {
+      PyErr_SetString(PyExc_SystemError,
+          "transfer: a piece's skip links are not the chain's");
+      return EVAL_RAISE();
+    }
     if (! kos_dyn_live_regs_derived(ctx)) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: a piece's registers are not the chain's");

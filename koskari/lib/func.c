@@ -1866,8 +1866,9 @@ int KosFunction_CacheFrame(
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
   /* The cached frame keeps the namespace it introduced, so it keeps
-     the cap that tells the collector to look inside it. */
-  KosDynNode_CAPS(frame) = KOS_DYN_CAP_OWNS_NS;
+     the cap that tells the collector to look inside it, beside the
+     caps every frame has. */
+  KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
   KosDynFrame_PC(frame) = kos_code_entry(KosDynFrame_CODE(frame));
   KosDynFrame_ACTING_PC(frame) = KosDynFrame_PC(frame);
   KosDynFrame_FLAGS(frame) = 0;

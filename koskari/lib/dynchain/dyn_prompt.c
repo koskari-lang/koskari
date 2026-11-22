@@ -38,7 +38,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
     return NULL;
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
-                   KOS_DYN_CAP_BARRIER);
+                   0);
   KosDynPrompt_TAG(prompt) = Py_XNewRef(tag);
   return prompt;
 }

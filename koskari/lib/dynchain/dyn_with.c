@@ -51,8 +51,7 @@ static KosDynWith *kos_dyn_with_allocate(
     return NULL;
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
-                   KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK
-                   | (winds & KOS_DYN_CAP_WINDS));
+                   winds & KOS_DYN_CAP_WINDS);
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;

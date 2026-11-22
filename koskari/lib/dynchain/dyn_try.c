@@ -34,7 +34,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_pc) {
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_TRY, parent,
-                   KOS_DYN_CAP_INTERCEPTS_RAISE);
+                   0);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
   KosDynTry_EXC_SAVED(node) = 0;

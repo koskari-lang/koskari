@@ -568,7 +568,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
 
     /* Cap fast check: nodes that intercept RAISE are dispatched to the
        handle phase; everything else goes straight to unwind/pop. */
-    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)) {
+    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPT)) {
 
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
@@ -659,7 +659,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
       }
     }
 
-    }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
+    }  /* KOS_DYN_CAP_INTERCEPT */
 
     /* PASS: unwind and pop */
     {

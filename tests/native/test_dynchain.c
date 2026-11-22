@@ -534,6 +534,217 @@ static int test_dynforeach_free_with_iter(void) {
 }
 
 
+/* === Capability and skip link tests === */
+
+
+/* A code-less frame on parent: a node with no skip bit. */
+static KosDynNode *plain_node(KosDynNode *parent) {
+    PyObject *ns = PyDict_New();
+
+    if (! ns)
+        return NULL;
+    return (KosDynNode *) kos_dynframe_new(parent, NULL, ns);
+}
+
+
+/* A TRY on parent: a node with a skip bit. */
+static KosDynNode *skip_node(KosDynNode *parent) {
+    return (KosDynNode *) kos_dyntry_new(parent, FAKE_INSN(1));
+}
+
+
+static int test_node_header_size(void) {
+
+    TEST_ASSERT_EQ(offsetof(KosDynNode, u), 40,
+                   "the node header is 40 bytes");
+    return 0;
+}
+
+
+static int test_caps_by_kind(void) {
+    /* every node of a kind carries the kind's caps from its init */
+    KosDynNode *frame = plain_node(NULL);
+    KosDynNode *prompt = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
+    KosDynNode *try_ = skip_node(NULL);
+    KosDynNode *wind = (KosDynNode *) kos_dynwind_new(NULL, NULL, NULL);
+    PyObject *owner = PyList_New(0);
+    KosGenState state;
+    KosDynNode *gen;
+
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+    TEST_ASSERT_NOT_NULL(prompt, "create prompt");
+    TEST_ASSERT_NOT_NULL(try_, "create try");
+    TEST_ASSERT_NOT_NULL(wind, "create wind");
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    kos_gen_state_init(&state, NULL);
+    gen = (KosDynNode *) kos_dyngen_new(owner, &state);
+    TEST_ASSERT_NOT_NULL(gen, "create the GEN node");
+
+    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
+                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
+                   "a code-less frame is a major frame and no more");
+    TEST_ASSERT(KosDynNode_IS_FRAME(frame), "a frame is found by its cap");
+    TEST_ASSERT(! (KosDynNode_CAPS(frame) & KOS_DYN_CAP_SKIP),
+                "a frame carries no skip bit");
+
+    TEST_ASSERT_EQ(KosDynNode_CAPS(prompt),
+                   KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_BARRIER,
+                   "a prompt intercepts and is a barrier, and is minor");
+    TEST_ASSERT_EQ(KosDynNode_CAPS(try_),
+                   KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_EFFECT
+                   | KOS_DYN_CAP_MAJOR,
+                   "a try intercepts and holds an effect");
+    TEST_ASSERT_EQ(KosDynNode_CAPS(wind),
+                   KOS_DYN_CAP_LEAVES | KOS_DYN_CAP_WINDS
+                   | KOS_DYN_CAP_MAJOR,
+                   "a wind leaves and winds");
+    TEST_ASSERT_EQ(KosDynNode_CAPS(gen),
+                   KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_GEN,
+                   "a GEN intercepts and is minor");
+    TEST_ASSERT(KosDynNode_IS_GEN(gen), "a GEN is found by its cap");
+    TEST_ASSERT(! KosDynNode_IS_GEN(prompt), "a prompt is not a GEN");
+
+    kos_dyngen_rest((KosDynGen *) gen);
+    kos_gen_state_clear(&state);
+    Py_DECREF(owner);
+    kos_dynchain_free(wind, NULL);
+    kos_dynchain_free(try_, NULL);
+    kos_dynchain_free(prompt, NULL);
+    kos_dynchain_free(frame, NULL);
+    return 0;
+}
+
+
+static int test_skip_links_at_init(void) {
+    /* a node's skip link is its nearest ancestor with a skip bit */
+    KosDynNode *f1 = plain_node(NULL);
+    KosDynNode *t1 = skip_node(f1);
+    KosDynNode *f2 = plain_node(t1);
+    KosDynNode *f3 = plain_node(f2);
+    KosDynNode *p = (KosDynNode *) kos_dynprompt_new(f3, NULL);
+    KosDynNode *f4 = plain_node(p);
+
+    TEST_ASSERT_NOT_NULL(f4, "build the chain");
+    TEST_ASSERT_NULL(KosDynNode_SKIP(f1), "the root names nothing");
+    TEST_ASSERT_NULL(KosDynNode_SKIP(t1), "nothing below the try has a bit");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(f2), t1, "a node on the try names it");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(f3), t1,
+                     "a node above a plain node names what that names");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(p), t1, "the prompt names the try");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(f4), p, "a node on the prompt names it");
+    TEST_ASSERT(kos_dyn_skips_hold(f4, NULL), "the chain's links hold");
+
+    KosDynNode_SKIP(f3) = p;
+    TEST_ASSERT(! kos_dyn_skips_hold(f4, NULL), "a wrong link is seen");
+    kos_dyn_relink_skips(f4, NULL);
+    TEST_ASSERT_SAME(KosDynNode_SKIP(f3), t1, "the relink sets it right");
+    TEST_ASSERT(kos_dyn_skips_hold(f4, NULL), "the relinked chain holds");
+
+    kos_dynchain_free(f4, NULL);
+    return 0;
+}
+
+
+/* Clone a three-node segment resting on a prompt, with the skip-bit
+   node at where (0 top, 1 middle, 2 bottom, 3 none), and attach the
+   clone onto another prompt. */
+static int clone_segment_skip_links(int where) {
+    KosDynNode *stop = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
+    KosDynNode *onto = (KosDynNode *) kos_dynprompt_new(NULL, Py_True);
+    KosDynNode *a = where == 2 ? skip_node(stop) : plain_node(stop);
+    KosDynNode *b = where == 1 ? skip_node(a) : plain_node(a);
+    KosDynNode *c = where == 0 ? skip_node(b) : plain_node(b);
+    KosCloneShape shape;
+    KosDynNode *top;
+    KosDynNode *mid;
+    KosDynNode *bottom;
+
+    TEST_ASSERT_NOT_NULL(c, "build the segment");
+    TEST_ASSERT_NOT_NULL(onto, "build the node to attach onto");
+
+    top = kos_dyn_clone_segment(c, stop, 1, 0, 0, &shape);
+    TEST_ASSERT_NOT_NULL(top, "clone the segment");
+    mid = KosDynNode_PARENT(top);
+    bottom = KosDynNode_PARENT(mid);
+    TEST_ASSERT_SAME(shape.bottom, bottom, "the shape names the bottom");
+
+    /* inside the clone the links are set; those reaching below it wait */
+    switch (where) {
+      case 0:
+        TEST_ASSERT_SAME(shape.tail, top, "the tail is the skip-bit clone");
+        TEST_ASSERT_NULL(KosDynNode_SKIP(top), "top reaches below");
+        TEST_ASSERT_NULL(KosDynNode_SKIP(mid), "mid reaches below");
+        break;
+      case 1:
+        TEST_ASSERT_SAME(shape.tail, mid, "the tail is the skip-bit clone");
+        TEST_ASSERT_SAME(KosDynNode_SKIP(top), mid, "top names mid");
+        TEST_ASSERT_NULL(KosDynNode_SKIP(mid), "mid reaches below");
+        break;
+      case 2:
+        TEST_ASSERT_SAME(shape.tail, bottom, "the tail is the skip-bit clone");
+        TEST_ASSERT_SAME(KosDynNode_SKIP(top), bottom, "top names bottom");
+        TEST_ASSERT_SAME(KosDynNode_SKIP(mid), bottom, "mid names bottom");
+        break;
+      default:
+        TEST_ASSERT_SAME(shape.tail, top, "with no bit the tail is the top");
+        TEST_ASSERT_NULL(KosDynNode_SKIP(top), "top reaches below");
+        TEST_ASSERT_NULL(KosDynNode_SKIP(mid), "mid reaches below");
+        break;
+    }
+    TEST_ASSERT_NULL(KosDynNode_SKIP(bottom), "bottom reaches below");
+
+    /* the attach: the bottom is linked, and the tail takes its link */
+    kos_dynnode_link(bottom, onto);
+    kos_dyn_repair_tail(shape.tail, bottom);
+    TEST_ASSERT_SAME(KosDynNode_SKIP(bottom), onto,
+                     "the bottom names the node it is on");
+    TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the attached clone holds");
+
+    kos_dynchain_free(top, NULL);
+    kos_dynchain_free(c, NULL);
+    return 0;
+}
+
+
+static int test_clone_skip_links_bit_at_top(void) {
+    return clone_segment_skip_links(0);
+}
+
+
+static int test_clone_skip_links_bit_in_middle(void) {
+    return clone_segment_skip_links(1);
+}
+
+
+static int test_clone_skip_links_bit_at_bottom(void) {
+    return clone_segment_skip_links(2);
+}
+
+
+static int test_clone_skip_links_no_bit(void) {
+    return clone_segment_skip_links(3);
+}
+
+
+static int test_frame_caps_survive_cache_reset(void) {
+    /* a frame stripped for a holder's cache stays a major frame */
+    KosDynFrame *frame = (KosDynFrame *) plain_node(NULL);
+    KosDynFrame *cache = NULL;
+
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+    KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
+    TEST_ASSERT(kos_dynframe_cache_inert(frame, &cache), "the cache takes it");
+    TEST_ASSERT_SAME(cache, frame, "the frame is in the cache");
+    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
+                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
+                   "the reset clears the scope cap and keeps the frame's");
+
+    KosDynFrame_NS(frame) = PyDict_New();
+    kos_dynframe_free(frame);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -571,6 +782,16 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dyngen_chain_free_leaves_the_owner_alone);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dynforeach_free_with_iter);
+
+    /* Capability and skip link tests */
+    RUN_TEST(test_node_header_size);
+    RUN_TEST(test_caps_by_kind);
+    RUN_TEST(test_skip_links_at_init);
+    RUN_TEST(test_clone_skip_links_bit_at_top);
+    RUN_TEST(test_clone_skip_links_bit_in_middle);
+    RUN_TEST(test_clone_skip_links_bit_at_bottom);
+    RUN_TEST(test_clone_skip_links_no_bit);
+    RUN_TEST(test_frame_caps_survive_cache_reset);
 
     return 0;
 }

@@ -53,7 +53,7 @@ KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state) {
     if (! gen)
       return NULL;
     kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL,
-                     KOS_DYN_CAP_INTERCEPTS_RAISE);
+                     0);
     KosDynNode_NS(gen) = Py_NewRef(KosNamespace_Empty());
     KosDynGen_STATE(gen) = state;
   }
@@ -65,7 +65,7 @@ KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state) {
 void kos_dyngen_rest(KosDynGen *gen) {
 
   KosDynGen_OWNER(gen) = NULL;
-  KosDynNode_PARENT(gen) = NULL;
+  kos_dynnode_link((KosDynNode *) gen, NULL);
   KosDynGen_STATE(gen)->node = (KosDynNode *) gen;
 }
 
@@ -283,10 +283,20 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   /* The GEN goes under the chain's top and the span above it; the
      span's interior links are intact, so only its bottom is relinked.
      The bottom's parent-is-frame flag is clear for a GEN as for the
-     NULL it rested under, so no note is needed. */
-  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+     NULL it rested under, so no note is needed. Nor do the span's skip
+     links change: the ones that reach below it name this GEN, the
+     node the state keeps from one install to the next, so only the
+     GEN's own is set. A span that rested under another GEN node has
+     them set over again. */
+  kos_dynnode_link((KosDynNode *) gen, KosContext_DYN_TOP(ctx));
   KosDynNode_PARENT(bottom) = (KosDynNode *) gen;
+  if (unlikely(KosDynNode_SKIP(bottom) != (KosDynNode *) gen))
+    kos_dyn_relink_skips(active, (KosDynNode *) gen);
   state->active = NULL;
+#if KOS_EVAL_SAFETYNET
+  if (! kos_dyn_skips_hold(active, (KosDynNode *) gen))
+    Py_FatalError("kos_dyn_gen_install: the span's skip links are stale");
+#endif
 
   /* frozen.top always equals the active head here: kos_dyn_gen_freeze
      writes active and the frozen snapshot together and nothing else
@@ -337,7 +347,7 @@ void kos_dyn_gen_unsplice(KosContext *ctx, KosGenState *state) {
   if (! bottom)
     return;
   gen = (KosDynGen *) KosDynNode_PARENT(bottom);
-  if (! gen || KosDynNode_KIND(gen) != KOS_DYN_GEN)
+  if (! gen || ! KosDynNode_IS_GEN(gen))
     return;
 
   /* the failure's error is the one the caller reports; the freeze's
@@ -403,9 +413,10 @@ int kos_dyn_gen_install_bootstrap(
     gen = kos_dyngen_new(owner, state);
     if (! gen)
       return -1;
-    KosDynNode_PARENT(root) = (KosDynNode *) gen;
-    if (KosDynNode_IS_FRAME(root))
-      kos_dynframe_note_parent((KosDynFrame *) root);
+    /* the GEN goes under nodes linked before it existed: their skip
+       links are set over again, once in the generator's life */
+    kos_dynnode_link(root, (KosDynNode *) gen);
+    kos_dyn_relink_skips(chain_head, (KosDynNode *) gen);
     state->started = 1;
   }
 
@@ -416,7 +427,7 @@ int kos_dyn_gen_install_bootstrap(
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(ctx, &state->host);
 
-  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+  kos_dynnode_link((KosDynNode *) gen, KosContext_DYN_TOP(ctx));
   kos_dyn_commit_dyn_top(ctx, chain_head);
 
   kos_dyn_gen_inherit_demand(ctx, invoker_demand);
@@ -538,8 +549,13 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
     KosDynFrame_BACK_FRAME(span->root) = (KosDynNode *) live;
   if (KosDynNode_STACK(span->root))
     KosSegment_BACK(KosDynNode_STACK(span->root)) = KosContext_BLOCK(ctx);
-  KosDynNode_PARENT(span->root) = under;
-  kos_dynnode_note_parent(span->root);
+  /* the skip links that reached the span's old root reach under now */
+  kos_dynnode_link(span->root, under);
+  kos_dyn_relink_skips(span->head, under);
+#if KOS_EVAL_SAFETYNET
+  if (! kos_dyn_skips_hold(span->head, under))
+    Py_FatalError("kos_dyn_span_attach: the span's skip links are stale");
+#endif
 
   kos_dyn_commit_dyn_top(ctx, span->head);
 

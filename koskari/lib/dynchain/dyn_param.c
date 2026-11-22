@@ -71,7 +71,7 @@ static KosDynParam *kos_dynparam_new_from_bindings(
   }
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent,
-                   KOS_DYN_CAP_WINDS);
+                   0);
 
   KosDynParam_BINDINGS(node) = cells;
   KosDynParam_SAVED(node) = NULL;

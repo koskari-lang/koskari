@@ -127,9 +127,35 @@ const char *kos_dynnode_kind_name(KosDynKind kind) {
 /* === DynNode base operations === */
 
 
+/* The caps every node of a kind carries for its whole life. A
+   constructor passes only what varies within its kind. */
+static const uint16_t kos_dyn_kind_caps[KOS_DYN_UNKNOWN] = {
+  [KOS_DYN_FRAME] = KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_PROMPT] = KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_BARRIER,
+  [KOS_DYN_WIND] =
+      KOS_DYN_CAP_LEAVES | KOS_DYN_CAP_WINDS | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_TRY] =
+      KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_EFFECT | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_FINALLY] =
+      KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_EFFECT | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_LOOP] = KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_FOREACH] = KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_NS] = KOS_DYN_CAP_OWNS_NS | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_COLLECT] = KOS_DYN_CAP_OWNS_NS | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_CC] = KOS_DYN_CAP_CC,
+  [KOS_DYN_PARAM] =
+      KOS_DYN_CAP_WINDS | KOS_DYN_CAP_EFFECT | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_WITH] =
+      KOS_DYN_CAP_LEAVES | KOS_DYN_CAP_CATCH | KOS_DYN_CAP_MAJOR,
+  [KOS_DYN_GEN] = KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_GEN,
+};
+
+
 /**
-   Initialize base KosDynNode fields (parent, kind, flags, caps). Per-kind
-   constructors call this before filling the union payload.
+   Initialize base KosDynNode fields (parent and skip link, kind, flags,
+   caps). caps is what varies within the kind; the kind's own caps are
+   added. Per-kind constructors call this before filling the union
+   payload.
 */
 static void kos_dynnode_init(
     KosDynNode *node,
@@ -138,9 +164,10 @@ static void kos_dynnode_init(
     uint32_t caps) {
 
   KosDynNode_PARENT(node) = parent;
-  KosDynNode_KIND(node) = kind;
+  KosDynNode_SKIP(node) = kos_dynnode_skip_under(parent);
+  KosDynNode_KIND(node) = (uint8_t) kind;
   KosDynNode_FLAGS(node) = KOS_DYNF_NONE;
-  KosDynNode_CAPS(node) = caps;
+  KosDynNode_CAPS(node) = (uint16_t) (caps | kos_dyn_kind_caps[kind]);
   KosDynNode_NODE_ID(node) = 0;  /* minted on first read, see kos_dynnode_id */
   KosDynNode_STACK(node) = NULL;
   KosDynNode_NS(node) = NULL;
@@ -225,6 +252,19 @@ static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
   KosSegment *seg = KosDynNode_STACK(node);
+
+#if KOS_EVAL_SAFETYNET
+  {
+    /* the caps that say what a node is are never written away */
+    uint16_t fixed = KOS_DYN_CAP_FRAME | KOS_DYN_CAP_GEN
+        | KOS_DYN_CAP_MAJOR | KOS_DYN_CAP_CC;
+
+    if ((KosDynNode_CAPS(node) & fixed)
+        != (kos_dyn_kind_caps[KosDynNode_KIND(node)] & fixed))
+      Py_FatalError("kos_dynnode_return_to_freelist: a node lost the"
+                    " caps of its kind");
+  }
+#endif
 
   if (seg) {
     /* An empty inline segment is the common case, and its release is
@@ -743,6 +783,54 @@ static PyObject *kos_dyn_take_staged_result(KosContext *ctx) {
 }
 
 
+/* === Skip links === */
+
+
+/**
+   Recompute the skip links of a segment. See dynchain.h. The walk goes
+   top down, so a node's nearest skip-bit ancestor is not known when
+   the node is met: the nodes still waiting for one are threaded
+   through their own skip fields, and the next skip-bit node resolves
+   them all. Those left at the end reach below the segment and take
+   what a node on stop takes.
+*/
+void kos_dyn_relink_skips(KosDynNode *top, KosDynNode *stop) {
+
+  KosDynNode *waiting = NULL;
+  KosDynNode *outer = kos_dynnode_skip_under(stop);
+
+  for (KosDynNode *n = top; n && n != stop; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_CAPS(n) & KOS_DYN_CAP_SKIP) {
+      while (waiting) {
+        KosDynNode *next = KosDynNode_SKIP(waiting);
+
+        KosDynNode_SKIP(waiting) = n;
+        waiting = next;
+      }
+    }
+    KosDynNode_SKIP(n) = waiting;
+    waiting = n;
+  }
+
+  while (waiting) {
+    KosDynNode *next = KosDynNode_SKIP(waiting);
+
+    KosDynNode_SKIP(waiting) = outer;
+    waiting = next;
+  }
+}
+
+
+int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop) {
+
+  for (KosDynNode *n = top; n && n != stop; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_SKIP(n) != kos_dynnode_skip_under(KosDynNode_PARENT(n)))
+      return 0;
+  }
+  return 1;
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_cc.c"
@@ -850,7 +938,7 @@ int kos_dyn_ob_traverse(KosObligation *ob, visitproc visit, void *arg) {
 static KosObligation *kos_dyn_ob_slot_for(KosDynNode *node) {
   KosObligation *ob;
 
-  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
+  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_LEAVES)) {
     PyErr_Format(PyExc_SystemError,
                  "obligation stored on a %s node, which carries none",
                  kos_dynnode_kind_name(KosDynNode_KIND(node)));
@@ -1191,7 +1279,7 @@ KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return) {
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   int was_leave;
 
-  if (! top || ! KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CONTROL_HOOK))
+  if (! top || ! KosDynNode_HAS_CAP(top, KOS_DYN_CAP_LEAVES))
     return EVAL_NORMAL();
   if (! kos_dyn_extent_in_flight(top))
     return EVAL_NORMAL();
@@ -1381,6 +1469,9 @@ KosDynNode *kos_dyn_clone_segment(
     KosCloneShape *shape) {
 
   KosDynNode *prev = NULL;
+  /* clones with no skip-bit clone below them yet, threaded through
+     their own skip fields (see kos_dyn_relink_skips) */
+  KosDynNode *waiting = NULL;
   size_t cap = 0;
   size_t open_frame = 0;
   size_t open_block = 0;
@@ -1409,6 +1500,18 @@ KosDynNode *kos_dyn_clone_segment(
     } else {
       shape->top.top = cloned;
     }
+
+    if (KosDynNode_CAPS(cloned) & KOS_DYN_CAP_SKIP) {
+      while (waiting) {
+        KosDynNode *next = KosDynNode_SKIP(waiting);
+
+        KosDynNode_SKIP(waiting) = cloned;
+        waiting = next;
+      }
+      shape->tail = cloned;
+    }
+    KosDynNode_SKIP(cloned) = waiting;
+    waiting = cloned;
 
     if (for_attach && KosDynNode_HAS_CAP(cloned, KOS_DYN_CAP_WINDS)
         && kos_clone_add_piece(shape, &cap, cloned, prev) < 0)
@@ -1465,6 +1568,17 @@ KosDynNode *kos_dyn_clone_segment(
     kos_dynnode_note_parent(prev);
   }
   shape->bottom = prev;
+
+  /* the clones still waiting reach below the clone: the attach repairs
+     them, from the lowest skip-bit clone or from the top */
+  while (waiting) {
+    KosDynNode *next = KosDynNode_SKIP(waiting);
+
+    KosDynNode_SKIP(waiting) = NULL;
+    waiting = next;
+  }
+  if (! shape->tail)
+    shape->tail = shape->top.top;
 
   /* met innermost first; attached outermost first */
   for (size_t i = 0; i < shape->piece_count / 2; i++) {
@@ -2145,7 +2259,7 @@ static KosOpResult kos_dyn_unlink_top_take(
     return EVAL_RAISE();
   }
 
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_LEAVES)) {
     if (ev == KOS_XFER_EVENT_TRANSFER
         && ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
       /* a transfer does not run a local extent: a call in flight is
@@ -2162,7 +2276,7 @@ static KosOpResult kos_dyn_unlink_top_take(
       return r;
   }
 
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_LEAVES)) {
     KosObligation *slot = kos_dyn_node_ob(node);
     ob = *slot;
     slot->kind = KOS_OB_NONE;
@@ -2390,7 +2504,7 @@ KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept) {
     return EVAL_RAISE();
   }
 
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_LEAVES)) {
     if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
       KosOpResult r = kos_dyn_extent_leave(ctx, node, KOS_XFER_EVENT_TRANSFER);
       if (r.kind != KOS_RES_NORMAL)
@@ -2817,10 +2931,10 @@ static KosContinuation *kos_continuation_capture_segment(
 
 /**
    The nearest prompt carrying tag, for an abort or the abort a shift
-   makes. One walk from dyn_top, by kind, for the two kinds that
-   decide it: a GEN denies (no abort crosses a generator node), and a
-   PROMPT is the match when its tag agrees, crossed when it does not,
-   so the walk goes on to the parent. Every other kind is crossed.
+   makes. One walk from dyn_top, for the two caps that decide it: a
+   generator's node denies (no abort crosses one), and a barrier, a
+   PROMPT, is the match when its tag agrees, crossed when it does not,
+   so the walk goes on to the parent. Every other node is crossed.
    Reachability is implied by the walk itself. Returns NULL with an
    exception set. With capturing set, for a shift, each node crossed
    before the prompt is also one the continuation will hold, and one
@@ -2835,18 +2949,14 @@ static KosDynPrompt *kos_prompt_seek(
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node) {
-    switch (KosDynNode_KIND(node)) {
-      case KOS_DYN_PROMPT:
-        if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag)
-          return (KosDynPrompt *) node;
-        break;
-      case KOS_DYN_GEN:
-        kos_raise_prompt_unreachable(
-            NULL, "generator", "cannot abort across a %s boundary");
-        kos_capture_note(tag, operation);
-        return NULL;
-      default:
-        break;
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
+      if (KosDynPrompt_TAG((KosDynPrompt *) node) == tag)
+        return (KosDynPrompt *) node;
+    } else if (KosDynNode_IS_GEN(node)) {
+      kos_raise_prompt_unreachable(
+          NULL, "generator", "cannot abort across a %s boundary");
+      kos_capture_note(tag, operation);
+      return NULL;
     }
 
     /* a node the capture will keep: what its clone would refuse is
