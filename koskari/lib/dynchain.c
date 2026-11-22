@@ -1118,15 +1118,23 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 /* === Obligations === */
 
 
-KosObligation *kos_dyn_node_ob(KosDynNode *node) {
+/* The extent of a WIND or a WITH, or NULL for any other kind */
+static inline KosExtent *kos_dyn_node_extent(const KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_WIND:
-      return KosDynWind_OB(node);
+      return KosDynWind_EXTENT(node);
     case KOS_DYN_WITH:
-      return KosDynWith_OB(node);
+      return KosDynWith_EXTENT(node);
     default:
       return NULL;
   }
+}
+
+
+KosObligation *kos_dyn_node_ob(KosDynNode *node) {
+  KosExtent *ext = kos_dyn_node_extent(node);
+
+  return ext ? &ext->ob : NULL;
 }
 
 
@@ -1274,26 +1282,49 @@ static KosOpResult kos_dyn_ob_resume_exception(KosObligation *ob) {
 /* === The extent contract === */
 
 
+/**
+   The call in flight is gone and left nothing to take. A WITH's
+   __exit__ gives back the handler-visible state it displaced; what
+   the node stored stays for the unlink to chain or discard.
+*/
+static inline void kos_dyn_extent_aborted(KosDynNode *node, KosExtent *ext) {
+
+  if (KosDynNode_KIND(node) == KOS_DYN_WITH)
+    kos_dyn_with_exit_done_exc((KosDynWith *) node);
+  KosExtent_PHASE(ext) = KOS_EXTENT_LEFT;
+}
+
+
 KosOpResult kos_dyn_extent_enter(KosContext *ctx, KosDynNode *node) {
 
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WITH:
-      return kos_dyn_with_enter(ctx, (KosDynWith *) node);
-    case KOS_DYN_WIND:
-      return kos_dyn_wind_enter(ctx, (KosDynWind *) node);
-    case KOS_DYN_PARAM:
-      /* already bound: a pass after a suspension re-derives its place */
-      if (KosDynParam_SAVED(node))
-        return EVAL_NORMAL();
-      if (kos_dyn_param_wind(ctx, (KosDynParam *) node) < 0)
-        return EVAL_RAISE();
+  KosExtent *ext;
+
+  if (KosDynNode_KIND(node) == KOS_DYN_PARAM) {
+    /* already bound: a pass after a suspension re-derives its place */
+    if (KosDynParam_SAVED(node))
       return EVAL_NORMAL();
-    default:
-      PyErr_Format(PyExc_RuntimeError,
-                   "kos_dyn_extent_enter: node kind %u has no enter",
-                   (unsigned) KosDynNode_KIND(node));
+    if (kos_dyn_param_wind(ctx, (KosDynParam *) node) < 0)
       return EVAL_RAISE();
+    return EVAL_NORMAL();
   }
+
+  ext = kos_dyn_node_extent(node);
+  if (! ext) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "kos_dyn_extent_enter: node kind %u has no enter",
+                 (unsigned) KosDynNode_KIND(node));
+    return EVAL_RAISE();
+  }
+
+  /* the enter runs once */
+  if (KosExtent_PHASE(ext) == KOS_EXTENT_LEFT || KosExtent_ENTERED(ext))
+    return EVAL_NORMAL();
+  if (KosExtent_PHASE(ext) == KOS_EXTENT_ENTERING)
+    return EVAL_REPROLOGUE();  /* the enter call is in flight */
+
+  return KosDynNode_IS_WIND(node)
+      ? kos_dyn_wind_call_enter(ctx, (KosDynWind *) node)
+      : kos_dyn_with_call_enter(ctx, (KosDynWith *) node);
 }
 
 
@@ -1302,17 +1333,46 @@ KosOpResult kos_dyn_extent_leave(
     KosDynNode *node,
     KosXferEvent ev) {
 
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return kos_dyn_wind_leave(ctx, (KosDynWind *) node, ev);
-    case KOS_DYN_WITH:
-      return kos_dyn_with_leave(ctx, (KosDynWith *) node, ev);
-    default:
-      PyErr_Format(PyExc_RuntimeError,
-                   "kos_dyn_extent_leave: node kind %u has no leave",
-                   (unsigned) KosDynNode_KIND(node));
-      return EVAL_RAISE();
+  KosExtent *ext = kos_dyn_node_extent(node);
+
+  (void) ev;
+
+  if (! ext) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "kos_dyn_extent_leave: node kind %u has no leave",
+                 (unsigned) KosDynNode_KIND(node));
+    return EVAL_RAISE();
   }
+
+  switch (KosExtent_PHASE(ext)) {
+    case KOS_EXTENT_LEFT:
+      return EVAL_NORMAL();
+
+    case KOS_EXTENT_ENTERING:
+    case KOS_EXTENT_LEAVING:
+      /* A call in flight sat in a frame above this node. The node is
+         dyn_top, so that frame is gone (it raised, or the walk crossed
+         it) and the call is dead: nothing to wait for and, for an
+         enter, never entered. An __exit__ that raised has replaced
+         the exception it was handling. */
+      kos_dyn_extent_aborted(node, ext);
+      return EVAL_NORMAL();
+
+    default:
+      break;
+  }
+
+  if (! KosExtent_ENTERED(ext)) {
+    /* never entered: nothing to run. A dyn-with's or dyn-wind's copy
+       that a transfer attached and has not yet entered arrives this
+       way. */
+    KosExtent_PHASE(ext) = KOS_EXTENT_LEFT;
+    return EVAL_NORMAL();
+  }
+
+  return KosDynNode_IS_WIND(node)
+      ? kos_dyn_wind_call_leave(ctx, (KosDynWind *) node)
+      : kos_dyn_with_call_leave(ctx, (KosDynWith *) node);
 }
 
 
@@ -1399,11 +1459,30 @@ static inline int kos_dyn_effect_in(KosContext *ctx, KosDynNode *node) {
 
 int kos_dyn_extent_settle(KosContext *ctx, KosDynNode *node) {
 
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return kos_dyn_wind_settle(ctx, (KosDynWind *) node);
-    case KOS_DYN_WITH:
-      return kos_dyn_with_settle(ctx, (KosDynWith *) node);
+  KosExtent *ext = kos_dyn_node_extent(node);
+  int wind = KosDynNode_IS_WIND(node);
+
+  if (! ext)
+    return 0;
+
+  switch (KosExtent_PHASE(ext)) {
+    case KOS_EXTENT_ENTERING:
+      if ((wind ? kos_dyn_wind_call_done(ctx)
+                : kos_dyn_with_enter_done(ctx, (KosDynWith *) node)) < 0)
+        return -1;
+      KosExtent_ENTERED(ext) = 1;
+      KosExtent_PHASE(ext) = KOS_EXTENT_IDLE;
+      return 0;
+
+    case KOS_EXTENT_LEAVING:
+      /* a WITH whose result could not be classified stays in flight
+         for the raise walk to abort */
+      if ((wind ? kos_dyn_wind_call_done(ctx)
+                : kos_dyn_with_leave_done(ctx, (KosDynWith *) node)) < 0)
+        return -1;
+      KosExtent_PHASE(ext) = KOS_EXTENT_LEFT;
+      return 0;
+
     default:
       return 0;
   }
@@ -1412,30 +1491,20 @@ int kos_dyn_extent_settle(KosContext *ctx, KosDynNode *node) {
 
 void kos_dyn_extent_abort(KosDynNode *node) {
 
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      kos_dyn_wind_abort((KosDynWind *) node);
-      break;
-    case KOS_DYN_WITH:
-      kos_dyn_with_abort((KosDynWith *) node);
-      break;
-    default:
-      break;
-  }
+  KosExtent *ext = kos_dyn_node_extent(node);
+
+  if (ext && (KosExtent_PHASE(ext) == KOS_EXTENT_ENTERING
+              || KosExtent_PHASE(ext) == KOS_EXTENT_LEAVING))
+    kos_dyn_extent_aborted(node, ext);
 }
 
 
 int kos_dyn_extent_in_flight(const KosDynNode *node) {
 
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN
-          || KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_AFTER;
-    case KOS_DYN_WITH:
-      return KosDynWith_ENTER_PENDING(node) || KosDynWith_EXIT_PENDING(node);
-    default:
-      return 0;
-  }
+  const KosExtent *ext = kos_dyn_node_extent(node);
+
+  return ext && (KosExtent_PHASE(ext) == KOS_EXTENT_ENTERING
+                 || KosExtent_PHASE(ext) == KOS_EXTENT_LEAVING);
 }
 
 
@@ -1450,9 +1519,8 @@ KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return) {
   if (kos_xfer_goal_waits_on(ctx, top))
     return EVAL_NORMAL();
 
-  was_leave = KosDynNode_IS_WIND(top)
-      ? KosDynWind_PHASE(top) == KOS_WIND_PHASE_PRE_AFTER
-      : KosDynWith_EXIT_PENDING(top);
+  was_leave =
+      KosExtent_PHASE(kos_dyn_node_extent(top)) == KOS_EXTENT_LEAVING;
 
   if (kos_dyn_extent_settle(ctx, top) < 0)
     return EVAL_RAISE();
@@ -2740,15 +2808,18 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
       /* a template WIND is always idle (its clone resets the phase, to
          be entered by the ENTERING replay); the live one matches only
          while its body runs */
+      /* one that never ran a before segment matches no template, as
+         it did while entering that way left it in no phase of its own */
       return KosDynWind_ENTERED(live)
-          && KosDynWind_PHASE(live) == KOS_WIND_PHASE_POST_BEGIN;
+          && KosDynWind_PHASE(live) == KOS_EXTENT_IDLE
+          && KosDynWind_BEFORE(live);
 
     case KOS_DYN_WITH:
       /* likewise always idle as a template; the live one matches while
          its body runs: entered, and no enter or exit in flight or
          awaited */
       return KosDynWith_ENTERED(live)
-          && KosDynWith_PHASE(live) == KOS_WITH_PHASE_IDLE
+          && KosDynWith_PHASE(live) == KOS_EXTENT_IDLE
           && KosDynWith_OB(live)->kind == KOS_OB_NONE;
 
     default:

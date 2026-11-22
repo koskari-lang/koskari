@@ -27,7 +27,6 @@
 
 
 static void kos_dynwith_free(KosDynWith *node);
-static void kos_dyn_with_abort_impl(KosDynWith *node);
 
 
 /**
@@ -58,7 +57,7 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_EXIT(node) = exit;
   KosDynWith_SELF_BIND(node) = self_bind;
   KosDynWith_ENTERED(node) = 0;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  KosDynWith_PHASE(node) = KOS_EXTENT_IDLE;
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
@@ -113,7 +112,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
      copy exits locally. */
   KosDynWith_ENTERED(node) = KosDynNode_HAS_CAP(src, KOS_DYN_CAP_WINDS)
       ? 0 : KosDynWith_ENTERED(src);
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  KosDynWith_PHASE(node) = KOS_EXTENT_IDLE;
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
@@ -196,8 +195,6 @@ KosDynWith *kos_dyn_push_with_provisional(
   if (! node)
     return NULL;
 
-  KosDynWith_ENTERED(node) = 0;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynwith_free(node);
     return NULL;
@@ -266,7 +263,7 @@ static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
   Py_DECREF(result);
 
   KosDynWith_ENTERED(node) = 1;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  KosDynWith_PHASE(node) = KOS_EXTENT_IDLE;
   return 0;
 }
 
@@ -319,20 +316,15 @@ static int kos_dyn_with_classify_exit(
       KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   }
   Py_DECREF(result);
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
+  KosDynWith_PHASE(node) = KOS_EXTENT_LEFT;
   return 0;
 }
 
 
 /**
-   Enter: run __enter__ once. See the extent contract in dynchain.h.
+   The enter call: __enter__. See the extent machine in dynchain.c.
 */
-static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
-
-  if (KosDynWith_LEFT(node) || KosDynWith_ENTERED(node))
-    return EVAL_NORMAL();
-  if (KosDynWith_ENTER_PENDING(node))
-    return EVAL_REPROLOGUE();  /* __enter__ in flight */
+static KosOpResult kos_dyn_with_call_enter(KosContext *ctx, KosDynWith *node) {
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
 
@@ -356,41 +348,17 @@ static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
 
   /* An installed callee has not run, and an awaitable has not settled:
      the completion runs at the settle. */
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
+  KosDynWith_PHASE(node) = KOS_EXTENT_ENTERING;
   return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
 }
 
 
 /**
-   Leave: run __exit__ once. See the extent contract in dynchain.h. The
+   The leave call: __exit__. See the extent machine in dynchain.c. The
    body value and a re-raise are not delivered here; the unlink does that
    after the node is gone.
 */
-static KosOpResult kos_dyn_with_leave(
-    KosContext *ctx,
-    KosDynWith *node,
-    KosXferEvent ev) {
-
-  (void) ev;
-
-  if (KosDynWith_LEFT(node))
-    return EVAL_NORMAL();
-
-  if (KosDynWith_EXIT_PENDING(node) || KosDynWith_ENTER_PENDING(node)) {
-    /* A call in flight sat in a frame above this node. The node is
-       dyn_top, so that frame is gone (it raised, or the walk crossed
-       it): the manager is discharged with nothing to take, and an
-       __exit__ that raised has replaced the exception it was handling. */
-    kos_dyn_with_abort_impl(node);
-    return EVAL_NORMAL();
-  }
-
-  if (! KosDynWith_ENTERED(node)) {
-    /* never entered: no __exit__. A dyn-with's copy that a transfer
-       attached and has not yet entered arrives this way. */
-    KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
-    return EVAL_NORMAL();
-  }
+static KosOpResult kos_dyn_with_call_leave(KosContext *ctx, KosDynWith *node) {
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
   KosObligation *ob = KosDynWith_OB(node);
@@ -434,7 +402,7 @@ static KosOpResult kos_dyn_with_leave(
     argv[argc++] = Py_None;
   }
 
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
+  KosDynWith_PHASE(node) = KOS_EXTENT_LEAVING;
   KosOpResult kr = KosContext_Call(
       ctx, exit_fn, argv, argc, NULL, 0, NULL, NULL);
 
@@ -465,51 +433,50 @@ static KosOpResult kos_dyn_with_leave(
 
 
 /**
-   The pending __enter__ or __exit__ returned; its result is staged or
-   is the top of the live block.
+   A pending with node sits above its owning frame, so that frame is
+   live while the node is; without it there is no operand block to
+   take a result from. Returns 0, or -1 with the error set.
 */
-static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
+static int kos_dyn_with_result_frame(KosContext *ctx) {
 
-  /* A pending with node sits above its owning frame, so that frame is
-     live while the node is; without it there is no operand block to
-     settle from. */
   if (! KosContext_FRAME(ctx)) {
     PyErr_SetString(PyExc_SystemError,
                     "with settle: pending node with no live frame");
     return -1;
-  }
-
-  if (KosDynWith_ENTER_PENDING(node))
-    return kos_dyn_with_bind_entered(ctx, node);
-
-  if (KosDynWith_EXIT_PENDING(node)) {
-    PyObject *result = kos_dyn_take_staged_result(ctx);
-
-    if (! result)
-      result = KosContext_StackPopRef(ctx);
-    if (! result)
-      return -1;
-    return kos_dyn_with_classify_exit(ctx, node, result);
   }
   return 0;
 }
 
 
 /**
-   The pending __enter__ or __exit__ died: the manager is discharged
-   with nothing to take.
+   The pending __enter__ returned; its result is staged or is the top
+   of the live block.
 */
-static void kos_dyn_with_abort_impl(KosDynWith *node) {
-  /* what was stored stays for the unlink to chain or discard */
-  kos_dyn_with_exit_done_exc(node);
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
+static int kos_dyn_with_enter_done(KosContext *ctx, KosDynWith *node) {
+
+  if (kos_dyn_with_result_frame(ctx) < 0)
+    return -1;
+  return kos_dyn_with_bind_entered(ctx, node);
 }
 
 
-static void kos_dyn_with_abort(KosDynWith *node) {
+/**
+   The pending __exit__ returned; its result is staged or is the top
+   of the live block.
+*/
+static int kos_dyn_with_leave_done(KosContext *ctx, KosDynWith *node) {
 
-  if (KosDynWith_ENTER_PENDING(node) || KosDynWith_EXIT_PENDING(node))
-    kos_dyn_with_abort_impl(node);
+  PyObject *result;
+
+  if (kos_dyn_with_result_frame(ctx) < 0)
+    return -1;
+
+  result = kos_dyn_take_staged_result(ctx);
+  if (! result)
+    result = KosContext_StackPopRef(ctx);
+  if (! result)
+    return -1;
+  return kos_dyn_with_classify_exit(ctx, node, result);
 }
 
 

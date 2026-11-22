@@ -187,15 +187,6 @@ typedef enum KosDynFlags {
    | KOS_DYN_CAP_WINDS | KOS_DYN_CAP_EFFECT)
 
 
-typedef enum KosDynWindPhase {
-  KOS_WIND_PHASE_IDLE,
-  KOS_WIND_PHASE_PRE_BEGIN,
-  KOS_WIND_PHASE_POST_BEGIN,
-  KOS_WIND_PHASE_PRE_AFTER,
-  KOS_WIND_PHASE_POST_AFTER,
-} KosDynWindPhase;
-
-
 /* === KosIterRequest: the iteration request sidecar === */
 
 
@@ -469,6 +460,9 @@ typedef enum KosObligationKind {
 
 typedef struct KosObligation {
   uint8_t kind;
+  /* three bytes of the record's own padding, the embedding record's
+     to use (see KosExtent) */
+  uint8_t lent[3];
   union {
     PyObject *value;               /* KOS_OB_VALUE: owned */
     KosExcState exc;               /* KOS_OB_EXCEPTION: owned triple */
@@ -478,6 +472,35 @@ typedef struct KosObligation {
     } ret;
   } u;
 } KosObligation;
+
+
+/* KosExtent phases */
+#define KOS_EXTENT_IDLE      0  /* no call in flight: before the enter,
+                                   or in the body once entered */
+#define KOS_EXTENT_ENTERING  1  /* the enter call is in flight */
+#define KOS_EXTENT_LEAVING   2  /* the leave call is in flight */
+#define KOS_EXTENT_LEFT      3  /* terminal: every further leave is a
+                                   no-op */
+
+
+/**
+   The state of an extent that runs user code on the way in and on the
+   way out: a WIND's before and after segments, a WITH's __enter__ and
+   __exit__. One machine runs both kinds (kos_dyn_extent_enter, _leave,
+   _settle, _abort); the kind supplies the two calls. A call in flight
+   has been started and has not returned: its frame is installed above
+   the node, or it suspended on an awaitable. entered is 1 once the
+   enter has completed, and says whether a leave has anything to run.
+   ob is what the node holds for after its leave. The phase and
+   entered live in the obligation's lent bytes, so the extent is no
+   larger than the obligation.
+*/
+typedef struct KosExtent {
+  KosObligation ob;
+} KosExtent;
+
+#define KosExtent_PHASE(e)    ((e)->ob.lent[0])
+#define KosExtent_ENTERED(e)  ((e)->ob.lent[1])
 
 
 /**
@@ -692,11 +715,9 @@ struct KosDynNode {
          asides, each NULL for none */
       KosCode *code;
       const KosExtra *row;
-      /* the body result at POP_WIND, or what a walk stored while the
-         after-thunk runs */
-      KosObligation ob;
-      uint8_t entered;
-      uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
+      /* the extent's phase, and in its obligation the body result at
+         POP_WIND, or what a walk stored while the after-thunk runs */
+      KosExtent extent;
     } wind;
     struct {
       KosOp *handler_pc;
@@ -728,14 +749,13 @@ struct KosDynNode {
       PyObject *exit;      /* resolved exit callable (owned) */
       PyObject *name;     /* binding name or NULL (owned) */
       KosOp *resume_pc;    /* the instruction after the with body (pop + 1) */
-      /* the exception __exit__ is handling, or what a walk stored while
-         __exit__ runs */
-      KosObligation ob;
-      /* __exit__ runs as a handler of the obligation's exception. The
-         lent bytes: [0] self_bind, KOS_WITH_SELF_*, which of
-         enter/exit is a plain function kept unbound, called with mgr
-         first; [1] entered, 1 after enter succeeded; [2] phase,
-         KOS_WITH_PHASE_* */
+      /* the extent's phase, and in its obligation the exception
+         __exit__ is handling, or what a walk stored while __exit__
+         runs */
+      KosExtent extent;
+      /* __exit__ runs as a handler of the obligation's exception.
+         lent[0] is self_bind, KOS_WITH_SELF_*: which of enter/exit is
+         a plain function kept unbound, called with mgr first */
       KosExcSlot exc;
     } with;
     struct {
@@ -1926,11 +1946,12 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
   enter / leave answer EVAL_NORMAL when the obligation is discharged,
   EVAL_REPROLOGUE when a thunk or __enter__/__exit__ frame was
   installed, EVAL_AWAIT (payload in .val) when the call suspended on an
-  awaitable, EVAL_RAISE when the node's own code raised. A node in a
-  pending phase (WIND PRE_*, WITH PENDING_*) is in flight: enter and
-  leave answer REPROLOGUE while its thunk frame sits above it, and
-  leave aborts it once it is dyn_top, since nothing is above it and
-  the thunk is gone (it raised, or a walk crossed it).
+  awaitable, EVAL_RAISE when the node's own code raised. A WIND or
+  WITH runs through one machine over its KosExtent, the kind supplying
+  the two calls. A node whose phase is ENTERING or LEAVING is in
+  flight: enter answers REPROLOGUE while its call's frame sits above
+  it, and leave aborts it once it is dyn_top, since nothing is above
+  it and the call is gone (it raised, or a walk crossed it).
 
   settle: the pending call has returned and its result sits on the
   live block; take it and advance the phase. abort: the pending call
@@ -2510,9 +2531,10 @@ int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop);
 #define KosDynWind_ROW(w)          (((KosDynNode *)(w))->u.wind.row)
 #define KosDynWind_BEFORE(w)       KosExtra_ASIDE(KosDynWind_ROW(w), 0)
 #define KosDynWind_AFTER(w)        KosExtra_ASIDE(KosDynWind_ROW(w), 1)
-#define KosDynWind_OB(w)           (&((KosDynNode *)(w))->u.wind.ob)
-#define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
-#define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
+#define KosDynWind_EXTENT(w)       (&((KosDynNode *)(w))->u.wind.extent)
+#define KosDynWind_OB(w)           (&KosDynWind_EXTENT(w)->ob)
+#define KosDynWind_ENTERED(w)      KosExtent_ENTERED(KosDynWind_EXTENT(w))
+#define KosDynWind_PHASE(w)        KosExtent_PHASE(KosDynWind_EXTENT(w))
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.exc.lent[0])
@@ -2560,13 +2582,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)
 
 
-#define KOS_WITH_PHASE_IDLE                0
-#define KOS_WITH_PHASE_PENDING_EXIT_AWAIT  1
-#define KOS_WITH_PHASE_PENDING_ENTER_AWAIT 2
-
-/** terminal: the extent has been left; every further leave is a no-op */
-#define KOS_WITH_PHASE_LEFT                3
-
 /** enter is a plain function: call it with mgr as the first argument */
 #define KOS_WITH_SELF_ENTER 1u
 
@@ -2577,11 +2592,12 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
 #define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.exc.lent[0])
-#define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.exc.lent[1])
-#define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.exc.lent[2])
+#define KosDynWith_EXTENT(n)       (&((KosDynNode *)(n))->u.with.extent)
+#define KosDynWith_ENTERED(n)      KosExtent_ENTERED(KosDynWith_EXTENT(n))
+#define KosDynWith_PHASE(n)        KosExtent_PHASE(KosDynWith_EXTENT(n))
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
-#define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)
+#define KosDynWith_OB(n)           (&KosDynWith_EXTENT(n)->ob)
 #define KosDynWith_EXC(n)          (&((KosDynNode *)(n))->u.with.exc)
 
 
@@ -2593,11 +2609,9 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
   returned, kos_dyn_extent_abort once the call has died.
 */
 #define KosDynWith_ENTER_PENDING(n) \
-  (KosDynWith_PHASE(n) == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+  (KosDynWith_PHASE(n) == KOS_EXTENT_ENTERING)
 #define KosDynWith_EXIT_PENDING(n) \
-  (KosDynWith_PHASE(n) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-#define KosDynWith_LEFT(n) \
-  (KosDynWith_PHASE(n) == KOS_WITH_PHASE_LEFT)
+  (KosDynWith_PHASE(n) == KOS_EXTENT_LEAVING)
 
 
 /* === Unit lifecycle === */

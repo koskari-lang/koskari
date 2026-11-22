@@ -45,7 +45,7 @@ KosDynWind *kos_dynwind_new(
   KosDynWind_ROW(wind) = row;
   KosDynWind_OB(wind)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(wind) = 0;
-  KosDynWind_PHASE(wind) = KOS_WIND_PHASE_IDLE;
+  KosDynWind_PHASE(wind) = KOS_EXTENT_IDLE;
   return wind;
 }
 
@@ -58,11 +58,11 @@ KosDynWind *kos_dynwind_new(
 */
 static int kos_dynwind_capturable(KosDynWind *wind) {
 
-  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
-      || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER
+  if (KosDynWind_PHASE(wind) == KOS_EXTENT_ENTERING
+      || KosDynWind_PHASE(wind) == KOS_EXTENT_LEAVING
       || KosDynWind_OB(wind)->kind != KOS_OB_NONE) {
     kos_raise_prompt_unreachable(
-        NULL, KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
+        NULL, KosDynWind_PHASE(wind) == KOS_EXTENT_ENTERING
                   ? "before" : "after",
         "cannot capture a continuation from inside a dyn-wind whose %s"
         " segment is in flight");
@@ -91,7 +91,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   KosDynWind_ROW(clone) = KosDynWind_ROW(wind);
   KosDynWind_OB(clone)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(clone) = 0;
-  KosDynWind_PHASE(clone) = KOS_WIND_PHASE_IDLE;
+  KosDynWind_PHASE(clone) = KOS_EXTENT_IDLE;
   return clone;
 }
 
@@ -147,78 +147,46 @@ static KosOpResult kos_dyn_wind_fire(
 
 
 /**
-   Enter: run the before segment once. See the extent contract in
-   dynchain.h.
+   The enter call: the before segment, when the wind has one. See the
+   extent machine in dynchain.c.
 */
-static KosOpResult kos_dyn_wind_enter(KosContext *ctx, KosDynWind *node) {
-
-  if (KosDynWind_ENTERED(node))
-    return EVAL_NORMAL();
-  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN)
-    return EVAL_REPROLOGUE();  /* before segment in flight */
+static KosOpResult kos_dyn_wind_call_enter(KosContext *ctx, KosDynWind *node) {
 
   if (! KosDynWind_BEFORE(node)) {
     KosDynWind_ENTERED(node) = 1;
     return EVAL_NORMAL();
   }
 
-  KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
+  KosDynWind_PHASE(node) = KOS_EXTENT_ENTERING;
   return kos_dyn_wind_fire(ctx, node, KosDynWind_BEFORE(node));
 }
 
 
 /**
-   Leave: run the after segment once. See the extent contract in
-   dynchain.h. The body result is not delivered here; the unlink does
-   that after the node is gone.
+   The leave call: the after segment, when the wind has one. The body
+   result is not delivered here; the unlink does that after the node
+   is gone.
 */
-static KosOpResult kos_dyn_wind_leave(
-    KosContext *ctx,
-    KosDynWind *node,
-    KosXferEvent ev) {
+static KosOpResult kos_dyn_wind_call_leave(KosContext *ctx, KosDynWind *node) {
 
-  (void) ev;
-
-  switch (KosDynWind_PHASE(node)) {
-    case KOS_WIND_PHASE_POST_AFTER:
-      return EVAL_NORMAL();
-
-    case KOS_WIND_PHASE_PRE_AFTER:
-    case KOS_WIND_PHASE_PRE_BEGIN:
-      /* A segment in flight sat in a frame above this node. The node
-         is dyn_top, so that frame is gone (it raised, or the walk
-         crossed it) and the segment is dead: nothing to wait for and,
-         for a before segment, never entered. */
-      KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
-      return EVAL_NORMAL();
-
-    default:
-      break;
-  }
-
-  if (! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER(node)) {
-    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
+  if (! KosDynWind_AFTER(node)) {
+    KosDynWind_PHASE(node) = KOS_EXTENT_LEFT;
     return EVAL_NORMAL();
   }
 
-  KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_AFTER;
+  KosDynWind_PHASE(node) = KOS_EXTENT_LEAVING;
   return kos_dyn_wind_fire(ctx, node, KosDynWind_AFTER(node));
 }
 
 
 /**
-   The pending segment returned; its result, which nothing reads, is
-   staged or is the top of the live block.
+   A segment returned; its result, which nothing reads, is staged or
+   is the top of the live block.
 */
-static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
+static int kos_dyn_wind_call_done(KosContext *ctx) {
 
-  PyObject *val;
+  PyObject *val = kos_dyn_take_staged_result(ctx);
 
-  if (KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_BEGIN
-      && KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_AFTER)
-    return 0;
-
-  val = kos_dyn_take_staged_result(ctx);
   if (val) {
     Py_DECREF(val);
   } else if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
@@ -228,25 +196,7 @@ static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
       return -1;
     Py_DECREF(val);
   }
-
-  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN) {
-    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_BEGIN;
-    KosDynWind_ENTERED(node) = 1;
-  } else {
-    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
-  }
   return 0;
-}
-
-
-/**
-   The pending segment died; nothing to take.
-*/
-static void kos_dyn_wind_abort(KosDynWind *node) {
-
-  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN
-      || KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_AFTER)
-    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
 }
 
 

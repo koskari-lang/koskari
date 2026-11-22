@@ -488,7 +488,7 @@ static int test_dynwith_free_exc_unconditional(void) {
         ctx, mgr, enter, exit, 0, NULL, 0, KOS_DYN_CAP_WINDS);
     TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
 
-    KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
+    KosDynWith_PHASE(with_node) = KOS_EXTENT_IDLE;
     /* an exception stored on the node resumes propagating when the node
        is unlinked normally: the pop answers -1 with it pending, and the
        three references end up owned by the error indicator */
@@ -562,6 +562,16 @@ static int test_node_header_size(void) {
        word over the triple and no more */
     TEST_ASSERT_EQ(sizeof(KosExcSlot), sizeof(KosExcState) + sizeof(void *),
                    "the exception slot is the triple and one word");
+    /* an extent's phase and entered flag live in its obligation's
+       lent bytes */
+    TEST_ASSERT_EQ(sizeof(KosExtent), sizeof(KosObligation),
+                   "an extent is no larger than its obligation");
+    TEST_ASSERT_EQ(sizeof(((KosDynNode *) 0)->u.wind), 6 * sizeof(void *),
+                   "the WIND payload is six words");
+    TEST_ASSERT_EQ(sizeof(((KosDynNode *) 0)->u.with), 13 * sizeof(void *),
+                   "the WITH payload is thirteen words");
+    TEST_ASSERT_EQ(sizeof(((KosDynNode *) 0)->u), 13 * sizeof(void *),
+                   "the WITH payload is the largest");
     return 0;
 }
 

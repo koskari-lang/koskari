@@ -236,12 +236,17 @@ behind their accessor macros. TRY stays 40 bytes, FINALLY 64, WITH
 
 ### 4.6 One extent machine
 
-`KosExtent { uint8_t phase; uint8_t entered; KosObligation ob; }` in
-WIND and WITH. One machine implements enter, leave, settle and abort,
-answering NORMAL, REPROLOGUE, AWAIT or RAISE. The kind supplies two
-calls: WIND runs its before or after Code constant as an aside, WITH
-calls `__enter__` or `__exit__`. `KosDynWindPhase` and
-`KOS_WITH_PHASE_*` go.
+`KosExtent { KosObligation ob; }` in WIND and WITH, with the phase and
+the entered flag in the obligation's `lent` bytes (`KosExtent_PHASE`,
+`KosExtent_ENTERED`), as the exception slot lends its own: an extent
+is 32 bytes, the obligation's size. One machine implements enter,
+leave, settle and abort, answering NORMAL, REPROLOGUE, AWAIT or RAISE.
+The kind supplies two calls: WIND runs its before or after Code
+constant as an aside, WITH calls `__enter__` or `__exit__`.
+`KosDynWindPhase` and `KOS_WITH_PHASE_*` go.
+
+The phases are `KOS_EXTENT_IDLE`, `_ENTERING`, `_LEAVING` and `_LEFT`.
+A WIND's former POST_BEGIN is IDLE with `entered` set.
 
 ### 4.7 One walker
 
@@ -562,15 +567,26 @@ the context's top frame.
 - `dynchain.h`: `KosExtent`; replace `ob`, `entered`, `phase` in WIND
   (`:610`) and WITH (`:651`); delete `KosDynWindPhase` (`:162`) and
   `KOS_WITH_PHASE_*`.
-- Order the WITH payload (slot, extent, `mgr`, `enter`, `exit`, `name`,
-  `resume_pc`, `self_bind`) to leave no padding. Report its `sizeof`
-  and the union's.
+- The WITH payload is `mgr`, `enter`, `exit`, `name`, `resume_pc`, the
+  extent, then the slot, whose `lent[0]` is `self_bind`: 104 bytes,
+  unchanged, and still the union's largest. WIND drops from 56 to 48.
 - One machine in `dynchain.c` behind `kos_dyn_extent_enter`, `_leave`,
   `_settle`, `_abort`, `_in_flight` (`:956`-`:1187`). `dyn_wind.c` and
-  `dyn_with.c` keep payload setup, their two calls, clone and traverse.
+  `dyn_with.c` keep payload setup, their two calls
+  (`kos_dyn_wind_call_enter`, `_call_leave`, `kos_dyn_with_call_enter`,
+  `_call_leave`), what each does with a returned call's result, clone
+  and traverse.
 - `kos_dyn_node_ob` (`:800`) returns `&extent->ob`.
 - Update the phase reads in `kos_dyn_node_same_phase` (`:2473`,
   `:2480`), `dyn_with.c:116` and the capturable tests.
+- `kos_dyn_node_same_phase` matched a live WIND only in POST_BEGIN,
+  which a wind with no before segment never reached. That is kept: a
+  live WIND matches its template only when it has a before segment.
+- A WIND that was left before it entered no longer runs its before
+  segment on a later enter, as a WITH never did. Nothing enters a node
+  that has left.
+- The WITH's check for a live frame at a settle applies only while a
+  call is in flight.
 
 ### 6.5 Stage 5: walker
 
