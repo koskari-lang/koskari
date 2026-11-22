@@ -388,7 +388,7 @@ or restricts a continuation.
 | 6 | Two node sizes | 3, 4 |
 | 7 | Winding across a yield | 2, 4, 5 |
 | 8 | Capture across a flattened coroutine | |
-| 9 | Template move | 1 |
+| 9 | Template move (dropped, section 6.9) | 1 |
 
 Gate for every stage: `make test`, `make test-native`, `make test-asan`
 and `make test-valgrind` green; counters taken with
@@ -828,6 +828,38 @@ As implemented:
   walk, and leave the continuation empty.
 - Otherwise drop the stage and report the routes.
 
+As implemented: dropped. No code changed.
+
+The continuation's install (`kos_vinstall_continuation`, `cont.c`)
+takes the callable borrowed and is not told who holds it. The count it
+reads there, by route:
+
+| Route | References at the install | Reachable afterwards |
+| --- | --- | --- |
+| `CALL`, `CALL_NAMES`, `CALL_STAR` and their tail twins, callable computed onto the stack | 1, the stack slot | no |
+| `CALL_FAST`, `CALL_VAR` and their variants | 2 or more: the variable, and the handler's owned read | yes, through the variable |
+| `CALL_ATTR` and its variants | 2 or more: the attribute's holder, and the handler's owned read | yes |
+| A transform's callback (`map`, `filter` and the rest, through `KosContext_Call`) | 1, the transform's field, borrowed for the call | yes: the transform calls it for the next element |
+| A `partial` or a `Demand` over a continuation | 1, the wrapper's field, borrowed for the call | yes: the wrapper can be called again |
+
+A count of 1 is read both on a route where nothing can call the
+continuation again and on routes where the holder will, so the count
+is not an exact test at the install. Making it exact needs each route
+to say whether the reference it holds dies with the call, which is a
+new argument on every `kc_vinstall`, or a mark on the continuation,
+which D4 excludes.
+
+The exact case is also the rare one. A continuation is named by its
+`shift`, so an apply goes through `CALL_FAST` or `CALL_VAR` with the
+variable still holding it: `shift_generator` applies `k` with three
+holders (its variable, the tuple it arrived in, the handler), and
+`shift_amb` applies each `k` more than once by design. `shift_abort`
+applies none. Only a continuation applied straight off the stack,
+never bound, would move, and no kernel does that.
+
+The delimited apply keeps its clone, and the stage 9 row of the
+budget and the "Delimited apply" row of the walks table do not apply.
+
 ## 7. Invariants
 
 - I1. The chain is one parent-linked list from `dyn_top` to the root.
@@ -931,7 +963,7 @@ Report how often the effect list leaves its inline pair on the kernels.
 | Abort prompt seek | every node to the prompt | skip-bit nodes |
 | Shift seek and keep | every node, twice | unchanged |
 | raise, return, break, continue | every node to the stop | same count; one test on a node with no skip bit |
-| Delimited apply | clone, then fix-ups | no clone when unreachable afterwards |
+| Delimited apply | clone, then fix-ups | unchanged: stage 9 was dropped |
 | Yield and re-entry with k dynamic extents | not wound | k leaves and k enters, their thunks, one cut or attach per winder; the yield also walks the plain nodes inside the outermost winder |
 | Await | none | none |
 
@@ -964,3 +996,7 @@ Report how often the effect list leaves its inline pair on the kernels.
 - Copy on return for delimited apply; its cost is a shared-flag test on
   every frame return.
 - The frame renumber and demand-bit loop of the context move (D2).
+- An await of a Koskari awaitable without the await frame. It is
+  harmless where it stays, under a spliced chain (section 6.8), and a
+  fresh coroutine's frame already replaces it; the aim is not to push
+  it at all.
