@@ -164,6 +164,10 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `demand_call_method` | `map` over a bound method; the Koskari side goes through `demand` | deterministic baseline |
 | `demand_call_param` | `demand_call` with one dynamic binding read per call: `parameterize` on the Koskari side, a `contextvars` binding on the Python side | deterministic baseline |
 | `yieldfrom` | `yield-from` delegation, consumed fully and abandoned after one value | deterministic baseline |
+| `gen_depth0`, `gen_depth4`, `gen_depth16` | a generator stepped by `for-each` whose `yield` sits inside 0, 4 or 16 nested `let` scopes; Koskari only, one kernel module | sum of range(20000) |
+| `gen_try` | a generator whose `yield` sits in the handler of a `try`, the handled exception live across every step | sum of range(20000) |
+| `gen_wind` | generators whose `yield` sits inside a `dyn-wind` with empty segments and inside a `parameterize`; Koskari only | deterministic baseline |
+| `raise_unwind` | one raise per step, sixteen frames below the `try` that handles it | handled count 2000 |
 | `reset_plain` | one `reset` per step whose body never shifts; a `try` block that never raises on the Python side | — |
 | `shift_abort` | one `abort` per step, through one call; a raise caught one frame up on the Python side | — |
 | `shift_generator` | a producer that shifts each value out with its continuation, resumed once per value; a generator stepped with `next` on the Python side | — |

@@ -1,0 +1,23 @@
+;; churn_raise_unwind -- one raise per step, k frames below the try that
+;; handles it, so the raise walk through those frames dominates.
+
+def thrower [k]:
+    if (== k 0):
+        raise (ValueError "deep")
+    else:
+        (+ 1 (thrower (- k 1)))
+
+
+def churn_raise_unwind [n k]:
+    var acc 0
+    var i 0
+    while (< i n):
+        try:
+            (thrower k)
+        except [e ValueError]:
+            set! acc (+ acc 1)
+        set! i (+ i 1)
+    acc
+
+
+;; The end.

@@ -1,0 +1,35 @@
+;; churn_gen_wind -- generators stepped by for-each whose yield sits inside
+;; a dyn-wind with empty before and after segments, and inside a
+;; parameterize.  No Python counterpart: Python has neither extent.
+
+(var MASK32 0xffffffff)
+
+define-parameter level 1
+
+
+def wound [n]:
+    dyn-wind:
+        for-each [i (range n)]:
+            yield i
+    before:
+        None
+    after:
+        None
+
+
+def bound [n]:
+    parameterize [[level 2]]:
+        for-each [i (range n)]:
+            yield (+ i level)
+
+
+def churn_gen_wind [n]:
+    var acc 0
+    for-each [v (wound n)]:
+        set! acc (& (+ acc v) MASK32)
+    for-each [v (bound n)]:
+        set! acc (& (+ acc v level) MASK32)
+    acc
+
+
+;; The end.

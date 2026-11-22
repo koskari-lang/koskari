@@ -1,0 +1,23 @@
+;; churn_gen_try -- a generator stepped by for-each whose yield sits in the
+;; handler of a try, so every step takes the handled exception off the
+;; thread and puts it back.
+
+(var MASK32 0xffffffff)
+
+
+def handled [n]:
+    try:
+        raise (ValueError "held")
+    except [e ValueError]:
+        for-each [i (range n)]:
+            yield i
+
+
+def churn_gen_try [n]:
+    var acc 0
+    for-each [v (handled n)]:
+        set! acc (& (+ acc v) MASK32)
+    acc
+
+
+;; The end.

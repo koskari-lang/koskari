@@ -1,0 +1,51 @@
+;; churn_gen_depth -- a generator stepped by for-each while its yield sits
+;; inside 0, 4 or 16 nested let scopes.  The scopes hold nothing a yield
+;; has to act on, so the cost of a step should not grow with their number.
+;; No Python counterpart: Python has no scope node to nest.
+
+(var MASK32 0xffffffff)
+
+
+def depth-0 [n]:
+    for-each [i (range n)]:
+        yield i
+
+
+def depth-4 [n]:
+    let [[a 1]]:
+        let [[b 1]]:
+            let [[c 1]]:
+                let [[d 1]]:
+                    for-each [i (range n)]:
+                        yield i
+
+
+def depth-16 [n]:
+    (let [[a 1]] (let [[b 1]] (let [[c 1]] (let [[d 1]]
+    (let [[e 1]] (let [[f 1]] (let [[g 1]] (let [[h 1]]
+    (let [[j 1]] (let [[k 1]] (let [[l 1]] (let [[m 1]]
+    (let [[o 1]] (let [[p 1]] (let [[q 1]] (let [[r 1]]
+      (for-each [i (range n)]
+        (yield i))))))))))))))))))
+
+
+def consume [gen]:
+    var acc 0
+    for-each [v gen]:
+        set! acc (& (+ acc v) MASK32)
+    acc
+
+
+def churn_gen_depth0 [n]:
+    (consume (depth-0 n))
+
+
+def churn_gen_depth4 [n]:
+    (consume (depth-4 n))
+
+
+def churn_gen_depth16 [n]:
+    (consume (depth-16 n))
+
+
+;; The end.
