@@ -140,6 +140,90 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
 }
 
 
+/* === The walker === */
+
+
+/**
+   What a walk that takes nodes off the chain is: the event it carries
+   and the caps a node needs to be offered that event before it
+   leaves. One per caller, static const, so the walk inlines to a loop
+   over constants.
+*/
+typedef struct KosTransit {
+  uint8_t event;   /* KosXferEvent */
+  uint16_t offer;  /* KOS_DYN_CAP_INTERCEPT, or 0 to offer nothing */
+} KosTransit;
+
+
+/**
+   Take dyn_top off the chain and free it, for a node with no skip
+   bit: one that is offered nothing, runs nothing and holds nothing
+   outside itself, so its leaving is its release. A FOREACH finishes
+   the request of a step in flight, by kind on the node in hand.
+*/
+static inline void kos_dyn_release_top(KosContext *ctx, KosDynNode *node) {
+
+  if (KosDynNode_KIND(node) == KOS_DYN_FOREACH)
+    kos_dyn_foreach_unwind(ctx, (KosDynForeach *) node);
+  kos_dyn_commit_dyn_top(ctx, KosDynNode_PARENT(node));
+  KosDynNode_PARENT(node) = NULL;
+  kos_dynnode_free(node);
+}
+
+
+/**
+   Walk from dyn_top down to stop, every node above stop leaving the
+   chain. A node with no skip bit costs one test and its release. A
+   node with one is offered the event when its caps meet t->offer,
+   then unlinked under the event (kos_dyn_unlink_top), which runs,
+   aborts or restores it as the event says.
+
+   The walk ends with EVAL_NORMAL and *consumed 0 when dyn_top is stop
+   or the chain is empty. It ends early with *at the node it stopped
+   on: EVAL_NORMAL and *consumed 1 when that node consumed the offer,
+   EVAL_RAISE when the offer failed, or the unlink's own answer when
+   that was not NORMAL (a leave in flight, or a failure).
+*/
+static inline __attribute__((always_inline)) KosOpResult kos_dyn_walk(
+    KosContext *ctx,
+    const KosTransit *t,
+    const KosDynNode *stop,
+    KosDynNode **at,
+    int *consumed) {
+
+  *consumed = 0;
+
+  for (;;) {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+    KosOpResult r;
+
+    if (! top || top == stop)
+      return EVAL_NORMAL();
+
+    KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
+    if (! (KosDynNode_CAPS(top) & KOS_DYN_CAP_SKIP)) {
+      kos_dyn_release_top(ctx, top);
+      continue;
+    }
+
+    if (KosDynNode_CAPS(top) & t->offer) {
+      KosHandleResult hr = kos_dyn_handle(ctx, top, (KosXferEvent) t->event);
+
+      if (hr != KOS_HANDLE_PASS) {
+        *at = top;
+        *consumed = (hr == KOS_HANDLE_CONSUMED);
+        return *consumed ? EVAL_NORMAL() : EVAL_RAISE();
+      }
+    }
+
+    r = kos_dyn_unlink_top(ctx, (KosXferEvent) t->event, 1);
+    if (r.kind != KOS_RES_NORMAL) {
+      *at = top;
+      return r;
+    }
+  }
+}
+
 
 /**
    Generic unwind walk toward a target node. See dynchain.h for the
@@ -227,57 +311,48 @@ KosOpResult kos_dyn_unwind_return(
     PyObject *val,
     KosPendingReturnKind kind) {
 
+  static const KosTransit transit = {
+    KOS_XFER_EVENT_RETURN, KOS_DYN_CAP_INTERCEPT,
+  };
+  KosDynNode *at = NULL;
+  int consumed;
+  KosOpResult r;
+
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_return: target frame=%p", (void *) frame);
 
-  while (KosContext_DYN_TOP(ctx) != NULL
-         && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
-    KosDynNode *top = KosContext_DYN_TOP(ctx);
-    KosOpResult r;
+  r = kos_dyn_walk(ctx, &transit, (KosDynNode *) frame, &at, &consumed);
 
-    /* Handle phase: offer RETURN before unwind */
-    {
-      KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RETURN);
-      if (hr == KOS_HANDLE_CONSUMED) {
-        if (KosDynNode_IS_FINALLY(top))
-          return finally_take_control(ctx, (KosDynFinally *) top, val,
-                                      KOS_PENDING_RETURN_FRAME,
-                                      "unwind_return");
-        /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
-        PyErr_SetString(PyExc_RuntimeError,
-                        "handle(CONSUMED) during return walk: unexpected node");
-        Py_DECREF(val);
-        return EVAL_RAISE();
-      }
-      if (hr == KOS_HANDLE_ERROR) {
-        Py_DECREF(val);
-        return EVAL_RAISE();
-      }
-    }
-
-    if (KOS_XFER_TRACE)
-      SAYF("[xfer] unwind_return: popping node=%p kind=%s",
-           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
-    r = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_RETURN, 1);
-    if (r.kind == KOS_RES_NORMAL)
-      continue;
-    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
-      /* The node's leave started and will suspend; val is stored on the node
-         and the return resumes once the node has left the chain. */
-      if (kos_dyn_ob_store_return(top, val, (uint8_t) kind) < 0) {
-        Py_XDECREF(r.val);
-        return EVAL_RAISE();
-      }
-      return r;
-    }
+  if (consumed) {
+    if (KosDynNode_IS_FINALLY(at))
+      return finally_take_control(ctx, (KosDynFinally *) at, val,
+                                  KOS_PENDING_RETURN_FRAME,
+                                  "unwind_return");
+    /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
+    PyErr_SetString(PyExc_RuntimeError,
+                    "handle(CONSUMED) during return walk: unexpected node");
     Py_DECREF(val);
+    return EVAL_RAISE();
+  }
+
+  if (r.kind == KOS_RES_NORMAL) {
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] unwind_return: done, dyn_top=%p",
+           (void *) KosContext_DYN_TOP(ctx));
     return r;
   }
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] unwind_return: done, dyn_top=%p",
-         (void *) KosContext_DYN_TOP(ctx));
-  return EVAL_NORMAL();
+
+  if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
+    /* The node's leave started and will suspend; val is stored on the node
+       and the return resumes once the node has left the chain. */
+    if (kos_dyn_ob_store_return(at, val, (uint8_t) kind) < 0) {
+      Py_XDECREF(r.val);
+      return EVAL_RAISE();
+    }
+    return r;
+  }
+  Py_DECREF(val);
+  return r;
 }
 
 
