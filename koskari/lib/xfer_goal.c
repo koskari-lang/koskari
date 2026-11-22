@@ -108,7 +108,6 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
     kos_dynchain_free(target, NULL);
   }
   Py_CLEAR(goal->payload);
-  Py_CLEAR(goal->continuation_ref);
   if (goal->restore) {
     for (size_t i = 0; i < goal->restore_count; i++) {
       KosXferRestore *r = &goal->restore[i];
@@ -132,9 +131,17 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
   /* the split points borrow nodes of the target or the chain */
   PyMem_Free(goal->shape.pieces);
   memset(&goal->shape, 0, sizeof(goal->shape));
-  /* a goal run in place is its caller's storage */
-  if (! goal->in_place)
-    PyMem_Free(goal);
+  /* The reference goes last: a winding goal is storage of the
+     generator it names, which this may free. A goal run in place is
+     its caller's storage. */
+  {
+    PyObject *ref = goal->continuation_ref;
+
+    goal->continuation_ref = NULL;
+    if (! goal->in_place)
+      PyMem_Free(goal);
+    Py_XDECREF(ref);
+  }
 }
 
 
@@ -1072,13 +1079,19 @@ static int goal_keep(KosContext *ctx, KosXferGoal *goal) {
 }
 
 
-KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal) {
+/**
+   The body of kos_xfer_goal_run and kos_xfer_goal_run_kept, kept the
+   constant: a goal in storage that outlives it is never moved.
+*/
+KOS_OP_INLINE KosOpResult goal_run(
+    KosContext *ctx,
+    KosXferGoal *goal,
+    const int kept) {
 
   int boundary = 0;
-  int linked = 0;
   KosOpResult r;
 
-  goal->in_place = 1;
+  goal->in_place = kept ? 2 : 1;
   kos_xfer_goal_push(ctx, goal);
 
   /* what the prologue does ahead of a drive: a delivery staged for the
@@ -1087,16 +1100,20 @@ KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal) {
 
   r = goal_drive(ctx, goal, &boundary);
 
-  for (KosXferGoal *g = KosContext_GOAL(ctx); g; g = g->outer) {
-    if (g == goal) {
-      linked = 1;
-      break;
+  if (! kept) {
+    int linked = 0;
+
+    for (KosXferGoal *g = KosContext_GOAL(ctx); g; g = g->outer) {
+      if (g == goal) {
+        linked = 1;
+        break;
+      }
     }
-  }
-  if (linked && goal_keep(ctx, goal) < 0) {
-    if (r.kind == KOS_RES_AWAIT)
-      Py_XDECREF(r.val);
-    return EVAL_RAISE();
+    if (linked && goal_keep(ctx, goal) < 0) {
+      if (r.kind == KOS_RES_AWAIT)
+        Py_XDECREF(r.val);
+      return EVAL_RAISE();
+    }
   }
 
   if (r.kind != KOS_RES_NORMAL)
@@ -1110,6 +1127,16 @@ KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal) {
       && kos_frame_threads(KosContext_FRAME(ctx)))
     return EVAL_NORMAL();
   return EVAL_REPROLOGUE();
+}
+
+
+KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal) {
+  return goal_run(ctx, goal, 0);
+}
+
+
+KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal) {
+  return goal_run(ctx, goal, 1);
 }
 
 

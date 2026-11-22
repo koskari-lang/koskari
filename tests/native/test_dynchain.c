@@ -1108,15 +1108,15 @@ static const KosExtra bare_wind_row;
 static int wind_out_and_freeze(KosContext *ctx, PyObject *val) {
 
     KosDynGen *gen = kos_dyn_find_gen(ctx);
-    KosXferGoal goal;
+    KosXferGoal *goal;
     KosOpResult r;
 
     TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
     TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 1,
                    "a span with winders is not frozen");
-    TEST_ASSERT_EQ(kos_dyn_gen_wind_out_begin(ctx, gen, &goal, val), 0,
-                   "record the winders");
-    r = kos_xfer_goal_run(ctx, &goal);
+    goal = kos_dyn_gen_wind_out_begin(ctx, gen, val);
+    TEST_ASSERT_NOT_NULL(goal, "record the winders");
+    r = kos_xfer_goal_run_kept(ctx, goal);
     TEST_ASSERT_EQ(r.kind, KOS_RES_YIELD, "the leaves answer the yield");
     TEST_ASSERT_SAME(r.val, val, "with the value yielded");
     Py_DECREF(r.val);

@@ -768,6 +768,35 @@ As implemented:
   the churn README, and the docstrings of
   `tests/reproducers/test_param_generator_extents.py`.
 
+Tuning, after every stage:
+
+- **The winding goal is the generator's storage.** The allocation that
+  holds `KosGenState.pieces` begins with one `KosXferGoal`, which the
+  yield's goal and then the step's goal use in turn
+  (`kos_xfer_goal_run_kept`, `in_place` 2). A yield and a step allocate
+  nothing, a paused goal is not moved, and the install has no
+  allocation to fail. `kos_xfer_goal_free` drops the generator's
+  reference last, since that can free the storage. `gen_wind` fell
+  3.9%, a tenth of what stage 7 added.
+- **Where the rest goes**, by an exact count (callgrind) over a
+  generator with one dyn-wind, per yield and step together: about 900
+  instructions run the two segments (the aside frame's allocation and
+  release, the fire, the settle, the return and its prologue pass) and
+  about 1,300 are the goal's own work, in straight-line code across
+  some twenty functions with no loop among them: `goal_wind_in` 226,
+  `goal_drive` 223 over four calls, `goal_wind_out` 202,
+  `eval_yield_unfrozen` 154, `kos_dyn_gen_install_winding` 106,
+  `kos_dyn_resync_chain` 79, the drain 71. No single change removes
+  much of it.
+- **Not done.** Threading from the step straight into the before
+  segment's frame would save one prologue pass, about 130
+  instructions, but an enter that raises or awaits there has no
+  prologue to raise on. Keeping the registers recorded for a winder
+  from one yield to the next would save the resync, but nothing proves
+  the chain under a winder at the same address is the same chain. An
+  aside frame costs about 225 instructions to allocate and release,
+  for every dyn-wind, in a generator or not.
+
 ### 6.8 Stage 8: capture across a flattened coroutine
 
 `coro.c`:

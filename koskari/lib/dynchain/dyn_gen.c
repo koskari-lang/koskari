@@ -79,6 +79,16 @@ void kos_dyngen_free(KosDynGen *gen) {
 
 
 /**
+   The storage of the goal that leaves and enters a span's winders: the
+   head of the allocation state->pieces is the rest of. Only for a
+   state with pieces.
+*/
+static inline KosXferGoal *kos_dyn_gen_wind_goal(KosGenState *state) {
+  return ((KosXferGoal *) state->pieces) - 1;
+}
+
+
+/**
    The one free of a GEN node that knows the owner is alive: the state
    is the owner's, and it takes its resting node out before freeing
    it. An installed node is not in the state (kos_dyngen_new took it
@@ -100,7 +110,8 @@ void kos_gen_state_clear(KosGenState *state) {
 
   /* the list named nodes of the span just freed */
   kos_dyn_effects_clear(&state->effects);
-  PyMem_Free(state->pieces);
+  if (state->pieces)
+    PyMem_Free(kos_dyn_gen_wind_goal(state));
   state->pieces = NULL;
   state->piece_count = 0;
   state->piece_cap = 0;
@@ -391,14 +402,16 @@ static int kos_dyn_gen_pieces(KosGenState *state, KosDynNode *top) {
     count += (size_t) kos_dyn_node_winder(items[i]);
 
   if (count > state->piece_cap) {
-    KosXferPiece *grown =
-        PyMem_Realloc(state->pieces, count * sizeof(KosXferPiece));
+    /* no winding goal is live here: the yield is about to fill it */
+    KosXferGoal *grown = PyMem_Realloc(
+        state->pieces ? kos_dyn_gen_wind_goal(state) : NULL,
+        sizeof(KosXferGoal) + count * sizeof(KosXferPiece));
 
     if (! grown) {
       PyErr_NoMemory();
       return -1;
     }
-    state->pieces = grown;
+    state->pieces = (KosXferPiece *) (grown + 1);
     state->piece_cap = (uint16_t) count;
   }
 
@@ -418,18 +431,19 @@ static int kos_dyn_gen_pieces(KosGenState *state, KosDynNode *top) {
 }
 
 
-int kos_dyn_gen_wind_out_begin(
+KosXferGoal *kos_dyn_gen_wind_out_begin(
     KosContext *ctx,
     KosDynGen *gen,
-    KosXferGoal *goal,
     PyObject *val) {
 
   KosGenState *state = KosDynGen_STATE(gen);
+  KosXferGoal *goal;
 
   if (kos_dyn_gen_pieces(state, KosContext_DYN_TOP(ctx)) < 0) {
     kos_dyn_gen_wind_reset(state);
-    return -1;
+    return NULL;
   }
+  goal = kos_dyn_gen_wind_goal(state);
 
   /* the list is the winding's from here: the plain install puts
      nothing of it back */
@@ -443,7 +457,7 @@ int kos_dyn_gen_wind_out_begin(
   goal->demand = 0;
   KosContext_FlushLiveRegsToFrame(ctx);
   kos_live_regs_capture(ctx, &goal->shape.top);
-  return 0;
+  return goal;
 }
 
 
@@ -603,10 +617,12 @@ static KOS_NOINLINE int kos_dyn_gen_install_winding(
     uint32_t invoker_demand) {
 
   KosXferPiece *first = &state->pieces[0];
-  KosXferGoal *goal = kos_xfer_goal_new(
-      NULL, NULL, NULL, NULL, KosDynGen_OWNER(gen), 0);
+  KosXferGoal *goal = kos_dyn_gen_wind_goal(state);
 
-  if (! goal || kos_dyn_gen_wind_in_outer(ctx, state, goal) < 0) {
+  /* the yield's goal is done: its storage is this one's */
+  kos_xfer_goal_init(goal, NULL, NULL, NULL, NULL, KosDynGen_OWNER(gen), 0);
+  goal->in_place = 2;
+  if (kos_dyn_gen_wind_in_outer(ctx, state, goal) < 0) {
     kos_xfer_goal_free(goal);
     KosDynNode_PARENT(state->bottom) = NULL;
     kos_dyngen_rest(gen);

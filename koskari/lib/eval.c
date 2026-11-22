@@ -2614,16 +2614,14 @@ static KOS_NOINLINE KosOpResult eval_yield_unfrozen(
 
   if (frozen == 1) {
     KosDynGen *gen = kos_dyn_find_gen(ctx);
-    KosXferGoal goal;
+    KosXferGoal *goal = kos_dyn_gen_wind_out_begin(ctx, gen, val);
     KosOpResult r;
 
-    if (kos_dyn_gen_wind_out_begin(ctx, gen, &goal, val) < 0) {
-      Py_DECREF(val);
-      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
-    }
     Py_DECREF(val);
+    if (! goal)
+      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
 
-    r = kos_xfer_goal_run(ctx, &goal);
+    r = kos_xfer_goal_run_kept(ctx, goal);
     if (r.kind == KOS_RES_YIELD)
       return eval_yield_wound(ctx, gen, r.val);
     return kos_eval_walk_outcome(ctx, r);

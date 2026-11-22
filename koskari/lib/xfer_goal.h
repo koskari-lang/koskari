@@ -153,7 +153,9 @@ struct KosXferGoal {
   /* LEAVING unlinked an outer's frontier; ATTACHING retires the voided
      outers */
   uint8_t voided_outer;
-  /* the goal is storage of kos_xfer_goal_run's caller, not its own */
+  /* the goal's storage is not its own: 1, kos_xfer_goal_run's
+     caller's, which the goal leaves if it pauses; 2, its generator's
+     (kos_xfer_goal_run_kept), which outlives it */
   uint8_t in_place;
 
   /* The rest is a winding goal's, phase KOS_GOAL_WINDING_OUT or
@@ -335,6 +337,14 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg);
      EVAL_RAISE with PyErr set when a step failed
 */
 KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal);
+
+
+/**
+   kos_xfer_goal_run for a goal in storage that outlives it, a
+   generator's winding goal (kos_dyn_gen_wind_out_begin): a goal that
+   pauses stays where it is.
+*/
+KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal);
 
 
 /**

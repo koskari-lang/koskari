@@ -365,7 +365,9 @@ typedef struct KosGenState {
      pieces are those winders, outermost first, each with the node
      resting on it and the registers live with it at dyn_top
      (kos_dyn_gen_wind_out_next); owned, and kept from one yield to the
-     next. piece_count and wound_count are nonzero from the yield that
+     next. The array's allocation begins with the storage of the goal
+     that leaves and enters them, one at a time, so a yield and a step
+     allocate nothing. piece_count and wound_count are nonzero from the yield that
      left the winders until the step that enters them again is done,
      and frozen.top is NULL while such a span rests, which is what
      sends the install to them. */
@@ -2163,15 +2165,14 @@ int kos_dyn_gen_freeze_wound(KosContext *ctx, KosDynGen *gen);
 /**
   Start the leaves a yield owes: record each listed winder with the
   node resting on it, by one walk from dyn_top to the outermost winder,
-  and fill goal, in the caller's storage, to run them
-  (KOS_GOAL_WINDING_OUT). The goal takes its own reference to val and
-  to the generator. Returns 0, or -1 with MemoryError set, the list
-  emptied and nothing else changed.
+  and fill the generator's winding goal to run them
+  (KOS_GOAL_WINDING_OUT, for kos_xfer_goal_run_kept). The goal takes
+  its own reference to val and to the generator. Returns the goal, or
+  NULL with MemoryError set, the list emptied and nothing else changed.
 */
-int kos_dyn_gen_wind_out_begin(
+KosXferGoal *kos_dyn_gen_wind_out_begin(
     KosContext *ctx,
     KosDynGen *gen,
-    KosXferGoal *goal,
     PyObject *val);
 
 
