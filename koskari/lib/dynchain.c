@@ -925,18 +925,27 @@ int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop) {
   The effect a node holds outside itself (KOS_DYN_CAP_EFFECT): a
   PARAM's cells in the context's table, a TRY's or FINALLY's handled
   exception on the thread. A span that rests off the chain moves
-  intact, and only these act: live says whether the node has an effect
-  to take out and changes nothing, out takes it out, and in puts it
-  back over the tables as they are then. A PARAM is always live; a TRY
-  or FINALLY is while it handles an exception that is not out already.
-  out cannot fail and does nothing on a node that is not live. in
-  returns 0, or -1 with PyErr set and the node's effect not applied.
-  Defined below, after the region exchanges they call.
+  intact, and only these act: lists says whether the node has an
+  effect to take out and changes nothing, out takes it out, and in
+  puts it back over the tables as they are then. A PARAM is always
+  live; a TRY or FINALLY is while it handles an exception that is not
+  out already. out cannot fail and does nothing on a node that is not
+  live. in returns 0, or -1 with PyErr set and the node's effect not
+  applied. Defined below, after the region exchanges they call.
+
+  lists, with winds set, also answers for a winder, which a
+  generator's yield lists among the effects, and counts it in
+  *winders. The winder test sits in the arm of the kind switch that
+  no kind with an effect reaches, so a node with an effect, live or
+  not, costs a walk nothing for the winders it looks for.
 
   Callers: the effect list functions here, and the keep of a node for
   a continuation (out).
 */
-static inline int kos_dyn_effect_live(const KosDynNode *node);
+KOS_OP_INLINE int kos_dyn_effect_lists(
+    const KosDynNode *node,
+    const int winds,
+    int *winders);
 
 static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node);
 
@@ -996,28 +1005,42 @@ static inline KosDynNode *kos_dyn_skip_from(KosDynNode *top) {
 
 
 /**
+   A winder: a node a transfer runs whose wind is not its effect, a
+   dyn-wind or a dyn-with. A PARAM's effect is its wind.
+*/
+static inline int kos_dyn_node_winder(const KosDynNode *node) {
+  return (KosDynNode_CAPS(node) & (KOS_DYN_CAP_WINDS | KOS_DYN_CAP_EFFECT))
+      == KOS_DYN_CAP_WINDS;
+}
+
+
+/**
    List the live effects of the nodes from top down to stop, innermost
    first, by a walk over the skip links that changes nothing. The walk
    fills the room the list has as it counts; a list that needs more is
    sized and the walk made again. stop carries a skip bit or is NULL,
    so the walk meets it. last, when given, receives the outermost node
-   the walk visited, or NULL. The list is empty on entry. Returns 0, or
-   -1 with MemoryError set and the list still empty.
+   the walk visited, or NULL. With winds set the walk lists every
+   winder too, in its place among the effects. The list is empty on
+   entry. Returns the number of winders listed, or -1 with MemoryError
+   set and the list still empty.
 */
-static int kos_dyn_effects_collect(
+KOS_OP_INLINE int kos_dyn_effects_collect_as(
     KosDynEffects *fx,
     KosDynNode *top,
     KosDynNode *stop,
-    KosDynNode **last) {
+    KosDynNode **last,
+    const int winds) {
 
   KosDynNode *first = kos_dyn_skip_from(top);
   KosDynNode *seen = NULL;
   KosDynNode **items = kos_dyn_effects_items(fx);
   size_t room = fx->cap ? (size_t) fx->cap : 2u;
   size_t count = 0;
+  int winders = 0;
 
   for (KosDynNode *n = first; n && n != stop; n = KosDynNode_SKIP(n)) {
-    if (kos_dyn_effect_live(n)) {
+    if (kos_dyn_effect_lists(n, winds, &winders)) {
       if (count < room)
         items[count] = n;
       count++;
@@ -1034,12 +1057,40 @@ static int kos_dyn_effects_collect(
       return -1;
     items = kos_dyn_effects_items(fx);
     for (KosDynNode *n = first; at < count; n = KosDynNode_SKIP(n)) {
-      if (kos_dyn_effect_live(n))
+      int again = 0;
+
+      if (kos_dyn_effect_lists(n, winds, &again))
         items[at++] = n;
     }
   }
   fx->count = (uint16_t) count;
-  return 0;
+  return winders;
+}
+
+
+/**
+   The two forms of the collect, each a function of its own so that
+   neither tests for the other and neither is folded into a caller
+   whose common path never lists: the effects alone, for a span moved
+   between contexts, and the effects with the winders, for a
+   generator's yield.
+*/
+static KOS_NOINLINE int kos_dyn_effects_collect(
+    KosDynEffects *fx,
+    KosDynNode *top,
+    KosDynNode *stop,
+    KosDynNode **last) {
+
+  return kos_dyn_effects_collect_as(fx, top, stop, last, 0);
+}
+
+
+static KOS_NOINLINE int kos_dyn_effects_collect_winds(
+    KosDynEffects *fx,
+    KosDynNode *top,
+    KosDynNode *stop) {
+
+  return kos_dyn_effects_collect_as(fx, top, stop, NULL, 1);
 }
 
 
@@ -1505,7 +1556,10 @@ void kos_dyn_install_regions(
 }
 
 
-static inline int kos_dyn_effect_live(const KosDynNode *node) {
+KOS_OP_INLINE int kos_dyn_effect_lists(
+    const KosDynNode *node,
+    const int winds,
+    int *winders) {
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
@@ -1515,6 +1569,12 @@ static inline int kos_dyn_effect_live(const KosDynNode *node) {
     case KOS_DYN_FINALLY:
       return KosDynFinally_EXC(node)->state == KOS_EXC_HANDLING;
     default:
+      /* no kind left here carries an effect: one a transfer runs is a
+         winder, a dyn-wind or a dyn-with */
+      if (winds && (KosDynNode_CAPS(node) & KOS_DYN_CAP_WINDS)) {
+        (*winders)++;
+        return 1;
+      }
       return 0;
   }
 }
@@ -1523,11 +1583,14 @@ static inline int kos_dyn_effect_live(const KosDynNode *node) {
 static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node) {
 
   /* A span at rest moves intact, so a kind whose effect is the node
-     rides it as it is: a WITH's __enter__ and a WIND's before thunk
-     stay done. PARAM's effect is the cells it swapped into the
-     context's table, which the consumer shares; that leaves with the
-     node. A TRY's or FINALLY's effect is the handled exception it
-     installed on the thread, which the consumer shares the same way. */
+     rides it as it is: a plain WITH's __enter__ stays done. PARAM's
+     effect is the cells it swapped into the context's table, which the
+     consumer shares; that leaves with the node. A TRY's or FINALLY's
+     effect is the handled exception it installed on the thread, which
+     the consumer shares the same way. A dyn-wind and a dyn-with are
+     not effects: a generator's yield leaves them and its next step
+     enters them (kos_dyn_gen_wind_out_next), and a chain moved between
+     contexts carries them entered. */
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);

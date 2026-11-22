@@ -84,6 +84,12 @@ typedef enum KosXferGoalPhase {
   KOS_GOAL_ATTACHING,
   KOS_GOAL_ENTERING,
   KOS_GOAL_DELIVERING,
+  /* A generator's yield leaving the winders of its span, innermost
+     first, and its next step entering them again, outermost first. No
+     node leaves the chain for good: see kos_dyn_gen_wind_out_next and
+     kos_dyn_gen_wind_attach. */
+  KOS_GOAL_WINDING_OUT,
+  KOS_GOAL_WINDING_IN,
 } KosXferGoalPhase;
 
 
@@ -149,6 +155,23 @@ struct KosXferGoal {
   uint8_t voided_outer;
   /* the goal is storage of kos_xfer_goal_run's caller, not its own */
   uint8_t in_place;
+
+  /* The rest is a winding goal's, phase KOS_GOAL_WINDING_OUT or
+     KOS_GOAL_WINDING_IN, and is written and read for no other: the
+     goals of a transfer pay nothing for it. */
+
+  /* The generator's state, whose effect list and winders the goal
+     works through. piece_next is its place in the list and
+     piece_entered the winders done; target is the part of the span cut
+     off above the winder at dyn_top; shape.top the registers of the
+     whole span; continuation_ref the generator. NULL for a winding
+     out that is done. */
+  KosGenState *gen_state;
+  /* a winding in whose payload is an exception to raise at the yield */
+  uint8_t is_throw;
+  /* a winding in pushed with no frame live: whether the consumer's
+     frame ran under demand, for the frame it loads */
+  uint8_t demand;
 };
 
 
@@ -312,6 +335,41 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg);
      EVAL_RAISE with PyErr set when a step failed
 */
 KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal);
+
+
+/**
+   Free a goal that is not finished and is already unlinked from its
+   context: kos_xfer_goal_free, after a winding goal has told its
+   generator that the nodes its lists named are gone. Every site that
+   gives up a goal it did not create and run to its end frees through
+   here.
+*/
+void kos_xfer_goal_discard(KosXferGoal *goal);
+
+
+/**
+   Give the winding in just pushed on ctx what the step sends into its
+   generator: send_val, or the exception throw_exc of type throw_typ,
+   all borrowed, or nothing. The goal delivers it at the suspended
+   yield once the last winder is entered.
+*/
+void kos_xfer_goal_hand(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc);
+
+
+/**
+   The evaluator's entry on a context whose suspension event is
+   KOS_SUSP_WIND: the winding in pushed there takes send_val or the
+   throw, unless the step handed it one already.
+*/
+void kos_xfer_goal_take_entry(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc);
 
 
 #endif

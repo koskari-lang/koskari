@@ -214,7 +214,7 @@ static int context_clear(PyObject *self) {
   while (KosContext_GOAL(ctx)) {
     KosXferGoal *goal = KosContext_GOAL(ctx);
     KosContext_GOAL(ctx) = KosXferGoal_OUTER(goal);
-    kos_xfer_goal_free(goal);
+    kos_xfer_goal_discard(goal);
   }
 
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));

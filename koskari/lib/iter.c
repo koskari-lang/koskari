@@ -27,6 +27,7 @@
 
 
 #include "lib.h"
+#include "xfer_goal.h"
 
 
 /* === KosPyAsyncGen type === */
@@ -572,6 +573,30 @@ static int agen_iter_busy(PyObject *self, const char *method) {
 
 
 /**
+   The step of a generator whose yield left a dyn-wind or a dyn-with:
+   the span is on the chain only up to the outermost, and the goal the
+   install pushed enters each and attaches the rest. It takes what this
+   step sends, the value or the exception the throw ingress primed, and
+   delivers it at the yield after the last enter.
+*/
+static KOS_NOINLINE KosIterStepResult agen_iter_winding(
+    KosContext *ctx,
+    PyObject *send_val,
+    int throwing) {
+
+  if (throwing) {
+    PyObject *exc = PyErr_GetRaisedException();
+
+    kos_xfer_goal_hand(ctx, NULL, (PyObject *) Py_TYPE(exc), exc);
+    Py_DECREF(exc);
+  } else {
+    kos_xfer_goal_hand(ctx, send_val, NULL, NULL);
+  }
+  return KOS_ITER_INSTALLED;
+}
+
+
+/**
    Shared core of ki_step and ki_throw: guard, mark busy, splice the
    generator's frames onto the consumer context. On success the drive is
    in flight (KOS_ITER_INSTALLED); when throwing, the exception the
@@ -595,6 +620,7 @@ static KosIterStepResult agen_iter_drive(
   KosGenState *state = &agen->state;
   KosDynNode *active;
   int started;
+  int staged;
 
   if (agen_iter_busy((PyObject *) agen, NULL))
     return KOS_ITER_ERROR;
@@ -651,8 +677,12 @@ static KosIterStepResult agen_iter_drive(
     return KOS_ITER_INSTALLED;
   }
 
-  if (kos_dyn_gen_install(ctx, (PyObject *) agen, state) < 0)
-    goto drive_error;
+  staged = kos_dyn_gen_install(ctx, (PyObject *) agen, state);
+  if (unlikely(staged != 0)) {
+    if (staged < 0)
+      goto drive_error;
+    return agen_iter_winding(ctx, send_val, throwing);
+  }
 
   /* The installed frame sits at a yield, whichever context it last
      yielded on. A context that is not running enters the evaluator

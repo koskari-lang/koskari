@@ -117,6 +117,9 @@ KosEvaluatorToken *KosContext_Token(const KosContext *ctx) {
 
   :return: EVAL_NORMAL when no goal remains or the goal is waiting;
            EVAL_REPROLOGUE when a leave or enter installed a frame;
+           the yield's own answer, EVAL_RESUME or the terminal
+           EVAL_YIELD, when the goal was a generator's yield leaving
+           its winders and the last is left;
            EVAL_AWAIT / EVAL_RAISE / EVAL_FATAL otherwise
 */
 static KosOpResult kos_eval_drain_goal(KosContext *ctx) {
@@ -126,6 +129,18 @@ static KosOpResult kos_eval_drain_goal(KosContext *ctx) {
 
   if (boundary)
     return r;
+
+  /* a generator's yield whose last winder is left: the span rests and
+     the value is presented */
+  if (r.kind == KOS_RES_YIELD) {
+    KosDynGen *gen = kos_dyn_yield_gen(ctx);
+
+    if (! gen) {
+      Py_DECREF(r.val);
+      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
+    }
+    return eval_yield_wound(ctx, gen, r.val);
+  }
   return kos_eval_walk_outcome(ctx, r);
 }
 

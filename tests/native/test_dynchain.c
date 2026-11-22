@@ -26,6 +26,7 @@
 
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
+#include "../../koskari/lib/xfer_goal.h"
 
 
 /* Records for the jump targets a node stores: a node holds the
@@ -1094,6 +1095,155 @@ static int test_span_move_three_effects(void) {
 }
 
 
+/* === Winding across a yield === */
+
+
+/* a dyn-wind's row with neither segment: its enter and its leave
+   complete at once */
+static const KosExtra bare_wind_row;
+
+
+/* Leave every winder of the span at dyn_top, as a yield does, and
+   freeze it. Returns 0 on success. */
+static int wind_out_and_freeze(KosContext *ctx, PyObject *val) {
+
+    KosDynGen *gen = kos_dyn_find_gen(ctx);
+    KosXferGoal goal;
+    KosOpResult r;
+
+    TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 1,
+                   "a span with winders is not frozen");
+    TEST_ASSERT_EQ(kos_dyn_gen_wind_out_begin(ctx, gen, &goal, val), 0,
+                   "record the winders");
+    r = kos_xfer_goal_run(ctx, &goal);
+    TEST_ASSERT_EQ(r.kind, KOS_RES_YIELD, "the leaves answer the yield");
+    TEST_ASSERT_SAME(r.val, val, "with the value yielded");
+    Py_DECREF(r.val);
+    TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal is retired");
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze_wound(ctx, gen), 0, "rest the span");
+    return 0;
+}
+
+
+/* A span of a root frame, a handling TRY, a dyn-wind, a second
+   handling TRY, a second dyn-wind and a frame on top. A yield leaves
+   the winds innermost first with the span cut above each, and takes
+   every effect out; the install puts the span back piece by piece. */
+static int test_wind_out_and_in(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *trys[2];
+    KosDynNode *winds[2];
+    KosDynNode *top;
+    KosXferPiece *pieces;
+    KosContext *ctx;
+    int boundary = 0;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    for (int i = 0; i < 2; i++) {
+        trys[i] = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+        TEST_ASSERT_NOT_NULL(trys[i], "push a try");
+        KosDynTry_EXC(trys[i])->state = KOS_EXC_HANDLING;
+        winds[i] = (KosDynNode *) kos_dyn_push_wind(
+            ctx, NULL, &bare_wind_row);
+        TEST_ASSERT_NOT_NULL(winds[i], "push a wind");
+        KosDynWind_ENTERED(winds[i]) = 1;
+    }
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+    top = KosContext_DYN_TOP(ctx);
+
+    for (int round = 0; round < 2; round++) {
+        TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
+
+        TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
+        TEST_ASSERT_EQ(state.wound_count, 4,
+                       "the winders are listed with the effects");
+        TEST_ASSERT_EQ(state.piece_count, 2, "both winders are recorded");
+        if (round)
+            TEST_ASSERT_SAME(state.pieces, pieces,
+                             "the records are kept for the next yield");
+        pieces = state.pieces;
+        TEST_ASSERT_SAME(pieces[0].regs.top, winds[0], "outermost first");
+        TEST_ASSERT_SAME(pieces[0].rest, trys[1],
+                         "with the node resting on it");
+        TEST_ASSERT_SAME(pieces[1].regs.top, winds[1], "then the inner");
+        TEST_ASSERT_SAME(pieces[1].rest, top, "under the top frame");
+        TEST_ASSERT_SAME(KosDynNode_PARENT(top), winds[1],
+                         "the span rests whole");
+        TEST_ASSERT_SAME(KosDynNode_PARENT(trys[1]), winds[0],
+                         "at both winders");
+        for (int i = 0; i < 2; i++) {
+            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
+                        "the effect is out");
+            TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 0,
+                           "the wind is left");
+            TEST_ASSERT_EQ(KosDynWind_PHASE(winds[i]), KOS_EXTENT_IDLE,
+                           "and can be entered again");
+        }
+
+        TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
+                       "the install stops at the outermost winder");
+        TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0],
+                         "which is the chain's top");
+        TEST_ASSERT_NULL(KosDynNode_PARENT(trys[1]),
+                         "what rests on it is cut off");
+        TEST_ASSERT_NOT_NULL(KosContext_GOAL(ctx), "and a goal is pushed");
+        TEST_ASSERT(KosDynTry_EXC(trys[0])->state == KOS_EXC_HANDLING,
+                    "the effect outside it is in");
+        TEST_ASSERT(KosDynTry_EXC(trys[1])->state == KOS_EXC_FROZEN,
+                    "the effect inside it is not");
+
+        TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx, &boundary).kind,
+                       KOS_RES_NORMAL, "the goal enters and attaches");
+        TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
+        TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
+        TEST_ASSERT_SAME(KosDynNode_PARENT(top), winds[1], "whole");
+        TEST_ASSERT_SAME(KosDynNode_PARENT(trys[1]), winds[0],
+                         "at both winders");
+        TEST_ASSERT_EQ(state.piece_count, 0, "the records are used up");
+        TEST_ASSERT_EQ(state.effects.count, 0, "and the list");
+        for (int i = 0; i < 2; i++) {
+            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+                        "the effect is in");
+            TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 1,
+                           "the wind is entered");
+        }
+        TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
+    }
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield to tear down");
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_NULL(state.pieces, "the clear frees the records");
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -1153,6 +1303,9 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_span_move_no_effects);
     RUN_TEST(test_span_move_one_effect);
     RUN_TEST(test_span_move_three_effects);
+
+    /* Winding across a yield */
+    RUN_TEST(test_wind_out_and_in);
 
     return 0;
 }

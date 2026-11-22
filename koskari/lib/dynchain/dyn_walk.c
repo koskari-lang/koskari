@@ -24,7 +24,15 @@
 
 /* === Dynamic chain walk and pop primitives === */
 
-int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
+/**
+   kos_dyn_gen_freeze, and with wound set kos_dyn_gen_freeze_wound: a
+   constant at each, so the plain freeze tests nothing for the other.
+*/
+KOS_OP_INLINE int kos_dyn_gen_freeze_as(
+    KosContext *ctx,
+    KosDynGen *gen,
+    const int wound) {
+
   KosGenState *state = KosDynGen_STATE(gen);
   KosDynNode *saved_parent;
   KosDynNode *ctx_active;
@@ -71,12 +79,21 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
      links from dyn_top to the GEN, which changes nothing: a span with
      no skip-bit node is the one step to the GEN, taken here with no
      call. The list's sizing is the only refusal, taken while the
-     chain is whole. */
-  if (likely(kos_dyn_skip_from(ctx_active) == (KosDynNode *) gen))
+     chain is whole. A span with a winder is not frozen before each
+     is left: they are listed with the effects, and the yield leaves
+     them and comes back as the wound form, with the list standing and
+     everything on it out. */
+  if (wound) {
+    /* nothing to list */
+  } else if (likely(kos_dyn_skip_from(ctx_active) == (KosDynNode *) gen)) {
     state->effects.count = 0;
-  else if (kos_dyn_effects_collect(
-               &state->effects, ctx_active, (KosDynNode *) gen, NULL) < 0)
-    return -2;
+  } else {
+    int winders = kos_dyn_effects_collect_winds(
+        &state->effects, ctx_active, (KosDynNode *) gen);
+
+    if (unlikely(winders != 0))
+      return winders < 0 ? -2 : 1;
+  }
 
   /* 2. The span leaves the chain: its bottom rests with no parent, and
      the live registers the next install of this head applies directly
@@ -92,7 +109,7 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   /* An effect a node holds outside itself leaves with it, innermost
      first; the install puts the listed ones back. The span's interior
      unwind caches stay: they name nodes of this same span. */
-  if (state->effects.count)
+  if (! wound && state->effects.count)
     kos_dyn_effects_out(ctx, &state->effects);
 
 #if VERBOSE_DEBUG
@@ -126,8 +143,12 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
   state->host.top = NULL;
 
-  /* 5. The span is the state's now: dyn_top no longer names it. */
+  /* 5. The span is the state's now: dyn_top no longer names it. A
+     span whose winders were left rests with no top recorded: the
+     install's test of it fails, and finds the winders there. */
   state->active = ctx_active;
+  if (wound)
+    state->frozen.top = NULL;
 
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p state=%p\n",
        (void *) KosContext_DYN_TOP(ctx),
@@ -137,6 +158,16 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
        (void *) KosContext_FRAME(ctx),
        (void *) state);
   return 0;
+}
+
+
+int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
+  return kos_dyn_gen_freeze_as(ctx, gen, 0);
+}
+
+
+int kos_dyn_gen_freeze_wound(KosContext *ctx, KosDynGen *gen) {
+  return kos_dyn_gen_freeze_as(ctx, gen, 1);
 }
 
 

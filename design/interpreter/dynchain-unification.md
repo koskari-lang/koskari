@@ -688,6 +688,86 @@ Tests first (section 8), then:
   parameterize in generators change with D1. Each existing expectation
   that changes is reported before it is edited.
 
+As implemented:
+
+- **Two goal phases.** `KOS_GOAL_WINDING_OUT` and `KOS_GOAL_WINDING_IN`
+  work through the generator's own records. Neither has a target clone
+  or a seam, and neither runs `goal_leave` or `goal_attach`: the nodes
+  stay the generator's, and a cut is one parent write.
+- **The list is mixed.** The freeze lists the winders among the
+  effects, in chain order, and answers 1 with nothing changed. The
+  yield then records each winder's piece, the node resting on it and,
+  as each is reached, the registers live with it at dyn_top
+  (`KosXferPiece`, in `KosGenState.pieces`). Effects go out as the walk
+  down the list passes them, so each leave runs with every inner effect
+  out. Re-entry walks the list from its end.
+- **The resting node is found by a parent walk**, from dyn_top down to
+  the outermost winder, at a yield whose span has a winder. A yield
+  written directly in a wind's body walks nothing. This misses the
+  "one cut per winder" line of section 9 by the plain nodes inside the
+  outermost winder. Recording the node at push was rejected: it puts a
+  test and a store on every push onto a non-frame node, for every
+  program. Leaving the upper pieces linked and bounding the goal's free
+  and traverse by the winder's address would remove the walk; it gives
+  up the rule that a held piece never points into a live chain, and is
+  a tuning item.
+- **One cut at a time.** The goal's `target` is the span's top while a
+  cut exists. Going out, the cut above the next winder is made before
+  the previous one is healed; going in, the same. A collection at any
+  point sees the held nodes once.
+- **A left extent is one never entered.** `kos_dyn_gen_wind_left` puts
+  the extent back to IDLE with `entered` clear, so the enter path is
+  unchanged and a generator dropped while it rests frees the node
+  without a second leave. A suspended extent cannot be told from one
+  never entered. Nothing needs the difference today. If something
+  does, a `KOS_EXTENT_SUSPENDED` phase that the enter accepts is the
+  remedy: the phase byte has room, and every phase switch gains a case.
+- **The pc is put back.** A dyn-with's exit moves the frame's pc past
+  its block. The goal records the pc live at each winder before its
+  leave and restores it after.
+- **The plain yield and step execute nothing new.** A span with no
+  skip-bit node takes the one-step path as before. A wound span rests
+  with `effects.count` 0 (the list's length is in `wound_count`) and
+  `frozen.top` NULL, so the install's existing tests send it to
+  `kos_dyn_gen_install_winding` and no plain install tests for it.
+  `kos_dyn_gen_freeze_wound` is the freeze specialised for it. The
+  winder test sits in the default arm of the collect's kind switch, so
+  a TRY, FINALLY or PARAM costs the walk nothing for it. The winding
+  fields of `KosXferGoal` are written and read by winding goals only,
+  and a goal given up goes through `kos_xfer_goal_discard`, which is
+  where a winding goal empties its generator's lists; the transfer's
+  own pop stays as it was.
+- **A running consumer gets no frame to thread into.** The install
+  leaves the frame register NULL on a running context, so the step's
+  existing test (`kos_iter_installed`) sends it to the prologue, whose
+  drain runs the goal; the goal loads the registers recorded for the
+  outermost winder. A context that is not running gets those registers
+  at once and `KOS_SUSP_WIND` as its suspension event, so its next
+  entry hands the goal the sent value or the throw instead of reviving
+  a yield.
+- **Delivery after the last enter.** The goal carries the sent value
+  or the thrown exception. A frame waiting on a resume takes it as its
+  delivery, a throw through `KosContext_ThrowIntoResume`; any other
+  frame takes the value on its stack or the raise at its yield. No
+  placeholder is pushed for a wound span.
+- **Failures.** A refusal while the outermost batch of effects goes
+  back takes the span off its GEN again and leaves it resting. Any
+  later failure raises on the chain as section 4.9 says, and the goal's
+  death frees the pieces not attached.
+- **`KosGenState` is 136 bytes**, 16 more: the pieces array, its count
+  and capacity, and `wound_count`.
+- **`gen_wind` costs 57% more.** Its two segments are `None`, and both
+  now run at every yield and step: two frames, two goals (the second
+  allocated), and two passes of the prologue. The other generator
+  kernels are within 0.1% of stage 6, `gen_try` 0.14% under.
+- **Tests.** `tests/reproducers/test_wind_across_yield.py`, 22 tests,
+  and a native test of the cut and the attach
+  (`test_wind_out_and_in`). No existing assertion changed. The prose
+  that changed: the `dyn-wind`, `dyn-with` and `parameterize` reference
+  pages, the YIELD entry of the VM reference, the `gen_wind` line of
+  the churn README, and the docstrings of
+  `tests/reproducers/test_param_generator_extents.py`.
+
 ### 6.8 Stage 8: capture across a flattened coroutine
 
 `coro.c`:
@@ -803,7 +883,7 @@ No stage may regress any kernel by more than 1%.
 | PROMPT, CC, GEN | 232 B | 56 B |
 | Resting generator, no regions | 464 B | 288 B |
 | reset body (PROMPT and frame) | 464 B | 288 B |
-| `KosGenState` | 96 B | 120 B |
+| `KosGenState` | 96 B | 136 B: 120 B after stage 2, and 16 B for the winders' records in stage 7 |
 | Freelists at most | 29.7 KB | 33.3 KB |
 
 Report how often the effect list leaves its inline pair on the kernels.
@@ -821,7 +901,7 @@ Report how often the effect list leaves its inline pair on the kernels.
 | Shift seek and keep | every node, twice | unchanged |
 | raise, return, break, continue | every node to the stop | same count; one test on a node with no skip bit |
 | Delimited apply | clone, then fix-ups | no clone when unreachable afterwards |
-| Yield and re-entry with k dynamic extents | not wound | k leaves and k enters, their thunks, one cut or attach per winder |
+| Yield and re-entry with k dynamic extents | not wound | k leaves and k enters, their thunks, one cut or attach per winder; the yield also walks the plain nodes inside the outermost winder |
 | Await | none | none |
 
 ## 10. Decisions

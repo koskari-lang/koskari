@@ -141,6 +141,11 @@ static KosOpResult eval_event_yield(
     KosDynGen *gen,
     PyObject *val);
 
+static KosOpResult eval_yield_wound(
+    KosContext *ctx,
+    KosDynGen *gen,
+    PyObject *val);
+
 static KosOpResult eval_event_await(KosContext *ctx, PyObject *val);
 
 static KosOpResult eval_event_return_unwind(KosContext *ctx, PyObject *val);
@@ -2445,6 +2450,11 @@ static KosOpResult eval_phase_entry(
         SAY("[eval] phase_entry -> revive_yield(send_val)");
         mode = revive_yield(ctx, send_val, throw_typ, throw_exc);
         break;
+      case KOS_SUSP_WIND:
+        /* no yield to revive yet: the goal that enters the generator's
+           winders delivers what this entry sends after the last enter */
+        kos_xfer_goal_take_entry(ctx, send_val, throw_typ, throw_exc);
+        break;
       case KOS_SUSP_AWAIT:
       default: {
         KosOpResult _ra = entry_revive_await(ctx, send_val, throw_typ,
@@ -2545,6 +2555,88 @@ static KosOpResult eval_phase_transfer(KosContext *ctx) {
 
 
 /**
+   Present a yielded value once its generator's span rests: the
+   consumer is the live frame, and its resume takes the element (a
+   for-each step, a next request, a yield-from over a provider), else
+   nobody, and the yield leaves the evaluator. Never a search outward:
+   a frame waiting on its own step sits between the producer and any
+   enclosing region. val is consumed.
+*/
+KOS_OP_INLINE KosOpResult eval_yield_present(KosContext *ctx, PyObject *val) {
+
+  if (iter_frame_has_resume(ctx))
+    return iter_deliver_to_resume(ctx, val, 0);
+
+  /* Only a yield that stops the evaluator leaves the context not
+     running; a delivered yield keeps threading, and the context stays
+     RUNNING so the context's GC traverse keeps visiting the live state. */
+  KosContext_MarkDeadAfterYield(ctx);
+  KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD);
+  ctx->terminal = 1;
+  return EVAL_YIELD(val);
+}
+
+
+/**
+   The rest of a yield whose span held winders, each now left: rest the
+   span, which lists and takes out nothing more, and present the value.
+   Reached from the yield itself when no leave ran a frame, and from
+   the prologue's drain when the goal's last leave is done. val is
+   consumed.
+*/
+static KOS_NOINLINE KosOpResult eval_yield_wound(
+    KosContext *ctx,
+    KosDynGen *gen,
+    PyObject *val) {
+
+  if (kos_dyn_gen_freeze_wound(ctx, gen) < 0) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
+  }
+  return eval_yield_present(ctx, val);
+}
+
+
+/**
+   The freeze did not rest the span: frozen is its answer, and val is
+   consumed. A span that holds a dyn-wind or a dyn-with has each left
+   before the value is presented, innermost first, through a goal run
+   from here. A leave that runs a frame or awaits ends the pass with
+   that answer, already through the ingress, and the goal's last step
+   answers the yield from the prologue's drain. The answer is the
+   yield's own, whatever it is: this never goes back into
+   eval_event_yield, which folds into the YIELD row.
+*/
+static KOS_NOINLINE KosOpResult eval_yield_unfrozen(
+    KosContext *ctx,
+    PyObject *val,
+    int frozen) {
+
+  if (frozen == 1) {
+    KosDynGen *gen = kos_dyn_find_gen(ctx);
+    KosXferGoal goal;
+    KosOpResult r;
+
+    if (kos_dyn_gen_wind_out_begin(ctx, gen, &goal, val) < 0) {
+      Py_DECREF(val);
+      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
+    }
+    Py_DECREF(val);
+
+    r = kos_xfer_goal_run(ctx, &goal);
+    if (r.kind == KOS_RES_YIELD)
+      return eval_yield_wound(ctx, gen, r.val);
+    return kos_eval_walk_outcome(ctx, r);
+  }
+
+  Py_DECREF(val);
+  /* -2: the freeze's effect list could not be sized, and nothing
+     has changed, so the yield raises where it stands */
+  return frozen == -2 ? EVAL_RAISE() : EVAL_FATAL();
+}
+
+
+/**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
    generator dead-after-yield, freezes gen (the running frame's GEN, from
    kos_dyn_yield_gen), delivers to the live frame's resume when there is
@@ -2568,30 +2660,10 @@ static KosOpResult eval_event_yield(
   {
     int frozen = kos_dyn_gen_freeze(ctx, gen);
 
-    if (frozen < 0) {
-      Py_DECREF(val);
-      /* -2: the freeze's effect list could not be sized, and nothing
-         has changed, so the yield raises where it stands */
-      return frozen == -2 ? EVAL_RAISE() : EVAL_FATAL();
-    }
+    if (unlikely(frozen != 0))
+      return eval_yield_unfrozen(ctx, val, frozen);
   }
-  {
-    /* The consumer is the live frame once the freeze has detached the
-       GEN: its resume takes the element (a for-each step, a next
-       request, a yield-from over a provider), else nobody, and the
-       yield leaves the evaluator. Never a search outward: a frame
-       waiting on its own step sits between the producer and any
-       enclosing region. */
-    if (iter_frame_has_resume(ctx))
-      return iter_deliver_to_resume(ctx, val, 0);
-  }
-  /* Only a yield that stops the evaluator leaves the context not
-     running; a delivered yield keeps threading, and the context stays
-     RUNNING so the context's GC traverse keeps visiting the live state. */
-  KosContext_MarkDeadAfterYield(ctx);
-  KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD);
-  ctx->terminal = 1;
-  return EVAL_YIELD(val);
+  return eval_yield_present(ctx, val);
 }
 
 

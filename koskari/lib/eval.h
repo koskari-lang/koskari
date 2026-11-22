@@ -161,6 +161,10 @@ typedef enum KosSuspensionEvent {
   KOS_SUSP_NONE   = 0,
   KOS_SUSP_AWAIT  = 1,
   KOS_SUSP_YIELD  = 2,
+  /* not a suspension of the evaluator: a generator was installed on
+     the context up to its outermost winder, and the goal that enters
+     the winders takes what the next entry sends (kos_dyn_gen_install) */
+  KOS_SUSP_WIND   = 3,
 } KosSuspensionEvent;
 
 
@@ -1140,7 +1144,10 @@ static inline void KosContext_LoadFrame(
    resume (a generator suspended inside a yield-from) to that resume by
    tail call, its staged delivery or a plain next; else bounce through
    the prologue, which runs a code-less frame's entry sequence, whose
-   delivery rides the frame's own stack.
+   delivery rides the frame's own stack. A generator installed only up
+   to its outermost winder leaves no frame live, so it goes to the
+   prologue too, which runs the goal that enters the winders
+   (kos_dyn_gen_install).
 */
 static inline KosOpResult kos_iter_installed(KosContext *ctx) {
   KosDynFrame *frame = KosContext_FRAME(ctx);

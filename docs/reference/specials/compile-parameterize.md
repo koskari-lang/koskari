@@ -27,6 +27,12 @@ mid-extent cannot leak its bindings anywhere. A `set!` on a parameter inside the
 extent writes the extent's binding and is discarded with it when the block
 exits.
 
+**Generators:** A `parameterize` in a generator is in effect for the
+generator alone. A `yield` in the body takes the bindings out for as long as
+the generator is suspended, so the code stepping it reads its own values, and
+the generator's next step puts them back before the body continues. When the
+block exits, what is restored is the binding of whoever made that last step.
+
 **Root scope:** A read that finds no `parameterize` binding falls through to
 the root scope, one per thread or per `with Domain():` block; see
 [`define-parameter`](../macros/compile-define-parameter-and-compile-parameterq.md).

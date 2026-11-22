@@ -359,6 +359,20 @@ typedef struct KosGenState {
                                   finish; any nonzero value is busy */
   KosDynEffects effects;       /* what the freeze took out and the
                                   install puts back */
+  /* A span whose yield left winders. The list in effects then holds
+     the winders among the effects, and its length is wound_count, with
+     effects.count 0: nothing in it is put back by the plain install.
+     pieces are those winders, outermost first, each with the node
+     resting on it and the registers live with it at dyn_top
+     (kos_dyn_gen_wind_out_next); owned, and kept from one yield to the
+     next. piece_count and wound_count are nonzero from the yield that
+     left the winders until the step that enters them again is done,
+     and frozen.top is NULL while such a span rests, which is what
+     sends the install to them. */
+  KosXferPiece *pieces;
+  uint16_t piece_count;
+  uint16_t piece_cap;
+  uint16_t wound_count;
   KosLiveRegs host;
   KosLiveRegs frozen;
 } KosGenState;
@@ -1391,11 +1405,21 @@ void kos_dyn_span_drop(KosDynSpan *span);
    retargeted to the span's top, and Py_None pushed as the suspended
    yield's placeholder. Requires state->active and state->started.
 
+   A span whose yield left winders (state->piece_count) is installed
+   up to its outermost winder only, with a goal pushed that enters each
+   winder and attaches what rests on it (KOS_GOAL_WINDING_IN). The rest
+   of the span is the goal's until then, no placeholder is pushed, and
+   the goal delivers the sent value or the throw after the last enter
+   (kos_xfer_goal_hand, kos_xfer_goal_take_entry). A context that is
+   not running is left with KOS_SUSP_WIND as its suspension event, so
+   its next entry hands the goal what it carries.
+
    :param ctx: execution context (may have empty or non-empty chain)
    :param owner: the generator object the GEN node refers to
    :param state: the owner's state record
 
-   :return: 0 on success, -1 on error
+   :return: 0 with the whole span installed, 1 with the goal pushed,
+       -1 on error with the span resting
 */
 int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
 
@@ -2111,13 +2135,92 @@ KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node);
   changes. gen is the node kos_dyn_find_gen returned for the running
   frame.
 
+  A span that holds a winder, a dyn-wind or a dyn-with, is not frozen
+  until each has been left: the freeze lists them with the effects,
+  changes nothing and answers 1, and the yield leaves them through a
+  goal (kos_dyn_gen_wind_out_begin), then rests the span with
+  kos_dyn_gen_freeze_wound.
+
   Callers: eval.c eval_event_yield.
 
-  :return: 0; -1 with PyErr set; or -2 with MemoryError set and the
-      chain, the span and its effects as they were, when the list
-      could not be sized
+  :return: 0; 1 with the winders listed and nothing changed; -1 with
+      PyErr set; or -2 with MemoryError set and the chain, the span and
+      its effects as they were, when the list could not be sized
 */
 int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen);
+
+
+/**
+  Rest a span whose winders the yield has left
+  (kos_dyn_gen_wind_out_next answered NULL): every listed effect is out
+  already, so nothing is listed and nothing taken out. The span rests
+  with no top recorded, which sends the next install to its winders.
+  Returns 0, or -1 with PyErr set.
+*/
+int kos_dyn_gen_freeze_wound(KosContext *ctx, KosDynGen *gen);
+
+
+/**
+  Start the leaves a yield owes: record each listed winder with the
+  node resting on it, by one walk from dyn_top to the outermost winder,
+  and fill goal, in the caller's storage, to run them
+  (KOS_GOAL_WINDING_OUT). The goal takes its own reference to val and
+  to the generator. Returns 0, or -1 with MemoryError set, the list
+  emptied and nothing else changed.
+*/
+int kos_dyn_gen_wind_out_begin(
+    KosContext *ctx,
+    KosDynGen *gen,
+    KosXferGoal *goal,
+    PyObject *val);
+
+
+/**
+  The next winder a yield leaves, innermost first, at dyn_top with only
+  the chain outside it: every listed effect inside it is out, and what
+  rested on it is cut off and held as the goal's target. Called again
+  for a winder whose leave was in flight, it answers the same node.
+  NULL when none is left: the span is whole at dyn_top again, with the
+  registers the yield had.
+*/
+KosDynNode *kos_dyn_gen_wind_out_next(KosContext *ctx, KosXferGoal *goal);
+
+
+/**
+  node's leave is done. A yield's leave does not end the extent: it is
+  put back as one never entered, so the next step's enter runs. The
+  frame's pc, which a dyn-with's exit moves past its block, is put back
+  where the yield left it.
+*/
+void kos_dyn_gen_wind_left(
+    KosContext *ctx,
+    KosXferGoal *goal,
+    KosDynNode *node);
+
+
+/**
+  The winder at dyn_top is entered: put back the effects listed between
+  it and the next winder, then attach what rested on it, up to and
+  including the next winder, or all of it when there is none. Returns
+  0, or -1 with PyErr set and nothing attached.
+*/
+int kos_dyn_gen_wind_attach(KosContext *ctx, KosXferGoal *goal);
+
+
+/**
+  Load the registers of the outermost winder, which a winding in on a
+  running context was pushed without (kos_dyn_gen_install): the frame
+  under the winder is live, and runs under what the consumer's frame
+  ran under.
+*/
+void kos_dyn_gen_wind_load(KosContext *ctx, KosXferGoal *goal);
+
+
+/**
+  Forget the listed effects and winders: their nodes are gone, or are
+  back on the chain and entered.
+*/
+void kos_dyn_gen_wind_reset(KosGenState *state);
 
 
 /**

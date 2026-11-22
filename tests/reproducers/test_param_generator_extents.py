@@ -14,19 +14,20 @@
 """
 tests.reproducers.test_param_generator_extents
 
-Generator extent semantics under per-context parameter cells. Generators
-follow the Python model within their own world: yield does not unwind,
-so a parameterize extent persists across the generator's suspensions and
-undoes when its block exits or the generator is exhausted. Because an
-async generator owns its context (cells forked at creation, like a
-defer), that whole lifecycle plays out in the generator's private table:
-the driver's view is never touched, even while the generator is
-suspended mid-extent, and an abandoned generator takes its table with
-it.
+Generator extent semantics under per-context parameter cells. A
+generator's parameterize is in effect for the generator alone: its own
+reads see the binding across its suspensions, the code stepping it
+never does, and the binding undoes when the block exits or the
+generator is exhausted. An async generator stepped from Python owns its
+context (cells forked at creation, like a defer), so there the whole
+lifecycle plays out in the generator's private table: the driver's view
+is never touched, even while the generator is suspended mid-extent, and
+an abandoned generator takes its table with it. One stepped from
+Koskari runs on the consumer's chain, where its bindings go out at
+every yield and come back at every step.
 
-The extent-safe suspension methodology remains delimited continuations
-(shift/reset), whose transfers unwind and rewind PARAM extents per
-application: yield does not unwind; shift does.
+A yield leaves a dyn-wind and a dyn-with as well, running their
+segments: see tests.reproducers.test_wind_across_yield.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -135,8 +136,8 @@ FLATTENED_SRC = """
 
 class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
     """
-    A generator's parameterize extents live in its own context: Python
-    yield semantics inside, driver isolation outside
+    A generator's parameterize extents are in effect for the generator
+    alone, across its suspensions
     """
 
     async def load(self, name, source):
@@ -147,10 +148,9 @@ class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
 
     async def test_generator_extent_isolated_from_driver(self):
         """
-        yield does not unwind the generator's extent (its own reads see
-        the binding across suspensions; the block exit undoes it), and
-        the driver's view is never touched while the generator is
-        suspended mid-extent
+        The generator's own reads see the binding across its
+        suspensions and the block exit undoes it, and the driver's view
+        is never touched while the generator is suspended mid-extent
         """
 
         mod = await self.load("param_gen_reporter", REPORTER_SRC)

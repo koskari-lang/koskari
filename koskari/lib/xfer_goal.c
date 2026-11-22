@@ -304,10 +304,62 @@ static void kos_xfer_goal_pop(KosContext *ctx) {
 }
 
 
+/**
+   kos_xfer_goal_pop for the callers off a transfer's own path, so the
+   one on it, the delivery, keeps the pop folded in.
+*/
+static KOS_NOINLINE void kos_xfer_goal_pop_cold(KosContext *ctx) {
+  kos_xfer_goal_pop(ctx);
+}
+
+
+/**
+   A winding goal that is given up: the nodes its generator's lists
+   named went with the target, or are on the chain for the raise to
+   unwind, so the lists are emptied. The generator is alive:
+   continuation_ref holds it.
+*/
+static void goal_winding_died(KosXferGoal *goal) {
+
+  if (goal->phase >= KOS_GOAL_WINDING_OUT && goal->gen_state) {
+    kos_dyn_gen_wind_reset(goal->gen_state);
+    goal->gen_state = NULL;
+  }
+}
+
+
+void kos_xfer_goal_discard(KosXferGoal *goal) {
+
+  if (goal)
+    goal_winding_died(goal);
+  kos_xfer_goal_free(goal);
+}
+
+
+/**
+   Give up the active goal: kos_xfer_goal_pop for one that did not run
+   to its end. A winding in pushed with no frame live leaves the
+   registers to be read from the chain.
+*/
+static void kos_xfer_goal_pop_dead(KosContext *ctx) {
+
+  KosXferGoal *goal = KosContext_GOAL(ctx);
+
+  goal_winding_died(goal);
+  if (goal->phase == KOS_GOAL_WINDING_IN) {
+    if (! KosContext_FRAME(ctx) && KosContext_DYN_TOP(ctx))
+      kos_dyn_resync_chain(ctx);
+    if (KosContext_SuspensionEvent(ctx) == KOS_SUSP_WIND)
+      KosContext_ClearSuspensionEvent(ctx);
+  }
+  kos_xfer_goal_pop_cold(ctx);
+}
+
+
 void kos_xfer_goal_abandon_all(KosContext *ctx) {
 
   while (KosContext_GOAL(ctx))
-    kos_xfer_goal_pop(ctx);
+    kos_xfer_goal_pop_dead(ctx);
 }
 
 
@@ -320,7 +372,7 @@ void kos_xfer_goal_abandon_stepping(KosContext *ctx) {
   while (KosContext_GOAL(ctx)
          && (! KosContext_GOAL(ctx)->frontier
              || KosContext_GOAL(ctx)->frontier == KosContext_DYN_TOP(ctx)))
-    kos_xfer_goal_pop(ctx);
+    kos_xfer_goal_pop_dead(ctx);
 }
 
 
@@ -340,13 +392,13 @@ void kos_xfer_goal_thunk_died(
 
   /* the goals started inside the thunk, then its waiter */
   while (KosContext_GOAL(ctx) != goal)
-    kos_xfer_goal_pop(ctx);
-  kos_xfer_goal_pop(ctx);
+    kos_xfer_goal_pop_dead(ctx);
+  kos_xfer_goal_pop_dead(ctx);
 
   /* the outers its LEAVING voided: their nodes left the chain, and the
      ATTACHING that would have retired them will not run */
   while (KosContext_GOAL(ctx) && ! KosContext_GOAL(ctx)->frontier)
-    kos_xfer_goal_pop(ctx);
+    kos_xfer_goal_pop_dead(ctx);
 }
 
 
@@ -677,7 +729,7 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
       if (! goal->seam || ! outer->frontier) {
         *link = outer->outer;
         outer->outer = NULL;
-        kos_xfer_goal_free(outer);
+        kos_xfer_goal_discard(outer);
       } else {
         link = &outer->outer;
       }
@@ -775,6 +827,131 @@ static KosOpResult goal_deliver(
 
 
 /**
+   WINDING_OUT: leave each winder of a yielding generator's span, with
+   the span cut above it. When the last is left the goal retires and
+   answers the yield itself, EVAL_YIELD with the value, for the yield
+   event to freeze the span and present it.
+*/
+static KOS_NOINLINE KosOpResult goal_wind_out(
+    KosContext *ctx,
+    KosXferGoal *goal) {
+
+  KosDynNode *node;
+  PyObject *val;
+
+  while ((node = kos_dyn_gen_wind_out_next(ctx, goal))) {
+    KosOpResult r = kos_dyn_extent_leave(ctx, node, KOS_XFER_EVENT_TRANSFER);
+
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
+      goal_wait(goal, node);
+      return r;
+    }
+    if (r.kind != KOS_RES_NORMAL)
+      return r;
+    kos_dyn_gen_wind_left(ctx, goal, node);
+  }
+
+  /* the lists stand for the freeze and the next install */
+  val = goal->payload;
+  goal->payload = NULL;
+  goal->gen_state = NULL;
+  kos_xfer_goal_pop_cold(ctx);
+  return EVAL_YIELD(val);
+}
+
+
+/**
+   WINDING_IN: enter the winder at dyn_top, then attach what rested on
+   it, until the span is whole; then deliver what the step sent, as the
+   install of a span with no winder leaves it: a frame waiting on a
+   resume takes the value, or the throw, as its delivery, any other
+   takes the value on its stack or the raise at its yield.
+*/
+static KOS_NOINLINE KosOpResult goal_wind_in(
+    KosContext *ctx,
+    KosXferGoal *goal) {
+
+  KosGenState *state = goal->gen_state;
+  PyObject *payload;
+  KosDynFrame *frame;
+  int is_throw;
+
+  /* pushed on a running context, which got no frame to thread into */
+  if (! KosContext_FRAME(ctx))
+    kos_dyn_gen_wind_load(ctx, goal);
+
+  while (goal->piece_entered < state->piece_count) {
+    KosDynNode *node = state->pieces[goal->piece_entered].regs.top;
+    KosOpResult r = kos_dyn_extent_enter(ctx, node);
+
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
+      goal_wait(goal, node);
+      return r;
+    }
+    if (r.kind != KOS_RES_NORMAL)
+      return r;
+    if (kos_dyn_gen_wind_attach(ctx, goal) < 0)
+      return EVAL_RAISE();
+  }
+
+  /* every listed node is back on the chain, in and entered */
+  kos_dyn_gen_wind_reset(state);
+  payload = goal->payload;
+  is_throw = goal->is_throw;
+  goal->payload = NULL;
+  kos_xfer_goal_pop_cold(ctx);
+  frame = KosContext_FRAME(ctx);
+
+  if (is_throw) {
+    PyErr_SetRaisedException(payload);
+    return KosContext_ThrowIntoResume(ctx) ? EVAL_NORMAL() : EVAL_RAISE();
+  }
+  if (frame && KosDynFrame_RESUME_KIND(frame)) {
+    if (payload)
+      Py_XSETREF(KosContext_PENDING_VALUE(ctx), payload);
+    return EVAL_NORMAL();
+  }
+  if (KosContext_StackPushRef(ctx, payload ? payload : Py_None) < 0) {
+    Py_XDECREF(payload);
+    return EVAL_RAISE();
+  }
+  Py_XDECREF(payload);
+  return EVAL_NORMAL();
+}
+
+
+void kos_xfer_goal_hand(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
+
+  KosXferGoal *goal = KosContext_GOAL(ctx);
+
+  if (throw_exc) {
+    PyErr_SetObject(throw_typ, throw_exc);
+    goal->payload = PyErr_GetRaisedException();
+    goal->is_throw = 1;
+  } else if (send_val) {
+    goal->payload = Py_NewRef(send_val);
+  }
+}
+
+
+void kos_xfer_goal_take_entry(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
+
+  KosXferGoal *goal = KosContext_GOAL(ctx);
+
+  if (goal && goal->phase == KOS_GOAL_WINDING_IN && ! goal->payload)
+    kos_xfer_goal_hand(ctx, send_val, throw_typ, throw_exc);
+}
+
+
+/**
    Drive the active goal as far as the chain allows, and each outer it
    retires into; with only set, stop once only is no longer the active
    goal.
@@ -815,6 +992,14 @@ static KosOpResult goal_drive(
     }
 
     switch (goal->phase) {
+      case KOS_GOAL_WINDING_OUT:
+        /* done, it answers the yield, and never NORMAL */
+        return goal_wind_out(ctx, goal);
+      case KOS_GOAL_WINDING_IN:
+        r = goal_wind_in(ctx, goal);
+        if (r.kind != KOS_RES_NORMAL)
+          return r;
+        break;
       case KOS_GOAL_LEAVING:
         r = goal_leave(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
@@ -875,7 +1060,7 @@ static int goal_keep(KosContext *ctx, KosXferGoal *goal) {
     goal->outer = NULL;
     if (goal->frontier)
       goal_end_wait(goal);
-    kos_xfer_goal_free(goal);
+    kos_xfer_goal_discard(goal);
     PyErr_NoMemory();
     return -1;
   }

@@ -100,6 +100,11 @@ void kos_gen_state_clear(KosGenState *state) {
 
   /* the list named nodes of the span just freed */
   kos_dyn_effects_clear(&state->effects);
+  PyMem_Free(state->pieces);
+  state->pieces = NULL;
+  state->piece_count = 0;
+  state->piece_cap = 0;
+  state->wound_count = 0;
 }
 
 
@@ -173,6 +178,59 @@ void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
 
 
 /* === the installs === */
+
+
+static inline KosExtent *kos_dyn_node_extent(const KosDynNode *node);
+
+static int kos_dyn_gen_install_winding(
+    KosContext *ctx,
+    KosGenState *state,
+    KosDynGen *gen,
+    KosDynNode *active,
+    uint32_t invoker_demand);
+
+
+/**
+   Put a resting span's bottom onto gen and gen onto the chain's top.
+   The live registers are not changed: the caller loads the ones of
+   whatever part of the span it leaves at dyn_top.
+*/
+static inline void kos_dyn_gen_splice(
+    KosContext *ctx,
+    KosGenState *state,
+    KosDynGen *gen,
+    KosDynNode *active,
+    KosDynNode *bottom) {
+
+  /* The consumer's registers, restored at the next freeze. */
+  kos_live_regs_capture(ctx, &state->host);
+
+  /* The span kept its interior unwind caches across the freeze; the
+     two on its bottom node name the consumer, and are rewritten from
+     the registers just recorded. Done before the registers change:
+     stamps never overwrite, so a stale link here would survive the
+     rebuild. */
+  if (KosDynNode_IS_FRAME(bottom))
+    KosDynFrame_BACK_FRAME(bottom) = state->host.frame;
+  if (KosDynNode_STACK(bottom))
+    KosSegment_BACK(KosDynNode_STACK(bottom)) = state->host.block;
+
+  /* The GEN goes under the chain's top and the span above it; the
+     span's interior links are intact, so only its bottom is relinked.
+     The bottom's parent-is-frame flag is clear for a GEN as for the
+     NULL it rested under, so no note is needed. Nor do the span's skip
+     links change: the ones that reach below it name this GEN, the
+     node the state keeps from one install to the next, so only the
+     GEN's own is set, as kos_dynnode_link sets it for a node known
+     not to be a frame. A span that rested under another GEN node has
+     them set over again. */
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+  KosDynNode_SKIP(gen) = kos_dynnode_skip_under(KosContext_DYN_TOP(ctx));
+  KosDynNode_PARENT(bottom) = (KosDynNode *) gen;
+  if (unlikely(KosDynNode_SKIP(bottom) != (KosDynNode *) gen))
+    kos_dyn_relink_skips(active, (KosDynNode *) gen);
+  state->active = NULL;
+}
 
 
 /**
@@ -257,45 +315,24 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
     return -1;
   }
 
-  /* The consumer's registers, restored at the next freeze. */
-  kos_live_regs_capture(ctx, &state->host);
+  kos_dyn_gen_splice(ctx, state, gen, active, bottom);
 
-  /* The span kept its interior unwind caches across the freeze; the
-     two on its bottom node name the consumer, and are rewritten from
-     the registers just recorded. Done before either splice path
-     below: stamps never overwrite, so a stale link here would survive
-     the rebuild. */
-  if (KosDynNode_IS_FRAME(bottom))
-    KosDynFrame_BACK_FRAME(bottom) = state->host.frame;
-  if (KosDynNode_STACK(bottom))
-    KosSegment_BACK(KosDynNode_STACK(bottom)) = state->host.block;
-
-  /* The GEN goes under the chain's top and the span above it; the
-     span's interior links are intact, so only its bottom is relinked.
-     The bottom's parent-is-frame flag is clear for a GEN as for the
-     NULL it rested under, so no note is needed. Nor do the span's skip
-     links change: the ones that reach below it name this GEN, the
-     node the state keeps from one install to the next, so only the
-     GEN's own is set, as kos_dynnode_link sets it for a node known
-     not to be a frame. A span that rested under another GEN node has
-     them set over again. */
-  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
-  KosDynNode_SKIP(gen) = kos_dynnode_skip_under(KosContext_DYN_TOP(ctx));
-  KosDynNode_PARENT(bottom) = (KosDynNode *) gen;
-  if (unlikely(KosDynNode_SKIP(bottom) != (KosDynNode *) gen))
-    kos_dyn_relink_skips(active, (KosDynNode *) gen);
-  state->active = NULL;
-
-  /* frozen.top always equals the active head here: kos_dyn_gen_freeze
-     writes active and the frozen snapshot together and nothing else
-     sets active non-NULL. The compare is kept so a future freeze path
-     that records one without the other takes the rebuild instead of
-     stale registers; the same holds for host.top at the freeze. */
+  /* frozen.top equals the active head for a span kos_dyn_gen_freeze
+     rested: it writes active and the frozen snapshot together and
+     nothing else sets active non-NULL. A span whose yield left
+     winders rests with frozen.top NULL (kos_dyn_gen_freeze_wound), so
+     the one test tells it from the rest at no cost to them, and it
+     goes on only up to its outermost winder. Any other mismatch takes
+     the rebuild instead of stale registers; the same holds for
+     host.top at the freeze. */
   if (state->frozen.top == active && state->frozen.frame) {
     /* The registers the freeze recorded for this very head: apply
        them. Same outcome as the rebuild without its find walk. */
     kos_live_regs_apply(ctx, &state->frozen);
   } else {
+    if (state->piece_count)
+      return kos_dyn_gen_install_winding(
+          ctx, state, gen, active, invoker_demand);
     kos_dyn_commit_dyn_top(ctx, active);
   }
   state->frozen.top = NULL;
@@ -323,6 +360,287 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
            : "NULL",
        (void *) KosContext_FRAME(ctx));
   return 0;
+}
+
+
+/* === winding across a yield === */
+
+
+void kos_dyn_gen_wind_reset(KosGenState *state) {
+
+  state->effects.count = 0;
+  state->wound_count = 0;
+  state->piece_count = 0;
+}
+
+
+/**
+   Record the listed winders, outermost first, each with the node
+   resting on it: one walk by parent links from top down to the
+   outermost winder. Returns 0, or -1 with MemoryError set.
+*/
+static int kos_dyn_gen_pieces(KosGenState *state, KosDynNode *top) {
+
+  KosDynEffects *fx = &state->effects;
+  KosDynNode **items = kos_dyn_effects_items(fx);
+  KosDynNode *above = NULL;
+  size_t count = 0;
+  size_t at;
+
+  for (size_t i = 0; i < fx->count; i++)
+    count += (size_t) kos_dyn_node_winder(items[i]);
+
+  if (count > state->piece_cap) {
+    KosXferPiece *grown =
+        PyMem_Realloc(state->pieces, count * sizeof(KosXferPiece));
+
+    if (! grown) {
+      PyErr_NoMemory();
+      return -1;
+    }
+    state->pieces = grown;
+    state->piece_cap = (uint16_t) count;
+  }
+
+  at = count;
+  for (KosDynNode *n = top; at; n = KosDynNode_PARENT(n)) {
+    if (kos_dyn_node_winder(n)) {
+      KosXferPiece *piece = &state->pieces[--at];
+
+      piece->rest = above;
+      piece->regs = (KosLiveRegs) { 0 };
+      piece->regs.top = n;
+    }
+    above = n;
+  }
+  state->piece_count = (uint16_t) count;
+  return 0;
+}
+
+
+int kos_dyn_gen_wind_out_begin(
+    KosContext *ctx,
+    KosDynGen *gen,
+    KosXferGoal *goal,
+    PyObject *val) {
+
+  KosGenState *state = KosDynGen_STATE(gen);
+
+  if (kos_dyn_gen_pieces(state, KosContext_DYN_TOP(ctx)) < 0) {
+    kos_dyn_gen_wind_reset(state);
+    return -1;
+  }
+
+  /* the list is the winding's from here: the plain install puts
+     nothing of it back */
+  state->wound_count = state->effects.count;
+  state->effects.count = 0;
+
+  kos_xfer_goal_init(goal, NULL, NULL, val, NULL, KosDynGen_OWNER(gen), 0);
+  goal->phase = KOS_GOAL_WINDING_OUT;
+  goal->gen_state = state;
+  goal->is_throw = 0;
+  goal->demand = 0;
+  KosContext_FlushLiveRegsToFrame(ctx);
+  kos_live_regs_capture(ctx, &goal->shape.top);
+  return 0;
+}
+
+
+KosDynNode *kos_dyn_gen_wind_out_next(KosContext *ctx, KosXferGoal *goal) {
+
+  KosGenState *state = goal->gen_state;
+  KosDynNode **items = kos_dyn_effects_items(&state->effects);
+  /* the winder left last, whose rest is still cut off */
+  KosXferPiece *left = goal->piece_entered
+      ? &state->pieces[state->piece_count - goal->piece_entered] : NULL;
+
+  while (goal->piece_next < state->wound_count) {
+    KosDynNode *node = items[goal->piece_next];
+    KosXferPiece *piece;
+
+    if (! kos_dyn_node_winder(node)) {
+      kos_dyn_effect_out(ctx, node);
+      goal->piece_next++;
+      continue;
+    }
+
+    piece = &state->pieces[state->piece_count - 1 - goal->piece_entered];
+    if (! piece->regs.frame) {
+      /* Cut above this winder before the one above it gets its rest
+         back, so the nodes the goal holds never reach the chain. */
+      if (piece->rest) {
+        KosDynNode_PARENT(piece->rest) = NULL;
+        goal->target = goal->shape.top.top;
+      }
+      if (left && left->rest)
+        KosDynNode_PARENT(left->rest) = left->regs.top;
+      if (KosContext_DYN_TOP(ctx) != node) {
+        KosContext_DYN_TOP(ctx) = node;
+        kos_dyn_resync_chain(ctx);
+      }
+      kos_live_regs_capture(ctx, &piece->regs);
+      goal->resume_pc = KosContext_PC(ctx);
+    }
+    return node;
+  }
+
+  /* every winder is left: the span is whole at dyn_top again */
+  if (left && left->rest)
+    KosDynNode_PARENT(left->rest) = left->regs.top;
+  goal->target = NULL;
+  if (KosContext_DYN_TOP(ctx) != goal->shape.top.top)
+    kos_live_regs_apply(ctx, &goal->shape.top);
+  return NULL;
+}
+
+
+void kos_dyn_gen_wind_left(
+    KosContext *ctx,
+    KosXferGoal *goal,
+    KosDynNode *node) {
+
+  KosExtent *ext = kos_dyn_node_extent(node);
+
+  KosExtent_PHASE(ext) = KOS_EXTENT_IDLE;
+  KosExtent_ENTERED(ext) = 0;
+  if (KosContext_FRAME(ctx))
+    KosContext_SET_PC(ctx, goal->resume_pc);
+  goal->piece_entered++;
+  goal->piece_next++;
+}
+
+
+/**
+   Put back the effects listed outside the outermost winder and leave
+   the goal at that winder. Returns 0, or -1 with PyErr set and those
+   effects out again.
+*/
+static int kos_dyn_gen_wind_in_outer(
+    KosContext *ctx,
+    KosGenState *state,
+    KosXferGoal *goal) {
+
+  KosDynNode **items = kos_dyn_effects_items(&state->effects);
+  size_t at = state->wound_count;
+
+  while (! kos_dyn_node_winder(items[at - 1])) {
+    if (kos_dyn_effect_in(ctx, items[at - 1]) < 0) {
+      for (; at < state->wound_count; at++)
+        kos_dyn_effect_out(ctx, items[at]);
+      return -1;
+    }
+    at--;
+  }
+  goal->piece_next = at - 1;
+  return 0;
+}
+
+
+int kos_dyn_gen_wind_attach(KosContext *ctx, KosXferGoal *goal) {
+
+  KosGenState *state = goal->gen_state;
+  KosDynNode **items = kos_dyn_effects_items(&state->effects);
+  KosXferPiece *piece = &state->pieces[goal->piece_entered];
+  KosXferPiece *next = (goal->piece_entered + 1u < state->piece_count)
+      ? piece + 1 : NULL;
+  KosDynFrame *below = KosContext_FRAME(ctx);
+  uint32_t demand = below
+      ? (KosDynFrame_FLAGS(below) & KOS_FRAME_DEMAND) : 0;
+  size_t at = goal->piece_next;
+
+  /* the effects go back while their nodes are still off the chain, so
+     a refusal leaves no node on it with its effect out */
+  while (at && ! kos_dyn_node_winder(items[at - 1])) {
+    if (kos_dyn_effect_in(ctx, items[at - 1]) < 0) {
+      for (; at < goal->piece_next; at++)
+        kos_dyn_effect_out(ctx, items[at]);
+      return -1;
+    }
+    at--;
+  }
+  goal->piece_next = next ? at - 1 : at;
+
+  /* cut above the next winder first, then give this one its rest */
+  if (next && next->rest)
+    KosDynNode_PARENT(next->rest) = NULL;
+  else
+    goal->target = NULL;
+  if (piece->rest)
+    KosDynNode_PARENT(piece->rest) = piece->regs.top;
+  kos_live_regs_apply(ctx, next ? &next->regs : &goal->shape.top);
+
+  /* each piece's frame runs under what the one below it runs under */
+  kos_dyn_gen_inherit_demand(ctx, demand);
+  goal->piece_entered++;
+  return 0;
+}
+
+
+/**
+   The rest of kos_dyn_gen_install for a span whose yield left
+   winders, spliced onto gen with the consumer's registers still live:
+   the effects outside the outermost winder go back, the span stays on
+   the chain up to that winder, and a goal is pushed that enters each
+   winder and attaches what rests on it. What rests on the outermost
+   is cut off and is the goal's until then. A refusal takes the span
+   off gen again and leaves it resting.
+
+   On a running context the consumer's step goes on at once, and
+   threads into whatever frame is live. None is left live here, so the
+   step goes to the prologue (kos_iter_installed), whose drain runs
+   the goal, which loads the registers the yield recorded with the
+   winder at dyn_top (kos_dyn_gen_wind_load). A context that is not
+   running enters the evaluator next, and gets those registers now.
+
+   Returns 1, or -1 with PyErr set and the span resting.
+*/
+static KOS_NOINLINE int kos_dyn_gen_install_winding(
+    KosContext *ctx,
+    KosGenState *state,
+    KosDynGen *gen,
+    KosDynNode *active,
+    uint32_t invoker_demand) {
+
+  KosXferPiece *first = &state->pieces[0];
+  KosXferGoal *goal = kos_xfer_goal_new(
+      NULL, NULL, NULL, NULL, KosDynGen_OWNER(gen), 0);
+
+  if (! goal || kos_dyn_gen_wind_in_outer(ctx, state, goal) < 0) {
+    kos_xfer_goal_free(goal);
+    KosDynNode_PARENT(state->bottom) = NULL;
+    kos_dyngen_rest(gen);
+    state->active = active;
+    return -1;
+  }
+
+  goal->phase = KOS_GOAL_WINDING_IN;
+  goal->gen_state = state;
+  goal->is_throw = 0;
+  goal->demand = invoker_demand != 0;
+  goal->shape.top = state->frozen;
+  goal->shape.top.top = active;
+  if (first->rest) {
+    KosDynNode_PARENT(first->rest) = NULL;
+    goal->target = active;
+  }
+  kos_xfer_goal_push(ctx, goal);
+
+  if (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) {
+    KosContext_DYN_TOP(ctx) = first->regs.top;
+    kos_dyn_resync_apply(ctx, NULL, first->regs.block, first->regs.ns, 1);
+  } else {
+    kos_dyn_gen_wind_load(ctx, goal);
+    KosContext_SetSuspensionEvent(ctx, KOS_SUSP_WIND);
+  }
+  return 1;
+}
+
+
+void kos_dyn_gen_wind_load(KosContext *ctx, KosXferGoal *goal) {
+
+  kos_live_regs_apply(ctx, &goal->gen_state->pieces[0].regs);
+  kos_dyn_gen_inherit_demand(ctx, goal->demand ? KOS_FRAME_DEMAND : 0);
 }
 
 

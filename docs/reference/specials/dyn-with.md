@@ -15,6 +15,15 @@ inside it does not see the exception and exit does not run for it; the
 exception reaches the call of the continuation as a `dyn-wind` before
 thunk's does.
 
+**Generators:** A `yield` in the body leaves the `dyn-with` as a transfer
+does. The yield calls exit, with no exception, before the consumer has the
+value, and the generator's next step calls enter again and binds `name` to
+its result before the body continues. An exit that raises at a yield raises
+from the `dyn-with`, and the value is not presented. The order among nested
+extents, and a generator closed or dropped at such a yield, are as for a
+[`dyn-wind`](compile-dyn-wind.md). A plain [`with`](with.md) calls neither
+at a yield.
+
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 The expression value is the body's value, or `None` when the exit swallows
 an exception. See
