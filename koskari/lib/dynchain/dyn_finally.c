@@ -28,7 +28,7 @@
    Allocate FINALLY with handler_pc; handles RAISE and RETURN when enabled.
 */
 KosDynFinally *kos_dynfinally_new(KosDynNode *parent, KosOp *handler_pc) {
-  KosDynFinally *node = kos_dynnode_alloc();
+  KosDynFinally *node = kos_dynnode_alloc(KOS_DYN_FINALLY);
 
   if (! node)
     return NULL;

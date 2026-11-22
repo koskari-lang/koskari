@@ -31,7 +31,7 @@ static KosDynNs *kos_dynns_new(
     KosDynNode *parent,
     PyObject *ns) {
 
-  KosDynNs *ns_node = kos_dynnode_alloc();
+  KosDynNs *ns_node = kos_dynnode_alloc(KOS_DYN_NS);
   if (! ns_node) {
     Py_DECREF(ns);
     return NULL;

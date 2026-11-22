@@ -44,7 +44,7 @@ static KosDynWith *kos_dyn_with_allocate(
     KosOp *resume_pc,
     uint32_t winds) {
 
-  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
+  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc(KOS_DYN_WITH);
 
   if (! node)
     return NULL;

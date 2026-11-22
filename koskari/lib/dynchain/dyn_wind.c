@@ -34,7 +34,7 @@ KosDynWind *kos_dynwind_new(
     KosCode *code,
     const KosExtra *row) {
 
-  KosDynWind *wind = kos_dynnode_alloc();
+  KosDynWind *wind = kos_dynnode_alloc(KOS_DYN_WIND);
   if (! wind)
     return NULL;
 

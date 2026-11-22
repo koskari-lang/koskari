@@ -34,7 +34,7 @@ static void kos_dyncollect_free(KosDynCollect *col_node);
 static KosDynCollect *kos_dyncollect_new(
     KosDynNode *parent,
     PyObject *ns) {
-  KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
+  KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc(KOS_DYN_COLLECT);
   if (! col_node) {
     Py_DECREF(ns);
     return NULL;

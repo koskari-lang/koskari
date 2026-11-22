@@ -32,7 +32,7 @@ KosDynLoop *kos_dynloop_new(
     KosOp *break_pc,
     KosOp *continue_pc) {
 
-  KosDynLoop *node = kos_dynnode_alloc();
+  KosDynLoop *node = kos_dynnode_alloc(KOS_DYN_LOOP);
 
   if (! node)
     return NULL;

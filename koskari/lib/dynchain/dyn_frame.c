@@ -60,7 +60,7 @@ KosDynFrame *kos_dynframe_new(
     KosCode *code,
     PyObject *ns) {
 
-  KosDynFrame *frame = kos_dynnode_alloc();
+  KosDynFrame *frame = kos_dynnode_alloc(KOS_DYN_FRAME);
   if (! frame) {
     Py_XDECREF(ns);
     return NULL;
@@ -401,7 +401,7 @@ KosDynFrame *kos_dynframe_new_aside(
     PyObject *ns,
     int owns_ns) {
 
-  KosDynFrame *frame = kos_dynnode_alloc();
+  KosDynFrame *frame = kos_dynnode_alloc(KOS_DYN_FRAME);
   KosOp *entry = kos_code_entry(aside);
 
   if (! frame) {

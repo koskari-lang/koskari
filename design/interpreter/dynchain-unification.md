@@ -649,6 +649,22 @@ As implemented:
   stages 3 and 4.
 - No `sizeof(KosDynNode)` outside the allocator.
 
+As implemented:
+
+- `kos_dynnode_alloc` takes the kind and reads its `MAJOR` cap from
+  the per-kind table; a constructor passes a constant, so the test
+  folds away.
+- The clone and the free do not read the cap either: each kind's clone
+  and free know their size. A PROMPT and a CC clone from
+  `kos_dynnode_clone_base_minor`, and a PROMPT, CC and GEN go back
+  through `kos_dynnode_return_minor`, which has no segment to
+  release. With the cap read at clone and at free, `shift_amb` and
+  `shift_generator` cost 1.1% to 1.4% more; without, the continuation
+  kernels gain 0.4% to 1.5%.
+- `kos_dyn_kind_size` reports a kind's size, for the native tests.
+- The major size is unchanged at 232 bytes: WITH is still the largest
+  payload at 104.
+
 ### 6.7 Stage 7: winding across a yield
 
 Tests first (section 8), then:
@@ -783,7 +799,7 @@ No stage may regress any kernel by more than 1%.
 
 | Shape | Baseline | After |
 | --- | --- | --- |
-| Major node | 232 B | 232 B, less once stages 3 and 4 shrink WITH |
+| Major node | 232 B | 232 B: stages 3 and 4 kept WITH at 104 B and shrank WIND to 48 B |
 | PROMPT, CC, GEN | 232 B | 56 B |
 | Resting generator, no regions | 464 B | 288 B |
 | reset body (PROMPT and frame) | 464 B | 288 B |

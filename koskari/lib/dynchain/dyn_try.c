@@ -28,7 +28,7 @@
    Allocate TRY with handler_pc; INTERCEPTS_RAISE cap for kos_dyn_handle.
 */
 KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_pc) {
-  KosDynTry *node = kos_dynnode_alloc();
+  KosDynTry *node = kos_dynnode_alloc(KOS_DYN_TRY);
 
   if (! node)
     return NULL;

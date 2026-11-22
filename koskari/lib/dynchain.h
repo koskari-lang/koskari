@@ -776,8 +776,11 @@ struct KosDynNode {
 
   /* Embedded operand-segment storage for region kinds: stack aims
      here at construction and spills to a heap segment on growth (the
-     storage then sits dormant until node reuse). Transfer bookmarks
-     (CC, PROMPT, GEN) leave it unused. */
+     storage then sits dormant until node reuse). A transfer bookmark
+     (CC, PROMPT, GEN) is a minor node, allocated without it and
+     without the payloads of the other kinds: nothing may read past a
+     minor node's own payload, and no code takes sizeof(KosDynNode)
+     but the allocator. */
   KosInlineSegment iseg;
 };
 
@@ -1830,6 +1833,16 @@ KosOpResult kos_dyn_unlink_top(
      chain; EVAL_RAISE
 */
 KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept);
+
+
+/**
+   The bytes a node of kind is allocated with: the whole KosDynNode
+   for a major kind, the header and the largest minor payload for a
+   PROMPT, CC or GEN. A node's size is not stored; the kind's
+   KOS_DYN_CAP_MAJOR says which. For the allocator and the native
+   tests.
+*/
+size_t kos_dyn_kind_size(KosDynKind kind);
 
 
 /**

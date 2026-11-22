@@ -64,7 +64,7 @@ static KosDynParam *kos_dynparam_new_from_bindings(
     }
   }
 
-  KosDynParam *node = (KosDynParam *) kos_dynnode_alloc();
+  KosDynParam *node = (KosDynParam *) kos_dynnode_alloc(KOS_DYN_PARAM);
   if (! node) {
     Py_DECREF(cells);
     return NULL;

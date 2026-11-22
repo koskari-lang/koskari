@@ -33,7 +33,7 @@ KosDynForeach *kos_dynforeach_new(
     KosOp *break_pc,
     KosOp *continue_pc) {
 
-  KosDynForeach *node = kos_dynnode_alloc();
+  KosDynForeach *node = kos_dynnode_alloc(KOS_DYN_FOREACH);
 
   if (! node)
     return NULL;

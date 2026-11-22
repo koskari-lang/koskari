@@ -33,7 +33,7 @@
 */
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, PyObject *tag) {
 
-  KosDynPrompt *prompt = kos_dynnode_alloc();
+  KosDynPrompt *prompt = kos_dynnode_alloc(KOS_DYN_PROMPT);
   if (! prompt)
     return NULL;
 
@@ -52,7 +52,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
     return NULL;
 
-  KosDynPrompt *clone = kos_dynnode_clone_base(prompt);
+  KosDynPrompt *clone = kos_dynnode_clone_base_minor(prompt);
   if (! clone)
     return NULL;
 
@@ -69,7 +69,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
     return;
 
   Py_CLEAR(KosDynPrompt_TAG(prompt));
-  kos_dynnode_return_to_freelist((KosDynNode *) prompt);
+  kos_dynnode_return_minor((KosDynNode *) prompt);
 }
 
 

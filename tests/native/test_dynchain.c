@@ -741,6 +741,55 @@ static int test_clone_skip_links_no_bit(void) {
 }
 
 
+static int test_node_sizes_by_kind(void) {
+    /* a PROMPT, CC or GEN is a minor node; every other kind is major */
+    size_t minor = offsetof(KosDynNode, u) + 2 * sizeof(void *);
+    KosDynKind kind;
+
+    for (kind = (KosDynKind) 0; kind < KOS_DYN_UNKNOWN; kind++) {
+        int is_minor = kind == KOS_DYN_PROMPT || kind == KOS_DYN_CC
+            || kind == KOS_DYN_GEN;
+
+        TEST_ASSERT_EQ(kos_dyn_kind_size(kind),
+                       is_minor ? minor : sizeof(KosDynNode),
+                       "the kind's size follows its MAJOR cap");
+    }
+    TEST_ASSERT_EQ(minor, 56, "a minor node is 56 bytes");
+    return 0;
+}
+
+
+/* Minor and major nodes come and go through their own freelists: a
+   node of one size is never handed out as the other. Each kind's
+   constructor writes its whole payload, and a major one its embedded
+   segment, so a wrong-sized block is an overrun the ASan run sees. */
+static int test_node_sizes_do_not_mix(void) {
+
+    for (int round = 0; round < 4; round++) {
+        KosDynNode *prompt = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
+        KosDynNode *try_;
+        KosDynNode *frame;
+
+        TEST_ASSERT_NOT_NULL(prompt, "create a prompt");
+        kos_dynchain_free(prompt, NULL);
+
+        /* the freed minor block must not serve the major nodes */
+        try_ = skip_node(NULL);
+        frame = plain_node(try_);
+        TEST_ASSERT_NOT_NULL(frame, "create major nodes");
+        TEST_ASSERT(KosDynNode_STACK(try_) != NULL, "the try has its segment");
+        kos_dynchain_free(frame, NULL);
+
+        /* and the freed major blocks may serve a minor node or not */
+        prompt = (KosDynNode *) kos_dynprompt_new(NULL, Py_True);
+        TEST_ASSERT_NOT_NULL(prompt, "create a prompt again");
+        TEST_ASSERT_NULL(KosDynNode_STACK(prompt), "a prompt owns no segment");
+        kos_dynchain_free(prompt, NULL);
+    }
+    return 0;
+}
+
+
 static int test_frame_caps_survive_cache_reset(void) {
     /* a frame stripped for a holder's cache stays a major frame */
     KosDynFrame *frame = (KosDynFrame *) plain_node(NULL);
@@ -1091,6 +1140,8 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_clone_skip_links_bit_in_middle);
     RUN_TEST(test_clone_skip_links_bit_at_bottom);
     RUN_TEST(test_clone_skip_links_no_bit);
+    RUN_TEST(test_node_sizes_by_kind);
+    RUN_TEST(test_node_sizes_do_not_mix);
     RUN_TEST(test_frame_caps_survive_cache_reset);
 
     /* Effect list tests */

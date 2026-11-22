@@ -174,10 +174,31 @@ static void kos_dynnode_init(
 }
 
 
-#define DYN_NODE_MAX_FREE KOS_FREELIST_CAP(128)  /* cached KosDynNode cap; tunable */
+/* A node comes in two sizes. A major node, one whose kind carries
+   KOS_DYN_CAP_MAJOR, is the whole KosDynNode: the largest payload and
+   the embedded operand segment. A minor node, a PROMPT, CC or GEN,
+   owns no segment and ends after the largest of those three payloads,
+   before anything a major kind uses. The size is not stored: the cap
+   says which, at alloc, at clone and at free, and each size has a
+   freelist of its own. */
+#define KOS_DYN_MAX2(a, b)  ((a) > (b) ? (a) : (b))
 
-static size_t dyn_freecount = 0;
-static KosDynNode *dyn_freelist = NULL;
+#define KOS_DYN_MINOR_PAYLOAD                                      \
+  KOS_DYN_MAX2(sizeof(((KosDynNode *) 0)->u.prompt),               \
+               KOS_DYN_MAX2(sizeof(((KosDynNode *) 0)->u.cc),      \
+                            sizeof(((KosDynNode *) 0)->u.gen)))
+
+#define KOS_DYN_MINOR_SIZE  (offsetof(KosDynNode, u) + KOS_DYN_MINOR_PAYLOAD)
+#define KOS_DYN_MAJOR_SIZE  sizeof(KosDynNode)
+
+/* cached node caps; tunable */
+#define DYN_MAJOR_MAX_FREE KOS_FREELIST_CAP(128)
+#define DYN_MINOR_MAX_FREE KOS_FREELIST_CAP(64)
+
+static size_t dyn_major_freecount = 0;
+static KosDynNode *dyn_major_freelist = NULL;
+static size_t dyn_minor_freecount = 0;
+static KosDynNode *dyn_minor_freelist = NULL;
 static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft point */
 
 
@@ -196,32 +217,83 @@ uint32_t kos_dynnode_mint_id(void) {
 }
 
 
-/**
-   Allocate a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
-   Returns NULL on failure (sets PyErr_NoMemory). The memory is not
-   zeroed: kos_dynnode_init writes the head and every kind's
-   constructor writes its whole union member.
-   The embedded segment's header is initialized on use
-   (kos_dynnode_use_inline_segment) and its slots are gated by len.
-*/
-static KosDynNode *kos_dynnode_alloc(void) {
-  KosDynNode *p = dyn_freelist;
+size_t kos_dyn_kind_size(KosDynKind kind) {
+  return (kos_dyn_kind_caps[kind] & KOS_DYN_CAP_MAJOR)
+      ? KOS_DYN_MAJOR_SIZE : KOS_DYN_MINOR_SIZE;
+}
 
-  if (p) {
-    dyn_freelist = KosDynNode_PARENT(p);
-    dyn_freecount--;
+
+/**
+   A node of the given size from the allocator: the freelist was empty.
+   Returns NULL with MemoryError set.
+*/
+static KosDynNode *kos_dynnode_alloc_fresh(int major) {
+  KosDynNode *p;
+
+  if (major) {
+    KOS_TRACE_FL_ALLOC("dyn_node", 0);
+    p = PyMem_Malloc(KOS_DYN_MAJOR_SIZE);
+  } else {
+    KOS_TRACE_FL_ALLOC("dyn_node_minor", 0);
+    p = PyMem_Malloc(KOS_DYN_MINOR_SIZE);
+  }
+
+  if (! p)
+    PyErr_NoMemory();
+  return p;
+}
+
+
+/* A major node: from its freelist, else fresh. */
+static inline KosDynNode *kos_dynnode_alloc_major(void) {
+  KosDynNode *p = dyn_major_freelist;
+
+  if (likely(p)) {
+    dyn_major_freelist = KosDynNode_PARENT(p);
+    dyn_major_freecount--;
     KOS_TRACE_FL_ALLOC("dyn_node", 1);
     return p;
   }
+  return kos_dynnode_alloc_fresh(1);
+}
 
-  KOS_TRACE_FL_ALLOC("dyn_node", 0);
-  p = PyMem_Malloc(sizeof(KosDynNode));
-  if (! p) {
-    PyErr_NoMemory();
-    return NULL;
+
+/* A minor node: from its freelist, else fresh. */
+static inline KosDynNode *kos_dynnode_alloc_minor(void) {
+  KosDynNode *p = dyn_minor_freelist;
+
+  if (likely(p)) {
+    dyn_minor_freelist = KosDynNode_PARENT(p);
+    dyn_minor_freecount--;
+    KOS_TRACE_FL_ALLOC("dyn_node_minor", 1);
+    return p;
   }
+  return kos_dynnode_alloc_fresh(0);
+}
 
-  return p;
+
+/**
+   Allocate a node for kind, major or minor as the kind's caps say.
+   Prefer reuse from that size's freelist; else PyMem_Malloc. Returns
+   NULL on failure (sets PyErr_NoMemory). The memory is not zeroed:
+   kos_dynnode_init writes the head and every kind's constructor
+   writes its whole union member. A major node's embedded segment has
+   its header initialized on use (kos_dynnode_use_inline_segment) and
+   its slots are gated by len; a minor node has none. A constructor
+   passes its kind as a constant, so the size test folds away there.
+*/
+static inline KosDynNode *kos_dynnode_alloc(KosDynKind kind) {
+  return (kos_dyn_kind_caps[kind] & KOS_DYN_CAP_MAJOR)
+      ? kos_dynnode_alloc_major() : kos_dynnode_alloc_minor();
+}
+
+
+/* What a clone's head takes from its source. See kos_dynnode_clone_base. */
+static inline void kos_dynnode_clone_head(KosDynNode *clone, KosDynNode *src) {
+  kos_dynnode_init(clone, KosDynNode_KIND(src), NULL, KosDynNode_CAPS(src));
+  KosDynNode_FLAGS(clone) =
+      (KosDynNode_FLAGS(src) & ~KOS_DYNF_GOAL_WAIT) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(src);
 }
 
 
@@ -232,23 +304,35 @@ static KosDynNode *kos_dynnode_alloc(void) {
    its original by id. A goal's wait on the source is not the clone's,
    so KOS_DYNF_GOAL_WAIT stays behind. The kind's clone fills its own
    payload after. NULL with an exception set on allocation failure.
+   This one is for a major kind; a PROMPT or CC clones from
+   kos_dynnode_clone_base_minor. Each kind's clone knows which it is,
+   so neither tests the size.
 */
 static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
-  KosDynNode *clone = kos_dynnode_alloc();
-  if (! clone)
-    return NULL;
+  KosDynNode *clone = kos_dynnode_alloc_major();
 
-  kos_dynnode_init(clone, KosDynNode_KIND(src), NULL, KosDynNode_CAPS(src));
-  KosDynNode_FLAGS(clone) =
-      (KosDynNode_FLAGS(src) & ~KOS_DYNF_GOAL_WAIT) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(src);
+  if (clone)
+    kos_dynnode_clone_head(clone, src);
+  return clone;
+}
+
+
+static KosDynNode *kos_dynnode_clone_base_minor(KosDynNode *src) {
+  KosDynNode *clone = kos_dynnode_alloc_minor();
+
+  if (clone)
+    kos_dynnode_clone_head(clone, src);
   return clone;
 }
 
 
 /**
-   Return a node to the freelist or free it. Call only after kind-specific
-   cleanup (refs released).
+   Return a major node to its freelist or free it. Call only after
+   kind-specific cleanup (refs released). The payload stays as it was:
+   stale pointers on a freelisted node are never traversed, and the
+   next constructor writes every field. See kos_dynnode_alloc. Each
+   kind's free knows its size, so the node's cap is not read: a PROMPT,
+   CC or GEN goes back through kos_dynnode_return_minor.
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
   KosSegment *seg = KosDynNode_STACK(node);
@@ -267,17 +351,33 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
      own; every other pushed node carries a fill of the live one). */
   Py_CLEAR(KosDynNode_NS(node));
 
-  if (dyn_freecount < DYN_NODE_MAX_FREE) {
+  if (dyn_major_freecount < DYN_MAJOR_MAX_FREE) {
     KOS_TRACE_FL_RETURN("dyn_node", 0);
-    /* The payload stays as it was: stale pointers on a freelisted node
-       are never traversed, and the next constructor writes every
-       field. See kos_dynnode_alloc. */
-    KosDynNode_PARENT(node) = dyn_freelist;
-    dyn_freelist = node;
-    dyn_freecount++;
-
+    KosDynNode_PARENT(node) = dyn_major_freelist;
+    dyn_major_freelist = node;
+    dyn_major_freecount++;
   } else {
     KOS_TRACE_FL_RETURN("dyn_node", 1);
+    PyMem_Free(node);
+  }
+}
+
+
+/**
+   Return a minor node, which owns no segment, to its freelist or free
+   it. Call only after kind-specific cleanup.
+*/
+static void kos_dynnode_return_minor(KosDynNode *node) {
+
+  Py_CLEAR(KosDynNode_NS(node));
+
+  if (dyn_minor_freecount < DYN_MINOR_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("dyn_node_minor", 0);
+    KosDynNode_PARENT(node) = dyn_minor_freelist;
+    dyn_minor_freelist = node;
+    dyn_minor_freecount++;
+  } else {
+    KOS_TRACE_FL_RETURN("dyn_node_minor", 1);
     PyMem_Free(node);
   }
 }
@@ -3608,12 +3708,19 @@ int koskari_dynchain_clear(PyObject *mod) {
 
   Py_CLEAR(_param_sentinel_unset);
 
-  while (dyn_freelist) {
-    KosDynNode *next = KosDynNode_PARENT(dyn_freelist);
-    PyMem_Free(dyn_freelist);
-    dyn_freelist = next;
+  while (dyn_major_freelist) {
+    KosDynNode *next = KosDynNode_PARENT(dyn_major_freelist);
+    PyMem_Free(dyn_major_freelist);
+    dyn_major_freelist = next;
   }
-  dyn_freecount = 0;
+  dyn_major_freecount = 0;
+
+  while (dyn_minor_freelist) {
+    KosDynNode *next = KosDynNode_PARENT(dyn_minor_freelist);
+    PyMem_Free(dyn_minor_freelist);
+    dyn_minor_freelist = next;
+  }
+  dyn_minor_freecount = 0;
 
   while (cont_freelist) {
     KosContinuation *next = (KosContinuation *) KosContinuation_CAPTURED_CHAIN(cont_freelist);

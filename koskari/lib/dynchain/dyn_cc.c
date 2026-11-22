@@ -31,7 +31,7 @@
 */
 static KosDynCC *kos_dyncc_new(KosDynNode *parent, KosOp *resume_pc) {
 
-  KosDynCC *cc = kos_dynnode_alloc();
+  KosDynCC *cc = kos_dynnode_alloc(KOS_DYN_CC);
   if (! cc)
     return NULL;
 
@@ -48,7 +48,7 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
   if (! cc)
     return NULL;
 
-  KosDynCC *clone = kos_dynnode_clone_base(cc);
+  KosDynCC *clone = kos_dynnode_clone_base_minor(cc);
   if (! clone)
     return NULL;
 
@@ -64,7 +64,7 @@ static void kos_dyncc_free(KosDynCC *cc) {
   if (! cc)
     return;
 
-  kos_dynnode_return_to_freelist(cc);
+  kos_dynnode_return_minor(cc);
 }
 
 

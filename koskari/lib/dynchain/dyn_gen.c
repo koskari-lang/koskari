@@ -49,7 +49,7 @@ KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state) {
   if (gen) {
     state->node = NULL;
   } else {
-    gen = (KosDynGen *) kos_dynnode_alloc();
+    gen = (KosDynGen *) kos_dynnode_alloc(KOS_DYN_GEN);
     if (! gen)
       return NULL;
     kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL,
@@ -74,7 +74,7 @@ void kos_dyngen_rest(KosDynGen *gen) {
 
 void kos_dyngen_free(KosDynGen *gen) {
 
-  kos_dynnode_return_to_freelist((KosDynNode *) gen);
+  kos_dynnode_return_minor((KosDynNode *) gen);
 }
 
 
