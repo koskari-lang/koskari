@@ -989,32 +989,118 @@ static int kos_dyn_effects_in(KosContext *ctx, KosDynEffects *fx) {
 /* === Region exception restore === */
 
 
+/* An empty slot */
+static inline void kos_exc_slot_init(KosExcSlot *slot) {
+  KosExc_Init(&slot->saved);
+  slot->state = KOS_EXC_NONE;
+}
+
+
+/* A clone's slot: the source's state and its own references */
+static inline void kos_exc_slot_copy(KosExcSlot *dst, const KosExcSlot *src) {
+  KosExc_Init(&dst->saved);
+  KosExc_Copy(&dst->saved, &src->saved);
+  dst->state = src->state;
+}
+
+
+/**
+   The owner takes over as the handler: saved takes the handler-visible
+   state the thread shows, for the caller to install the owner's
+   exception in its place.
+*/
+static inline void kos_exc_slot_displace(KosExcSlot *slot) {
+  KosExc_Fetch(&slot->saved);
+  slot->state = KOS_EXC_HANDLING;
+}
+
+
+/**
+   The owner is done handling: the state it displaced is given back,
+   the way POP_EXCEPT restores the previous handled exception in
+   CPython. A slot that holds nothing changes nothing. An empty saved
+   state clears the thread's, which is right: the owner's exception
+   stops being visible when the owner is done.
+*/
+static inline void kos_exc_slot_leave(KosExcSlot *slot) {
+  if (slot->state != KOS_EXC_NONE) {
+    KosExc_Install(&slot->saved);
+    slot->state = KOS_EXC_NONE;
+  }
+}
+
+
+/**
+   The owner goes to rest off the chain: its own exception comes off
+   the thread into saved and the displaced one goes back, innermost
+   first, so whoever runs meanwhile sees its own handled exception, as
+   CPython pops a generator's exc_info at a yield. Only a HANDLING
+   slot acts.
+*/
+static inline void kos_exc_slot_out(KosExcSlot *slot) {
+  KosExcState own;
+
+  if (slot->state != KOS_EXC_HANDLING)
+    return;
+
+  KosExc_Init(&own);
+  KosExc_Fetch(&own);
+  KosExc_Install(&slot->saved);
+  KosExc_Move(&slot->saved, &own);
+  slot->state = KOS_EXC_FROZEN;
+}
+
+
+/**
+   The reverse, outermost first: saved takes the handler-visible state
+   as it is now (the consumer's current handled exception, or the
+   exception of the owner outside this one, just put back), and the
+   owner's own exception becomes handler-visible again. The owner
+   later leaves by giving back a current state, not the one it
+   displaced in an earlier run. Only a FROZEN slot acts.
+
+   Under a consumer the exchange is with the thread. An adapter-driven
+   install (no frame below the generator) runs before koskari_eval has
+   swapped the context's handler-visible state onto the thread, so the
+   exchange is with the context's slot, which that swap then installs.
+*/
+static inline void kos_exc_slot_in(KosContext *ctx, KosExcSlot *slot) {
+  KosExcState own;
+
+  if (slot->state != KOS_EXC_FROZEN)
+    return;
+
+  KosExc_Init(&own);
+  KosExc_Move(&own, &slot->saved);
+  if (KosContext_FRAME(ctx)) {
+    KosExc_Fetch(&slot->saved);
+    KosExc_Install(&own);
+  } else {
+    KosExcState *info = KosContext_EXC_INFO(ctx);
+
+    KosExc_Move(&slot->saved, info);
+    KosExc_Move(info, &own);
+  }
+  slot->state = KOS_EXC_HANDLING;
+}
+
+
+/* The slot of a TRY or FINALLY region */
+static inline KosExcSlot *kos_dyn_region_slot(KosDynNode *node) {
+  return KosDynNode_IS_TRY(node)
+      ? KosDynTry_EXC(node) : KosDynFinally_EXC(node);
+}
+
+
 /**
    A TRY or FINALLY region leaving the chain gives back the
-   handler-visible exception it displaced when it consumed a raise,
-   the way POP_EXCEPT restores the previous handled exception in
-   CPython. A region that consumed nothing changes nothing. Every path
-   off the chain runs this: the fast pops, and the uninstall the raise
-   walk and the return and break teardowns go through.
+   handler-visible exception it displaced when it consumed a raise. A
+   region that consumed nothing changes nothing. Every path off the
+   chain runs this: the fast pops, and the uninstall the raise walk
+   and the return and break teardowns go through.
 */
 static void kos_dyn_region_leave_exc(KosDynNode *node) {
-  uint8_t *saved_flag;
-  KosExcState *saved;
-
-  if (KosDynNode_IS_TRY(node)) {
-    saved_flag = &KosDynTry_EXC_SAVED((KosDynTry *) node);
-    saved = KosDynTry_SAVED((KosDynTry *) node);
-  } else {
-    saved_flag = &KosDynFinally_EXC_SAVED((KosDynFinally *) node);
-    saved = KosDynFinally_SAVED((KosDynFinally *) node);
-  }
-
-  if (*saved_flag) {
-    /* an empty saved state clears the thread's, which is right: the
-       region's exception stops being visible when the region goes */
-    KosExc_Install(saved);
-    *saved_flag = 0;
-  }
+  kos_exc_slot_leave(kos_dyn_region_slot(node));
 }
 
 
@@ -1231,91 +1317,6 @@ KosOpResult kos_dyn_extent_leave(
 
 
 /**
-   The region's exception slots: saved, and the flags that say what it
-   holds. A TRY and a FINALLY keep them in the same shape.
-*/
-static void kos_dyn_region_exc_slots(
-    KosDynNode *node,
-    uint8_t **exc_saved,
-    uint8_t **exc_frozen,
-    KosExcState **saved) {
-
-  if (KosDynNode_IS_TRY(node)) {
-    *exc_saved = &KosDynTry_EXC_SAVED((KosDynTry *) node);
-    *exc_frozen = &KosDynTry_EXC_FROZEN((KosDynTry *) node);
-    *saved = KosDynTry_SAVED((KosDynTry *) node);
-  } else {
-    *exc_saved = &KosDynFinally_EXC_SAVED((KosDynFinally *) node);
-    *exc_frozen = &KosDynFinally_EXC_FROZEN((KosDynFinally *) node);
-    *saved = KosDynFinally_SAVED((KosDynFinally *) node);
-  }
-}
-
-
-/**
-   A region that consumed a raise has its handled exception on the
-   thread and what it displaced in saved. Freezing the span takes the
-   region's own exception off the thread into saved and puts the
-   displaced one back, innermost first, so the consumer sees its own
-   handled exception while the generator is suspended, as CPython pops
-   a generator's exc_info at a yield.
-*/
-static int kos_dyn_region_exc_freeze(KosDynNode *node) {
-  uint8_t *exc_saved, *exc_frozen;
-  KosExcState *saved;
-  KosExcState own;
-
-  kos_dyn_region_exc_slots(node, &exc_saved, &exc_frozen, &saved);
-  if (! *exc_saved || *exc_frozen)
-    return 0;
-
-  KosExc_Init(&own);
-  KosExc_Fetch(&own);
-  KosExc_Install(saved);
-  KosExc_Move(saved, &own);
-  *exc_frozen = 1;
-  return 1;
-}
-
-
-/**
-   The reverse, outermost first: saved takes the handler-visible state
-   as it is now (the consumer's current handled exception, or the
-   exception of the region outside this one, just put back), and the
-   region's own exception becomes handler-visible again. The region
-   later leaves by giving back a current state, not the one it
-   displaced in an earlier run.
-
-   Under a consumer the exchange is with the thread. An adapter-driven
-   install (no frame below the generator) runs before koskari_eval has
-   swapped the context's handler-visible state onto the thread, so the
-   exchange is with the context's slot, which that swap then installs.
-*/
-static void kos_dyn_region_exc_install(KosContext *ctx, KosDynNode *node) {
-  uint8_t *exc_saved, *exc_frozen;
-  KosExcState *saved;
-  KosExcState own;
-
-  kos_dyn_region_exc_slots(node, &exc_saved, &exc_frozen, &saved);
-  if (! *exc_frozen)
-    return;
-
-  KosExc_Init(&own);
-  KosExc_Move(&own, saved);
-  if (KosContext_FRAME(ctx)) {
-    KosExc_Fetch(saved);
-    KosExc_Install(&own);
-  } else {
-    KosExcState *slot = KosContext_EXC_INFO(ctx);
-
-    KosExc_Move(saved, slot);
-    KosExc_Move(slot, &own);
-  }
-  *exc_frozen = 0;
-}
-
-
-/**
    Whether node is a TRY or FINALLY region holding its own handled
    exception off the thread: frozen with a generator's span, or kept
    for a continuation.
@@ -1323,9 +1324,9 @@ static void kos_dyn_region_exc_install(KosContext *ctx, KosDynNode *node) {
 static int kos_dyn_region_frozen(KosDynNode *node) {
 
   if (KosDynNode_IS_TRY(node))
-    return KosDynTry_EXC_FROZEN((KosDynTry *) node);
+    return KosDynTry_EXC(node)->state == KOS_EXC_FROZEN;
   if (KosDynNode_IS_FINALLY(node))
-    return KosDynFinally_EXC_FROZEN((KosDynFinally *) node);
+    return KosDynFinally_EXC(node)->state == KOS_EXC_FROZEN;
   return 0;
 }
 
@@ -1340,7 +1341,7 @@ void kos_dyn_install_regions(
 
   kos_dyn_install_regions(ctx, KosDynNode_PARENT(top), stop);
   if (kos_dyn_region_frozen(top))
-    kos_dyn_region_exc_install(ctx, top);
+    kos_exc_slot_in(ctx, kos_dyn_region_slot(top));
 }
 
 
@@ -1350,11 +1351,9 @@ static inline int kos_dyn_effect_live(const KosDynNode *node) {
     case KOS_DYN_PARAM:
       return 1;
     case KOS_DYN_TRY:
-      return KosDynTry_EXC_SAVED((KosDynTry *) node)
-          && ! KosDynTry_EXC_FROZEN((KosDynTry *) node);
+      return KosDynTry_EXC(node)->state == KOS_EXC_HANDLING;
     case KOS_DYN_FINALLY:
-      return KosDynFinally_EXC_SAVED((KosDynFinally *) node)
-          && ! KosDynFinally_EXC_FROZEN((KosDynFinally *) node);
+      return KosDynFinally_EXC(node)->state == KOS_EXC_HANDLING;
     default:
       return 0;
   }
@@ -1375,7 +1374,7 @@ static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node) {
       break;
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
-      (void) kos_dyn_region_exc_freeze(node);
+      kos_exc_slot_out(kos_dyn_region_slot(node));
       break;
     default:
       break;
@@ -1390,7 +1389,7 @@ static inline int kos_dyn_effect_in(KosContext *ctx, KosDynNode *node) {
       return kos_dyn_param_wind(ctx, (KosDynParam *) node);
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
-      kos_dyn_region_exc_install(ctx, node);
+      kos_exc_slot_in(ctx, kos_dyn_region_slot(node));
       return 0;
     default:
       return 0;
@@ -2725,7 +2724,8 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
   switch (KosDynNode_KIND(live)) {
     case KOS_DYN_TRY:
       return KosDynTry_ENABLED(live) == KosDynTry_ENABLED(tmpl)
-          && KosDynTry_EXC_SAVED(live) == KosDynTry_EXC_SAVED(tmpl);
+          && (KosDynTry_EXC(live)->state != KOS_EXC_NONE)
+             == (KosDynTry_EXC(tmpl)->state != KOS_EXC_NONE);
 
     case KOS_DYN_FINALLY:
       return KosDynFinally_ENABLED(live) == KosDynFinally_ENABLED(tmpl)
@@ -2733,7 +2733,8 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
              == KosDynFinally_HANDLING_RAISE(tmpl)
           && KosDynFinally_HANDLING_CONTROL(live)
              == KosDynFinally_HANDLING_CONTROL(tmpl)
-          && KosDynFinally_EXC_SAVED(live) == KosDynFinally_EXC_SAVED(tmpl);
+          && (KosDynFinally_EXC(live)->state != KOS_EXC_NONE)
+             == (KosDynFinally_EXC(tmpl)->state != KOS_EXC_NONE);
 
     case KOS_DYN_WIND:
       /* a template WIND is always idle (its clone resets the phase, to

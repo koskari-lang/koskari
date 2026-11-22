@@ -217,12 +217,22 @@ lowest frame is numbered 1.
 typedef struct KosExcSlot {
   KosExcState saved;
   uint8_t state;   /* KOS_EXC_NONE, KOS_EXC_HANDLING, KOS_EXC_FROZEN */
+  uint8_t lent[3]; /* the embedding payload's own small fields */
 } KosExcSlot;
 ```
 
 Embedded in TRY, FINALLY and WITH in place of `saved`, `exc_saved` and
 `exc_frozen`. `kos_exc_slot_out` and `kos_exc_slot_in` are the only
-exchange code. FINALLY keeps its separate `handling` state.
+exchange code; `kos_exc_slot_displace` and `kos_exc_slot_leave` are
+the owner taking over as handler and giving the displaced state back.
+FINALLY keeps its separate `handling` state.
+
+The state byte would cost each payload a word of padding, and WITH is
+the largest payload, so the node would grow to 240 bytes. The slot
+lends the rest of that word instead: `enabled`, `handling_raise`,
+`handling_control`, `self_bind`, `entered` and `phase` live in `lent`
+behind their accessor macros. TRY stays 40 bytes, FINALLY 64, WITH
+104, and the node 232.
 
 ### 4.6 One extent machine
 
@@ -541,9 +551,11 @@ the context's top frame.
   `kos_dyn_install_regions` (`:1098`) and the clone's `frozen` test
   (`:1404`) read the slot state.
 - `dyn_walk.c:639`-`:650`: the raise walk fills the slot.
-- `kos_dyn_node_same_phase` (`:2458`, `:2467`) compares slot state.
+- `kos_dyn_node_same_phase` (`:2458`, `:2467`) compares whether each
+  slot holds anything: a template's region is FROZEN where the live
+  one is HANDLING, and the two are the same phase.
 - `dyn_with.c`: the WITH's `exc_saved` and `saved`.
-- Report `sizeof` of the three payloads before and after.
+- `sizeof` of the three payloads is unchanged: 40, 64 and 104.
 
 ### 6.4 Stage 4: extent machine
 

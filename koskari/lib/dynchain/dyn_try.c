@@ -37,9 +37,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_pc) {
                    0);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
-  KosDynTry_EXC_SAVED(node) = 0;
-  KosDynTry_EXC_FROZEN(node) = 0;
-  KosExc_Init(KosDynTry_SAVED(node));
+  kos_exc_slot_init(KosDynTry_EXC(node));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }
@@ -54,10 +52,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
     return NULL;
   KosDynTry_HANDLER_PC(clone) = KosDynTry_HANDLER_PC(node);
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
-  KosDynTry_EXC_SAVED(clone) = KosDynTry_EXC_SAVED(node);
-  KosDynTry_EXC_FROZEN(clone) = KosDynTry_EXC_FROZEN(node);
-  KosExc_Init(KosDynTry_SAVED(clone));
-  KosExc_Copy(KosDynTry_SAVED(clone), KosDynTry_SAVED(node));
+  kos_exc_slot_copy(KosDynTry_EXC(clone), KosDynTry_EXC(node));
   return clone;
 }
 
@@ -66,7 +61,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
    Release the saved exception state; return TRY node to freelist.
 */
 void kos_dyntry_free(KosDynTry *node) {
-  KosExc_Clear(KosDynTry_SAVED(node));
+  KosExc_Clear(&KosDynTry_EXC(node)->saved);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
@@ -128,7 +123,7 @@ int kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
    GC traverse a KOS_DYN_TRY: the saved exception state.
 */
 static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
-  return KosExc_Traverse(KosDynTry_SAVED((KosDynTry *) node), visit, arg);
+  return KosExc_Traverse(&KosDynTry_EXC(node)->saved, visit, arg);
 }
 
 

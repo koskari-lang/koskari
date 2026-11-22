@@ -557,6 +557,11 @@ static int test_node_header_size(void) {
 
     TEST_ASSERT_EQ(offsetof(KosDynNode, u), 40,
                    "the node header is 40 bytes");
+    /* the slot's state and the bytes it lends fit the padding the
+       exception triple leaves, so a payload embedding one grows by a
+       word over the triple and no more */
+    TEST_ASSERT_EQ(sizeof(KosExcSlot), sizeof(KosExcState) + sizeof(void *),
+                   "the exception slot is the triple and one word");
     return 0;
 }
 
@@ -785,7 +790,7 @@ static KosContext *span_with_effects(
         trys[i] = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
         if (! trys[i])
             return NULL;
-        KosDynTry_EXC_SAVED(trys[i]) = 1;
+        KosDynTry_EXC(trys[i])->state = KOS_EXC_HANDLING;
     }
     if (! kos_dyn_push_frame_empty(ctx))
         return NULL;
@@ -824,7 +829,7 @@ static int freeze_install_effects(int count) {
             TEST_ASSERT_SAME(effects_items(&state.effects)[i],
                              trys[count - 1 - i],
                              "the list is innermost first");
-            TEST_ASSERT(KosDynTry_EXC_FROZEN(trys[i]), "the effect is out");
+            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN, "the effect is out");
         }
         if (count > 2) {
             TEST_ASSERT_EQ(state.effects.cap, count,
@@ -849,7 +854,7 @@ static int freeze_install_effects(int count) {
         TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
         TEST_ASSERT_EQ(state.effects.count, 0, "the list is used up");
         for (int i = 0; i < count; i++)
-            TEST_ASSERT(! KosDynTry_EXC_FROZEN(trys[i]), "the effect is in");
+            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING, "the effect is in");
         TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
     }
 
@@ -934,7 +939,7 @@ static int test_freeze_refused_changes_nothing(void) {
     TEST_ASSERT_NULL(state.active, "the state holds no span");
     TEST_ASSERT_EQ(state.effects.count, 0, "nothing is listed");
     for (int i = 0; i < 3; i++)
-        TEST_ASSERT(! KosDynTry_EXC_FROZEN(trys[i]), "no effect went out");
+        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING, "no effect went out");
 
     TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 0, "a later freeze works");
     kos_gen_state_clear(&state);
@@ -975,7 +980,7 @@ static int span_move(int count) {
     for (int i = 0; i < count; i++) {
         trys[i] = (KosDynNode *) kos_dyn_push_try(own, FAKE_INSN(1));
         TEST_ASSERT_NOT_NULL(trys[i], "push a try");
-        KosDynTry_EXC_SAVED(trys[i]) = 1;
+        KosDynTry_EXC(trys[i])->state = KOS_EXC_HANDLING;
     }
     TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(own), "push the top frame");
     KosContext_EvalExit(own);
@@ -991,7 +996,7 @@ static int span_move(int count) {
         TEST_ASSERT_SAME(effects_items(&span.effects)[i],
                          trys[count - 1 - i],
                          "the list is innermost first");
-        TEST_ASSERT(KosDynTry_EXC_FROZEN(trys[i]), "the effect is out");
+        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN, "the effect is out");
     }
     TEST_ASSERT_EQ(KosDynFrame_DEPTH(span.top_frame),
                    kos_dyn_frame_count(head, NULL),
@@ -1005,7 +1010,7 @@ static int span_move(int count) {
     TEST_ASSERT_EQ(KosDynFrame_DEPTH(head), 3, "and the top frame after it");
     TEST_ASSERT_EQ(span.effects.cap, 0, "the span's list is given up");
     for (int i = 0; i < count; i++)
-        TEST_ASSERT(! KosDynTry_EXC_FROZEN(trys[i]), "the effect is in");
+        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING, "the effect is in");
     TEST_ASSERT(kos_dyn_skips_hold(head, NULL), "the skip links hold");
 
     KosContext_EvalExit(ctx);

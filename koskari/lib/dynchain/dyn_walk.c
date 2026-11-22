@@ -637,12 +637,8 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
              leaves to Python. */
           kos_eval_note_crossed_frame(ctx);
           KosExc_TakeRaised(&raised);
-          if (KosDynNode_IS_TRY(region)) {
-            KosExc_Fetch(KosDynTry_SAVED((KosDynTry *) region));
-            KosDynTry_EXC_SAVED((KosDynTry *) region) = 1;
-          } else {
-            KosExc_Fetch(KosDynFinally_SAVED((KosDynFinally *) region));
-            KosDynFinally_EXC_SAVED((KosDynFinally *) region) = 1;
+          kos_exc_slot_displace(kos_dyn_region_slot(region));
+          if (KosDynNode_IS_FINALLY(region)) {
             KosExc_Clear(KosDynFinally_HANDLING((KosDynFinally *) region));
             KosExc_Copy(KosDynFinally_HANDLING((KosDynFinally *) region),
                         &raised);

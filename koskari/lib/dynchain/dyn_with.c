@@ -62,8 +62,7 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
-  KosDynWith_EXC_SAVED(node) = 0;
-  KosExc_Init(KosDynWith_SAVED(node));
+  kos_exc_slot_init(KosDynWith_EXC(node));
   return node;
 }
 
@@ -120,8 +119,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
     Py_INCREF(KosDynWith_NAME(node));
   KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
-  KosDynWith_EXC_SAVED(node) = 0;
-  KosExc_Init(KosDynWith_SAVED(node));
+  kos_exc_slot_init(KosDynWith_EXC(node));
   return node;
 }
 
@@ -142,7 +140,7 @@ static void kos_dynwith_free(KosDynWith *node) {
   Py_XDECREF(KosDynWith_NAME(node));
   KosDynWith_NAME(node) = NULL;
   kos_dyn_ob_clear(KosDynWith_OB(node));
-  KosExc_Clear(KosDynWith_SAVED(node));
+  KosExc_Clear(&KosDynWith_EXC(node)->saved);
 
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -278,10 +276,7 @@ static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
    it displaced. A call that handled nothing displaced nothing.
 */
 static void kos_dyn_with_exit_done_exc(KosDynWith *node) {
-  if (KosDynWith_EXC_SAVED(node)) {
-    KosExc_Install(KosDynWith_SAVED(node));
-    KosDynWith_EXC_SAVED(node) = 0;
-  }
+  kos_exc_slot_leave(KosDynWith_EXC(node));
 }
 
 
@@ -419,8 +414,7 @@ static KosOpResult kos_dyn_with_leave(
 
     KosExc_Init(&handling);
     KosExc_Copy(&handling, &ob->u.exc);
-    KosExc_Fetch(KosDynWith_SAVED(node));
-    KosDynWith_EXC_SAVED(node) = 1;
+    kos_exc_slot_displace(KosDynWith_EXC(node));
     KosExc_Install(&handling);
   }
 
@@ -531,7 +525,7 @@ static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));
   Py_VISIT(KosDynWith_NAME(with_node));
-  if (KosExc_Traverse(KosDynWith_SAVED(with_node), visit, arg) < 0)
+  if (KosExc_Traverse(&KosDynWith_EXC(with_node)->saved, visit, arg) < 0)
     return -1;
   return kos_dyn_ob_traverse(KosDynWith_OB(with_node), visit, arg);
 }

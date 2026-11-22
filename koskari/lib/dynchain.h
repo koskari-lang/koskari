@@ -285,6 +285,32 @@ typedef enum KosGenBusy {
 } KosGenBusy;
 
 
+/* KosExcSlot states */
+#define KOS_EXC_NONE      0  /* the slot holds nothing */
+#define KOS_EXC_HANDLING  1  /* saved is what the owner's exception displaced */
+#define KOS_EXC_FROZEN    2  /* saved is the owner's own, off the thread */
+
+
+/**
+   One handled exception's place in a node: a TRY or FINALLY handling
+   a raise, or a WITH whose __exit__ is handling one. The owner's
+   exception is the thread's handled exception while it is HANDLING,
+   and saved is the handler-visible state that displaced, given back
+   when the owner is done. FROZEN is the same owner at rest off the
+   chain, in a generator's span or a continuation: the two are
+   exchanged, so the thread shows what it showed before and saved
+   holds the owner's own. kos_exc_slot_out and kos_exc_slot_in make
+   that exchange and nothing else does. lent is three bytes of the
+   record's own padding, the embedding payload's to use for its small
+   fields.
+*/
+typedef struct KosExcSlot {
+  KosExcState saved;
+  uint8_t state;
+  uint8_t lent[3];
+} KosExcSlot;
+
+
 /**
    An effect list: the nodes of a resting span whose effect is out
    (kos_dyn_effect_out), innermost first, the order they went out in.
@@ -674,21 +700,14 @@ struct KosDynNode {
     } wind;
     struct {
       KosOp *handler_pc;
-      uint8_t enabled;
-      uint8_t exc_saved;      /* consumed a raise: saved is what it displaced */
-      /* in a frozen span: saved is the region's own handled exception,
-         taken off the thread */
-      uint8_t exc_frozen;
-      KosExcState saved;      /* handler-visible state before this region */
+      /* the raise the handler consumed; lent[0] is enabled */
+      KosExcSlot exc;
     } try_;
     struct {
       KosOp *handler_pc;
-      uint8_t enabled;
-      uint8_t handling_raise;
-      uint8_t handling_control;  /* KosPendingReturnKind stored here */
-      uint8_t exc_saved;      /* as for try_ */
-      uint8_t exc_frozen;     /* as for try_ */
-      KosExcState saved;      /* handler-visible state before this region */
+      /* as for try_; lent[0] is enabled, lent[1] handling_raise, and
+         lent[2] handling_control, a KosPendingReturnKind */
+      KosExcSlot exc;
       KosExcState handling;   /* the raise being propagated through the body */
     } finally_;
     /* LOOP and FOREACH open with the same region record, so a break or
@@ -707,21 +726,17 @@ struct KosDynNode {
       PyObject *mgr;       /* context manager (owned) */
       PyObject *enter;     /* resolved enter callable (owned) */
       PyObject *exit;      /* resolved exit callable (owned) */
-      /* KOS_WITH_SELF_*: which of enter/exit is a plain function kept
-         unbound, called with mgr first */
-      uint8_t self_bind;
-      uint8_t entered;     /* 1 after enter succeeded */
-      uint8_t phase;       /* KOS_WITH_PHASE_* */
-      /* __exit__ runs as a handler of the obligation's exception: saved
-         is the handler-visible state that displaced, given back when
-         __exit__ is done */
-      uint8_t exc_saved;
       PyObject *name;     /* binding name or NULL (owned) */
       KosOp *resume_pc;    /* the instruction after the with body (pop + 1) */
       /* the exception __exit__ is handling, or what a walk stored while
          __exit__ runs */
       KosObligation ob;
-      KosExcState saved;
+      /* __exit__ runs as a handler of the obligation's exception. The
+         lent bytes: [0] self_bind, KOS_WITH_SELF_*, which of
+         enter/exit is a plain function kept unbound, called with mgr
+         first; [1] entered, 1 after enter succeeded; [2] phase,
+         KOS_WITH_PHASE_* */
+      KosExcSlot exc;
     } with;
     struct {
       /* The generator object whose span this node marks, borrowed. It
@@ -2500,17 +2515,16 @@ int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop);
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
-#define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
-#define KosDynTry_EXC_SAVED(r)       (((KosDynNode *)(r))->u.try_.exc_saved)
-#define KosDynTry_EXC_FROZEN(r)      (((KosDynNode *)(r))->u.try_.exc_frozen)
-#define KosDynTry_SAVED(r)           (&((KosDynNode *)(r))->u.try_.saved)
+#define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.exc.lent[0])
+#define KosDynTry_EXC(r)             (&((KosDynNode *)(r))->u.try_.exc)
 #define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
-#define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
-#define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
-#define KosDynFinally_HANDLING_CONTROL(r) (((KosDynNode *)(r))->u.finally_.handling_control)
-#define KosDynFinally_EXC_SAVED(r)   (((KosDynNode *)(r))->u.finally_.exc_saved)
-#define KosDynFinally_EXC_FROZEN(r)  (((KosDynNode *)(r))->u.finally_.exc_frozen)
-#define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)
+#define KosDynFinally_ENABLED(r) \
+  (((KosDynNode *)(r))->u.finally_.exc.lent[0])
+#define KosDynFinally_HANDLING_RAISE(r) \
+  (((KosDynNode *)(r))->u.finally_.exc.lent[1])
+#define KosDynFinally_HANDLING_CONTROL(r) \
+  (((KosDynNode *)(r))->u.finally_.exc.lent[2])
+#define KosDynFinally_EXC(r)         (&((KosDynNode *)(r))->u.finally_.exc)
 #define KosDynFinally_HANDLING(r)    (&((KosDynNode *)(r))->u.finally_.handling)
 
 /* The region record of a LOOP or a FOREACH, read the same way for
@@ -2562,14 +2576,13 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
-#define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.self_bind)
-#define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
-#define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
+#define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.exc.lent[0])
+#define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.exc.lent[1])
+#define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.exc.lent[2])
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)
-#define KosDynWith_EXC_SAVED(n)    (((KosDynNode *)(n))->u.with.exc_saved)
-#define KosDynWith_SAVED(n)        (&((KosDynNode *)(n))->u.with.saved)
+#define KosDynWith_EXC(n)          (&((KosDynNode *)(n))->u.with.exc)
 
 
 /**

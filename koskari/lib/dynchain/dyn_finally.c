@@ -39,9 +39,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, KosOp *handler_pc) {
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_CONTROL(node) = 0;
-  KosDynFinally_EXC_SAVED(node) = 0;
-  KosDynFinally_EXC_FROZEN(node) = 0;
-  KosExc_Init(KosDynFinally_SAVED(node));
+  kos_exc_slot_init(KosDynFinally_EXC(node));
   KosExc_Init(KosDynFinally_HANDLING(node));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
@@ -59,10 +57,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_ENABLED(clone) = KosDynFinally_ENABLED(node);
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);
   KosDynFinally_HANDLING_CONTROL(clone) = KosDynFinally_HANDLING_CONTROL(node);
-  KosDynFinally_EXC_SAVED(clone) = KosDynFinally_EXC_SAVED(node);
-  KosDynFinally_EXC_FROZEN(clone) = KosDynFinally_EXC_FROZEN(node);
-  KosExc_Init(KosDynFinally_SAVED(clone));
-  KosExc_Copy(KosDynFinally_SAVED(clone), KosDynFinally_SAVED(node));
+  kos_exc_slot_copy(KosDynFinally_EXC(clone), KosDynFinally_EXC(node));
   KosExc_Init(KosDynFinally_HANDLING(clone));
   KosExc_Copy(KosDynFinally_HANDLING(clone), KosDynFinally_HANDLING(node));
   return clone;
@@ -73,7 +68,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
    Release both exception states; return node to freelist.
 */
 void kos_dynfinally_free(KosDynFinally *node) {
-  KosExc_Clear(KosDynFinally_SAVED(node));
+  KosExc_Clear(&KosDynFinally_EXC(node)->saved);
   KosExc_Clear(KosDynFinally_HANDLING(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -140,7 +135,7 @@ int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
    GC traverse a KOS_DYN_FINALLY: both exception states.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
-  if (KosExc_Traverse(KosDynFinally_SAVED((KosDynFinally *) node), visit, arg))
+  if (KosExc_Traverse(&KosDynFinally_EXC(node)->saved, visit, arg))
     return -1;
   return KosExc_Traverse(KosDynFinally_HANDLING((KosDynFinally *) node),
                          visit, arg);
