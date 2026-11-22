@@ -31,6 +31,7 @@ BENCHMARK = Benchmark(
     ki=_ki.churn_gen_wind,
     expected=400040000,
     tags=("generator",),
+    perf=True,
 )
 
 

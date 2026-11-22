@@ -14,9 +14,8 @@
 """
 churn_shift_abort benchmark: one early exit per step, through one call
 
-The Koskari kernel shifts and drops the continuation, so the value
-leaves through the reset. The Python variant raises an exception
-carrying the value and catches it one frame up.
+The kernel shifts and drops the continuation, so the value leaves
+through the reset.  Perf only: Python has no continuation to drop.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -26,35 +25,14 @@ from ki import shift_abort as _ki
 from registry import Benchmark
 
 
-MASK32 = 0xFFFFFFFF
-
-
-class Escape(Exception):
-    pass
-
-
-def escape(x):
-    raise Escape((x * 1664525 + 1013904223) & MASK32)
-
-
-def churn_shift_abort(n, x):
-    i = 0
-    while i < n:
-        try:
-            x = 1 + escape(x)
-        except Escape as esc:
-            x = esc.args[0]
-        i += 1
-    return x
-
-
 BENCHMARK = Benchmark(
     name="shift_abort",
     runs=50,
     args=(20000, 1),
-    py=churn_shift_abort,
     ki=_ki.churn_shift_abort,
+    expected=1453904673,
     tags=("continuation",),
+    perf=True,
 )
 
 

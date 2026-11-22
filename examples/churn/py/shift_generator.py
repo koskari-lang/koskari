@@ -15,11 +15,9 @@
 churn_shift_generator benchmark: a producer suspended and resumed once
 per value
 
-The Koskari kernel shifts each value out with the continuation that
-goes on to the next, and the consumer calls it once. The Python variant
-is a generator stepped with next. Python resumes the one generator
-frame where Koskari resumes a copy of the captured region, so the ratio
-measures that difference.
+The kernel shifts each value out with the continuation that goes on to
+the next, and the consumer calls it once.  Perf only: a Python generator
+resumes its one frame where this resumes a copy of the captured region.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -29,32 +27,14 @@ from ki import shift_generator as _ki
 from registry import Benchmark
 
 
-MASK32 = 0xFFFFFFFF
-
-
-def produce(items):
-    for v in items:
-        yield v
-
-
-def churn_shift_generator(n):
-    data = list(range(n))
-    acc = 0
-    gen = produce(data)
-    step = next(gen, None)
-    while step is not None:
-        acc = (acc * 31 + step) & MASK32
-        step = next(gen, None)
-    return acc
-
-
 BENCHMARK = Benchmark(
     name="shift_generator",
     runs=500,
     args=(2000,),
-    py=churn_shift_generator,
     ki=_ki.churn_shift_generator,
+    expected=765768680,
     tags=("continuation", "generator"),
+    perf=True,
 )
 
 

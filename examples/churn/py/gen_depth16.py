@@ -32,6 +32,7 @@ BENCHMARK = Benchmark(
     ki=_ki.churn_gen_depth16,
     expected=199990000,
     tags=("generator",),
+    perf=True,
 )
 
 

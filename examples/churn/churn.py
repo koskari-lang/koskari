@@ -109,7 +109,7 @@ def run_benchmark(bench, mode, samples, warmup):
         return reporter.Result(
             name=bench.name, mode=mode, tags=bench.tags,
             expected=bench.expected, timings=[], ok=True,
-            note="skipped (koskari-only case, no python variant)")
+            note="skipped (perf-only kernel, no python variant)")
 
     timings = []
     answers = []
@@ -131,10 +131,12 @@ def run_benchmark(bench, mode, samples, warmup):
         expected=bench.expected, timings=timings, ok=ok)
 
 
-def select(registry_map, names, tags):
+def select(registry_map, names, tags, perf):
     """
-    Resolve the requested benchmark names.  Explicit names win; else any
-    benchmark carrying one of ``tags``; else every benchmark.
+    Resolve the requested benchmark names.  Explicit names win, whatever
+    their kind; else any benchmark carrying one of ``tags``; else every
+    benchmark.  The last two leave out the perf-only kernels unless
+    ``perf`` is set.
     """
 
     if names:
@@ -143,12 +145,10 @@ def select(registry_map, names, tags):
                 raise SystemExit("unknown benchmark: %s" % name)
         return list(names)
 
-    if tags:
-        wanted = set(tags)
-        return [name for name, bench in registry_map.items()
-                if wanted.intersection(bench.tags)]
-
-    return list(registry_map.keys())
+    wanted = set(tags)
+    return [name for name, bench in registry_map.items()
+            if (perf or not bench.perf)
+            and (not wanted or wanted.intersection(bench.tags))]
 
 
 def parse_args(argv=None):
@@ -156,10 +156,13 @@ def parse_args(argv=None):
         description="Run Koskari churn microbenchmarks")
     parser.add_argument(
         "names", nargs="*", metavar="NAME",
-        help="benchmarks to run (default: all)")
+        help="benchmarks to run (default: every comparison)")
     parser.add_argument(
         "--tag", action="append", default=[], metavar="TAG",
         help="select benchmarks carrying this tag (repeatable)")
+    parser.add_argument(
+        "--perf", action="store_true",
+        help="add the perf-only kernels, which have no Python variant")
     parser.add_argument(
         "--mode", choices=("compare", "koskari", "python"), default="compare",
         help="compare both, koskari only (tracing), or python only")
@@ -182,7 +185,7 @@ def run(opts):
     """
 
     registry_map = registry.discover()
-    selected = select(registry_map, opts.names, opts.tag)
+    selected = select(registry_map, opts.names, opts.tag, opts.perf)
 
     print("mode=%s  samples=%d  warmup=%d"
           % (opts.mode, opts.samples, opts.warmup))

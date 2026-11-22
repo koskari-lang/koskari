@@ -21,7 +21,8 @@ directly. Two environments drive the harness:
 
 ```bash
 # Comparison: Python vs Koskari, answers cross-checked (default mode)
-tox -qe churn                      # all benchmarks
+tox -qe churn                      # every comparison
+tox -qe churn -- --perf            # the perf-only kernels as well
 tox -qe churn -- loop tree method  # a subset, by name
 tox -qe churn -- --tag game        # a family, by tag
 tox -qe churn -- --json out.json   # also write a metrics payload
@@ -48,8 +49,13 @@ takes the last value).
 | `koskari` | Koskari only | `== expected` when set | tracing; no Python cost |
 | `python` | Python only | `== expected` when set | profile the reference alone |
 
-Koskari-only benchmarks (no Python variant) run their Koskari side in `compare`
-too, checking `expected`; they are skipped only under `--mode python`.
+A **perf-only** kernel (`perf=True` in its descriptor) watches a cost of the
+evaluator that no Python program has: a generator's scope depth, a `dyn-wind`
+around a `yield`, a delimited continuation. It has no Python variant. A run
+leaves it out unless it is named or `--perf` is given; it then runs its
+Koskari side in `compare` too, checking `expected`, and is skipped only under
+`--mode python`. The perf counter collection (`make perf`) names every kernel,
+so it measures these as before.
 
 A **hosted** benchmark (`hosted=True` in its descriptor) is an async case:
 each call is driven to completion on one asyncio event loop instead of the
@@ -61,7 +67,9 @@ called bare and its coroutine handed to the loop. The per-call
 
 - **By name:** positional arguments — `tox -qe churn -- loop pidigits`.
 - **By tag:** `--tag NAME` (repeatable) — `tox -qe churn -- --tag game --tag attr`.
-- **All:** pass nothing.
+- **Every comparison:** pass nothing.
+- **With the perf-only kernels:** `--perf`, alone or with `--tag`. A kernel
+  named outright runs whatever its kind.
 
 Tags in use: `dispatch`, `call`, `keyword`, `method`, `recursion`,
 `iteration`, `alloc`, `attr`, `slots`, `branch`, `match`, `loop`, `str`,
@@ -73,6 +81,7 @@ Tags in use: `dispatch`, `call`, `keyword`, `method`, `recursion`,
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--mode {compare,koskari,python}` | `compare` | which variants to run |
+| `--perf` | off | add the perf-only kernels to an unnamed selection |
 | `--samples N` | 5 | measured batches per variant |
 | `--warmup N` | 1 | warmup batches discarded before measuring |
 | `--json PATH` | — | write the metrics payload to PATH |
@@ -164,14 +173,14 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `demand_call_method` | `map` over a bound method; the Koskari side goes through `demand` | deterministic baseline |
 | `demand_call_param` | `demand_call` with one dynamic binding read per call: `parameterize` on the Koskari side, a `contextvars` binding on the Python side | deterministic baseline |
 | `yieldfrom` | `yield-from` delegation, consumed fully and abandoned after one value | deterministic baseline |
-| `gen_depth0`, `gen_depth4`, `gen_depth16` | a generator stepped by `for-each` whose `yield` sits inside 0, 4 or 16 nested `let` scopes; Koskari only, one kernel module | sum of range(20000) |
+| `gen_depth0`, `gen_depth4`, `gen_depth16` | a generator stepped by `for-each` whose `yield` sits inside 0, 4 or 16 nested `let` scopes; perf only, one kernel module | sum of range(20000) |
 | `gen_try` | a generator whose `yield` sits in the handler of a `try`, the handled exception live across every step | sum of range(20000) |
-| `gen_wind` | generators whose `yield` sits inside a `dyn-wind` whose segments do nothing, run at every yield and every step, and inside a `parameterize`; Koskari only | deterministic baseline |
+| `gen_wind` | generators whose `yield` sits inside a `dyn-wind` whose segments do nothing, run at every yield and every step, and inside a `parameterize`; perf only | deterministic baseline |
 | `raise_unwind` | one raise per step, sixteen frames below the `try` that handles it | handled count 2000 |
-| `reset_plain` | one `reset` per step whose body never shifts; a `try` block that never raises on the Python side | — |
-| `shift_abort` | one `abort` per step, through one call; a raise caught one frame up on the Python side | — |
-| `shift_generator` | a producer that shifts each value out with its continuation, resumed once per value; a generator stepped with `next` on the Python side | — |
-| `shift_amb` | a three-level search where each choice is a `shift` whose handler calls the continuation once per choice; three nested loops on the Python side | the six Pythagorean triples under 21 |
+| `reset_plain` | one `reset` per step whose body never shifts; perf only | deterministic baseline |
+| `shift_abort` | one `abort` per step, through one call; perf only | deterministic baseline |
+| `shift_generator` | a producer that shifts each value out with its continuation, resumed once per value; perf only | deterministic baseline |
+| `shift_amb` | a three-level search where each choice is a `shift` whose handler calls the continuation once per choice; perf only | the six Pythagorean triples under 21 |
 | `coro_call` | hosted: `asyncio.gather` over one coroutine per element; the Koskari side gathers Koskari Coroutines | deterministic baseline |
 | `coro_await` | hosted: serial `await` of one coroutine per element; the Koskari side awaits Koskari Coroutines | deterministic baseline |
 | `coro_send` | `send(None)` into one coroutine per element, result taken from its StopIteration; the Koskari side sends into Koskari Coroutines | deterministic baseline |
@@ -209,8 +218,8 @@ the driver discovers every non-underscore module in `py/`.
        acc
    ```
 
-2. **Variant + descriptor** — `py/<name>.py`, the Python variant (or `None`
-   for a Koskari-only case) and the `BENCHMARK` the driver reads:
+2. **Variant + descriptor** — `py/<name>.py`, the Python variant (none for
+   a perf-only kernel) and the `BENCHMARK` the driver reads:
 
    ```python
    from ki import square_sum as _ki
@@ -228,11 +237,12 @@ the driver discovers every non-underscore module in `py/`.
        name="square_sum",
        runs=50,
        args=(1_000_000,),
-       py=square_sum,          # None => koskari-only
+       py=square_sum,          # left out for a perf-only kernel
        ki=_ki.square_sum,
        expected=None,          # a known value makes it self-validating
        tags=("loop",),
        hosted=False,           # True => drive each call on an event loop
+       perf=False,             # True => no Python variant; run by name or --perf
    )
    ```
 
@@ -244,7 +254,7 @@ Python attribute access, so `_ki.square_sum` only resolves if the kernel defines
 
 For a **float** kernel, write every constant with the *identical* decimal
 string in both languages and round the result (e.g. `(round x 9)`) so the two
-doubles compare equal. For a Koskari-only case, capture the deterministic
+doubles compare equal. For a perf-only kernel, capture the deterministic
 result once (via `--json`) and set it as `expected`.
 
 ## Layout

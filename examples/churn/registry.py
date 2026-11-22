@@ -45,6 +45,10 @@ class Benchmark:
     an asyncio event loop instead of the demand path.  The Python variant is
     then an ``async def`` and the Koskari kernel is called bare, its
     coroutine handed to the loop.
+
+    ``perf`` marks a kernel kept for watching the evaluator's own cost, with
+    no Python program that does the same work.  It has no Python variant, and
+    a run selects it only by name or under ``--perf``.
     """
 
     name: str
@@ -55,6 +59,7 @@ class Benchmark:
     expected: typing.Optional[object] = None
     tags: typing.Tuple = ()
     hosted: bool = False
+    perf: bool = False
 
 
 def discover():
