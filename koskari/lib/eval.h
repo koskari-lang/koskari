@@ -1335,10 +1335,21 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosContext *ctx,
     KosDynFrame *frame) {
 
-  /* kos_dynnode_link, for a node known to be a frame */
-  KosDynNode_PARENT(frame) = KosContext_DYN_TOP(ctx);
-  KosDynNode_SKIP(frame) = kos_dynnode_skip_under(KosContext_DYN_TOP(ctx));
-  kos_dynframe_note_parent(frame);
+  /* kos_dynnode_link, for a node known to be a frame. A frame carries
+     no skip bit, so a frame on a frame takes its parent's skip link
+     with no test of the parent's caps beyond the one for its kind. */
+  {
+    KosDynNode *parent = KosContext_DYN_TOP(ctx);
+
+    KosDynNode_PARENT(frame) = parent;
+    if (likely(parent && KosDynNode_IS_FRAME(parent))) {
+      KosDynNode_SKIP(frame) = KosDynNode_SKIP(parent);
+      KosDynFrame_FLAGS(frame) |= KOS_FRAME_PARENT_IS_FRAME;
+    } else {
+      KosDynNode_SKIP(frame) = kos_dynnode_skip_under(parent);
+      KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_PARENT_IS_FRAME;
+    }
+  }
   KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
 
   {

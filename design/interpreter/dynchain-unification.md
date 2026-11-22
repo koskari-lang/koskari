@@ -141,7 +141,9 @@ static inline void kos_dynnode_link(KosDynNode *node, KosDynNode *parent) {
 }
 ```
 
-Rules, asserted under `KOS_EVAL_SAFETYNET`:
+Rules. The native tests check the skip links (`kos_dyn_skips_hold`).
+The safety net does not: it turns a memory fault into an exception and
+audits no structure.
 
 - **R1.** A node may lose a skip bit at any time. A walk re-tests
   `caps` on every node reached through `skip`. Bits outside the mask
@@ -159,9 +161,11 @@ Rules, asserted under `KOS_EVAL_SAFETYNET`:
     value up the tail.
   - A resting generator span's bottom is its root frame, and its tail
     names the GEN. The state reuses that GEN node, so the tail is
-    already right at install and only the GEN is relinked: O(1).
-  - A chain moved between contexts need not end in a GEN. Its tail
-    repair is folded into the per-frame loop of the attach.
+    already right at install and only the GEN is relinked: O(1). The
+    install compares the bottom's `skip` with the GEN and relinks the
+    span (`kos_dyn_relink_skips`) only when they differ.
+  - A chain moved between contexts need not end in a GEN. The attach
+    relinks the whole span with `kos_dyn_relink_skips`.
   - A clone attached in pieces repairs the first piece's tail only. A
     later piece's bottom goes back onto the split point it was cut
     from, which is its `skip` already.
@@ -406,19 +410,15 @@ uses.
 - `KosDynNode_IS_FRAME`, `_IS_GEN` and `_IS_CC` test bits.
 - Add `kos_dynnode_link`, and `tail` to `KosCloneShape`.
 
-Init sites gain bits: `dyn_frame.c:73`, `:413` (`FRAME | MAJOR`);
-`dyn_prompt.c:41` (`INTERCEPT`); `dyn_gen.c:56` (`GEN`);
-`dyn_cc.c` (`CC`); `dyn_param.c:74` (`EFFECT | MAJOR`); `dyn_try.c:37`,
-`dyn_finally.c:37` (`EFFECT | MAJOR`); `dyn_wind.c:42`,
-`dyn_with.c:54`, `dyn_loop.c:40`, `dyn_foreach.c:41`, `dyn_ns.c:40`,
-`dyn_collect.c:44` (`MAJOR`).
+The caps fixed for a kind come from one table, `kos_dyn_kind_caps` in
+`dynchain.c`, which `kos_dynnode_init` adds to what its caller passes.
+An init site passes only what varies within its kind.
 
 Whole-field caps writes become bit operations:
 
 - `func.c:1870`: `|= KOS_DYN_CAP_OWNS_NS`.
 - `dyn_frame.c:527` (`kos_dynframe_cache_inert`):
   `&= ~KOS_DYN_CAP_OWNS_NS`.
-- Assert `FRAME | MAJOR` at frame pop under the safety net.
 
 `kos_dyn_node_same_phase` (`dynchain.c:2453`) compares whole `caps`
 fields. That stays correct: the new bits are fixed per kind and copied
@@ -434,20 +434,20 @@ Parent writes:
 | --- | --- | --- |
 | `dynchain.c:140` `kos_dynnode_init` | parent at init | `kos_dynnode_link` |
 | `dynchain.c:248` freelist | link reuse | unchanged |
-| `dynchain.c:723`, `:2180`, `:2187`, `dyn_frame.c:522`, `:571`, `:640`, `dyn_loop.c:126`, `func.c:1866` | NULL as the node is freed or cached | `kos_dynnode_link(node, NULL)` |
+| `dynchain.c:723`, `:2180`, `:2187`, `dyn_frame.c:522`, `:571`, `:640`, `dyn_loop.c:126`, `func.c:1866` | NULL as the node is freed or cached | raw write: the freelist or cache link sets `skip` at reuse |
 | `dynchain.c:1407`, `:1464` `kos_dyn_clone_segment` | clone links | R4 pending list |
 | `dynchain.c:2412` `kos_dyn_unlink_top_keep` | NULL on a kept node | cut: `skip` kept |
 | `xfer_goal.c:475`, `:476`, `:479` `goal_keep_node` | kept node into the template | raw writes; re-point a `skip` naming the live prompt (R4) |
 | `dynchain.c:2787`, `xfer_plan.c:104` | clone bottom off its stop | cut |
 | `xfer_goal.c:599` | rest of the target off its split point | cut |
 | `xfer_goal.c:606` `goal_attach` | piece bottom onto its base | `kos_dynnode_link`; first piece repairs the tail from `shape->tail` |
-| `eval.h:1338` frame push | parent is `dyn_top` | `kos_dynnode_link`, or `kos_dynnode_link_frame` without the NULL test if the budget needs it |
-| `dyn_frame.c:618` tail swap | ready frame takes the live frame's parent | `kos_dynnode_link`; the live frame is `dyn_top`, so nothing names it |
+| `eval.h:1338` frame push | parent is `dyn_top` | written out in `kos_dyn_push_ready_frame`: a frame on a frame copies its parent's `skip` inside the parent-kind test it already makes |
+| `dyn_frame.c:618` tail swap | ready frame takes the live frame's parent | parent and `skip` copied from the live frame; the live frame is `dyn_top`, so nothing names it |
 | `dyn_walk.c:78` freeze | span bottom off the GEN | cut |
 | `dyn_gen.c:68` `kos_dyngen_rest` | GEN off the consumer | `kos_dynnode_link(gen, NULL)` |
 | `dyn_gen.c:287`, `:419` | GEN onto `dyn_top` | `kos_dynnode_link` |
 | `dyn_gen.c:288`, `:406` | span bottom onto the GEN | `kos_dynnode_link` |
-| `dyn_gen.c:541` `kos_dyn_span_attach` | root onto `dyn_top` | `kos_dynnode_link`, then the tail repair in the frame loop at `:550` |
+| `dyn_gen.c:541` `kos_dyn_span_attach` | root onto `dyn_top` | `kos_dynnode_link`, then `kos_dyn_relink_skips` over the span |
 
 Lookups to convert: `kos_dyn_find_gen`, `kos_dyn_yield_gen`
 (`dyn_gen.c:126`), `kos_dyn_find_cc` (`dynchain.c:2677`), the PROMPT
@@ -457,12 +457,10 @@ and GEN cases of `kos_prompt_seek` (`dynchain.c:2838`, by `BARRIER` and
 `KosDynNode_IS_` in conditions outside a behaviour switch and list any
 left.
 
-Safety net: after every span install, context-move attach and clone
-attach, recompute each attached node's `skip` by a parent walk and
-compare. R2: assert `node == dyn_top` wherever a skip bit is set after
-init.
+The native tests check the skip links after a span install, a
+context-move attach and a clone attach. No safety-net check reads them.
 
-Nothing reads `skip` in this stage but that check.
+Nothing else reads `skip` in this stage.
 
 ### 6.2 Stage 2: effect list and the context move
 
@@ -499,9 +497,8 @@ Nothing reads `skip` in this stage but that check.
   when one fails.
 - `kos_dyn_gen_install_bootstrap` (`:352`) keeps its counting walk: it
   runs once per generator.
-- Under the safety net, assert each computed count against an
-  `IS_FRAME` walk. A mismatch is a stop, reported with the frame that
-  broke contiguity.
+- The computed counts get no safety-net audit. A native test compares
+  them with an `IS_FRAME` walk.
 
 New fragment `dynchain/dyn_span.c`, included from `dynchain.c` and
 added to `depends` in `setup.py`:
@@ -511,7 +508,7 @@ added to `depends` in `setup.py`:
 - Detach: skip walk to `outer`, effect functions only, the thread
   exception swap at `:484` kept. Record `top_frame`.
 - Attach: room check and renumber from `DEPTH(top_frame)`; effects in
-  from the span's list; the frame loop at `:550` also repairs the tail.
+  from the span's list; `kos_dyn_relink_skips` repairs the skip links.
   The frame renumber and the demand-bit loop stay (D2).
 
 `coro.c:1027` and `iterate.c:1054`: the room check reads the depth of
@@ -654,7 +651,7 @@ resume kind.
 `tests/native/` (C):
 
 - Skip links after push, clone (skip-bit node at top, middle, bottom),
-  keep, span freeze and install; an R2 violation caught.
+  keep, span freeze and install.
 - Freeze and install with 0, 1, 2 and 3 effects; order outermost first;
   the array reused on the next yield.
 - Effect list allocation failure at a yield: `MemoryError`, span and
