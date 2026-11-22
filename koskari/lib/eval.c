@@ -2565,9 +2565,15 @@ static KosOpResult eval_event_yield(
      pcs when it switches to the consumer's. */
   SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
        (void *) gen, (void *) KosContext_DYN_TOP(ctx));
-  if (kos_dyn_gen_freeze(ctx, gen) < 0) {
-    Py_DECREF(val);
-    return EVAL_FATAL();
+  {
+    int frozen = kos_dyn_gen_freeze(ctx, gen);
+
+    if (frozen < 0) {
+      Py_DECREF(val);
+      /* -2: the freeze's effect list could not be sized, and nothing
+         has changed, so the yield raises where it stands */
+      return frozen == -2 ? EVAL_RAISE() : EVAL_FATAL();
+    }
   }
   {
     /* The consumer is the live frame once the freeze has detached the

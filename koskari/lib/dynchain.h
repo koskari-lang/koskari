@@ -286,6 +286,26 @@ typedef enum KosGenBusy {
 
 
 /**
+   An effect list: the nodes of a resting span whose effect is out
+   (kos_dyn_effect_out), innermost first, the order they went out in.
+   They go back in from the list's end, so each node finds the tables
+   as the node outside it left them. The nodes are the span's own and borrowed. Two entries are
+   held inline; a longer list moves to a heap array that the record
+   keeps from then on, so a list that has reached its size allocates
+   nothing more. cap is that array's capacity, or 0 while the list is
+   inline.
+*/
+typedef struct KosDynEffects {
+  union {
+    struct KosDynNode *pair[2];
+    struct KosDynNode **heap;
+  } items;
+  uint16_t count;
+  uint16_t cap;
+} KosDynEffects;
+
+
+/**
    A generator's state between installs, held by the generator object:
    the span resting out of any chain and what the next install needs
    to put it back. The span is the unstarted frame until the first
@@ -300,6 +320,10 @@ typedef enum KosGenBusy {
    generator's registers taken at the freeze, applied at install while
    active is still frozen.top. A guard mismatch falls back to the chain
    rebuild.
+
+   The span's frame count is not kept: its frames are numbered without
+   a gap, so the count is the depth of frozen.frame, the span's top
+   frame, less the bottom frame's, plus one.
 */
 typedef struct KosGenState {
   struct KosDynNode *active;   /* the resting span's top; NULL while
@@ -307,19 +331,17 @@ typedef struct KosGenState {
   struct KosDynNode *bottom;   /* the span's bottom node, the root frame */
   struct KosDynNode *node;     /* the GEN node resting between installs,
                                   or NULL */
-  uint16_t nframes;            /* frames in the span, counted at the
-                                  freeze for the install's room check */
   uint16_t base_depth;         /* consumer depth the span's frames are
                                   numbered for; UINT16_MAX until the
                                   first frozen install */
   uint8_t started;             /* the first install has entered the frame;
                                   a resting span resumes a yield rather
                                   than entering fresh code */
-  uint8_t installs;            /* a node of the resting span holds an
-                                  effect the install puts back */
   uint8_t busy;                /* KosGenBusy: a step is in flight, from
                                   the drive's start to the owner's
                                   finish; any nonzero value is busy */
+  KosDynEffects effects;       /* what the freeze took out and the
+                                  install puts back */
   KosLiveRegs host;
   KosLiveRegs frozen;
 } KosGenState;
@@ -1271,44 +1293,58 @@ void kos_dyngen_free(KosDynGen *gen);
 
 
 /**
-   A chain at rest between contexts: the span from head, the chain's
-   top, down to root, its bottom node with no parent, each node's
-   outward effect taken back and its frames counted. A parked
-   coroutine's or stepper's chain travels onto an awaiter's chain in
-   one of these; the generator's own resting span is its KosGenState.
+   A chain at rest between contexts: a context's whole chain from
+   head, its top, down to a bottom node with no parent, each node's
+   outward effect taken out and listed. top_frame is the chain's top
+   frame, or NULL: the chain was numbered on a context of its own, so
+   that frame's depth is the chain's frame count until an attach
+   renumbers it. gen is the GEN at the chain's bottom, or NULL when
+   the bottom is not one. A parked coroutine's or stepper's chain
+   travels onto an awaiter's chain in one of these; the generator's
+   own resting span is its KosGenState. This is a context switch: no
+   extent leaves or enters and no user code runs. Implemented in
+   dynchain/dyn_span.c.
 */
 typedef struct KosDynSpan {
   struct KosDynNode *head;
-  struct KosDynNode *root;
-  uint16_t nframes;
-  uint8_t installs;
+  struct KosDynNode *top_frame;
+  struct KosDynNode *gen;
+  KosDynEffects effects;
 } KosDynSpan;
 
 
 /**
    Take ctx's whole chain off it as a resting span. The chain must be
-   at rest, parked at a suspension with nothing running on it. Each
-   node's outward effect is taken back (kos_dyn_extent_freeze), the
-   frames are counted for the attach's room check, and ctx is left
-   with no chain and cleared registers; everything else it holds stays.
-   Cannot fail.
+   at rest, parked at a suspension with nothing running on it. The
+   nodes that carry a skip bit are the only ones visited: each live
+   effect is listed and taken out (kos_dyn_effect_out), and ctx is
+   left with no chain and cleared registers; everything else it holds
+   stays. Returns 0, or -1 with MemoryError set and nothing changed,
+   when the list could not be sized.
 */
-void kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span);
+int kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span);
 
 
 /**
    Put a resting span onto ctx's chain under its top. The frames are
-   checked for room above the live frame and renumbered from its
-   depth, each node's effect is put back over ctx's tables, the root
-   is linked under the top with its unwind caches naming the live
-   frame and block, the registers follow the span's head, and every
-   frame of the span takes the live frame's demand bit. Returns 0 with
-   the span emptied, or -1 with PyErr set and the span resting as it
-   was: refused for room before anything moved, or an effect's install
-   failed with the effects put back out. A context with no chain takes
+   checked for room above the live frame, each listed effect is put
+   back over ctx's tables, the frames are renumbered from the live
+   frame's depth and take its demand bit, the bottom is linked under
+   the top with its unwind caches naming the live frame and block,
+   and the registers follow the span's head. Returns 0 with the span
+   emptied, or -1 with PyErr set and the span resting as it was:
+   refused for room before anything moved, or an effect refused with
+   the ones before it taken out again. A context with no chain takes
    the span as its whole chain.
 */
 int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span);
+
+
+/**
+   Give up a resting span's effect list: the span that could be
+   attached nowhere. The chain itself is the caller's to free.
+*/
+void kos_dyn_span_drop(KosDynSpan *span);
 
 
 /**
@@ -1898,23 +1934,6 @@ void kos_dyn_extent_abort(KosDynNode *node);
 
 
 /**
-  freeze / install: a generator freeze moves the span above the GEN off
-  the live chain intact, and the install moves it back. A kind whose
-  effect lives outside its node (PARAM: the cells it swapped into the
-  context's table) takes that effect out at the freeze and puts it back
-  at the install, over the table as it is then. Every other kind is a
-  no-op. freeze cannot fail and returns 1 when it took an effect out
-  that the install must put back, else 0; install returns 0, or -1
-  with PyErr set and the node's effect not applied.
-
-  Callers: kos_dyn_gen_freeze, kos_dyn_gen_install.
-*/
-int kos_dyn_extent_freeze(KosContext *ctx, KosDynNode *node);
-
-int kos_dyn_extent_install(KosContext *ctx, KosDynNode *node);
-
-
-/**
   True when node is a CONTROL_HOOK node whose enter or leave is in
   flight.
 */
@@ -2019,13 +2038,18 @@ KosOp *kos_dynnode_catch_resume_pc(KosDynNode *node);
   retarget to it. A yield is not an unwind: no node between the frame
   and its GEN acts on it (no finally, no __exit__), so the open extents
   freeze with the chain and return on the next install. A node whose
-  effect lives outside itself takes it out (kos_dyn_extent_freeze) and
-  puts it back at the install. gen is the node kos_dyn_find_gen
-  returned for the running frame.
+  effect lives outside itself takes it out (kos_dyn_effect_out) and
+  the install puts it back: the freeze follows the skip links from
+  dyn_top to gen, lists the live effects in the state, then takes
+  them out innermost first. The list is sized before anything
+  changes. gen is the node kos_dyn_find_gen returned for the running
+  frame.
 
   Callers: eval.c eval_event_yield.
 
-  :return: 0, or -1 with PyErr set
+  :return: 0; -1 with PyErr set; or -2 with MemoryError set and the
+      chain, the span and its effects as they were, when the list
+      could not be sized
 */
 int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen);
 

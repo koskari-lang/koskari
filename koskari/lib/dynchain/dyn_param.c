@@ -258,7 +258,7 @@ int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
 
 /**
    Restore outer param values on extent unwind. Callers:
-   kos_dyn_extent_freeze and kos_dyn_uninstall_handler.
+   kos_dyn_effect_out and kos_dyn_uninstall_handler.
 */
 void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
   if (KOS_XFER_TRACE)

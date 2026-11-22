@@ -180,13 +180,19 @@ audits no structure.
 
 ### 4.3 Effects at a yield
 
-A generator's state holds an effect list: the span nodes whose state is
-swapped out while it rests, outermost first.
+A generator's state holds an effect list (`KosDynEffects`): the span
+nodes whose state is swapped out while it rests, innermost first, the
+order they go out in. They go back in from the list's end.
 
 - The freeze is a skip walk from `dyn_top` to the GEN. It collects with
-  a predicate that changes nothing, then acts. The list's allocation is
-  the only step that can fail, and it fails before the chain changes:
-  `MemoryError` at the yield, span and effects untouched.
+  a predicate that changes nothing, then acts. The walk fills the room
+  the list has as it counts, and is made a second time only when the
+  list had to grow. The list's allocation is the only step that can
+  fail, and it fails before the chain changes: `MemoryError` at the
+  yield, span and effects untouched (`kos_dyn_gen_freeze` answers -2
+  and the yield raises).
+- A span with no skip-bit node is one compare in the freeze: the top's
+  skip link is the GEN.
 - Two entries are inline. A longer list uses a heap array the state
   keeps and grows, so a step never allocates once the array is sized.
 - The install walks the list and nothing else. An empty list does
@@ -477,7 +483,9 @@ Nothing else reads `skip` in this stage.
 - Split `kos_dyn_extent_freeze` (`:1112`) into `kos_dyn_effect_live`
   (PARAM: always; TRY, FINALLY: handling and not frozen, the test at
   `:1034`) and `kos_dyn_effect_out`. `kos_dyn_extent_install` (`:1133`)
-  becomes `kos_dyn_effect_in`.
+  becomes `kos_dyn_effect_in`. The three are static to `dynchain.c`,
+  beside the list functions `kos_dyn_effects_collect`, `_out` and
+  `_in` that the freeze, the install and the context move share.
 - `kos_dyn_keep_leave` (`:2326`) calls `kos_dyn_effect_out` for PARAM,
   TRY and FINALLY.
 
@@ -506,10 +514,19 @@ added to `depends` in `setup.py`:
 - Move `kos_dyn_span_detach` and `kos_dyn_span_attach` there from
   `dyn_gen.c:467` and `:505`.
 - Detach: skip walk to `outer`, effect functions only, the thread
-  exception swap at `:484` kept. Record `top_frame`.
-- Attach: room check and renumber from `DEPTH(top_frame)`; effects in
-  from the span's list; `kos_dyn_relink_skips` repairs the skip links.
-  The frame renumber and the demand-bit loop stay (D2).
+  exception swap at `:484` kept. Record `top_frame`. The walk does not
+  reach a bottom with no skip bit, so the span records no root: it
+  records `gen`, the GEN at the chain's bottom when the outermost
+  skip-bit node is one with no parent. The detach can refuse, with
+  `MemoryError` and nothing changed, when its list cannot be sized.
+- Attach: room check from `DEPTH(top_frame)`; effects in from the
+  span's list; then one walk that renumbers the frames, sets their
+  demand bit and finds the bottom; `kos_dyn_relink_skips` repairs the
+  skip links. Nothing is renumbered before a refusal, so a second
+  attach reads the same count. The renumber and the demand-bit
+  assignment stay (D2), as that one walk.
+- `kos_dyn_span_drop` gives up the list of a span that could be
+  attached nowhere.
 
 `coro.c:1027` and `iterate.c:1054`: the room check reads the depth of
 the context's top frame.
@@ -652,7 +669,7 @@ resume kind.
 
 - Skip links after push, clone (skip-bit node at top, middle, bottom),
   keep, span freeze and install.
-- Freeze and install with 0, 1, 2 and 3 effects; order outermost first;
+- Freeze and install with 0, 1, 2 and 3 effects; order innermost first;
   the array reused on the next yield.
 - Effect list allocation failure at a yield: `MemoryError`, span and
   effects unchanged.
@@ -717,7 +734,7 @@ No stage may regress any kernel by more than 1%.
 | PROMPT, CC, GEN | 232 B | 56 B |
 | Resting generator, no regions | 464 B | 288 B |
 | reset body (PROMPT and frame) | 464 B | 288 B |
-| `KosGenState` | 96 B | measured after stage 2 |
+| `KosGenState` | 96 B | 120 B |
 | Freelists at most | 29.7 KB | 33.3 KB |
 
 Report how often the effect list leaves its inline pair on the kernels.

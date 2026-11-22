@@ -745,6 +745,291 @@ static int test_frame_caps_survive_cache_reset(void) {
 }
 
 
+/* === Effect list tests === */
+
+
+/* A consumer's context with a generator's span installed on it: a
+   consumer frame, the GEN, the generator's frame, then count TRY nodes
+   each handling an exception, and a frame on top where the yield
+   runs. The trys are returned outermost first. */
+static KosContext *span_with_effects(
+    PyObject *owner,
+    KosGenState *state,
+    int count,
+    KosDynNode **trys) {
+
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosContext *ctx;
+
+    if (! ns || ! gen_ns)
+        return NULL;
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    if (! consumer || ! root)
+        return NULL;
+    ctx = KosContext_New(consumer, kos_tls_current());
+    if (! ctx)
+        return NULL;
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(state, root);
+    if (kos_dyn_gen_install_bootstrap(
+            ctx, owner, state, (KosDynNode *) root) < 0)
+        return NULL;
+    state->active = NULL;
+
+    for (int i = 0; i < count; i++) {
+        trys[i] = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+        if (! trys[i])
+            return NULL;
+        KosDynTry_EXC_SAVED(trys[i]) = 1;
+    }
+    if (! kos_dyn_push_frame_empty(ctx))
+        return NULL;
+    return ctx;
+}
+
+
+static KosDynNode **effects_items(KosDynEffects *fx) {
+    return fx->cap ? fx->items.heap : fx->items.pair;
+}
+
+
+/* Freeze and install a span holding count effects, twice over. */
+static int freeze_install_effects(int count) {
+
+    PyObject *owner = PyList_New(0);
+    KosGenState state;
+    KosDynNode *trys[4] = { NULL, NULL, NULL, NULL };
+    KosContext *ctx;
+    KosDynNode *top;
+    KosDynNode **heap = NULL;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    ctx = span_with_effects(owner, &state, count, trys);
+    TEST_ASSERT_NOT_NULL(ctx, "build the installed span");
+    top = KosContext_DYN_TOP(ctx);
+
+    for (int round = 0; round < 2; round++) {
+        KosDynGen *gen = kos_dyn_find_gen(ctx);
+
+        TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
+        TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 0, "freeze the span");
+        TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
+        TEST_ASSERT_EQ(state.effects.count, count, "every effect is listed");
+        for (int i = 0; i < count; i++) {
+            TEST_ASSERT_SAME(effects_items(&state.effects)[i],
+                             trys[count - 1 - i],
+                             "the list is innermost first");
+            TEST_ASSERT(KosDynTry_EXC_FROZEN(trys[i]), "the effect is out");
+        }
+        if (count > 2) {
+            TEST_ASSERT_EQ(state.effects.cap, count,
+                           "past two the list is on the heap");
+            if (round)
+                TEST_ASSERT_SAME(state.effects.items.heap, heap,
+                                 "the array is kept for the next yield");
+            heap = state.effects.items.heap;
+        } else {
+            TEST_ASSERT_EQ(state.effects.cap, 0, "two entries stay inline");
+        }
+
+        /* the count the install computes from depths is the walk's */
+        TEST_ASSERT_EQ(
+            (unsigned) KosDynFrame_DEPTH(state.frozen.frame)
+                - KosDynFrame_DEPTH(state.bottom) + 1u,
+            kos_dyn_frame_count(state.active, NULL),
+            "the span's depths give its frame count");
+
+        TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
+                       "install the span");
+        TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
+        TEST_ASSERT_EQ(state.effects.count, 0, "the list is used up");
+        for (int i = 0; i < count; i++)
+            TEST_ASSERT(! KosDynTry_EXC_FROZEN(trys[i]), "the effect is in");
+        TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
+    }
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze to tear down");
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_EQ(state.effects.cap, 0, "the clear frees the array");
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    return 0;
+}
+
+
+static int test_freeze_install_no_effects(void) {
+    return freeze_install_effects(0);
+}
+
+
+static int test_freeze_install_one_effect(void) {
+    return freeze_install_effects(1);
+}
+
+
+static int test_freeze_install_two_effects(void) {
+    return freeze_install_effects(2);
+}
+
+
+static int test_freeze_install_three_effects(void) {
+    return freeze_install_effects(3);
+}
+
+
+static PyMemAllocatorEx refusing_base;
+static int refusing = 0;
+
+
+static void *refusing_realloc(void *ctx, void *ptr, size_t size) {
+    if (refusing)
+        return NULL;
+    return refusing_base.realloc(ctx, ptr, size);
+}
+
+
+/* A freeze whose list cannot be sized refuses with MemoryError and
+   leaves the chain, the span and its effects as they were. */
+static int test_freeze_refused_changes_nothing(void) {
+
+    PyObject *owner = PyList_New(0);
+    KosGenState state;
+    KosDynNode *trys[4] = { NULL, NULL, NULL, NULL };
+    PyMemAllocatorEx hook;
+    KosContext *ctx;
+    KosDynNode *top;
+    KosDynGen *gen;
+    int r;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    ctx = span_with_effects(owner, &state, 3, trys);
+    TEST_ASSERT_NOT_NULL(ctx, "build the installed span");
+    top = KosContext_DYN_TOP(ctx);
+    gen = kos_dyn_find_gen(ctx);
+    TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
+
+    PyMem_GetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
+    hook = refusing_base;
+    hook.realloc = refusing_realloc;
+    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &hook);
+    refusing = 1;
+    r = kos_dyn_gen_freeze(ctx, gen);
+    refusing = 0;
+    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
+
+    TEST_ASSERT_EQ(r, -2, "the freeze refuses");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
+                "with MemoryError");
+    PyErr_Clear();
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the chain is whole");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(state.bottom), (KosDynNode *) gen,
+                     "the span is still on its GEN");
+    TEST_ASSERT_NULL(state.active, "the state holds no span");
+    TEST_ASSERT_EQ(state.effects.count, 0, "nothing is listed");
+    for (int i = 0; i < 3; i++)
+        TEST_ASSERT(! KosDynTry_EXC_FROZEN(trys[i]), "no effect went out");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 0, "a later freeze works");
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    return 0;
+}
+
+
+/* A chain that does not end in a GEN, moved from its own context to
+   under another's top: its effects go out and come back, its frames
+   are numbered from the frame it lands on, and its skip links hold. */
+static int span_move(int count) {
+
+    PyObject *ns = PyDict_New();
+    PyObject *own_ns = PyDict_New();
+    KosDynFrame *base;
+    KosDynFrame *root;
+    KosContext *ctx;
+    KosContext *own;
+    KosDynNode *trys[4] = { NULL, NULL, NULL, NULL };
+    KosDynNode *head;
+    KosDynSpan span;
+
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+    TEST_ASSERT_NOT_NULL(own_ns, "create the moved chain's ns");
+    base = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, own_ns);
+    TEST_ASSERT_NOT_NULL(base, "create the awaiter's frame");
+    TEST_ASSERT_NOT_NULL(root, "create the moved chain's frame");
+    ctx = KosContext_New(base, kos_tls_current());
+    own = KosContext_New(root, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the awaiter's context");
+    TEST_ASSERT_NOT_NULL(own, "create the chain's own context");
+
+    KosContext_EvalEnter(own, NULL);
+    for (int i = 0; i < count; i++) {
+        trys[i] = (KosDynNode *) kos_dyn_push_try(own, FAKE_INSN(1));
+        TEST_ASSERT_NOT_NULL(trys[i], "push a try");
+        KosDynTry_EXC_SAVED(trys[i]) = 1;
+    }
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(own), "push the top frame");
+    KosContext_EvalExit(own);
+    head = KosContext_DYN_TOP(own);
+
+    KosContext_EvalEnter(ctx, NULL);
+    TEST_ASSERT_EQ(kos_dyn_span_detach(own, &span), 0, "detach the chain");
+    TEST_ASSERT_NULL(KosContext_DYN_TOP(own), "its context holds no chain");
+    TEST_ASSERT_SAME(span.head, head, "the span names the chain's top");
+    TEST_ASSERT_NULL(span.gen, "the chain ends in no GEN");
+    TEST_ASSERT_EQ(span.effects.count, count, "every effect is listed");
+    for (int i = 0; i < count; i++) {
+        TEST_ASSERT_SAME(effects_items(&span.effects)[i],
+                         trys[count - 1 - i],
+                         "the list is innermost first");
+        TEST_ASSERT(KosDynTry_EXC_FROZEN(trys[i]), "the effect is out");
+    }
+    TEST_ASSERT_EQ(KosDynFrame_DEPTH(span.top_frame),
+                   kos_dyn_frame_count(head, NULL),
+                   "the top frame's depth is the chain's frame count");
+
+    TEST_ASSERT_EQ(kos_dyn_span_attach(ctx, &span), 0, "attach the chain");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), head, "the chain is on top");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(root), (KosDynNode *) base,
+                     "its bottom is on the awaiter's frame");
+    TEST_ASSERT_EQ(KosDynFrame_DEPTH(root), 2, "the bottom frame is numbered");
+    TEST_ASSERT_EQ(KosDynFrame_DEPTH(head), 3, "and the top frame after it");
+    TEST_ASSERT_EQ(span.effects.cap, 0, "the span's list is given up");
+    for (int i = 0; i < count; i++)
+        TEST_ASSERT(! KosDynTry_EXC_FROZEN(trys[i]), "the effect is in");
+    TEST_ASSERT(kos_dyn_skips_hold(head, NULL), "the skip links hold");
+
+    KosContext_EvalExit(ctx);
+    Py_DECREF(own);
+    Py_DECREF(ctx);
+    return 0;
+}
+
+
+static int test_span_move_no_effects(void) {
+    return span_move(0);
+}
+
+
+static int test_span_move_one_effect(void) {
+    return span_move(1);
+}
+
+
+static int test_span_move_three_effects(void) {
+    return span_move(3);
+}
+
+
 /* === Test runner === */
 
 
@@ -792,6 +1077,16 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_clone_skip_links_bit_at_bottom);
     RUN_TEST(test_clone_skip_links_no_bit);
     RUN_TEST(test_frame_caps_survive_cache_reset);
+
+    /* Effect list tests */
+    RUN_TEST(test_freeze_install_no_effects);
+    RUN_TEST(test_freeze_install_one_effect);
+    RUN_TEST(test_freeze_install_two_effects);
+    RUN_TEST(test_freeze_install_three_effects);
+    RUN_TEST(test_freeze_refused_changes_nothing);
+    RUN_TEST(test_span_move_no_effects);
+    RUN_TEST(test_span_move_one_effect);
+    RUN_TEST(test_span_move_three_effects);
 
     return 0;
 }

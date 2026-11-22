@@ -18,7 +18,7 @@
   Included by dynchain.c. The KOS_DYN_GEN node: the generator boundary
   that intercepts yields and denies shifts, on the chain only while
   the generator's span is installed, and the installs of a resting
-  span.
+  span. A chain moved between contexts is dyn_span.c's.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -64,8 +64,10 @@ KosDynGen *kos_dyngen_new(PyObject *owner, KosGenState *state) {
 
 void kos_dyngen_rest(KosDynGen *gen) {
 
+  /* kos_dynnode_link onto nothing, for a node known not to be a frame */
   KosDynGen_OWNER(gen) = NULL;
-  kos_dynnode_link((KosDynNode *) gen, NULL);
+  KosDynNode_PARENT(gen) = NULL;
+  KosDynNode_SKIP(gen) = NULL;
   KosDynGen_STATE(gen)->node = (KosDynNode *) gen;
 }
 
@@ -95,6 +97,9 @@ void kos_gen_state_clear(KosGenState *state) {
   state->node = NULL;
   if (node)
     kos_dyngen_free((KosDynGen *) node);
+
+  /* the list named nodes of the span just freed */
+  kos_dyn_effects_clear(&state->effects);
 }
 
 
@@ -168,26 +173,6 @@ void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
 
 
 /**
-   Put back what the freeze took out, outermost first, so each node's
-   record of the table beneath it is the consumer's table as it is now.
-   On a failure the nodes already installed are frozen again and the
-   span is as the freeze left it.
-*/
-static int kos_dyn_gen_install_span(KosContext *ctx, KosDynNode *node) {
-  if (! node)
-    return 0;
-  if (kos_dyn_gen_install_span(ctx, KosDynNode_PARENT(node)) < 0)
-    return -1;
-  if (kos_dyn_extent_install(ctx, node) < 0) {
-    for (KosDynNode *n = KosDynNode_PARENT(node); n; n = KosDynNode_PARENT(n))
-      (void) kos_dyn_extent_freeze(ctx, n);
-    return -1;
-  }
-  return 0;
-}
-
-
-/**
    The demand bit is drive-state: forcibly assigned to the generator's
    frame at every entry, inherited from the frame below the splice.
    Adapter-driven installs have no frame below (invoker 0), so an async
@@ -240,11 +225,16 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
 
   /* The resumed frames sit above the consumer's frame; a resume that
      would not fit raises RecursionError at the request, as Python's
-     next() does, with the generator left suspended. The freeze
-     counted the frames; the invoker frame in hand is the base depth,
-     and the numbering stands while it is the one of the last install. */
+     next() does, with the generator left suspended. The span's
+     frames are numbered without a gap, so their count is the top
+     frame's depth less the bottom's, plus one; the invoker frame in
+     hand is the base depth, and the numbering stands while it is the
+     one of the last install. */
   {
-    unsigned count = state->nframes;
+    unsigned count = state->frozen.frame
+        ? (unsigned) KosDynFrame_DEPTH(state->frozen.frame)
+            - KosDynFrame_DEPTH(bottom) + 1u
+        : 0u;
     unsigned base = invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0;
 
     if (kos_eval_check_frame_room(ctx, invoker_frame, count) < 0) {
@@ -259,12 +249,9 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
 
   /* What the freeze took out comes back before the splice: a refusal
      here leaves the span resting, nothing spliced. */
-  if (state->installs) {
-    if (kos_dyn_gen_install_span(ctx, active) < 0) {
-      kos_dyngen_rest(gen);
-      return -1;
-    }
-    state->installs = 0;
+  if (state->effects.count && kos_dyn_effects_in(ctx, &state->effects) < 0) {
+    kos_dyngen_rest(gen);
+    return -1;
   }
 
   /* The consumer's registers, restored at the next freeze. */
@@ -286,9 +273,11 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
      NULL it rested under, so no note is needed. Nor do the span's skip
      links change: the ones that reach below it name this GEN, the
      node the state keeps from one install to the next, so only the
-     GEN's own is set. A span that rested under another GEN node has
+     GEN's own is set, as kos_dynnode_link sets it for a node known
+     not to be a frame. A span that rested under another GEN node has
      them set over again. */
-  kos_dynnode_link((KosDynNode *) gen, KosContext_DYN_TOP(ctx));
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+  KosDynNode_SKIP(gen) = kos_dynnode_skip_under(KosContext_DYN_TOP(ctx));
   KosDynNode_PARENT(bottom) = (KosDynNode *) gen;
   if (unlikely(KosDynNode_SKIP(bottom) != (KosDynNode *) gen))
     kos_dyn_relink_skips(active, (KosDynNode *) gen);
@@ -464,109 +453,6 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
      GEN are still allocated; the chain is freed only afterwards. */
   kos_dyn_commit_dyn_top(ctx, consumer);
   kos_dynchain_free(frame, consumer);
-  return 0;
-}
-
-
-/* === spans: a chain moved between contexts === */
-
-
-void kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span) {
-
-  KosDynNode *head = KosContext_DYN_TOP(ctx);
-  KosDynNode *root = NULL;
-  unsigned nframes = 0;
-  int installs = 0;
-  KosExcState thread_exc;
-
-  /* the parked frame's pc fields come from the registers, as at any
-     chain edit */
-  KosContext_FlushLiveRegsToFrame(ctx);
-
-  /* A region's freeze exchanges its handled exception with the
-     thread's, which belongs to whoever is running: the awaiter, not
-     this parked context. The context's own slot, where its handler
-     state went when its last eval left, stands in for the thread
-     across the freezes, and takes back what they leave. */
-  KosExc_Init(&thread_exc);
-  KosExc_Fetch(&thread_exc);
-  KosExc_Install(KosContext_EXC_INFO(ctx));
-
-  for (KosDynNode *n = head; n; n = KosDynNode_PARENT(n)) {
-    nframes += KosDynNode_IS_FRAME(n) ? 1u : 0u;
-    installs |= kos_dyn_extent_freeze(ctx, n);
-    root = n;
-  }
-
-  KosExc_Fetch(KosContext_EXC_INFO(ctx));
-  KosExc_Install(&thread_exc);
-
-  span->head = head;
-  span->root = root;
-  span->nframes = (uint16_t) nframes;
-  span->installs = installs ? 1 : 0;
-  KosContext_ClearLiveRegs(ctx);
-}
-
-
-int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
-
-  KosDynNode *under = KosContext_DYN_TOP(ctx);
-  KosDynFrame *live = KosContext_FRAME(ctx);
-  uint32_t demand = live ? (KosDynFrame_FLAGS(live) & KOS_FRAME_DEMAND) : 0;
-  unsigned base = live ? KosDynFrame_DEPTH(live) : 0;
-
-  if (! span->head) {
-    PyErr_SetString(PyExc_SystemError, "kos_dyn_span_attach: empty span");
-    return -1;
-  }
-  if (kos_eval_check_frame_room(ctx, live, span->nframes) < 0)
-    return -1;
-  kos_dyn_renumber_frames_counted(span->head, NULL, base, span->nframes);
-
-  /* a generator's frames were numbered for the base its state records;
-     numbered here for another, the record is void, so the next install
-     at any base renumbers rather than trusting a match */
-  if (KosDynNode_IS_GEN(span->root))
-    KosDynGen_STATE((KosDynGen *) span->root)->base_depth = UINT16_MAX;
-
-  /* what the detach took out comes back before the link: a refusal
-     here leaves the span resting, nothing linked */
-  if (span->installs) {
-    if (kos_dyn_gen_install_span(ctx, span->head) < 0)
-      return -1;
-    span->installs = 0;
-  }
-
-  /* the root's unwind caches name the frame and block beneath the
-     splice; stamps never overwrite, so they are set before the commit
-     rebuilds */
-  if (KosDynNode_IS_FRAME(span->root))
-    KosDynFrame_BACK_FRAME(span->root) = (KosDynNode *) live;
-  if (KosDynNode_STACK(span->root))
-    KosSegment_BACK(KosDynNode_STACK(span->root)) = KosContext_BLOCK(ctx);
-  /* the skip links that reached the span's old root reach under now */
-  kos_dynnode_link(span->root, under);
-  kos_dyn_relink_skips(span->head, under);
-
-  kos_dyn_commit_dyn_top(ctx, span->head);
-
-  /* The demand bit is drive-state, assigned from the frame beneath the
-     splice to every frame of the span, not only the surfaced one: a
-     frame lower in the span awaits after the one above it returns,
-     and a child frame inherits the bit only at its creation. */
-  for (KosDynNode *n = span->head; n && n != under; n = KosDynNode_PARENT(n)) {
-    if (! KosDynNode_IS_FRAME(n))
-      continue;
-    if (demand)
-      KosDynFrame_FLAGS(n) |= KOS_FRAME_DEMAND;
-    else
-      KosDynFrame_FLAGS(n) &= ~KOS_FRAME_DEMAND;
-  }
-
-  span->head = NULL;
-  span->root = NULL;
-  span->nframes = 0;
   return 0;
 }
 

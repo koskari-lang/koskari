@@ -67,11 +67,22 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
 #endif
 
-  /* 1. The span leaves the chain: its bottom rests with no parent, and
+  /* 1. The span's live effects are listed by a walk over the skip
+     links from dyn_top to the GEN, which changes nothing: a span with
+     no skip-bit node is the one step to the GEN, taken here with no
+     call. The list's sizing is the only refusal, taken while the
+     chain is whole. */
+  if (likely(kos_dyn_skip_from(ctx_active) == (KosDynNode *) gen))
+    state->effects.count = 0;
+  else if (kos_dyn_effects_collect(
+               &state->effects, ctx_active, (KosDynNode *) gen, NULL) < 0)
+    return -2;
+
+  /* 2. The span leaves the chain: its bottom rests with no parent, and
      the live registers the next install of this head applies directly
      go with it. The state names the span only once dyn_top no longer
-     does (step 3): the generator's traverse reports state->active and
-     the context's reports dyn_top, and the extent freeze below can
+     does (step 5): the generator's traverse reports state->active and
+     the context's reports dyn_top, and an effect going out below can
      allocate (the cell table's copy), so a collection in between would
      otherwise count the span's references twice. */
   saved_parent = KosDynNode_PARENT(gen);
@@ -79,20 +90,10 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   kos_live_regs_capture(ctx, &state->frozen);
 
   /* An effect a node holds outside itself leaves with it, innermost
-     first; the install puts it back, and only when one left. The
-     span's interior unwind caches stay: they name nodes of this same
-     span. The frame count serves the install's room check. */
-  {
-    unsigned nframes = 0;
-    int installs = 0;
-
-    for (KosDynNode *n = ctx_active; n; n = KosDynNode_PARENT(n)) {
-      nframes += KosDynNode_IS_FRAME(n) ? 1u : 0u;
-      installs |= kos_dyn_extent_freeze(ctx, n);
-    }
-    state->nframes = (uint16_t) nframes;
-    state->installs = installs ? 1 : 0;
-  }
+     first; the install puts the listed ones back. The span's interior
+     unwind caches stay: they name nodes of this same span. */
+  if (state->effects.count)
+    kos_dyn_effects_out(ctx, &state->effects);
 
 #if VERBOSE_DEBUG
   {
@@ -104,11 +105,11 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
 #endif
 
-  /* 2. The GEN marked the span while it was installed; it rests in the
+  /* 3. The GEN marked the span while it was installed; it rests in the
      state for the next install. */
   kos_dyngen_rest(gen);
 
-  /* 3. Put the GEN's old parent onto ctx's active. The consumer below
+  /* 4. Put the GEN's old parent onto ctx's active. The consumer below
      the GEN has not run since the install recorded its registers, so
      they are restored as recorded when the GEN still sat where it was
      installed; anything else rebuilds from the chain. */
@@ -125,7 +126,7 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
   }
   state->host.top = NULL;
 
-  /* 4. The span is the state's now: dyn_top no longer names it. */
+  /* 5. The span is the state's now: dyn_top no longer names it. */
   state->active = ctx_active;
 
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p state=%p\n",

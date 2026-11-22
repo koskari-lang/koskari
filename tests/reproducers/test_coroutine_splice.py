@@ -250,6 +250,30 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(after)
 
 
+    def test_splice_moves_extents_without_running_them(self):
+        """
+        A coroutine suspended inside a parameterize and a dyn-wind
+        brings both with it: the splice is a context switch, so no
+        thunk runs for it, the parameter cell is the coroutine's again
+        on the awaiter's chain, and the awaiter's own cell is back once
+        the extent is left
+        """
+
+        mod = asyncio.run(self.load_module())
+        log = []
+        c = mod.wait_in_extents(log)
+        self.assertEqual(c.send(None), "suspended")
+        self.assertEqual(log, ["before"])
+
+        outer = mod.await_then_read(c)
+        self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(log, ["before"])
+        with self.assertRaises(StopIteration) as done:
+            outer.send(None)
+        self.assertEqual(done.exception.value, ("coro", "root"))
+        self.assertEqual(log, ["before", "after"])
+
+
     def test_signal_pending_at_the_await_raises_at_the_site(self):
         """
         A signal taken by the poll between the settle and the await

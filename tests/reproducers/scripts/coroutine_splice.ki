@@ -101,6 +101,18 @@
   #((await c) (handled)))
 
 
+(def wait_in_extents [log]
+  (parameterize [[p "coro"]]
+    (dyn-wind (log.append "before")
+              (begin (await (Suspender)) p)
+              (log.append "after"))))
+
+
+(def await_then_read [c]
+  (define r (await c))
+  #(r p))
+
+
 (def catch_await [aw]
   (try
     (await aw)

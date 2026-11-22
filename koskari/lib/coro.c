@@ -1022,16 +1022,20 @@ static KosOpResult coroutine_splice(KosContext *ctx, KosCoroutine *coro) {
   KosDynSpan span;
   PyObject *yielded;
 
+  /* the chain's lowest frame is numbered 1 on its own context, so its
+     top frame's depth is its frame count */
   if (kos_eval_check_frame_room(
           ctx, await_frame,
-          kos_dyn_frame_count(KosContext_DYN_TOP(own), NULL)) < 0) {
+          KosContext_FRAME(own)
+              ? KosDynFrame_DEPTH(KosContext_FRAME(own)) : 0u) < 0
+      || kos_dyn_span_detach(own, &span) < 0) {
     Py_DECREF(coro);
     return EVAL_RAISE();
   }
 
-  kos_dyn_span_detach(own, &span);
   if (kos_dyn_span_attach(ctx, &span) < 0) {
     if (kos_dyn_span_attach(own, &span) < 0) {
+      kos_dyn_span_drop(&span);
       KosContext_DYN_TOP(own) = span.head;
       KosContext_ReleaseChain(own);
       coroutine_finish(coro);

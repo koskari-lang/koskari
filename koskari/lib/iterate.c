@@ -1049,20 +1049,24 @@ static KosOpResult stepper_splice(KosContext *ctx, KosIterStepper *st) {
   KosDynSpan span;
   PyObject *yielded;
 
+  /* the chain's lowest frame is numbered 1 on its own context, so its
+     top frame's depth is its frame count */
   if (kos_eval_check_frame_room(
           ctx, await_frame,
-          kos_dyn_frame_count(KosContext_DYN_TOP(own), NULL)) < 0) {
+          KosContext_FRAME(own)
+              ? KosDynFrame_DEPTH(KosContext_FRAME(own)) : 0u) < 0
+      || kos_dyn_span_detach(own, &span) < 0) {
     Py_DECREF(st);
     return EVAL_RAISE();
   }
 
-  kos_dyn_span_detach(own, &span);
-  if (KosDynNode_IS_GEN(span.root))
-    KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_CONSUMER;
+  if (span.gen)
+    KosDynGen_STATE((KosDynGen *) span.gen)->busy = KOS_GEN_BUSY_CONSUMER;
   if (kos_dyn_span_attach(ctx, &span) < 0) {
-    if (KosDynNode_IS_GEN(span.root))
-      KosDynGen_STATE((KosDynGen *) span.root)->busy = KOS_GEN_BUSY_OWN;
+    if (span.gen)
+      KosDynGen_STATE((KosDynGen *) span.gen)->busy = KOS_GEN_BUSY_OWN;
     if (kos_dyn_span_attach(own, &span) < 0) {
+      kos_dyn_span_drop(&span);
       /* the chain can rest nowhere: the step is spent, which finishes
          the provider so it is not left busy forever, and frees the
          chain through the stepper's context */

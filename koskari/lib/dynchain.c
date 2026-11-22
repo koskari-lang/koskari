@@ -818,11 +818,171 @@ int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop) {
 }
 
 
+/* === Effect lists === */
+
+
+/**
+  The effect a node holds outside itself (KOS_DYN_CAP_EFFECT): a
+  PARAM's cells in the context's table, a TRY's or FINALLY's handled
+  exception on the thread. A span that rests off the chain moves
+  intact, and only these act: live says whether the node has an effect
+  to take out and changes nothing, out takes it out, and in puts it
+  back over the tables as they are then. A PARAM is always live; a TRY
+  or FINALLY is while it handles an exception that is not out already.
+  out cannot fail and does nothing on a node that is not live. in
+  returns 0, or -1 with PyErr set and the node's effect not applied.
+  Defined below, after the region exchanges they call.
+
+  Callers: the effect list functions here, and the keep of a node for
+  a continuation (out).
+*/
+static inline int kos_dyn_effect_live(const KosDynNode *node);
+
+static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node);
+
+static inline int kos_dyn_effect_in(KosContext *ctx, KosDynNode *node);
+
+
+static inline KosDynNode **kos_dyn_effects_items(KosDynEffects *fx) {
+  return fx->cap ? fx->items.heap : fx->items.pair;
+}
+
+
+/**
+   Room for count entries. The inline pair serves two; past that the
+   heap array is made or grown, and kept. Returns 0, or -1 with
+   MemoryError set and the list as it was.
+*/
+static int kos_dyn_effects_reserve(KosDynEffects *fx, size_t count) {
+
+  KosDynNode **heap;
+
+  if (count <= (fx->cap ? (size_t) fx->cap : 2u))
+    return 0;
+  if (count > UINT16_MAX) {
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  heap = PyMem_Realloc(fx->cap ? fx->items.heap : NULL,
+                       count * sizeof(KosDynNode *));
+  if (! heap) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  fx->items.heap = heap;
+  fx->cap = (uint16_t) count;
+  return 0;
+}
+
+
+static void kos_dyn_effects_clear(KosDynEffects *fx) {
+
+  if (fx->cap)
+    PyMem_Free(fx->items.heap);
+  *fx = (KosDynEffects) { 0 };
+}
+
+
+/**
+   The first node at or under top that carries a skip bit: where a
+   walk by skip links starts.
+*/
+static inline KosDynNode *kos_dyn_skip_from(KosDynNode *top) {
+  if (! top || (KosDynNode_CAPS(top) & KOS_DYN_CAP_SKIP))
+    return top;
+  return KosDynNode_SKIP(top);
+}
+
+
+/**
+   List the live effects of the nodes from top down to stop, innermost
+   first, by a walk over the skip links that changes nothing. The walk
+   fills the room the list has as it counts; a list that needs more is
+   sized and the walk made again. stop carries a skip bit or is NULL,
+   so the walk meets it. last, when given, receives the outermost node
+   the walk visited, or NULL. The list is empty on entry. Returns 0, or
+   -1 with MemoryError set and the list still empty.
+*/
+static int kos_dyn_effects_collect(
+    KosDynEffects *fx,
+    KosDynNode *top,
+    KosDynNode *stop,
+    KosDynNode **last) {
+
+  KosDynNode *first = kos_dyn_skip_from(top);
+  KosDynNode *seen = NULL;
+  KosDynNode **items = kos_dyn_effects_items(fx);
+  size_t room = fx->cap ? (size_t) fx->cap : 2u;
+  size_t count = 0;
+
+  for (KosDynNode *n = first; n && n != stop; n = KosDynNode_SKIP(n)) {
+    if (kos_dyn_effect_live(n)) {
+      if (count < room)
+        items[count] = n;
+      count++;
+    }
+    seen = n;
+  }
+  if (last)
+    *last = seen;
+
+  if (unlikely(count > room)) {
+    size_t at = 0;
+
+    if (kos_dyn_effects_reserve(fx, count) < 0)
+      return -1;
+    items = kos_dyn_effects_items(fx);
+    for (KosDynNode *n = first; at < count; n = KosDynNode_SKIP(n)) {
+      if (kos_dyn_effect_live(n))
+        items[at++] = n;
+    }
+  }
+  fx->count = (uint16_t) count;
+  return 0;
+}
+
+
+/**
+   Take every listed effect out, innermost first.
+*/
+static void kos_dyn_effects_out(KosContext *ctx, KosDynEffects *fx) {
+
+  KosDynNode **items = kos_dyn_effects_items(fx);
+
+  for (size_t i = 0; i < fx->count; i++)
+    kos_dyn_effect_out(ctx, items[i]);
+}
+
+
+/**
+   Put every listed effect back, outermost first, so each node's record
+   of the table beneath it is the table as it is now, and empty the
+   list. On a refusal the effects already back are taken out again and
+   the list stands. Returns 0, or -1 with PyErr set.
+*/
+static int kos_dyn_effects_in(KosContext *ctx, KosDynEffects *fx) {
+
+  KosDynNode **items = kos_dyn_effects_items(fx);
+
+  for (size_t i = fx->count; i; i--) {
+    if (kos_dyn_effect_in(ctx, items[i - 1]) < 0) {
+      for (; i < fx->count; i++)
+        kos_dyn_effect_out(ctx, items[i]);
+      return -1;
+    }
+  }
+  fx->count = 0;
+  return 0;
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_cc.c"
 #include "dynchain/dyn_shift.c"
 #include "dynchain/dyn_gen.c"
+#include "dynchain/dyn_span.c"
 #include "dynchain/dyn_wind.c"
 
 
@@ -1184,28 +1344,46 @@ void kos_dyn_install_regions(
 }
 
 
-int kos_dyn_extent_freeze(KosContext *ctx, KosDynNode *node) {
+static inline int kos_dyn_effect_live(const KosDynNode *node) {
 
-  /* A yield moves the node intact, so a kind whose effect is the node
-     rides the span as it is: a WITH's __enter__ and a WIND's before
-     thunk stay done. PARAM's effect is the cells it swapped into the
-     context's table, which the consumer shares; that leaves with the
-     node. A TRY's or FINALLY's effect is the handled exception it
-     installed on the thread, which the consumer shares the same way. */
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
-      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
       return 1;
     case KOS_DYN_TRY:
+      return KosDynTry_EXC_SAVED((KosDynTry *) node)
+          && ! KosDynTry_EXC_FROZEN((KosDynTry *) node);
     case KOS_DYN_FINALLY:
-      return kos_dyn_region_exc_freeze(node);
+      return KosDynFinally_EXC_SAVED((KosDynFinally *) node)
+          && ! KosDynFinally_EXC_FROZEN((KosDynFinally *) node);
     default:
       return 0;
   }
 }
 
 
-int kos_dyn_extent_install(KosContext *ctx, KosDynNode *node) {
+static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node) {
+
+  /* A span at rest moves intact, so a kind whose effect is the node
+     rides it as it is: a WITH's __enter__ and a WIND's before thunk
+     stay done. PARAM's effect is the cells it swapped into the
+     context's table, which the consumer shares; that leaves with the
+     node. A TRY's or FINALLY's effect is the handled exception it
+     installed on the thread, which the consumer shares the same way. */
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
+      break;
+    case KOS_DYN_TRY:
+    case KOS_DYN_FINALLY:
+      (void) kos_dyn_region_exc_freeze(node);
+      break;
+    default:
+      break;
+  }
+}
+
+
+static inline int kos_dyn_effect_in(KosContext *ctx, KosDynNode *node) {
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
@@ -2426,20 +2604,10 @@ static KosOpResult kos_dyn_uninstall_handler(
 */
 static void kos_dyn_keep_leave(KosContext *ctx, KosDynNode *node) {
 
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PARAM:
-      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
-      break;
-    case KOS_DYN_FOREACH:
-      kos_dyn_foreach_keep(ctx, (KosDynForeach *) node);
-      break;
-    case KOS_DYN_TRY:
-    case KOS_DYN_FINALLY:
-      (void) kos_dyn_region_exc_freeze(node);
-      break;
-    default:
-      break;
-  }
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_EFFECT))
+    kos_dyn_effect_out(ctx, node);
+  else if (KosDynNode_KIND(node) == KOS_DYN_FOREACH)
+    kos_dyn_foreach_keep(ctx, (KosDynForeach *) node);
 }
 
 
