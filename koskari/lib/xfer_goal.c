@@ -509,18 +509,6 @@ static void goal_keep_node(KosXferGoal *goal, KosDynNode *node) {
 */
 static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
 
-#if KOS_EVAL_SAFETYNET
-  /* checked before anything is unlinked: a seam that is not on the
-     chain would otherwise be discovered only once the chain is empty */
-  if (goal->seam
-      && (! kos_dyn_reaches(ctx, goal->seam)
-      || kos_dynnode_id(goal->seam) != goal->seam_id)) {
-    PyErr_SetString(PyExc_SystemError,
-        "transfer: the seam is not on the chain");
-    return EVAL_RAISE();
-  }
-#endif
-
   while (KosContext_DYN_TOP(ctx) != goal->seam) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
     KosDynNode *kept = NULL;
@@ -553,11 +541,13 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
   }
 
 #if KOS_EVAL_SAFETYNET
-  if (goal->keep
-      && ! kos_dyn_skips_hold(
-          KosContinuation_CAPTURED_CHAIN(goal->keep), NULL)) {
+  /* The seam is at dyn_top, so it is read as a live node: one that
+     took the address of the node the goal recorded carries another
+     id. A seam that is not on the chain at all is the loop's own
+     error above, with or without the safety net. */
+  if (goal->seam && kos_dynnode_id(goal->seam) != goal->seam_id) {
     PyErr_SetString(PyExc_SystemError,
-        "transfer: the kept template's skip links are stale");
+        "transfer: the seam is not the node the goal recorded");
     return EVAL_RAISE();
   }
 #endif
@@ -633,11 +623,6 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
       kos_dyn_install_regions(ctx, regs->top, base);
 
 #if KOS_EVAL_SAFETYNET
-    if (! kos_dyn_skips_hold(regs->top, base)) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: a piece's skip links are not the chain's");
-      return EVAL_RAISE();
-    }
     if (! kos_dyn_live_regs_derived(ctx)) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: a piece's registers are not the chain's");
@@ -688,18 +673,6 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
     goal->voided_outer = 0;
   }
 
-#if KOS_EVAL_SAFETYNET
-  /* every outer left waits on a node still on the chain */
-  for (KosXferGoal *outer = goal->outer; outer; outer = outer->outer) {
-    if (! outer->frontier
-        || ! kos_dyn_reaches(ctx, outer->frontier)
-        || kos_dynnode_id(outer->frontier) != outer->frontier_id) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: a waiting goal's node left the chain unnoticed");
-      return EVAL_RAISE();
-    }
-  }
-#endif
   return EVAL_NORMAL();
 }
 

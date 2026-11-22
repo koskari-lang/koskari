@@ -675,9 +675,16 @@ static KosIterStepResult agen_iter_drive(
   if (send_val) {
     KosDynFrame *frame = KosContext_FRAME(ctx);
     if (frame && KosDynFrame_RESUME_KIND(frame)) {
-      /* waiting on a resume: the sent value is its delivery */
-      Py_INCREF(send_val);
-      KosContext_StageDelivery(ctx, send_val);
+      /* waiting on a resume: the sent value is its delivery. A running
+         consumer threads into the frame in this trip, so the value is
+         staged here. A context that is not running takes the same
+         value at its entry, where the yield revive stages it: staged
+         here it would cross the step's exit, and no delivery staged
+         for a bytecode frame may. */
+      if (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) {
+        Py_INCREF(send_val);
+        KosContext_StageDelivery(ctx, send_val);
+      }
     } else {
       PyObject *popped = KosContext_StackPopRef(ctx);
       if (! popped)

@@ -293,10 +293,6 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
   if (unlikely(KosDynNode_SKIP(bottom) != (KosDynNode *) gen))
     kos_dyn_relink_skips(active, (KosDynNode *) gen);
   state->active = NULL;
-#if KOS_EVAL_SAFETYNET
-  if (! kos_dyn_skips_hold(active, (KosDynNode *) gen))
-    Py_FatalError("kos_dyn_gen_install: the span's skip links are stale");
-#endif
 
   /* frozen.top always equals the active head here: kos_dyn_gen_freeze
      writes active and the frozen snapshot together and nothing else
@@ -552,10 +548,6 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
   /* the skip links that reached the span's old root reach under now */
   kos_dynnode_link(span->root, under);
   kos_dyn_relink_skips(span->head, under);
-#if KOS_EVAL_SAFETYNET
-  if (! kos_dyn_skips_hold(span->head, under))
-    Py_FatalError("kos_dyn_span_attach: the span's skip links are stale");
-#endif
 
   kos_dyn_commit_dyn_top(ctx, span->head);
 

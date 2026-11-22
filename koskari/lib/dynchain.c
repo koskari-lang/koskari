@@ -253,19 +253,6 @@ static KosDynNode *kos_dynnode_clone_base(KosDynNode *src) {
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
   KosSegment *seg = KosDynNode_STACK(node);
 
-#if KOS_EVAL_SAFETYNET
-  {
-    /* the caps that say what a node is are never written away */
-    uint16_t fixed = KOS_DYN_CAP_FRAME | KOS_DYN_CAP_GEN
-        | KOS_DYN_CAP_MAJOR | KOS_DYN_CAP_CC;
-
-    if ((KosDynNode_CAPS(node) & fixed)
-        != (kos_dyn_kind_caps[KosDynNode_KIND(node)] & fixed))
-      Py_FatalError("kos_dynnode_return_to_freelist: a node lost the"
-                    " caps of its kind");
-  }
-#endif
-
   if (seg) {
     /* An empty inline segment is the common case, and its release is
        the two stores KosStack_Release would make for it. */

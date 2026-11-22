@@ -2452,8 +2452,8 @@ void kos_dyn_relink_skips(KosDynNode *top, KosDynNode *stop);
 
 /**
    Whether every skip link from top down to the node resting on stop
-   is the one its parents give. For KOS_EVAL_SAFETYNET checks.
-   Implemented in dynchain.c.
+   is the one its parents give. For the native tests; proportional to
+   the run walked. Implemented in dynchain.c.
 */
 int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop);
 

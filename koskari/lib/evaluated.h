@@ -449,10 +449,14 @@ static inline void kos_iter_request_bind_next(
 
 
 /**
-   Whether kind and islots are an answer either bind gives for iter
-   (kos_iter_request_bind_next, kos_dyn_iter_request_bind_iter): the
-   kind's protocol is one iter has, and islots is its suite exactly
-   when it is a provider. The consistency test behind a fetch under
+   Whether kind and islots are safe to fetch iter by: islots is iter's
+   suite exactly when iter is a provider, the kind is the provider
+   kind exactly then, and a python kind has an iterator to step. The
+   fetch calls through islots unchecked, so a suite that is not the
+   iterator's own is the memory fault this guards. A python kind's
+   protocol is not tested: a class may lose __next__ or __anext__
+   after the bind classified it, and each python step reads its slot
+   again and answers for a missing one. The test behind a fetch under
    KOS_EVAL_SAFETYNET.
 */
 static inline int kos_iter_kind_fits(
@@ -462,7 +466,6 @@ static inline int kos_iter_kind_fits(
 
   KosIterSlots *fresh = NULL;
   int provider = KosIter_CheckSlots(iter, &fresh);
-  PyTypeObject *tp;
 
   if (islots != (provider ? fresh : NULL))
     return 0;
@@ -470,14 +473,10 @@ static inline int kos_iter_kind_fits(
     case KOS_IREQ_KIND_PROVIDER:
       return provider;
     case KOS_IREQ_KIND_PY_SYNC:
-      return ! provider && iter && PyIter_Check(iter);
     case KOS_IREQ_KIND_PY_ASYNC:
-      tp = iter ? Py_TYPE(iter) : NULL;
-      return ! provider && tp && tp->tp_as_async && tp->tp_as_async->am_anext;
+      return ! provider && iter != NULL;
     case KOS_IREQ_KIND_NONE:
-      tp = iter ? Py_TYPE(iter) : NULL;
-      return ! provider && ! (iter && PyIter_Check(iter))
-          && ! (tp && tp->tp_as_async && tp->tp_as_async->am_anext);
+      return ! provider;
     default:
       return 0;
   }
