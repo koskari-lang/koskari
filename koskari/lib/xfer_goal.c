@@ -525,7 +525,7 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
    node kept before it, or as the template's top, and onto the
    template's bottom.
 */
-static void goal_keep_node(KosXferGoal *goal, KosDynNode *node) {
+KOS_OP_INLINE void goal_keep_node(KosXferGoal *goal, KosDynNode *node) {
 
   KosContinuation *k = goal->keep;
   KosDynNode *tail = goal->keep_tail;

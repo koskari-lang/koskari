@@ -797,6 +797,20 @@ Tuning, after every stage:
   aside frame costs about 225 instructions to allocate and release,
   for every dyn-wind, in a generator or not.
 
+- **Continuation kernels.** Against the commit before stage 1,
+  `shift_generator` stood 1.34% over and `shift_amb` 1.12% over. An
+  exact count put the capture's share in two functions the stage 5
+  split had left out of line, each now with two callers:
+  `kos_dyn_keep_node` and `goal_keep_node` are inlined again. The
+  clone no longer threads every node through its skip field; it
+  remembers the topmost clone still waiting for a skip-bit clone and
+  walks down from it when one arrives, and a clone that meets none
+  keeps the NULL it was made with. `shift_generator` is 0.41% over.
+  `shift_amb` is 0.94% over, about 50 instructions per application:
+  the skip links of each cloned node, the repair of the bottom run at
+  the attach, and the caps copy. That is the price of the links, which
+  `shift_abort` (4.2% under) and the generator kernels are paid from.
+
 ### 6.8 Stage 8: capture across a flattened coroutine
 
 `coro.c`:

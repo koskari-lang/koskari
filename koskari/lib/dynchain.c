@@ -1864,9 +1864,9 @@ KosDynNode *kos_dyn_clone_segment(
     KosCloneShape *shape) {
 
   KosDynNode *prev = NULL;
-  /* clones with no skip-bit clone below them yet, threaded through
-     their own skip fields (see kos_dyn_relink_skips) */
-  KosDynNode *waiting = NULL;
+  /* the topmost clone with no skip-bit clone below it yet: it and the
+     clones under it, down to prev, wait for one */
+  KosDynNode *run = NULL;
   size_t cap = 0;
   size_t open_frame = 0;
   size_t open_block = 0;
@@ -1896,17 +1896,16 @@ KosDynNode *kos_dyn_clone_segment(
       shape->top.top = cloned;
     }
 
+    /* a clone is made with no skip link, and one that never meets a
+       skip-bit clone below it keeps none: the attach repairs those */
     if (KosDynNode_CAPS(cloned) & KOS_DYN_CAP_SKIP) {
-      while (waiting) {
-        KosDynNode *next = KosDynNode_SKIP(waiting);
-
-        KosDynNode_SKIP(waiting) = cloned;
-        waiting = next;
-      }
+      for (KosDynNode *n = run; n && n != cloned; n = KosDynNode_PARENT(n))
+        KosDynNode_SKIP(n) = cloned;
+      run = cloned;
       shape->tail = cloned;
+    } else if (! run) {
+      run = cloned;
     }
-    KosDynNode_SKIP(cloned) = waiting;
-    waiting = cloned;
 
     if (for_attach && KosDynNode_HAS_CAP(cloned, KOS_DYN_CAP_WINDS)
         && kos_clone_add_piece(shape, &cap, cloned, prev) < 0)
@@ -1966,12 +1965,6 @@ KosDynNode *kos_dyn_clone_segment(
 
   /* the clones still waiting reach below the clone: the attach repairs
      them, from the lowest skip-bit clone or from the top */
-  while (waiting) {
-    KosDynNode *next = KosDynNode_SKIP(waiting);
-
-    KosDynNode_SKIP(waiting) = NULL;
-    waiting = next;
-  }
   if (! shape->tail)
     shape->tail = shape->top.top;
 
@@ -2849,7 +2842,7 @@ static void kos_dyn_keep_leave(KosContext *ctx, KosDynNode *node) {
    namespace has it revealed, as the clone that shares it would.
    Callers: kos_dyn_unlink_top_keep.
 */
-static void kos_dyn_keep_node(KosDynNode *node) {
+KOS_OP_INLINE void kos_dyn_keep_node(KosDynNode *node) {
 
   KosDynNode_FLAGS(node) &= ~KOS_DYNF_GOAL_WAIT;
 
