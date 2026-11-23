@@ -1,0 +1,20 @@
+;; churn_wind_plain -- one dyn-wind per step, entered and left with no
+;; transfer across it, its before and after segments empty.  No Python
+;; counterpart: Python has no such extent.
+
+(var MASK32 0xffffffff)
+
+
+def churn_wind_plain [n]:
+    var acc 0
+    for-each [i (range n)]:
+        dyn-wind:
+            set! acc (& (+ acc i) MASK32)
+        before:
+            None
+        after:
+            None
+    acc
+
+
+;; The end.

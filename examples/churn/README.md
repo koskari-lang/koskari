@@ -176,6 +176,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `gen_depth0`, `gen_depth4`, `gen_depth16` | a generator stepped by `for-each` whose `yield` sits inside 0, 4 or 16 nested `let` scopes; perf only, one kernel module | sum of range(20000) |
 | `gen_try` | a generator whose `yield` sits in the handler of a `try`, the handled exception live across every step | sum of range(20000) |
 | `gen_wind` | generators whose `yield` sits inside a `dyn-wind` whose segments do nothing, run at every yield and every step, and inside a `parameterize`; perf only | deterministic baseline |
+| `wind_plain` | one `dyn-wind` per step whose segments do nothing, entered and left with no transfer across it; perf only | sum of range(20000) |
 | `raise_unwind` | one raise per step, sixteen frames below the `try` that handles it | handled count 2000 |
 | `reset_plain` | one `reset` per step whose body never shifts; perf only | deterministic baseline |
 | `shift_abort` | one `abort` per step, through one call; perf only | deterministic baseline |
