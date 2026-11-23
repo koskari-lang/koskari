@@ -802,11 +802,15 @@ Tuning, after every stage:
   that looked for a waiting goal would test on every return.
   `gen_wind` fell 1.46%. A step through `kos_iter_installed` (a
   transform's request) still goes by the prologue.
-- **Not done.** Keeping the registers recorded for a winder
-  from one yield to the next would save the resync, but nothing proves
-  the chain under a winder at the same address is the same chain. An
-  aside frame costs about 225 instructions to allocate and release,
-  for every dyn-wind, in a generator or not.
+- **A winder's registers are not kept between yields.** Keeping them
+  would save the resync, about 80 instructions of 2,200, but they
+  depend on the chain under the generator, which is the consumer's
+  and may differ at every step. Reusing them would take a record on
+  the generator of what the span was last attached onto, by a counter
+  since an address can be reused, and a compare at each step. Not
+  built.
+- An aside frame costs about 225 instructions to allocate and
+  release, for every dyn-wind, in a generator or not (section 11).
 
 - **Continuation kernels.** Against the commit before stage 1,
   `shift_generator` stood 1.34% over and `shift_amb` 1.12% over. An
