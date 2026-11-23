@@ -810,6 +810,16 @@ Tuning, after every stage:
   the skip links of each cloned node, the repair of the bottom run at
   the attach, and the caps copy. That is the price of the links, which
   `shift_abort` (4.2% under) and the generator kernels are paid from.
+- **The yield's parent walk stays.** Leaving the pieces above the
+  outermost winder linked, and bounding the goal's free and traverse
+  by the winder's address, would save the walk over those plain nodes:
+  about 4 instructions a node, one node in `gen_wind`, some 65
+  instructions of 2,200 under sixteen nested scopes. It gives up the
+  rule that a piece a goal holds never points into a live chain, and
+  the bound would have to hold after a raise has freed the winder. Not
+  built.
+- **`gen_try`** is 0.8% under the commit before stage 1; nothing to
+  tune.
 
 ### 6.8 Stage 8: capture across a flattened coroutine
 
@@ -1043,3 +1053,8 @@ Report how often the effect list leaves its inline pair on the kernels.
   harmless where it stays, under a spliced chain (section 6.8), and a
   fresh coroutine's frame already replaces it; the aim is not to push
   it at all.
+- The cost of an aside frame: about 225 instructions to allocate and
+  release, for each segment of every dyn-wind, in a generator or not.
+  It is half of what the two segments cost in `gen_wind`. A kernel
+  of a plain dyn-wind in a loop, with no generator, would measure it
+  alone.
