@@ -816,8 +816,18 @@ Tuning, after every stage:
   the generator of what the span was last attached onto, by a counter
   since an address can be reused, and a compare at each step. Not
   built.
-- An aside frame costs about 225 instructions to allocate and
-  release, for every dyn-wind, in a generator or not (section 11).
+- **A dyn-wind does not keep its segment's frame.** A wind node that
+  held the frame its last segment returned from, for the next segment
+  to run in, was built and measured on `wind_plain`, a kernel of one
+  dyn-wind per step with no generator. A reuse cost 101 instructions
+  against 120 for a new frame, the test for a frame worth keeping
+  cost 40 at each return, and the step fell by 20 of about 1,900:
+  `wind_plain` 0.51%, `gen_wind` 1.90%, with `async_generators` 1.81%
+  over from a cause not found. It added a field on the wind node, a
+  second node held per live dyn-wind and a traverse case. Not built.
+  The frame's cost is its install (the flush of the live registers,
+  the stamp of its segment, the load) and its return route, not its
+  allocation (section 11).
 
 - **Continuation kernels.** Against the commit before stage 1,
   `shift_generator` stood 1.34% over and `shift_amb` 1.12% over. An
@@ -1075,8 +1085,10 @@ Report how often the effect list leaves its inline pair on the kernels.
   harmless where it stays, under a spliced chain (section 6.8), and a
   fresh coroutine's frame already replaces it; the aim is not to push
   it at all.
-- The cost of an aside frame: about 225 instructions to allocate and
-  release, for each segment of every dyn-wind, in a generator or not.
-  It is half of what the two segments cost in `gen_wind`. A kernel
-  of a plain dyn-wind in a loop, with no generator, would measure it
-  alone.
+- The cost of an aside frame, for each segment of every dyn-wind, in
+  a generator or not: about 120 instructions to allocate, fill and
+  install, 85 to release, and 124 on the return route. `wind_plain`
+  measures it alone, at about 1,900 instructions a step. Keeping the
+  frame on the wind node saves little (section 6.7), since most of
+  the 120 is the install; a gain would come from a segment that runs
+  without a frame of its own, or from a shorter return route.
