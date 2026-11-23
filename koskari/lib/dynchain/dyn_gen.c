@@ -494,7 +494,6 @@ KosDynNode *kos_dyn_gen_wind_out_next(KosContext *ctx, KosXferGoal *goal) {
         kos_dyn_resync_chain(ctx);
       }
       kos_live_regs_capture(ctx, &piece->regs);
-      goal->resume_pc = KosContext_PC(ctx);
     }
     return node;
   }
@@ -518,8 +517,6 @@ void kos_dyn_gen_wind_left(
 
   KosExtent_PHASE(ext) = KOS_EXTENT_IDLE;
   KosExtent_ENTERED(ext) = 0;
-  if (KosContext_FRAME(ctx))
-    KosContext_SET_PC(ctx, goal->resume_pc);
   goal->piece_entered++;
   goal->piece_next++;
 }

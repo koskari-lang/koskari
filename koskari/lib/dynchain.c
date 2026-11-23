@@ -1690,6 +1690,11 @@ KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return) {
   if (! was_leave)
     return EVAL_NORMAL();
 
+  /* the leave was the running frame's own, not a transfer's: a with
+     says where that frame goes on */
+  if (KosDynNode_IS_WITH(top))
+    kos_dyn_with_exit_resume(ctx, (KosDynWith *) top);
+
   return kos_dyn_unlink_top_take(ctx, KOS_XFER_EVENT_NONE, 0, out_return);
 }
 

@@ -2189,9 +2189,7 @@ KosDynNode *kos_dyn_gen_wind_out_next(KosContext *ctx, KosXferGoal *goal);
 
 /**
   node's leave is done. A yield's leave does not end the extent: it is
-  put back as one never entered, so the next step's enter runs. The
-  frame's pc, which a dyn-with's exit moves past its block, is put back
-  where the yield left it.
+  put back as one never entered, so the next step's enter runs.
 */
 void kos_dyn_gen_wind_left(
     KosContext *ctx,

@@ -722,9 +722,15 @@ As implemented:
   never entered. Nothing needs the difference today. If something
   does, a `KOS_EXTENT_SUSPENDED` phase that the enter accepts is the
   remedy: the phase byte has room, and every phase switch gains a case.
-- **The pc is put back.** A dyn-with's exit moves the frame's pc past
-  its block. The goal records the pc live at each winder before its
-  leave and restores it after.
+- **A leave does not move the pc.** A with's exit moved the live pc
+  past its block whenever it handled no exception, whoever had it
+  leave, and the winding goal recorded the pc before each leave and
+  put it back. A shift's abort did not: the next extent's leave frame
+  flushed the moved pc into the frame being kept, and every copy of
+  it resumed past the dyn-with with the node still on the chain. The
+  move is now made only where the running frame's own leave completes
+  later (`kos_dyn_with_exit_resume`, from `kos_dyn_settle_top`), and
+  the goal's record is gone.
 - **The plain yield and step execute nothing new.** A span with no
   skip-bit node takes the one-step path as before. A wound span rests
   with `effects.count` 0 (the list's length is in `wound_count`) and

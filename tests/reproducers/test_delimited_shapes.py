@@ -418,4 +418,99 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
         await self.check('shape_param_ends_before_resume', ('done', [1, 1]))
 
 
+    # 8. a dyn-with under an extent whose leave runs in a frame
+
+    async def test_dynwith_under_wind(self):
+        """
+        dyn-with inside a dyn-wind: the copy k enters resumes after the
+        shift, inside the dyn-with, and runs the rest of each body once
+        """
+
+        mod = await self.load_module()
+        self.assertEqual(
+            await mod.shape_dynwith_under_wind(mod.StepManager),
+            (101, ['in', 'enter', 'exit', 'out', 'handler',
+                   'in', 'enter', 'after shift', 'exit', 'after with',
+                   'out']))
+
+    async def test_dynwith_under_wind_python_exit(self):
+        """
+        the same with a manager written in Python, whose __exit__
+        completes without a frame of its own
+        """
+
+        mod = await self.load_module()
+        self.assertEqual(
+            await mod.shape_dynwith_under_wind(PyManager),
+            (101, ['in', 'enter', 'exit', 'out', 'handler',
+                   'in', 'enter', 'after shift', 'exit', 'after with',
+                   'out']))
+
+    async def test_dynwith_under_wind_multishot(self):
+        """
+        k invoked twice: each copy resumes inside the dyn-with with the
+        operands its body held
+        """
+
+        await self.check(
+            'shape_dynwith_under_wind_multishot',
+            (223, ['in', 'enter', 'exit', 'out',
+                   'in', 'enter', 'exit', 'out',
+                   'in', 'enter', 'exit', 'out']))
+
+    async def test_dynwith_under_dynwith(self):
+        """
+        dyn-with inside a dyn-with: the outer's exit runs in a frame
+        after the inner's, and the copy still resumes after the shift
+        """
+
+        await self.check(
+            'shape_dynwith_under_dynwith',
+            (101, ['enter', 'enter', 'exit', 'exit', 'handler',
+                   'enter', 'enter', 'after shift', 'exit', 'after inner',
+                   'exit']))
+
+    async def test_dynwith_under_param_under_wind(self):
+        """
+        a parameterize between the dyn-wind and the dyn-with: the copy
+        ends the dyn-with before the parameterize
+        """
+
+        await self.check(
+            'shape_dynwith_under_param_under_wind',
+            (101, ['in', 'enter', 'exit', 'out', 'handler',
+                   'in', 'enter', 'after shift', 'exit', 7, 'out']))
+
+    async def test_dynwith_under_wind_callee(self):
+        """
+        the shift is in a function the dyn-with's body calls: the frame
+        the dyn-with is written in resumes after the call
+        """
+
+        await self.check(
+            'shape_dynwith_under_wind_callee',
+            (101, ['in', 'enter', 'exit', 'out', 'handler',
+                   'in', 'enter', 'after shift', 'after call', 'exit',
+                   'after with', 'out']))
+
+
+class PyManager:
+    """
+    A context manager whose __enter__ and __exit__ are Python functions
+    """
+
+    def __init__(self, seen):
+        self.seen = seen
+
+
+    def __enter__(self):
+        self.seen.append("enter")
+        return self
+
+
+    def __exit__(self, *exc):
+        self.seen.append("exit")
+        return False
+
+
 # The end.

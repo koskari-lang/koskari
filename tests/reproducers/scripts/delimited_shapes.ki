@@ -439,4 +439,101 @@ def shape_dynwith_over_step []:
     (#tuple r seen)
 
 
+;; A dyn-with under another extent whose leave runs in a frame: the
+;; shift's abort exits the dyn-with, then the outer extent's leave is
+;; pushed over the frame the continuation keeps. Each shape notes the
+;; code after the shift and after the dyn-with, which a resumed copy
+;; must run once each. make_manager builds the dyn-with's manager.
+
+def shape_dynwith_under_wind [make_manager]:
+    var seen (#list)
+    var r:
+        reset:
+            dyn-wind:
+                dyn-with [c (make_manager seen)]:
+                    var v (shift k (begin (seen.append "handler") (k 1)))
+                    (seen.append "after shift")
+                    (+ v 10)
+                (seen.append "after with")
+                (+ v 100)
+            before:
+                (seen.append "in")
+            after:
+                (seen.append "out")
+    (#tuple r seen)
+
+
+def shape_dynwith_under_wind_multishot []:
+    var seen (#list)
+    var r:
+        reset:
+            dyn-wind:
+                + 100:
+                    dyn-with [c (StepManager seen)]:
+                        (+ 10 (shift k (+ (k 1) (k 2))))
+            before:
+                (seen.append "in")
+            after:
+                (seen.append "out")
+    (#tuple r seen)
+
+
+def shape_dynwith_under_dynwith []:
+    var seen (#list)
+    var r:
+        reset:
+            dyn-with [a (StepManager seen)]:
+                dyn-with [b (StepManager seen)]:
+                    var v (shift k (begin (seen.append "handler") (k 1)))
+                    (seen.append "after shift")
+                (seen.append "after inner")
+                (+ v 100)
+    (#tuple r seen)
+
+
+(define-parameter shape_depth 0)
+
+def shape_dynwith_under_param_under_wind []:
+    var seen (#list)
+    var r:
+        reset:
+            dyn-wind:
+                parameterize [[shape_depth 7]]:
+                    dyn-with [c (StepManager seen)]:
+                        var v (shift k (begin (seen.append "handler") (k 1)))
+                        (seen.append "after shift")
+                    (seen.append (parameterq shape_depth))
+                    (+ v 100)
+            before:
+                (seen.append "in")
+            after:
+                (seen.append "out")
+    (#tuple r seen)
+
+
+def shifts_and_notes [seen]:
+    var v (shift k (begin (seen.append "handler") (k 1)))
+    (seen.append "after shift")
+    v
+
+
+;; the shift is in a function the dyn-with's body calls, so the frame
+;; the dyn-with is written in is not the one that shifted
+def shape_dynwith_under_wind_callee []:
+    var seen (#list)
+    var r:
+        reset:
+            dyn-wind:
+                dyn-with [c (StepManager seen)]:
+                    var v (shifts_and_notes seen)
+                    (seen.append "after call")
+                (seen.append "after with")
+                (+ v 100)
+            before:
+                (seen.append "in")
+            after:
+                (seen.append "out")
+    (#tuple r seen)
+
+
 ;; The end.

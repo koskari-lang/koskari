@@ -283,6 +283,11 @@ static void kos_dyn_with_exit_done_exc(KosDynWith *node) {
    released and the node now owes None in its place. Any other outcome
    leaves the triple where it is for the unlink to re-raise. Returns -1
    with the error set when the result's truth test raises.
+
+   The pc is not touched: whoever had the node leave owns it. A
+   transfer keeps or frees the frame where it stood, a walk sets its
+   own, and an exit that completed later for the frame it was written
+   in goes on through kos_dyn_with_exit_resume.
 */
 static int kos_dyn_with_classify_exit(
     KosContext *ctx,
@@ -293,6 +298,7 @@ static int kos_dyn_with_classify_exit(
   int handling = (ob->kind == KOS_OB_EXCEPTION);
   int swallow = 0;
 
+  (void) ctx;
   kos_dyn_with_exit_done_exc(node);
 
   if (handling) {
@@ -309,15 +315,27 @@ static int kos_dyn_with_classify_exit(
   if (swallow) {
     kos_dyn_ob_clear(ob);
     ob->kind = KOS_OB_SWALLOWED;
-    if (KosContext_FRAME(ctx))
-      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
-  } else if (! handling) {
-    if (KosContext_FRAME(ctx))
-      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   }
   Py_DECREF(result);
   KosDynWith_PHASE(node) = KOS_EXTENT_LEFT;
   return 0;
+}
+
+
+/**
+   An __exit__ that did not complete where it was called has returned,
+   and the frame the with is written in carries on: past the with's
+   block, unless the exception __exit__ was handling is still to be
+   raised. POP_WITH left the pc on itself when __exit__ suspended, and
+   a swallowed raise left it where the raise happened. Callers:
+   kos_dyn_settle_top, never a transfer's settle.
+*/
+static void kos_dyn_with_exit_resume(KosContext *ctx, KosDynWith *node) {
+
+  if (KosDynWith_OB(node)->kind == KOS_OB_EXCEPTION)
+    return;
+  if (KosContext_FRAME(ctx))
+    KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
 }
 
 
