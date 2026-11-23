@@ -797,11 +797,18 @@ Tuning, after every stage:
   (`kos_xfer_goal_run_pushed`), after the step has handed it what it
   sends, and relay the answer as an instruction's: a failed enter
   takes the raise ingress from there, as it did from the prologue's
-  drain. Three of the five prologue passes of a yield and step are
-  gone; the two after a segment's return stay, since a frame return
-  that looked for a waiting goal would test on every return.
-  `gen_wind` fell 1.46%. A step through `kos_iter_installed` (a
-  transform's request) still goes by the prologue.
+  drain. Three of the five prologue passes of a yield and step went
+  with that, and `gen_wind` fell 1.46%. A step through
+  `kos_iter_installed` (a transform's request) still goes by the
+  prologue.
+- **A segment's return runs its goal.** The return of a frame onto a
+  region node already takes the region arm of `kos_return_deliver`,
+  and answers REPROLOGUE there only because a goal is set. When that
+  goal will drive, the arm tail calls `kos_eval_goal_thread`, which
+  runs it (`kos_xfer_goal_run_pushed`), rests and presents a yield
+  whose last winder is left, and relays any other answer. No test is
+  added to a return that takes an earlier arm. The other two prologue
+  passes are gone, and `gen_wind` fell a further 2.20%.
 - **A winder's registers are not kept between yields.** Keeping them
   would save the resync, about 80 instructions of 2,200, but they
   depend on the chain under the generator, which is the consumer's

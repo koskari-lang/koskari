@@ -348,11 +348,14 @@ KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal);
 
 
 /**
-   kos_xfer_goal_run for the active goal, which its maker pushed and
-   left for the first drive: the goal a generator's install pushes on a
-   running context to enter the winders its yield left
+   kos_xfer_goal_run for the active goal, already pushed, which will
+   drive (kos_xfer_goal_will_drive): the goal a generator's install
+   pushed on a running context to enter the winders its yield left
    (kos_dyn_gen_install), run from the step once the step has handed
-   it what it sends. The answers are kos_xfer_goal_run's.
+   it what it sends; and a goal whose frame has just returned onto the
+   node it waits on, run from that return. The answers are
+   kos_xfer_goal_run's, and YIELD from a generator's yield whose last
+   winder is left.
 */
 KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx);
 

@@ -1166,11 +1166,15 @@ KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal) {
 
 KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx) {
 
+  KosXferGoal *goal = KosContext_GOAL(ctx);
   int boundary = 0;
 
-  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
-  return goal_run_answer(
-      ctx, goal_drive(ctx, KosContext_GOAL(ctx), &boundary));
+  /* as the prologue does ahead of a drive: a goal whose frame has just
+     returned may find the frame's result staged, which its settle
+     takes; any other staged delivery is dropped */
+  if (! goal->frontier)
+    Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+  return goal_run_answer(ctx, goal_drive(ctx, goal, &boundary));
 }
 
 

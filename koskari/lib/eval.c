@@ -1655,6 +1655,41 @@ static KosOpResult kos_op_call_star(
 
 
 /**
+   Run the active goal, which will drive, and thread on its answer:
+   what the prologue's drain does (kos_eval_drain_goal), without the
+   pass. A generator's yield whose last winder is left rests the span
+   and presents the value; any other answer is relayed as an
+   instruction's is. insn and val are unused.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_eval_goal_thread(
+    KosContext *ctx,
+    void *insn,
+    PyObject *val) {
+
+  KosOpResult r = kos_xfer_goal_run_pushed(ctx);
+
+  (void) insn;
+  (void) val;
+
+  if (r.kind == KOS_RES_YIELD) {
+    KosDynGen *gen = kos_dyn_yield_gen(ctx);
+
+    if (! gen) {
+      Py_DECREF(r.val);
+      RESULT_RAISE();
+    }
+    r = kos_eval_walk_outcome(ctx, eval_yield_wound(ctx, gen, r.val));
+    if (likely(r.kind == KOS_RES_RESUME))
+      TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
+    if (r.kind == KOS_RES_REPROLOGUE)
+      TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+    return r;
+  }
+  RESULT_RELAY(ctx, r);
+}
+
+
+/**
    The delivery of RETURN: val is the owned return value.  The four
    shapes that need no walk thread straight on: a plain bytecode parent
    takes the value on its stack and continues at its saved pc (the
@@ -1752,8 +1787,15 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
         r = eval_region_return(ctx, child, parent, ft, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_CONTINUE(ctx);
-    if (r.kind == KOS_RES_REPROLOGUE)
+    if (r.kind == KOS_RES_REPROLOGUE) {
+      /* the frame a transfer's step ran, a dyn-wind's segment or an
+         __enter__ or __exit__, returned onto the node its goal waits
+         on: the goal goes on from here */
+      if (KosContext_GOAL(ctx) && kos_xfer_goal_will_drive(ctx)
+          && ! PyErr_Occurred())
+        TAILCALL(kos_eval_goal_thread, ctx, NULL, NULL);
       TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+    }
     return r;
   }
 
