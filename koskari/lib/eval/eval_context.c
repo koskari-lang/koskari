@@ -169,18 +169,10 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx) {
 
 
 /**
-   Memory teardown only: releases dyn nodes and operand stacks via
-   kos_dynchain_free without running the extent protocol (WITH
-   __exit__, PARAM restore, WIND hooks). A holder with a frozen async
-   generator runs KosPyAsyncGen_Teardown before dropping its reference
-   so GEN.active is disposed before the context. Also the type's
-   tp_clear, so a context inside a garbage cycle drops what it holds.
-   A cleared context is empty, every field after the object header
-   zero but the flags, which keep KOS_CTX_CLEARED until the dealloc
-   zeroes them for the freelist revival, so a field added to
-   KosContext is cleared here.
+   Free the chain alone: what KosContext_ReleaseChain does but for the
+   goals, for a caller that knows the context has none.
 */
-void KosContext_ReleaseChain(KosContext *ctx) {
+static void context_free_chain(KosContext *ctx) {
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
 
@@ -196,6 +188,29 @@ void KosContext_ReleaseChain(KosContext *ctx) {
 }
 
 
+/**
+   Memory teardown only: releases dyn nodes and operand stacks via
+   kos_dynchain_free without running the extent protocol (WITH
+   __exit__, PARAM restore, WIND hooks), then gives up every transfer
+   goal, each of which waits on a node of the chain just freed or holds
+   a target it would have attached to it. Each goal leaves the list
+   before it is freed, so a collection run by a free never walks a goal
+   already released. A holder with a frozen async generator runs
+   KosPyAsyncGen_Teardown before dropping its reference so GEN.active
+   is disposed before the context. Also the type's tp_clear, so a
+   context inside a garbage cycle drops what it holds. A cleared
+   context is empty, every field after the object header zero but the
+   flags, which keep KOS_CTX_CLEARED until the dealloc zeroes them for
+   the freelist revival, so a field added to KosContext is cleared
+   here.
+*/
+void KosContext_ReleaseChain(KosContext *ctx) {
+
+  context_free_chain(ctx);
+  kos_xfer_goal_abandon_all(ctx);
+}
+
+
 static int context_clear(PyObject *self) {
 
   KosContext *ctx = (KosContext *) self;
@@ -208,14 +223,9 @@ static int context_clear(PyObject *self) {
   KosContext_TOKEN(ctx) = NULL;
 
   /* a finalizer in the same garbage cycle can still reach the context
-     while its chain is freed, so the registers are cleared first */
+     while its chain is freed, so the registers are cleared first; the
+     goals go after the chain */
   KosContext_ReleaseChain(ctx);
-
-  while (KosContext_GOAL(ctx)) {
-    KosXferGoal *goal = KosContext_GOAL(ctx);
-    KosContext_GOAL(ctx) = KosXferGoal_OUTER(goal);
-    kos_xfer_goal_discard(goal);
-  }
 
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   Py_CLEAR(KosContext_PY_AWAIT_YIELDED(ctx));
@@ -279,8 +289,8 @@ int KosContext_Recycle(KosContext *ctx) {
   Py_CLEAR(KosContext_TOKEN(ctx));
 
   /* the next drive derives the live registers again from the frame it
-     installs */
-  KosContext_ReleaseChain(ctx);
+     installs; a context with a goal was refused above */
+  context_free_chain(ctx);
 
   KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;

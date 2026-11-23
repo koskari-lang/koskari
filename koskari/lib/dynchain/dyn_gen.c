@@ -93,6 +93,15 @@ static inline KosXferGoal *kos_dyn_gen_wind_goal(KosGenState *state) {
    is the owner's, and it takes its resting node out before freeing
    it. An installed node is not in the state (kos_dyngen_new took it
    out), and goes with its chain.
+
+   The winding goal at the head of the pieces allocation may still be
+   on a goal list (a context's, or a span's) when the state is cleared:
+   the collector's clear of the owner can come before the clear of the
+   context holding it. A live goal holds the owner through
+   continuation_ref, from kos_xfer_goal_init until kos_xfer_goal_free
+   lets it go, so the allocation stays with the state until then, and
+   the owner's dealloc, which comes after the goal is freed, clears the
+   state again and frees it.
 */
 void kos_gen_state_clear(KosGenState *state) {
 
@@ -108,14 +117,21 @@ void kos_gen_state_clear(KosGenState *state) {
   if (node)
     kos_dyngen_free((KosDynGen *) node);
 
-  /* the list named nodes of the span just freed */
+  /* the list named nodes of the span just freed, and the counts are of
+     that list and of the pieces naming its nodes */
   kos_dyn_effects_clear(&state->effects);
-  if (state->pieces)
-    PyMem_Free(kos_dyn_gen_wind_goal(state));
-  state->pieces = NULL;
   state->piece_count = 0;
-  state->piece_cap = 0;
   state->wound_count = 0;
+
+  if (state->pieces) {
+    KosXferGoal *goal = kos_dyn_gen_wind_goal(state);
+
+    if (goal->continuation_ref)
+      return;
+    PyMem_Free(goal);
+  }
+  state->pieces = NULL;
+  state->piece_cap = 0;
 }
 
 
@@ -411,6 +427,10 @@ static int kos_dyn_gen_pieces(KosGenState *state, KosDynNode *top) {
       PyErr_NoMemory();
       return -1;
     }
+    /* the head goal is not live until its init: kos_gen_state_clear
+       reads continuation_ref, which a grow keeps NULL */
+    if (! state->pieces)
+      grown->continuation_ref = NULL;
     state->pieces = (KosXferPiece *) (grown + 1);
     state->piece_cap = (uint16_t) count;
   }

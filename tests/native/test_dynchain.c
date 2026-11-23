@@ -1244,6 +1244,79 @@ static int test_wind_out_and_in(void) {
 }
 
 
+/* A generator's state cleared while the goal entering its winders is
+   still on the consumer's context, as the collector's clear of the
+   owner can come before the clear of that context: the state keeps
+   the storage the goal lives in, the context's clear gives the goal up
+   and lets go of the owner, and the next clear of the state frees the
+   storage. */
+static int test_wind_goal_outlives_the_state_clear(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *wind;
+    KosXferGoal *goal;
+    KosContext *ctx;
+    Py_ssize_t owner_refs;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+    owner_refs = Py_REFCNT(owner);
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    wind = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
+    TEST_ASSERT_NOT_NULL(wind, "push a wind");
+    KosDynWind_ENTERED(wind) = 1;
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
+                   "the install stops at the winder");
+    goal = KosContext_GOAL(ctx);
+    TEST_ASSERT_NOT_NULL(goal, "a goal is pushed");
+    TEST_ASSERT_SAME((KosXferPiece *) (goal + 1), state.pieces,
+                     "in the state's storage");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs + 1,
+                   "the goal holds the owner");
+    KosContext_EvalExit(ctx);
+
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_SAME(state.pieces, (KosXferPiece *) (goal + 1),
+                     "the live goal keeps its storage");
+    TEST_ASSERT_EQ(state.piece_count, 0, "with no records");
+    TEST_ASSERT_EQ(state.wound_count, 0, "and no list");
+
+    Py_DECREF(ctx);
+    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs,
+                   "the context's clear gave the goal up");
+
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_NULL(state.pieces, "the next clear frees the storage");
+    TEST_ASSERT_EQ(state.piece_cap, 0, "and forgets it");
+
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -1306,6 +1379,7 @@ int run_dynchain_tests(void) {
 
     /* Winding across a yield */
     RUN_TEST(test_wind_out_and_in);
+    RUN_TEST(test_wind_goal_outlives_the_state_clear);
 
     return 0;
 }

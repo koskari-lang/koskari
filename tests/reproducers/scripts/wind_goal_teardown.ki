@@ -1,0 +1,60 @@
+;; Reproducer: a generator whose winding goal is still on a goal list
+;; when the generator is closed or collected. The goal lives in the
+;; generator's own storage; the close that cannot finish frees the
+;; chain the goal waits on, and the goal goes with it. Suspender is
+;; injected by the test.
+
+
+(def on_entry [log gate]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (if gate (await (Suspender)) None)
+      (log.append "in2"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out"))))
+
+
+(def on_entry_stubborn [log gate]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (if gate
+        (try (await (Suspender))
+          ([GeneratorExit]
+            (log.append "caught")
+            (await (Suspender))
+            (log.append "after2")))
+        None)
+      (log.append "in2"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out"))))
+
+
+(def on_exit_stubborn [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (yield 1) (yield 2))
+    (after:
+      (log.append "out")
+      (try (await (Suspender))
+        ([GeneratorExit]
+          (log.append "caught")
+          (await (Suspender))
+          (log.append "after2"))))))
+
+
+(def managed [mgr]
+  (dyn-with [c mgr]
+    (yield 1)
+    (yield 2)))
+
+
+(def leave_by_raise [gen log gate]
+  (for-each [x gen]
+    (log.append x)
+    (gate.append 1)
+    (raise (ValueError "stop"))))
+
+
+;; The end.

@@ -49,8 +49,8 @@ static void asyncgen_free_span(KosPyAsyncGen *agen) {
 /**
    Free the chain on a context the wrapper stepped its generator on, if
    one is there: a span left installed after a close the eval could
-   not honor. The same two steps the context's clear takes; nothing
-   refuses them.
+   not honor, with the goals left waiting on it. The release the
+   context's clear takes; nothing refuses it.
 */
 static void asyncgen_free_chain_on(KosContext *ctx) {
 
@@ -226,7 +226,11 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
    run by the time clear or dealloc reaches here. A span installed on
    a consumer's chain is not in the state while installed, and goes
    with that chain, whose free touches neither the wrapper nor its
-   state; one on the wrapper's own context goes with the context.
+   state; one on the wrapper's own context goes with the context. A
+   winding goal still on a goal list keeps its storage in the state
+   (kos_gen_state_clear): the goal's discard resets the state's lists
+   and lets go of the wrapper, and the dealloc that follows frees the
+   storage.
 */
 static void asyncgen_drop_state(KosPyAsyncGen *agen) {
 
