@@ -5,8 +5,8 @@
 ;; defer over it, runs on the caller's chain and meets the caller's
 ;; frame-depth limit. One Python already started and left parked at an
 ;; await splices its chain under the awaiter and continues from its
-;; suspend point. sleeper_partial, Suspender and handled are injected
-;; by the test.
+;; suspend point, with the goals waiting on its chain. sleeper_partial,
+;; Suspender, handled, started and finish_via are injected by the test.
 
 
 (import _thread)
@@ -174,6 +174,88 @@
 (def await_after_interrupt [c]
   (_thread.interrupt_main)
   (await c))
+
+
+(def wound [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out") (await (Suspender)) (log.append "out2"))))
+
+
+(def wound_on_entry [log gate]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (if gate (await (Suspender)) None)
+      (log.append "in2"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out"))))
+
+
+(def managed [mgr]
+  (dyn-with [c mgr]
+    (yield 1)
+    (yield 2)))
+
+
+(def collect [gen log]
+  (for-each [x gen]
+    (log.append x))
+  log)
+
+
+(def collect_gated [gen log gate]
+  (for-each [x gen]
+    (log.append x)
+    (gate.append 1))
+  log)
+
+
+(def abort_through_wait [log]
+  (reset
+    (dyn-wind
+      (before: (log.append "in"))
+      (body: (shift k "aborted"))
+      (after: (log.append "out") (await (Suspender)) (log.append "out2")))))
+
+
+(def jumper [log k]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (k "jumped"))
+    (after: (log.append "out") (await (Suspender)) (log.append "out2"))))
+
+
+(def await_in_extent [log c]
+  (dyn-wind
+    (before: (log.append "a-in"))
+    (body: (await c))
+    (after: (log.append "a-out"))))
+
+
+(def owner_awaits_jumper [log]
+  (define r
+    (call/cc
+      (lambda [k]
+        (define box (started jumper log k))
+        (log.append box.first)
+        (await_in_extent log box.c)
+        "not reached")))
+  (log.append r)
+  log)
+
+
+(def other_awaits_jumper [log]
+  (define r
+    (call/cc
+      (lambda [k]
+        (define box (started jumper log k))
+        (log.append box.first)
+        (finish_via await_in_extent log box.c)
+        "not reached")))
+  (log.append r)
+  log)
 
 
 ;; The end.

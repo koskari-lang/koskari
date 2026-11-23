@@ -1500,8 +1500,10 @@ frame count above the caller's frame for a delimited continuation, or above
 the seam's frame for an undelimited one, before anything moves), both
 generator installs (a resume that would not fit raises at the request, as
 Python's `next()` does, with the generator left suspended),
-`kos_dyn_span_attach`, and the coroutine and stepper attachments (`coro.c`,
-`iterate.c`). An await frame is pushed without the check
+`kos_dyn_span_attach` (which also counts the frames a moved goal's target
+holds off the chain, and shifts them by the chain's shift), and the
+coroutine and stepper attachments (`coro.c`, `iterate.c`). An await frame
+is pushed without the check
 (`kos_await_frame_install`). A continuation's copy is numbered by the
 clone that makes it (`kos_dyn_clone_segment`, from the depth the invoke
 computed), and a generator install renumbers its span
@@ -2254,7 +2256,7 @@ into it and counts its frames (§6.3, §6.4).
 - Implements `__await__`, `send`, `throw`, `close`
 - State machine: NEW → RUNNING → WAITING_PY / YIELDED → DONE. WAITING_PY is the parked state a Koskari await splices, a chain at rest on the coroutine's own context at a Python await; YIELDED, a chain at rest at a yield, is driven through the Python protocol only, which refuses a Koskari await of it. RUNNING with `in_send` set is active, on its own context under a Python drive, and every entry is refused while it lasts. A coroutine whose program moved to an awaiter, taken fresh or spliced, is DONE from that moment.
 - Created by an Expression (`KosCoroutine_NewFromCode`) or by a Function call from Python (`KosCoroutine_NewFromFrame` over the function's ready frame); the record holds the frame until the first send wraps it in a context, or a Koskari await takes it (`KosCoroutine_TakeFresh`, swapped into the await frame); send and throw call `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
-- A Koskari await of a coroutine parked at a Python await splices its chain under the await frame (`coroutine_splice`): the chain detaches from the coroutine's context as a span and attaches under the awaiter's live frame, the pending await iterator and the value it yielded move to the awaiter's context, the coroutine object is finished and its own context released, and the await frame becomes a coroutine frame, whose resume holds no state and returns the chain's value from the frame. A continuation captures across a coroutine frame as across any other. The awaiter then suspends on that same yielded value, and its driver completes the await. The Python-side `__await__` of a parked coroutine is still refused, as CPython refuses one with `cr_await` set.
+- A Koskari await of a coroutine parked at a Python await splices its chain under the await frame (`coroutine_splice`): the chain detaches from the coroutine's context as a span, with every transfer goal waiting on it, and attaches under the awaiter's live frame, the goals above the awaiter's own (a goal whose seam was the old context's root takes the node under the splice; a cc-unwind goal left down to a seam that is not the context's root raises its signal at the live frame as an ordinary raise, for the awaiter's ingress to judge its token), the pending await iterator and the value it yielded move to the awaiter's context, the coroutine object is finished and its own context released, and the await frame becomes a coroutine frame, whose resume holds no state and returns the chain's value from the frame. A continuation captures across a coroutine frame as across any other. The awaiter then suspends on that same yielded value, and its driver completes the await. The Python-side `__await__` of a parked coroutine is still refused, as CPython refuses one with `cr_await` set.
 
 **KosPyAsyncGen** (iter.c):
 - Wraps `KosContext` for async generator protocol

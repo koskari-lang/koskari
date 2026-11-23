@@ -154,6 +154,21 @@ SRC = """
 (def take_after_interrupt [st]
   (_thread.interrupt_main)
   (await st))
+
+(def wound [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out") (await (Suspender)) (log.append "out2"))))
+
+(def wound_on_entry [log gate]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (if gate (await (Suspender)) None)
+      (log.append "in2"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out"))))
 """
 
 
@@ -254,6 +269,68 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done.exception.value, "woken")
         self.assertEqual(2, await g.__anext__())
         await g.aclose()
+
+    def step_out(self, awaitable):
+        """
+        Step an awaitable from Python to its end, each step suspending
+        on "suspended"
+
+        :return: ("value", result), or ("raise", exception type name)
+        """
+
+        try:
+            while True:
+                self.assertEqual(awaitable.send(None), "suspended")
+        except StopIteration as done:
+            return ("value", done.value)
+        except Exception as exc:
+            return ("raise", type(exc).__name__)
+
+    def test_step_suspended_in_an_after_segment_is_spliced(self):
+        """
+        A step Python left suspended in the after segment its yield runs
+        brings the goal leaving the dyn-wind with it: the segment
+        finishes on the awaiter's chain and the yield is the awaiter's
+        value
+        """
+
+        v = asyncio.run(self.load())
+        log = []
+        g = v["wound"](log)
+        st = g.__anext__()
+        self.assertEqual(st.send(None), "suspended")
+        self.assertEqual(log, ["in", "out"])
+
+        outer = v["take_stepper"](st)
+        self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(self.step_out(outer), ("value", 1))
+        self.assertEqual(log, ["in", "out", "out2"])
+
+        self.assertEqual(self.step_out(g.__anext__()), ("value", 2))
+        self.assertEqual(
+            self.step_out(g.__anext__()), ("raise", "StopAsyncIteration"))
+        self.assertEqual(
+            log, ["in", "out", "out2", "in", "out", "out2",
+                  "in", "out", "out2"])
+
+    def test_step_suspended_in_a_before_segment_is_spliced(self):
+        v = asyncio.run(self.load())
+        log = []
+        gate = []
+        g = v["wound_on_entry"](log, gate)
+        self.assertEqual(self.step_out(g.__anext__()), ("value", 1))
+        gate.append(1)
+        st = g.__anext__()
+        self.assertEqual(st.send(None), "suspended")
+        self.assertEqual(log, ["in", "in2", "out", "in"])
+
+        outer = v["take_stepper"](st)
+        self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(self.step_out(outer), ("value", 2))
+        self.assertEqual(log, ["in", "in2", "out", "in", "in2", "out"])
+
+        self.assertEqual(
+            self.step_out(g.__anext__()), ("raise", "StopAsyncIteration"))
 
     async def test_refused_step_releases_the_generator(self):
         """

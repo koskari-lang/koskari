@@ -1347,56 +1347,70 @@ void kos_dyngen_free(KosDynGen *gen);
 
 
 /**
-   A chain at rest between contexts: a context's whole chain from
-   head, its top, down to a bottom node with no parent, each node's
-   outward effect taken out and listed. top_frame is the chain's top
-   frame, or NULL: the chain was numbered on a context of its own, so
-   that frame's depth is the chain's frame count until an attach
-   renumbers it. gen is the GEN at the chain's bottom, or NULL when
-   the bottom is not one. A parked coroutine's or stepper's chain
-   travels onto an awaiter's chain in one of these; the generator's
-   own resting span is its KosGenState. This is a context switch: no
-   extent leaves or enters and no user code runs. Implemented in
+   A suspended thread's state on its way to the awaiter that takes it
+   over: the context's whole chain from head, its top, down to a bottom
+   node with no parent, each node's outward effect taken out and
+   listed, and the transfer goals that wait on that chain. A Koskari
+   coroutine is not a generator: suspended at an await, its chain, the
+   goals waiting on it, its pending await and its handled exception are
+   the state of a thread, and an awaiter that splices it makes that
+   state its own, as a call made from the awaiter at the start would
+   have. top_frame is the chain's top frame, or NULL: the chain was
+   numbered on a context of its own, so that frame's depth is the
+   chain's frame count until an attach renumbers it. gen is the GEN at
+   the chain's bottom, or NULL when the bottom is not one. goals is the
+   context's active goal, its outers linked behind it, or NULL. A
+   generator's own resting span is its KosGenState, not one of these.
+   No extent leaves or enters and no user code runs. Implemented in
    dynchain/dyn_span.c.
 */
 typedef struct KosDynSpan {
   struct KosDynNode *head;
   struct KosDynNode *top_frame;
   struct KosDynNode *gen;
+  KosXferGoal *goals;
   KosDynEffects effects;
 } KosDynSpan;
 
 
 /**
-   Take ctx's whole chain off it as a resting span. The chain must be
-   at rest, parked at a suspension with nothing running on it. The
-   nodes that carry a skip bit are the only ones visited: each live
-   effect is listed and taken out (kos_dyn_effect_out), and ctx is
-   left with no chain and cleared registers; everything else it holds
-   stays. Returns 0, or -1 with MemoryError set and nothing changed,
-   when the list could not be sized.
+   Take ctx's thread state off it as a resting span: its whole chain
+   and every goal on it. The chain must be at rest, suspended with
+   nothing running on it. The nodes that carry a skip bit are the only
+   ones visited: each live effect is listed and taken out
+   (kos_dyn_effect_out), and ctx is left with no chain, no goals and
+   cleared registers; everything else it holds stays. Every goal on ctx
+   waits on a node of the chain, or was voided by one that does, so the
+   goals go with it. Returns 0, or -1 with MemoryError set and nothing
+   changed, when the list could not be sized.
 */
 int kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span);
 
 
 /**
    Put a resting span onto ctx's chain under its top. The frames are
-   checked for room above the live frame, each listed effect is put
-   back over ctx's tables, the frames are renumbered from the live
-   frame's depth and take its demand bit, the bottom is linked under
-   the top with its unwind caches naming the live frame and block,
-   and the registers follow the span's head. Returns 0 with the span
-   emptied, or -1 with PyErr set and the span resting as it was:
+   checked for room above the live frame, counting the frames a goal's
+   target still holds off the chain; each listed effect is put back
+   over ctx's tables; the frames are renumbered from the live frame's
+   depth and take its demand bit, and a target's frames take the same
+   shift; the bottom is linked under the top with its unwind caches
+   naming the live frame and block, and the registers follow the
+   span's head. The span's goals go above ctx's own: ctx's active goal
+   is the outer of the outermost one, and a goal whose seam was the
+   root of the context it left takes the top the span went onto, where
+   the awaiter's call was made. Returns 0 with the span emptied, or -1
+   with PyErr set and the span resting as it was, goals included:
    refused for room before anything moved, or an effect refused with
    the ones before it taken out again. A context with no chain takes
-   the span as its whole chain.
+   the span as its whole chain, and its goals as its only goals.
 */
 int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span);
 
 
 /**
-   Give up a resting span's effect list: the span that could be
-   attached nowhere. The chain itself is the caller's to free.
+   Give up a resting span's effect list and discard its goals, each
+   unlinked before it is freed: the span that could be attached
+   nowhere. The chain itself is the caller's to free.
 */
 void kos_dyn_span_drop(KosDynSpan *span);
 

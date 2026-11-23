@@ -775,10 +775,45 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
+   DELIVERING for a cc-unwind: raise its signal. The signal leaves the
+   context only from its root: a NULL seam, or the GEN at the bottom of
+   a generator's own context, the seams the foreign path in eval.c
+   gives. Every goal, waiting outers included, is void with it. Left
+   down to any other seam -- a suspended thread's goal an awaiter's
+   splice made its own, whose seam is the top the awaiter's call was
+   made from -- the signal is raised at the live frame as any raise is,
+   and the ingress there judges its token as it would have had the
+   awaiter called the thread from the start. Only this goal retires
+   then: the awaiter's own goals are the raise's to judge.
+*/
+static KOS_NOINLINE KosOpResult goal_deliver_signal(
+    KosContext *ctx,
+    KosXferGoal *goal,
+    int *out_boundary) {
+
+  PyErr_SetObject((PyObject *) Py_TYPE(goal->payload), goal->payload);
+
+  if (goal->seam
+      && ! (KosDynNode_IS_GEN(goal->seam)
+            && ! KosDynNode_PARENT(goal->seam))) {
+    kos_xfer_goal_pop_cold(ctx);
+    return EVAL_RAISE();
+  }
+
+  kos_eval_prepare_boundary_raise(ctx);
+  kos_xfer_goal_abandon_all(ctx);
+  *out_boundary = 1;
+  return EVAL_RAISE();
+}
+
+
+/**
    DELIVERING: push the payload, stage it for the receiving frame's
-   resume, set it as a pending throw, or raise it at the boundary; then
-   retire the goal. An abort to a prompt has no payload: its target is
-   the handler's frame, which takes nothing, and the goal only retires.
+   resume, set it as a pending throw, or raise a cc-unwind's signal,
+   at the boundary from the context's root or at the live frame from
+   any other seam; then retire the goal. An abort to a prompt has no
+   payload: its target is the handler's frame, which takes nothing,
+   and the goal only retires.
    A shift's abort carries the continuation, pushed for the handler's
    first instruction to store.
    A receiving frame that carries a resume the goal
@@ -795,15 +830,8 @@ static KosOpResult goal_deliver(
     KosXferGoal *goal,
     int *out_boundary) {
 
-  if (goal->is_cc_unwind) {
-    /* the signal leaves this context: every goal, waiting outers
-       included, is void with it */
-    PyErr_SetObject((PyObject *) Py_TYPE(goal->payload), goal->payload);
-    kos_eval_prepare_boundary_raise(ctx);
-    kos_xfer_goal_abandon_all(ctx);
-    *out_boundary = 1;
-    return EVAL_RAISE();
-  }
+  if (unlikely(goal->is_cc_unwind))
+    return goal_deliver_signal(ctx, goal, out_boundary);
 
   if (! KosContext_FRAME(ctx)) {
     PyErr_SetString(PyExc_SystemError,

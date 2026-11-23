@@ -15,11 +15,13 @@
 
 
 /**
-  Included by dynchain.c. A chain moved between contexts: a suspended
-  coroutine's or stepper's whole chain taken off its own context and
-  put under an awaiter's top. This is a context switch, not a
-  transfer: no extent leaves or enters and no user code runs. Only
-  the nodes that hold an effect outside themselves act, through
+  Included by dynchain.c. A suspended thread's state made an awaiter's:
+  a Koskari coroutine, or a stepper's step, suspended at an await on
+  its own context has its whole chain and the transfer goals waiting
+  on it taken off that context and put under an awaiter's top, as if
+  the awaiter had called it from the start. This is a context switch,
+  not a transfer: no extent leaves or enters and no user code runs.
+  Only the nodes that hold an effect outside themselves act, through
   kos_dyn_effect_out and kos_dyn_effect_in, and nothing here knows a
   generator's state beyond the GEN at a chain's bottom.
 
@@ -27,7 +29,86 @@
   :license: GNU General Public License v3
 */
 
-/* === spans: a chain moved between contexts === */
+/* === spans: a suspended thread's state === */
+
+
+/**
+   The depth of the highest frame a goal's target still holds off the
+   chain, over goal and its outers, or 0. A target is numbered as it
+   will stand once attached, on the context it was made on, so the
+   first frame from its top is its highest.
+*/
+static KOS_NOINLINE unsigned kos_dyn_span_goals_reach(KosXferGoal *goal) {
+
+  unsigned reach = 0;
+
+  for (; goal; goal = KosXferGoal_OUTER(goal)) {
+    KosDynNode *n = goal->target;
+
+    while (n && ! KosDynNode_IS_FRAME(n))
+      n = KosDynNode_PARENT(n);
+    if (n && KosDynFrame_DEPTH(n) > reach)
+      reach = KosDynFrame_DEPTH(n);
+  }
+  return reach;
+}
+
+
+/**
+   Shift the frames each goal's target holds off the chain by base, the
+   shift the attach gives the chain's own frames: both were numbered
+   from 1 on the context the chain left. A target's off-chain part runs
+   from its top down to a node with no parent.
+*/
+static KOS_NOINLINE void kos_dyn_span_goals_renumber(
+    KosXferGoal *goal,
+    unsigned base) {
+
+  if (! base)
+    return;
+
+  for (; goal; goal = KosXferGoal_OUTER(goal)) {
+    for (KosDynNode *n = goal->target; n; n = KosDynNode_PARENT(n)) {
+      if (KosDynNode_IS_FRAME(n))
+        KosDynFrame_DEPTH(n) = (uint16_t) (KosDynFrame_DEPTH(n) + base);
+    }
+  }
+}
+
+
+/**
+   Put the span's goals above ctx's own. The span's chain sits above
+   ctx's chain, so every node one of its goals waits on is above every
+   node one of ctx's goals waits on, and ctx's active goal becomes the
+   outer of the outermost of them. A goal whose seam was the root of
+   the context it left, NULL, takes under: that root is now the bottom
+   of the chain the awaiter called, on under. A voided-outer note on
+   ctx's active goal passes up as kos_xfer_goal_push passes it.
+*/
+static KOS_NOINLINE void kos_dyn_span_goals_link(
+    KosContext *ctx,
+    KosXferGoal *goals,
+    KosDynNode *under) {
+
+  KosXferGoal *below = KosContext_GOAL(ctx);
+  int voided = below && below->voided_outer;
+  KosXferGoal *goal = goals;
+
+  for (;;) {
+    if (! goal->seam && under) {
+      goal->seam = under;
+      goal->seam_id = kos_dynnode_id(under);
+    }
+    if (voided)
+      goal->voided_outer = 1;
+    if (! KosXferGoal_OUTER(goal))
+      break;
+    goal = KosXferGoal_OUTER(goal);
+  }
+
+  KosXferGoal_OUTER(goal) = below;
+  KosContext_GOAL(ctx) = goals;
+}
 
 
 int kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span) {
@@ -43,6 +124,12 @@ int kos_dyn_span_detach(KosContext *ctx, KosDynSpan *span) {
   /* the suspended frame's pc fields come from the registers, as at any
      chain edit */
   KosContext_FlushLiveRegsToFrame(ctx);
+
+  /* every goal on the context waits on a node of this chain, or was
+     voided by one that does: they are the suspended thread's as much
+     as the chain is */
+  span->goals = KosContext_GOAL(ctx);
+  KosContext_GOAL(ctx) = NULL;
 
   /* A region's effect exchanges its handled exception with the
      thread's, which belongs to whoever is running: the awaiter, not
@@ -80,6 +167,7 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
   uint32_t demand = live ? (KosDynFrame_FLAGS(live) & KOS_FRAME_DEMAND) : 0;
   unsigned base = live ? KosDynFrame_DEPTH(live) : 0;
   unsigned depth;
+  unsigned room;
   KosDynNode *root = NULL;
 
   if (! span->head) {
@@ -88,10 +176,19 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
   }
 
   /* The chain's lowest frame is numbered 1 on its own context, so its
-     top frame's depth is its frame count. Nothing renumbers before a
-     refusal, so the count reads the same at a second attach. */
+     top frame's depth is its frame count; a goal's target still off the
+     chain was numbered there too, and may reach higher. Nothing
+     renumbers before a refusal, so both read the same at a second
+     attach. */
   depth = span->top_frame ? KosDynFrame_DEPTH(span->top_frame) : 0u;
-  if (kos_eval_check_frame_room(ctx, live, depth) < 0)
+  room = depth;
+  if (unlikely(span->goals)) {
+    unsigned reach = kos_dyn_span_goals_reach(span->goals);
+
+    if (reach > room)
+      room = reach;
+  }
+  if (kos_eval_check_frame_room(ctx, live, room) < 0)
     return -1;
 
   /* what the detach took out comes back before the link: a refusal
@@ -117,6 +214,10 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
       KosDynFrame_FLAGS(n) &= ~KOS_FRAME_DEMAND;
   }
 
+  /* the frames the goals' targets still hold take the chain's shift */
+  if (unlikely(span->goals))
+    kos_dyn_span_goals_renumber(span->goals, base);
+
   /* a generator's frames were numbered for the base its state records;
      numbered here for another, the record is void, so the next install
      at any base renumbers rather than trusting a match */
@@ -136,6 +237,12 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
 
   kos_dyn_commit_dyn_top(ctx, span->head);
 
+  /* the goals go above ctx's own, as the chain goes above its chain */
+  if (unlikely(span->goals)) {
+    kos_dyn_span_goals_link(ctx, span->goals, under);
+    span->goals = NULL;
+  }
+
   kos_dyn_effects_clear(&span->effects);
   span->head = NULL;
   span->top_frame = NULL;
@@ -146,7 +253,20 @@ int kos_dyn_span_attach(KosContext *ctx, KosDynSpan *span) {
 
 void kos_dyn_span_drop(KosDynSpan *span) {
 
+  KosXferGoal *goal = span->goals;
+
   kos_dyn_effects_clear(&span->effects);
+
+  /* each goal is unlinked before it is freed, as a context's clear
+     frees its goals */
+  span->goals = NULL;
+  while (goal) {
+    KosXferGoal *outer = KosXferGoal_OUTER(goal);
+
+    KosXferGoal_OUTER(goal) = NULL;
+    kos_xfer_goal_discard(goal);
+    goal = outer;
+  }
 }
 
 

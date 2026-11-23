@@ -29,6 +29,7 @@ import gc
 import os
 import signal
 import sys
+import types
 import unittest
 
 import pytest
@@ -67,6 +68,94 @@ class Twice:
         return "woken"
 
 
+class Settling:
+    """
+    A Python awaitable that suspends once with "suspended", then logs
+    its tag and completes with False
+    """
+
+    def __init__(self, log, tag):
+        self.log = log
+        self.tag = tag
+
+
+    def __await__(self):
+        yield "suspended"
+        self.log.append(self.tag)
+        return False
+
+
+class AwaitedExit:
+    """
+    A context manager whose __exit__ hands back an awaitable that
+    suspends
+    """
+
+    def __init__(self, log):
+        self.log = log
+
+
+    def __enter__(self):
+        self.log.append("enter")
+
+
+    def __exit__(self, typ, val, tb):
+        self.log.append("exit")
+        return Settling(self.log, "exit2")
+
+
+class AwaitedEnter:
+    """
+    A context manager whose __enter__ hands back an awaitable that
+    suspends, once gate is non-empty
+    """
+
+    def __init__(self, log, gate):
+        self.log = log
+        self.gate = gate
+
+
+    def __enter__(self):
+        self.log.append("enter")
+        if self.gate:
+            return Settling(self.log, "enter2")
+        return None
+
+
+    def __exit__(self, typ, val, tb):
+        self.log.append("exit")
+        return False
+
+
+def started(fn, *args):
+    """
+    Call a Koskari function from Python and step its coroutine once
+
+    :return: a namespace holding the coroutine as c and what its first
+      step suspended on as first
+    """
+
+    c = fn(*args)
+    first = c.send(None)
+    return types.SimpleNamespace(c=c, first=first)
+
+
+def finish_via(fn, *args):
+    """
+    Call a Koskari function from Python and step its coroutine to its
+    return, discarding what it suspends on
+
+    :return: the coroutine's value
+    """
+
+    c = fn(*args)
+    try:
+        while True:
+            c.send(None)
+    except StopIteration as done:
+        return done.value
+
+
 class Interrupted(Exception):
     """
     Raised by the SIGINT handler the signal test installs; the
@@ -92,6 +181,8 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         vars(mod)['Suspender'] = Suspender
         vars(mod)['Twice'] = Twice
         vars(mod)['handled'] = lambda: sys.exc_info()[1]
+        vars(mod)['started'] = started
+        vars(mod)['finish_via'] = finish_via
         return mod
 
 
@@ -456,6 +547,155 @@ class TestCoroutineSplice(unittest.IsolatedAsyncioTestCase):
         mod = await self.load_module()
         with self.assertRaises(KoskariSyncViolation):
             await mod.demand_over_partial()
+
+
+    def run_out(self, outer):
+        """
+        Step a suspended coroutine to its return, each step suspending
+        on "suspended"
+
+        :param outer: the coroutine
+        :return: its value
+        """
+
+        with self.assertRaises(StopIteration) as done:
+            while True:
+                self.assertEqual(outer.send(None), "suspended")
+        return done.exception.value
+
+
+    def spliced_wound(self, mod, c):
+        """
+        Await c, started from Python and suspended in a segment, from
+        Koskari, and step the awaiter to its return
+
+        :param mod: the loaded script module
+        :param c: a coroutine stepped once from Python
+        :return: the awaiter's value
+        """
+
+        outer = mod.await_object(c)
+        self.assertEqual(outer.send(None), "suspended")
+        return self.run_out(outer)
+
+
+    def test_splice_in_an_after_segment_at_a_yield(self):
+        """
+        A coroutine suspended in the after segment a generator's yield
+        runs brings the goal leaving the dyn-wind with it: the segment
+        finishes on the awaiter's chain, the consumer has the value,
+        and the next step enters the dyn-wind again
+        """
+
+        mod = asyncio.run(self.load_module())
+        log = []
+        c = mod.collect(mod.wound(log), log)
+        self.assertEqual(c.send(None), "suspended")
+        self.assertEqual(log, ["in", "out"])
+
+        expect = ["in", "out", "out2", 1, "in", "out", "out2", 2,
+                  "in", "out", "out2"]
+        self.assertEqual(self.spliced_wound(mod, c), expect)
+        self.assertEqual(log, expect)
+
+
+    def test_splice_in_a_before_segment_at_reentry(self):
+        mod = asyncio.run(self.load_module())
+        log = []
+        gate = []
+        c = mod.collect_gated(mod.wound_on_entry(log, gate), log, gate)
+        self.assertEqual(c.send(None), "suspended")
+        self.assertEqual(log, ["in", "in2", "out", 1, "in"])
+
+        expect = ["in", "in2", "out", 1, "in", "in2", "out", 2,
+                  "in", "in2", "out"]
+        self.assertEqual(self.spliced_wound(mod, c), expect)
+        self.assertEqual(log, expect)
+
+
+    def test_splice_in_a_dyn_with_exit_at_a_yield(self):
+        mod = asyncio.run(self.load_module())
+        log = []
+        c = mod.collect(mod.managed(AwaitedExit(log)), log)
+        self.assertEqual(c.send(None), "suspended")
+        self.assertEqual(log, ["enter", "exit"])
+
+        expect = ["enter", "exit", "exit2", 1, "enter", "exit", "exit2", 2,
+                  "enter", "exit", "exit2"]
+        self.assertEqual(self.spliced_wound(mod, c), expect)
+        self.assertEqual(log, expect)
+
+
+    def test_splice_in_a_dyn_with_enter_at_reentry(self):
+        mod = asyncio.run(self.load_module())
+        log = []
+        gate = []
+        gen = mod.managed(AwaitedEnter(log, gate))
+        c = mod.collect_gated(gen, log, gate)
+        self.assertEqual(c.send(None), "suspended")
+        self.assertEqual(log, ["enter", "exit", 1, "enter"])
+
+        expect = ["enter", "exit", 1, "enter", "enter2", "exit", 2,
+                  "enter", "enter2", "exit"]
+        self.assertEqual(self.spliced_wound(mod, c), expect)
+        self.assertEqual(log, expect)
+
+
+    def test_splice_in_an_after_segment_of_an_abort(self):
+        """
+        A shift's abort leaving a dyn-wind whose after segment suspends
+        goes on from the awaiter's chain to its reset
+        """
+
+        mod = asyncio.run(self.load_module())
+        log = []
+        c = mod.abort_through_wait(log)
+        self.assertEqual(c.send(None), "suspended")
+        self.assertEqual(log, ["in", "out"])
+
+        self.assertEqual(self.spliced_wound(mod, c), "aborted")
+        self.assertEqual(log, ["in", "out", "out2"])
+
+
+    def test_continuation_signal_from_a_spliced_coroutine_reaches_its_owner(
+            self):
+        """
+        A coroutine started from Python inside the evaluation that
+        captured k invokes k inside a dyn-wind, and is suspended in the
+        after segment by the unwind the signal began. Awaited from that
+        same evaluation, the after segment finishes, the awaiter's own
+        dyn-wind is left, and k takes the value
+        """
+
+        mod = asyncio.run(self.load_module())
+        log = []
+        outer = mod.owner_awaits_jumper(log)
+        self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(log, ["in", "out", "suspended", "a-in"])
+
+        expect = ["in", "out", "suspended", "a-in", "out2", "a-out",
+                  "jumped"]
+        self.assertEqual(self.run_out(outer), expect)
+        self.assertEqual(log, expect)
+
+
+    def test_continuation_signal_from_a_spliced_coroutine_leaves_an_awaiter(
+            self):
+        """
+        Awaited from a coroutine that does not own k, the signal leaves
+        that coroutine's extents and its context as it would from any
+        call, and k's owner takes the value
+        """
+
+        mod = asyncio.run(self.load_module())
+        log = []
+        with self.assertRaises(StopIteration) as done:
+            mod.other_awaits_jumper(log).send(None)
+
+        expect = ["in", "out", "suspended", "a-in", "out2", "a-out",
+                  "jumped"]
+        self.assertEqual(done.exception.value, expect)
+        self.assertEqual(log, expect)
 
 
 # The end.

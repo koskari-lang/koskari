@@ -211,6 +211,12 @@ in its own fragment and has its own effect list in `KosDynSpan`.
 The room check is the depth of that context's top frame, since its
 lowest frame is numbered 1.
 
+A suspended coroutine is not a generator: its chain, the transfer goals
+waiting on that chain, its pending await and its handled exception are
+the state of a thread, and the splice makes all of it the awaiter's, as
+a call from the awaiter would have from the start. The goals travel in
+`KosDynSpan` with the chain (6.2).
+
 ### 4.5 One exception slot
 
 ```c
@@ -545,6 +551,40 @@ added to `depends` in `setup.py`:
 
 `coro.c:1027` and `iterate.c:1054`: the room check reads the depth of
 the context's top frame.
+
+As implemented, the span carries the suspended thread's goals too:
+
+- `KosDynSpan.goals` holds the context's whole goal list, active goal
+  first. Detach takes it off the context with the chain: every goal on
+  a context waits on a node of its chain, or was voided by one that
+  does. Before this, the goals stayed behind, the context's clear
+  discarded them, and the awaiter settled the node a goal waited on as
+  its frame's own leave or enter.
+- Attach links the goals above the awaiter's: the awaiter's active goal
+  becomes the outer of the outermost moved goal, and a voided-outer
+  note on it passes up as `kos_xfer_goal_push` passes it. A refused
+  attach leaves the goals in the span, the re-attach to the old context
+  restores them, and `kos_dyn_span_drop` discards them, each unlinked
+  before it is freed.
+- Root seam: a moved goal whose seam was NULL, the old context's root,
+  takes the node under the splice as its seam. That is where the
+  awaiter's call was made, and below it are the awaiter's own extents.
+- Depths: the frames a goal's target holds off the chain were numbered
+  on the old context, and nothing renumbers them before they attach
+  (`goal_attach`, `kos_dyn_gen_wind_attach`). They take the chain's
+  shift by the live frame's depth, and the attach's room check counts
+  the highest of them.
+- cc-unwind delivery: the boundary raise, with
+  `kos_eval_prepare_boundary_raise` and `kos_xfer_goal_abandon_all`, is
+  made only when the goal's seam is the context's root, NULL or a GEN
+  with no parent (the seams the foreign path in `eval.c` gives). From
+  any other seam the goal retires alone and the signal is raised at the
+  live frame as an ordinary raise, so the awaiter's ingress judges the
+  continuation's token as it would have had the coroutine been called
+  from the start.
+- `KOS_SUSP_WIND` does not move. A context suspended at a Python await
+  always carries `KOS_SUSP_AWAIT`; the winding mark is consumed at the
+  entry that follows the install that set it.
 
 ### 6.3 Stage 3: exception slot
 
