@@ -29,6 +29,7 @@ one whose topic has come up in your code.
 | [Functions](functions.md) | Formals, defaults, rest collectors, `return` and multiple values, closures, recursion and named `let`, thunks |
 | [Decorators](decorators.md) | The `@` surface end to end: reader, `decorate`, graft and call-time families, extending it |
 | [Control flow](control-flow.md) | `if`, `cond`, `when`, `unless`, `while`, `for-each`, `break` with a value, the `-each` family |
+| [Dynamic extents](dynamic-extents.md) | `dyn-wind`, `dyn-with` and `parameterize` beside `try` and `with`; continuation transfers; Python code between extents; extents in generators |
 | [Match patterns](match-patterns.md) | The `match` pattern language: sequences, classes, mappings, typed captures, guards |
 | [Idiomatic Koskari](idiomatic-koskari.md) | The direct form over the assembled one: `item-slice`, dotted `set!`, `var` patterns, `None?`, `unless` |
 
@@ -67,6 +68,7 @@ types-and-annotations
 functions
 decorators
 control-flow
+dynamic-extents
 match-patterns
 idiomatic-koskari
 modules-and-packages

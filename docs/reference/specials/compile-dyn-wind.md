@@ -60,4 +60,4 @@
   log)                           ; => ["in", "out", 1, "in", "out", 2, "in", "out"]
 ```
 
-**Also:** layout handler [`dyn-wind`](../layouts/layout-dyn-wind.md).
+**Also:** layout handler [`dyn-wind`](../layouts/layout-dyn-wind.md); guide page [Dynamic extents](../../guide/dynamic-extents.md).

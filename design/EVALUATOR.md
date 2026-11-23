@@ -273,7 +273,7 @@ flowchart TD
 
 ### 2.2 Phase 2: Transfer Goal Processing
 
-**eval_phase_transfer** runs **`kos_eval_drain_goal`** (`eval/eval_chain.c`), which processes the active goal through **`kos_xfer_goal_drive`** and routes its answer. The same step runs at every prologue re-entry (**`eval_step_drain_goal`**, §8.2), so a goal waiting on a thunk resumes as soon as that thunk's frame is gone.
+**eval_phase_transfer** runs **`kos_eval_drain_goal`** (`eval/eval_chain.c`), which processes the active goal through **`kos_xfer_goal_drive`** and routes its answer. The same drain runs at every prologue re-entry (§8.2), so a goal waiting on a thunk resumes as soon as that thunk's frame is gone. Two sites run a waiting goal without a prologue pass (§6.2, "Threading").
 
 ```mermaid
 flowchart TD
@@ -573,7 +573,7 @@ the resume with the value, §8.2); a **region** over a plain parent
 (`kos_return_is_region` → `eval_region_return`: any parent that is not a
 frame, a GEN or a PROMPT, beneath a frame with no resume waiting,
 retargeted from the same cached facts; the value is pushed onto the
-region's segment, and a region that carries `KOS_DYN_CAP_CONTROL_HOOK`
+region's segment, and a region that carries `KOS_DYN_CAP_LEAVES`
 (WITH, WIND) reacts through `kos_dyn_settle_top` before
 `kos_eval_delivery_done`, the rest dispatch directly); and a region with
 no such hook over a **frame waiting on a resume**
@@ -810,9 +810,11 @@ at the chain root (NULL parent) or a GEN at the context root. Per iteration:
    Otherwise record the frame into the exception's trace
    (`kos_eval_note_crossed_frame`), pop it, and continue in the
    caller's section.
-2. **Cap fast check**: only nodes with `KOS_DYN_CAP_INTERCEPTS_RAISE`
-   (TRY, FINALLY, GEN) are dispatched; everything else, a PROMPT
-   included, goes straight to unwind/pop. Dispatch
+2. **Cap fast check**: only nodes with `KOS_DYN_CAP_INTERCEPT`
+   (TRY, FINALLY, GEN, PROMPT) are dispatched, and a PROMPT passes;
+   a node with no skip bit (§11, "Capabilities and the skip link")
+   leaves through `kos_dyn_release_top`, with no offer, no unlink
+   dispatch and no obligation. Dispatch
    outcomes:
    - **CONSUMED** by TRY or FINALLY (**node-authoritative**: a live,
      enabled node consumes on its own state; its `HANDLER_PC` was fixed
@@ -946,8 +948,8 @@ TRANSFER; a TRY or FINALLY is local to its frame, and the unlink restores
 its saved exception state and runs no handler or finally body.
 
 The caps bitfield is the **fast first check** before dispatch: the RAISE
-walk consults `KOS_DYN_CAP_INTERCEPTS_RAISE` and only dispatches
-cap-positive nodes (TRY, FINALLY, GEN); cap-negative nodes
+walk consults `KOS_DYN_CAP_INTERCEPT` and only dispatches
+cap-positive nodes (TRY, FINALLY, GEN, PROMPT); cap-negative nodes
 skip the kind-switch entirely and go straight to unwind/pop. A
 `KOS_DYN_CAP_BARRIER` node (PROMPT) passes on handle(RAISE) and is
 crossed by the raise walk's unlink itself (`kos_dyn_unlink_top` with
@@ -955,22 +957,28 @@ the barrier allowed).
 
 ### 5.5 The unwind walks
 
-There is no single unwind entry. Four walks, each over the running context, tear nodes down for one reason: `kos_dyn_unwind_raise` (RAISE), `kos_dyn_unwind_return` (RETURN), `kos_dyn_unwind_to_loop` (BREAK and CONTINUE), and `kos_dyn_unwind_to_node` (a targeted unwind to a chosen node). A continuation transfer, a shift's abort included, leaves nodes through a transfer goal's LEAVING phase with TRANSFER (§6). The reason reaches a node as a `KosXferEvent` (NONE, RETURN, RAISE, BREAK, CONTINUE, SHIFT, TRANSFER) so it knows *why* it is being torn down; transfer-aware nodes (e.g. `dynamic-wind`) use it for after-thunks.
+Four walks, each over the running context, tear nodes down for one reason: `kos_dyn_unwind_raise` (RAISE), `kos_dyn_unwind_return` (RETURN), `kos_dyn_unwind_to_loop` (BREAK and CONTINUE), and `kos_dyn_unwind_to_node` (a targeted unwind to a chosen node). A continuation transfer, a shift's abort included, leaves nodes through a transfer goal's LEAVING phase with TRANSFER (§6). The reason reaches a node as a `KosXferEvent` (NONE, RETURN, RAISE, BREAK, CONTINUE, SHIFT, TRANSFER) so it knows *why* it is being torn down; transfer-aware nodes (e.g. `dynamic-wind`) use it for after-thunks.
+
+The walks share one step, the test of the skip bits (`KOS_DYN_CAP_SKIP`: INTERCEPT, LEAVES, WINDS, EFFECT). A node with none leaves through `kos_dyn_release_top`, or `kos_dyn_keep_top` when a shift's abort keeps it: no offer, no unlink dispatch, no obligation, no goal bookkeeping. A node with one is offered the event when the walk offers (`kos_dyn_handle`) and leaves through `kos_dyn_unlink_top`, which runs, aborts or restores it by the event. `kos_dyn_walk(ctx, const KosTransit *t, stop)`, inlined over a constant `KosTransit` (the event and the offer mask) per caller, is that loop for the return walk, the loop walk and `kos_dyn_unwind_to_node`. The raise walk keeps a loop of its own for the frame crossing, the GEN teardown and the wind exception preserve, and `goal_leave` keeps one in `xfer_goal.c`; both take the same release for a node with no skip bit.
+
+A walk that removes nothing follows `skip` and so visits only nodes with a skip bit: the generator freeze, the context move's detach, the abort's prompt seek, `kos_dyn_find_gen` and `transform_chain_gens`. Two walks visit every parent: `kos_dyn_find_loop`, since the region must be in the running frame and a frame has no skip bit, and the shift's prompt seek, which asks `kos_dyn_node_capturable` of every node.
 
 ### 5.6 Transit types
 
 | Transit | Walk | Key functions |
 |---------|------|----------------|
 | RETURN | handle(RETURN) per node above the frame; an enabled FINALLY consumes and may overwrite the value; if not consumed, unwind → pop callee frame; a plain parent takes the value through `eval_plain_return`, a PROMPT parent is popped with the frame and the value goes below it, any other non-GEN parent takes it through **`eval_parent_return_deliver`** after the pop. A root frame, or a frame whose GEN or PROMPT parent is the context root, returns `EVAL_RETURN(val)`. | `kos_dyn_unwind_return`; `eval_event_return_at_frame` |
-| RAISE | handle(RAISE) on nodes with the INTERCEPTS_RAISE cap; TRY/FINALLY catch (node-authoritative); else unwind → pop, **crossing frames** (each added to the traceback) until the chain root or a root GEN; an async teardown stores the exception as the node's obligation; teardown failures supersede with `__context__` | `process_raise` → `kos_dyn_unwind_raise`; `kos_dyn_handle` behind the INTERCEPTS_RAISE gate (§4.2, §4.4) |
-| YIELD | No walk and no offer: a yield is not an unwind, so no node between the frame and its GEN acts on it. **`kos_dyn_yield_gen`** locates the GEN; **`eval_event_yield`** freezes it, then delivers to the receiver or stops | `kos_dyn_yield_gen`, `kos_dyn_gen_freeze` |
+| RAISE | handle(RAISE) on nodes with the INTERCEPT cap; TRY/FINALLY catch (node-authoritative); else unwind → pop, **crossing frames** (each added to the traceback) until the chain root or a root GEN; an async teardown stores the exception as the node's obligation; teardown failures supersede with `__context__` | `process_raise` → `kos_dyn_unwind_raise`; `kos_dyn_handle` behind the INTERCEPT gate (§4.2, §4.4) |
+| YIELD | No offer and no unlink: a yield is not an unwind. **`kos_dyn_yield_gen`** locates the GEN; **`eval_event_yield`** freezes it, then delivers to the receiver or stops. The freeze is a skip walk that swaps out the state of the span's `EFFECT` nodes; a span holding a `WINDS` node is wound out first, by a goal that runs each leave (§6.6) | `kos_dyn_yield_gen`, `kos_dyn_gen_freeze`, `eval_yield_unfrozen` |
 | AWAIT | **No** chain unwind or pop; full dynchain preserved; evaluator returns `EVAL_AWAIT(val)` | AWAIT opcode, `revive_await` |
 | BREAK / CONTINUE | Find the nearest enabled LOOP or FOREACH in the running frame (`kos_dyn_find_loop`); offer handle to each node above it (an enabled FINALLY consumes and re-issues at POP_FINALLY), else unlink it; CONTINUE stores the result on the region and continues at its continue pc; BREAK pops the region, pushes the result and continues at its break pc | `kos_dyn_unwind_to_loop` |
 | ABORT | handle(ABORT) offered to each node while locating the nearest prompt with the tag, in one walk, for an abort and for a shift; a prompt consumes, and one whose tag differs is crossed; a GEN denies. For a shift the walk also refuses a node that cannot be captured. The abort to the prompt follows (§6.4) | `kos_prompt_seek`, from `kos_abort_prompt` and `kos_shift_capture`; `kos_abort_to_prompt` |
 
 **YIELD details:** The span from dyn_top down to the GEN leaves the live
-chain into the generator object's state with its open extents intact (no
-`finally`, no `__exit__` runs at a yield; they return with the next install);
+chain into the generator object's state. A `finally` and a plain
+`with` run nothing at a yield and return with the next install; a
+`dyn-wind`, a `dyn-with` and a `parameterize` are left before the
+value is presented and entered again by the next step (§6.6);
 the GEN leaves the chain with it and rests in the same state. **Top-level**
 generator (a GEN at the chain root): suspend and return the yield value.
 **Flattened** iterator stepping (a consumer frame carrying a for-each,
@@ -985,9 +993,9 @@ RAISE transit), not a separate inbound channel.
 
 ### 5.7 Generator node
 
-`KOS_DYN_GEN` marks a generator's span on the chain while it is **installed** (when Python steps a Koskari generator via `send`/`throw`, or a Koskari consumer steps it on its own chain); the generator's root frame has the GEN as its parent, and the GEN's parent is the consumer's top or NULL at the context root. The node is a marker: it names the generator object, borrowed, and the object's state record. Everything the generator keeps between steps lives in that record on the object: the resting span, its bottom frame, the frame count and consumer depth the span is numbered for, the two register snapshots of the flattened step cycle, and the started, installs and busy flags. The node itself rests there between installs too, so a step reuses it rather than the freelist. A generator object is created with its unstarted frame alone as the span; the first install creates the node.
+`KOS_DYN_GEN` marks a generator's span on the chain while it is **installed** (when Python steps a Koskari generator via `send`/`throw`, or a Koskari consumer steps it on its own chain); the generator's root frame has the GEN as its parent, and the GEN's parent is the consumer's top or NULL at the context root. The node is a marker: it names the generator object, borrowed, and the object's state record. Everything the generator keeps between steps lives in that record on the object: the resting span, its bottom frame, the consumer depth the span is numbered for, the two register snapshots of the flattened step cycle, the effect list, the winding pieces and their goal's storage (§6.6), and the started and busy flags. A span's frame count is not stored: depths are contiguous, so it is the top frame's depth minus the bottom frame's plus one. The node itself rests there between installs too, so a step reuses it rather than the freelist. A generator object is created with its unstarted frame alone as the span; the first install creates the node.
 
-- **YIELD**: no node is offered the event. **`kos_dyn_yield_gen`** walks outward from the running frame to its GEN, and **`eval_event_yield`** freezes it through **`kos_dyn_gen_freeze`**: the span from dyn_top down to the generator's root frame leaves the chain into the object's state, the GEN unlinks and rests there, the GEN's old parent becomes dyn_top, and the live registers retarget to it. Resumption is via **`revive_yield`**, which pushes **`send_val`** onto the stack and continues at the next instruction.
+- **YIELD**: no node is offered the event. **`kos_dyn_yield_gen`** walks outward from the running frame to its GEN, and **`eval_event_yield`** freezes it through **`kos_dyn_gen_freeze`**: the span from dyn_top down to the generator's root frame leaves the chain into the object's state, the GEN unlinks and rests there, the GEN's old parent becomes dyn_top, and the live registers retarget to it. The freeze first collects the span's effect list by a skip walk from dyn_top to the GEN (`KosDynEffects`: the `EFFECT` nodes whose state is live, innermost first) and swaps each out (`kos_dyn_effect_out`: a PARAM's cells, a handling TRY's or FINALLY's exception); the install swaps them back from the list's end and walks nothing else. A span with no skip-bit node is one compare, the top's skip link against the GEN. Two entries are inline in the state and a longer list uses an array the state keeps, so a step allocates nothing once it is sized; the list's growth is the only step that can fail, before the chain changes (`kos_dyn_gen_freeze` answers -2 and the yield raises `MemoryError`). A span holding a `WINDS` node is not frozen at once: the freeze answers 1 with nothing changed and the yield winds out (§6.6). Resumption is via **`revive_yield`**, which pushes **`send_val`** onto the stack and continues at the next instruction.
 - **Lifetime**: an installed GEN is the chain's, freed with it like any other node; a chain free that reaches a GEN ends the step in flight and clears the object's busy flag. The borrowed object is alive for as long as the node is installed: the record stepping it (a for-each request, a next request's resume, a yield-from delegate slot, a native frame's record, a Python adapter) sits below the node on the chain or releases its context before the object, and the object clears its own context in its dealloc. The node holds no reference, so a generator dropped by Python dies at its last reference and its close runs there, as CPython's finalizer does; the collector is involved only when user references form a cycle.
 
 Whether control returns to the caller depends on evaluator flattening:
@@ -1000,12 +1008,15 @@ Whether control returns to the caller depends on evaluator flattening:
 
 - **Lexical / resource nodes** (e.g. `with`): **push** / **wind**, **unwind** /
   **pop**. A WITH does not handle RAISE: it carries `KOS_DYN_CAP_CATCH` and
-  may swallow the exception during its unwind. A yield does not touch it.
+  may swallow the exception during its unwind. A yield does not touch a
+  plain one.
 - **Transfer-aware nodes** (`KOS_DYN_CAP_WINDS`: `dynamic-wind`, `dyn-with`,
   `parameterize`): **unwind** on RETURN, RAISE, BREAK, CONTINUE and
   TRANSFER, and **wind** again when a transfer re-enters them. A yield
-  does not unwind them. A plain `with`, `try` and `finally` are local: a
-  TRANSFER unlinks them without running exit, handler or finally body.
+  leaves them and the next step enters them, without unlinking (§6.6).
+  A plain `with`, `try` and `finally` are local: a TRANSFER unlinks
+  them without running exit, handler or finally body, and a yield
+  runs nothing of theirs.
 - **Interceptors** (`try` / `except`, `finally`): primarily **handle(event)**;
   may transform or swallow transits.
 - **Resumable operations without a node** (yield-from): the delegating
@@ -1086,6 +1097,8 @@ flowchart LR
 | `resume_pc`, `continuation_ref` | `KosOp *` installed when the target is used up (NULL when unset); the Python wrapper kept alive |
 | `restore`, `restore_count` | the captured operand stacks of the shared nodes, put back at the first ATTACHING (§6.4) |
 | `outer`, `voided_outer` | the waiting enclosing goal; set when LEAVING unlinked a node an outer goal waits on |
+| `in_place` | the goal's storage is not its own: 1, the caller of `kos_xfer_goal_run`, which the goal leaves for the heap if it pauses; 2, its generator's (`kos_xfer_goal_run_kept`), which outlives it |
+| `gen_state`, `is_throw`, `demand` | a winding goal's only (§6.6): the generator state whose list it works through, whether its payload is an exception to raise at the yield, and whether the consumer ran under demand |
 
 ### 6.2 Goal step rules
 
@@ -1094,6 +1107,8 @@ flowchart LR
 3. **ATTACHING is a relink.** The clone already numbered its frames for the frame depth limit (§7.7), linked its back links, and recorded each split point -- the next node a transfer runs (`KOS_DYN_CAP_WINDS`) -- with the registers live there. The first ATTACHING completes the clone from the registers at the seam (`kos_dyn_settle_clone`) and puts back the restore records; each ATTACHING then links the next piece, from the target's bottom up to and including the next split point, and loads its registers. No walk. The piece that uses the target up sets the resume pc. Every outer goal whose frontier LEAVING unlinked is freed (all of them when the seam is NULL).
 4. **Outermost first.** ATTACHING and ENTERING alternate until the target is used up: each split point's enter (a before thunk, `__enter__`, a parameter binding) runs with only the extents outside it on the chain, as dynamic-wind runs a before thunk.
 5. **Raise.** A raise frees every goal not waiting on a live thunk, from the active one down to the first that waits on one (`kos_xfer_goal_abandon_stepping`). A goal whose thunk is still above its node stays: a raise the thunk catches itself leaves the transfer going, and one that leaves the thunk frees the goal when the walk unlinks the node it waits on (`kos_xfer_goal_thunk_died`). The chain a walk left behind is a chain to raise through.
+
+**Threading.** A goal that leaves itself waiting on a frame a step just installed does not need a prologue pass to start that frame. A run answers NORMAL when the frame can be threaded into, no delivery is staged and the breaker is down (`goal_run_answer`), and the caller threads into the frame. Two sites run a waiting goal themselves, through `kos_xfer_goal_run_pushed`, the raw goal step whose answer has not been through the raise ingress and is relayed as an instruction's: the for-each and yield-from step, for the goal a wound install pushed (`KOS_ITER_INSTALLED_THREAD`), and the region arm of `kos_return_deliver`, which tail calls `kos_eval_goal_thread` when the frame that returned was the one a goal waited on (`kos_xfer_goal_will_drive`). A step through `kos_iter_installed` (a transform's request) goes by the prologue.
 
 Seam and target per caller:
 
@@ -1106,7 +1121,7 @@ Seam and target per caller:
 
 ### 6.3 Unlink and obligations
 
-Every node leaves the chain through **`kos_dyn_unlink_top(ctx, ev, allow_barrier)`**: (1) a `KOS_DYN_CAP_CONTROL_HOOK` node is asked to leave (`kos_dyn_extent_leave`), and any answer but NORMAL returns with the node still on the chain; (2) the synchronous per-kind teardown runs; (3) the node's obligation is detached; (4) the parent becomes `dyn_top` and the node is freed; (5) the obligation is acted on by its kind and by `ev`:
+Every node leaves the chain through **`kos_dyn_unlink_top(ctx, ev, allow_barrier)`**: (1) a `KOS_DYN_CAP_LEAVES` node is asked to leave (`kos_dyn_extent_leave`), and any answer but NORMAL returns with the node still on the chain; (2) the synchronous per-kind teardown runs; (3) the node's obligation is detached; (4) the parent becomes `dyn_top` and the node is freed; (5) the obligation is acted on by its kind and by `ev`:
 
 | Obligation \ event | `NONE` (plain pop, hook finished a leave) | `RAISE` | any transfer event |
 |---|---|---|---|
@@ -1115,21 +1130,21 @@ Every node leaves the chain through **`kos_dyn_unlink_top(ctx, ev, allow_barrier
 | RETURN | caller error; only `kos_dyn_settle_top` receives one, handing it back for `KosEval_ResumeReturn` | dropped | dropped |
 | SWALLOWED | None pushed (a with's `__exit__` consumed the raise) | None pushed | None pushed |
 
-**Keeping.** A shift's abort does not free what it leaves: its LEAVING (`goal_leave_keep`) takes each node through **`kos_dyn_unlink_top_keep(ctx, &node)`** and links it into the continuation's template, under the node kept before it and onto the template's bottom, a clone of the prompt. The function shares no code with `kos_dyn_unlink_top`, so no other leave pays for it. A kept node leaves as a transfer has it leave, and a stored obligation is discarded; what a clone taken before the leave would have recorded stays on the node, since each call of the continuation clones the template and a kept node never runs again:
+**Keeping.** A shift's abort does not free what it leaves: its LEAVING (`goal_leave`, with `keep` set) takes each node with a skip bit through **`kos_dyn_unlink_top_keep(ctx, &node)`** and each node without one through `kos_dyn_keep_top`, and links it into the continuation's template (`goal_keep_node`), under the node kept before it and onto the template's bottom, a clone of the prompt. A kept node keeps its links; one whose `skip` is the live PROMPT is re-pointed at the template's clone of it. `kos_dyn_unlink_top_keep` shares no code with `kos_dyn_unlink_top`, so no other leave pays for it. A kept node leaves as a transfer has it leave, and a stored obligation is discarded; what a clone taken before the leave would have recorded stays on the node, since each call of the continuation clones the template and a kept node never runs again:
 
 | Kind | Kept |
 |---|---|
 | FRAME | namespace revealed; a holder's cache slot and the links to the frame and segment below dropped; the resume left as it is. The function reference stays, so the frame is offered to the function's frame cache when the template is freed |
 | NS, COLLECT | namespace revealed |
-| TRY, FINALLY | when handling an exception, frozen as with a generator's span (`kos_dyn_region_exc_freeze`): its exception comes off the thread into the node and the displaced one goes back |
+| TRY, FINALLY | when handling an exception, its effect goes out as at a generator's freeze (`kos_dyn_effect_out`, `kos_exc_slot_out`): its exception comes off the thread into the node's slot and the displaced one goes back |
 | FOREACH | the request of a step in flight is finished, as the iterator must be told; the resume on the loop's frame stays, since that frame is kept next |
-| PARAM | the outer cells are swapped back |
+| PARAM | the outer cells are swapped back (`kos_dyn_effect_out`) |
 | WIND, dyn-with | the after thunk or `__exit__` runs |
 | plain WITH | a call in flight is discharged |
 
 What a clone would refuse (`kos_dyn_node_capturable`: a GEN, a WIND or WITH with a call in flight or an obligation stored, a frame whose resume kind cannot clone its state) is refused by the prompt seek, before the first node leaves. A leave that raises abandons the transfer, and the goal drops its payload, the continuation, with the partial template; one that waits leaves the partial template on the goal.
 
-The **extent contract** for WIND and WITH is total and re-entrant: `enter` / `leave` answer NORMAL when discharged, REPROLOGUE when a thunk or `__enter__`/`__exit__` frame was installed, AWAIT when the call suspended, RAISE when the node's own code raised; a node in a pending phase is in flight, answers REPROLOGUE while its thunk frame sits above it, and is aborted by a leave once it is `dyn_top` with the thunk gone. `settle` takes the returned call result off the block and advances the phase; `abort` advances without one. The node never unlinks itself and never reads the transfer state.
+The **extent contract** for WIND and WITH is one machine (`kos_dyn_extent_enter`, `_leave`, `_settle`, `_abort`, `_in_flight`, over the `KosExtent` each payload embeds; phases `KOS_EXTENT_IDLE`, `_ENTERING`, `_LEAVING`, `_LEFT`). The kind supplies two calls: a WIND runs its before or after aside, a WITH calls `__enter__` or `__exit__`. The contract is total and re-entrant: `enter` / `leave` answer NORMAL when discharged, REPROLOGUE when a thunk or `__enter__`/`__exit__` frame was installed, AWAIT when the call suspended, RAISE when the node's own code raised; a node in a pending phase is in flight, answers REPROLOGUE while its thunk frame sits above it, and is aborted by a leave once it is `dyn_top` with the thunk gone. `settle` takes the returned call result off the block and advances the phase; `abort` advances without one. The node never unlinks itself and never reads the transfer state.
 
 ### 6.4 Continuation capture and application
 
@@ -1137,7 +1152,7 @@ The **extent contract** for WIND and WITH is total and re-entrant: `enter` / `le
 
 **Reset.** `RESET`, `ABORT` and `SHIFT` are EXTRA rows of two fields: a tag count and an aside. Count 0 names the default tag, count 1 pops the tag from the stack, and Code construction refuses any other count. The tag is an owned `PyObject *` matched by identity; the default tag is NULL, and a popped `None` names it. `RESET` pushes a `KOS_DYN_PROMPT` carrying the tag (`kos_dyn_push_prompt`) and the body's frame above it (`kos_dyn_push_aside`), over the live namespace. The prompt holds no operands and no pc: the region's operands are in the frames above it, and the frame below already stands after the RESET. The frame on a prompt ends it; its return pops both (§2.6).
 
-**Abort** (`kos_abort_to_prompt(ctx, prompt, aside, ns, owns_ns, payload, keep)`). `ABORT` seeks its prompt (`kos_abort_prompt`): one walk from `dyn_top` offers `handle(ABORT)` to each node and stops at the nearest PROMPT carrying the tag; a PROMPT of another tag is crossed, a GEN denies with `KoskariPromptUnreachable`, and no prompt raises through `kos_raise_prompt_not_found`. The handler's frame is then made, linked to nothing, and a transfer goal runs in place (`kos_xfer_goal_run`) with the prompt as seam and that frame as target; the goal is kept on the heap only if a leave pauses or fails. LEAVING unlinks every node above the prompt with TRANSFER, the running frame and the reset's body frame included: a node carrying `KOS_DYN_CAP_WINDS` runs its leave (a WIND after thunk, a dyn-with `__exit__`, a PARAM restore), and a plain WITH, TRY or FINALLY is unlinked without running anything of its own. The region's operands stay in its frames until LEAVING unlinks them, so an after thunk or `__exit__` that raises abandons the abort and the region continues where the raise is caught. The prompt stays. ATTACHING links the handler's frame on it; its return ends the prompt and is the reset's value, as the body's would have been. The handler runs outside the region's extents: a `dyn-wind`, `with`, `try` or `parameterize` opened between the reset and the abort is not in effect for it. A shift or an abort in the handler finds the same prompt. The caller supplies the handler's namespace: `ABORT` passes the live one, revealed before the transfer since the frame that owns it is released and a frame cache would otherwise reclaim the namespace; `SHIFT` passes the one it built from the handler's spec, which the handler's frame introduces.
+**Abort** (`kos_abort_to_prompt(ctx, prompt, aside, ns, owns_ns, payload, keep)`). `ABORT` seeks its prompt (`kos_abort_prompt`): one walk from `dyn_top`, following `skip`, offers `handle(ABORT)` to each node it reaches and stops at the nearest PROMPT carrying the tag; a PROMPT of another tag is crossed, a GEN denies with `KoskariPromptUnreachable`, and no prompt raises through `kos_raise_prompt_not_found`. The handler's frame is then made, linked to nothing, and a transfer goal runs in place (`kos_xfer_goal_run`) with the prompt as seam and that frame as target; the goal is kept on the heap only if a leave pauses or fails. LEAVING unlinks every node above the prompt with TRANSFER, the running frame and the reset's body frame included: a node carrying `KOS_DYN_CAP_WINDS` runs its leave (a WIND after thunk, a dyn-with `__exit__`, a PARAM restore), and a plain WITH, TRY or FINALLY is unlinked without running anything of its own. The region's operands stay in its frames until LEAVING unlinks them, so an after thunk or `__exit__` that raises abandons the abort and the region continues where the raise is caught. The prompt stays. ATTACHING links the handler's frame on it; its return ends the prompt and is the reset's value, as the body's would have been. The handler runs outside the region's extents: a `dyn-wind`, `with`, `try` or `parameterize` opened between the reset and the abort is not in effect for it. A shift or an abort in the handler finds the same prompt. The caller supplies the handler's namespace: `ABORT` passes the live one, revealed before the transfer since the frame that owns it is released and a frame cache would otherwise reclaim the namespace; `SHIFT` passes the one it built from the handler's spec, which the handler's frame introduces.
 
 **Shift capture** (`kos_shift_capture(ctx, tag, &k, &prompt)`). `SHIFT` pops its tag first, so the tag is no part of the continuation, and seeks its prompt as an abort does; on the way each node crossed must be one a continuation can hold (`kos_dyn_node_capturable`), so every refusal is raised while the chain is whole. The live pc is flushed into the running frame, which then stands at the instruction after the SHIFT, and the continuation is made with a clone of the prompt as its only node. `SHIFT` then calls `kos_abort_to_prompt` with the continuation as both payload and `keep`: the abort's LEAVING keeps each node it unlinks into the template (§6.3), so the template is whole frames from the running one down through the prompt, the same content a clone of that run would have held, without the clone or the frees. The reset's body frame rests on the prompt's copy, which ends the copy of the body as the prompt ends the body. DELIVERING pushes the continuation on the handler's stack, where the handler's first instruction stores it into the handler's own namespace: k is a local of the aside's spec, so each run of the handler has its own and no cycle forms through the enclosing function's names.
 
@@ -1162,6 +1177,35 @@ A reset's body and a shift's or an abort's handler are asides: each runs in a fr
 | raise | Not refused. The raise walk unlinks a PROMPT like any other node, so an exception in a body or a handler propagates from the reset, and one in an applied continuation propagates from the call site. | -- |
 
 `KoskariPromptUnreachable` derives from `KoskariContinuationError` and `RuntimeError`. Its `tag` attribute is the prompt tag, None for the default tag and for call/cc. `kos_raise_prompt_unreachable(operation, boundary, fmt)` (`dynchain.h`) raises it.
+
+### 6.6 Winding across a yield
+
+A yield leaves the `KOS_DYN_CAP_WINDS` nodes of the generator's span, innermost first, before the value is presented, and the step that resumes the generator enters them again, outermost first. A WIND runs its after and before asides, a dyn-with its `__exit__` and `__enter__`, and a PARAM, which is also an `EFFECT`, swaps its cells. No node leaves the chain for good: the nodes stay the generator's.
+
+A leave or an enter may install a frame or suspend, so both run as a transfer goal with no target and no seam, in two phases of its own, `KOS_GOAL_WINDING_OUT` and `KOS_GOAL_WINDING_IN`. Neither runs `goal_leave` or `goal_attach`.
+
+- **The list is mixed.** The freeze's collect lists the winders among the effects, in chain order, and answers 1 with nothing changed (`kos_dyn_gen_freeze`). `eval_yield_unfrozen` then starts the winding out (`kos_dyn_gen_wind_out_begin`).
+- **Out.** `goal_wind_out` walks the list from its start (`kos_dyn_gen_wind_out_next`). Effects go out as it passes them. At a winder the span is cut just above it, so its leave runs with the chain as it stood outside the nodes it encloses and every inner effect out; the cut part is the goal's `target` while the cut exists, and one cut exists at a time. The goal records each winder's piece: the node resting on it, the registers live with it at dyn_top, and the pc, which a dyn-with's exit moves past its block and the goal puts back (`KosXferPiece`, in `KosGenState.pieces`). A leave that installs a frame makes the goal wait on the winder, as a transfer's does. `kos_dyn_gen_wind_left` puts a left extent back to IDLE with `entered` clear, so a later enter is the ordinary one and a generator dropped while it rests frees the node without a second leave. When the last winder is left the span freezes (`kos_dyn_gen_freeze_wound`) and `eval_yield_wound` presents the value.
+- **In.** A wound span rests with `effects.count` 0 (the list's length is in `wound_count`) and `frozen.top` NULL, so the install's existing tests send it to `kos_dyn_gen_install_winding` and a plain install tests nothing for it. The install attaches the span up to and including the outermost winder and pushes the goal. `goal_wind_in` runs the winder's enter, then `kos_dyn_gen_wind_attach` puts back the effects up to the next winder and attaches the next piece, until the list is used up; `kos_dyn_gen_wind_load` loads the registers of the whole span.
+- **Delivery after the last enter.** The goal carries the sent value or the thrown exception (`kos_xfer_goal_hand`, `kos_xfer_goal_take_entry`). A frame waiting on a resume takes it as its delivery, a throw through `KosContext_ThrowIntoResume`; any other frame takes the value on its stack or the raise at its yield. No placeholder is pushed for a wound span.
+- **Who runs the goal.** A running consumer's for-each or yield-from step runs it at the step site (§6.2, "Threading"); a step through `kos_iter_installed` leaves it to the prologue's drain. A context that is not running gets the outermost winder's registers at once and `KOS_SUSP_WIND` as its suspension event, so its next entry hands the goal the sent value or the throw instead of reviving a yield. A segment's return runs the goal from the region arm of `kos_return_deliver` (`kos_eval_goal_thread`), which also rests and presents a yield whose last winder is left.
+- **The goal is the generator's storage.** The allocation that holds `KosGenState.pieces` begins with one `KosXferGoal`, which the yield's goal and then the step's use in turn (`kos_xfer_goal_run_kept`, `in_place` 2). A yield and a step allocate nothing once it is sized, and a paused goal is not moved. A goal given up goes through `kos_xfer_goal_discard`, where a winding goal empties its generator's lists.
+- **Busy.** The generator is busy for the whole of both sequences: a `next` or a close of it from a segment raises as a re-entrant step does.
+- **A plain span pays nothing.** A span with no skip-bit node takes the one-compare freeze and the plain install. The winder test is in the default arm of the collect's kind switch, so a TRY, FINALLY or PARAM costs the walk nothing for it.
+
+Failures propagate by the ordinary raise walk from the level of the chain where they happen:
+
+| Failure | Chain | Outcome |
+|---|---|---|
+| a leave raises at a yield | the node is still on the chain | the raise walks outward from the node: a handler in its body does not see it, one around it in the generator may, and otherwise it leaves through the GEN. No value is presented and the generator is not frozen |
+| a refusal while the outermost batch of effects goes back | nothing entered | the span comes off its GEN again and rests |
+| an enter raises at a step | the extents outside the failing node | the raise unwinds those; the pieces not attached never entered and are freed with the goal |
+| close or throw at a yield | wound in first | the exception is raised at the yield and the raise unwinds; each segment runs once |
+| a finalizer's close at a yield | the same, on the generator's own context | an error is reported as unraisable |
+| close of a coroutine suspended in an await | never wound out | a raise at the suspension point; only the ordinary unwind runs |
+
+Yield-from needs nothing of its own: the inner generator winds out at its yield and the outer at its emit, and a step winds in the outer, then the inner.
+
 
 ## 7. Tail Calls and Call Installs
 
@@ -1739,7 +1783,7 @@ carry recyclable durable contexts.
 2. `PyErr_Occurred()` at the next prologue (or after the opcode). `process_raise` runs.
 3. `handle_continuation_apply` sees its own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation(ctx, ...)`.
 4. `kos_invoke_continuation` checks the frame depth limit, clones the captured chain, takes `dyn_top` as the seam (delimited) or finds the common ancestor (undelimited), and pushes a goal (§6.4). `handle_continuation_apply` answers `EVAL_REPROLOGUE()`.
-5. The prologue's `eval_step_drain_goal` processes it: LEAVING unlinks down to the seam (after thunks and dyn-with `__exit__`s run as frames, the goal waiting on each until it returns; a delimited call's seam is `dyn_top`, so nothing leaves), ATTACHING and ENTERING alternate, a piece at a time, outermost extent first, and the last piece sets the resume pc; DELIVERING pushes the value, or stages it in the pending slot when the frame delivered to carries a resume the restore put back (the frame was waiting on a delivery when it was captured, and the value is that delivery).
+5. The prologue's drain (`kos_eval_drain_goal`) processes it: LEAVING unlinks down to the seam (after thunks and dyn-with `__exit__`s run as frames, the goal waiting on each until it returns; a delimited call's seam is `dyn_top`, so nothing leaves), ATTACHING and ENTERING alternate, a piece at a time, outermost extent first, and the last piece sets the resume pc; DELIVERING pushes the value, or stages it in the pending slot when the frame delivered to carries a resume the restore put back (the frame was waiting on a delivery when it was captured, and the value is that delivery).
 6. Execution resumes at the captured pc with the value on the stack.
 
 ### 9.3.1 Scenario: reset, shift, and two calls of k
@@ -1778,11 +1822,11 @@ Tests: `TestDelimitedTransferNested` in `tests/compile/specials/test_continuatio
 ### 9.6 Scenario: YIELD Suspend and Resume
 
 1. Generator is running; frame's parent is GEN. `YIELD` pops its value and tail-calls **`kos_yield_deliver`**.
-2. **`kos_yield_deliver`** asks **`kos_dyn_yield_gen`** for the frame's GEN (§6.5) and runs **`eval_event_yield`** → **`kos_dyn_gen_freeze`**: the dynchain above the GEN leaves the chain into the generator object's state, and the GEN rests there with it. A flattened GEN (one with a parent) delivers to its consumer; a root GEN's result is marked terminal and returned as `EVAL_YIELD(val)`.
+2. **`kos_yield_deliver`** asks **`kos_dyn_yield_gen`** for the frame's GEN (§6.5) and runs **`eval_event_yield`** → **`kos_dyn_gen_freeze`**: the dynchain above the GEN leaves the chain into the generator object's state, and the GEN rests there with it. A span holding a `dyn-wind`, a `dyn-with` or a `parameterize` is wound out first and the value is presented when the last leave has returned (§6.6). A flattened GEN (one with a parent) delivers to its consumer; a root GEN's result is marked terminal and returned as `EVAL_YIELD(val)`.
 3. If the live frame carries a resume (a for-each step, a next request, a yield-from waiting on its delegate): **`eval_event_yield`** hands the value to it via **`iter_deliver_to_resume`**, which answers `EVAL_RESUME(val)`, and `kos_yield_deliver` tail-calls **`kos_eval_resume_live`**, which enters the resume. No boundary is visible to the caller. Yield-from's emit kind re-emits the value as its own yield (a fresh YIELD event that freezes the delegating GEN and delivers onward), so nested stacks compose to arbitrary depth. Otherwise (the caller of `koskari_eval` consumes the generator) **`KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD)`** and return `EVAL_YIELD(val)`.
 4. The caller (e.g. Python generator `send`) receives `KOS_RES_YIELD` and `val` in the root case; later calls `koskari_eval(ctx, NULL, send_val, NULL, NULL)`.
 5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
-6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack.
+6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack. A wound span's context was left with `KOS_SUSP_WIND`: its entry hands the value to the winding goal, which delivers it after the last enter (§6.6).
 
 ### 9.7 Scenario: Tail Call
 
@@ -1856,8 +1900,10 @@ frames, prompts, wind extents, and control regions. This replaces the previous
 separate frame chain and handler chain.
 
 **KosDynNode** -- Single tagged-union struct for all chain node kinds. Base fields
-`parent`, `kind`, `flags`, `caps`, `node_id`, **`stack`**, and **`ns`** precede
-union `u`; an embedded **`KosInlineSegment`** (`iseg`, 8 slots) sits at the tail.
+`parent`, `skip`, `kind`, `flags`, `caps`, `node_id`, **`stack`**, and **`ns`** (a 40-byte
+header: `kind` and `flags` are bytes, `caps` 16 bits) precede
+union `u`; an embedded **`KosInlineSegment`** (`iseg`, 8 slots) sits at the tail
+of a major node.
 Region kinds always own a segment -- aimed at `iseg` at construction or push and
 spilled to a heap segment on growth -- so **`stack == NULL` marks a transfer
 bookmark** (CC, PROMPT, GEN), which inherits the enclosing extent's segment.
@@ -1880,6 +1926,47 @@ segment, and each has only its own `KosDynNode_IS_*` test; there is no
 shared region macro. Behavior is selected by capability bits
 (`KOS_DYN_CAP_*`).
 
+**Capabilities and the skip link.** `caps` holds capabilities and roles alike.
+`kind` is the payload's discriminator and selects a node's own behaviour
+(construct, clone, clear, traverse, describe). A node is found by a bit, never
+by kind; a switch on kind is for a node already in hand. The caps fixed for a
+kind come from one table (`kos_dyn_kind_caps`), which `kos_dynnode_init` adds
+to what its caller passes.
+
+| Bit | Name | Meaning | Kinds |
+| --- | --- | --- | --- |
+| 0 | `KOS_DYN_CAP_INTERCEPT` | may consume or deny a transit | TRY, FINALLY, GEN, PROMPT |
+| 1 | `KOS_DYN_CAP_LEAVES` | runs user code on a local unwind; has an obligation slot | WIND, WITH |
+| 2 | `KOS_DYN_CAP_WINDS` | a transfer and a yield run it out and in | WIND, dyn-with, PARAM |
+| 3 | `KOS_DYN_CAP_EFFECT` | holds runtime-owned state outside itself | PARAM, TRY, FINALLY |
+| 4 | `KOS_DYN_CAP_BARRIER` | a plain pop refuses to unlink it | PROMPT |
+| 5 | `KOS_DYN_CAP_LOOP_REGION` | break/continue target while its body runs | LOOP, FOREACH |
+| 6 | `KOS_DYN_CAP_CATCH` | may swallow an exception during its unwind | WITH |
+| 7 | `KOS_DYN_CAP_OWNS_NS` | `ns` is the node's own scope | FRAME with code, NS, COLLECT |
+| 8 | `KOS_DYN_CAP_FRAME` | an activation record | FRAME |
+| 9 | `KOS_DYN_CAP_GEN` | a generator span's root marker | GEN |
+| 10 | `KOS_DYN_CAP_MAJOR` | owns an operand segment; selects the freelist | all but PROMPT, CC, GEN |
+| 11 | `KOS_DYN_CAP_CC` | a call/cc block | CC |
+
+`KOS_DYN_CAP_SKIP` is bits 0 to 3. FRAME, CC, NS, COLLECT, LOOP and FOREACH carry
+no skip bit. `skip` is the nearest ancestor with a skip bit, or NULL, set by
+`kos_dynnode_link`. A walk that removes nothing follows it (§5.5).
+
+- A node may lose a skip bit at any time, so a walk tests `caps` again on every
+  node reached through `skip`. A node gains one only while it is `dyn_top`.
+- A segment that moves keeps its internal links. A cut, a parent set to NULL,
+  leaves `skip` as it is, and nothing walks a resting segment by `skip`. The
+  attach links the bottom with `kos_dynnode_link` and repairs the tail: the
+  nodes from the bottom up to and including the lowest skip-bit node, which
+  all name one node outside the segment.
+- A resting generator span's tail names its GEN, which the state reuses, so an
+  install relinks only the GEN and repairs the span
+  (`kos_dyn_relink_skips`) only when the bottom's `skip` differs.
+- A chain moved between contexts is relinked whole at its attach. A clone
+  attached in pieces repairs the first piece's tail (`KosCloneShape.tail`).
+- The native tests check the links (`kos_dyn_skips_hold`); the safety net does
+  not.
+
 **Context managers (`KOS_DYN_WITH`)** -- Lexical `with` and `dyn-with` share one
 node kind. A dyn-with is a WITH carrying `KOS_DYN_CAP_WINDS`, not a second
 `KosDynKind`: a transfer runs its exit on the way out and its enter on
@@ -1892,23 +1979,30 @@ See [with-dyn-with.md](interpreter/with-dyn-with.md) and `dynchain.h`.
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_DEPTH, KosDynFrame_RESUME_KIND, KosDynFrame_RESUME_STATE, KosDynFrame_RESUME_NAME, KosDynFrame_CACHE_SLOT, KosDynFrame_FN, KosDynFrame_BACK_FRAME.
 - **Prompt** (u.prompt): tag (owned `PyObject *`, matched by identity; NULL is the default tag, and None is never stored). No operand segment and no pc: the frame on it, the reset's body or a shift's or an abort's handler, ends it by returning. Carries `KOS_DYN_CAP_BARRIER`.
   Macro: KosDynPrompt_TAG.
-- **Wind** (u.wind): before_thunk, after_thunk, ob (`KosObligation`: the body result stored at POP_WIND, or what a walk stored while the after thunk runs), entered, phase (`KosDynWindPhase`: IDLE, PRE_BEGIN, POST_BEGIN, PRE_AFTER, POST_AFTER).
-  Macros: KosDynWind_BEFORE_THUNK, KosDynWind_AFTER_THUNK, KosDynWind_OB, KosDynWind_ENTERED, KosDynWind_PHASE.
-- **Try** (u.try_): handler_pc, enabled, exc_saved, exc_frozen, saved (the handler-visible `KosExcState` the region displaced when it consumed a raise). Macros: KosDynTry_HANDLER_PC, KosDynTry_ENABLED, KosDynTry_EXC_SAVED, KosDynTry_SAVED.
-- **Finally** (u.finally_): handler_pc, enabled, handling_raise, handling_control, exc_saved, exc_frozen, saved, handling (the raise being propagated through the body). Macros: KosDynFinally_HANDLER_PC, KosDynFinally_ENABLED, KosDynFinally_HANDLING_RAISE, KosDynFinally_HANDLING_CONTROL, KosDynFinally_EXC_SAVED, KosDynFinally_SAVED, KosDynFinally_HANDLING. handling_control holds a KosPendingReturnKind: the return, break or continue an unwind walk stored on the region, which POP_FINALLY re-issues once the body has run. The value itself rides the region stack.
+- **Wind** (u.wind): code and row (the code object and the PUSH_WIND extra row whose two ASIDE fields are the before and after segments), extent (`KosExtent`: the obligation, holding the body result stored at POP_WIND or what a walk stored while the after segment runs, with the phase and the entered flag in the obligation's lent bytes; phases `KOS_EXTENT_IDLE`, `_ENTERING`, `_LEAVING`, `_LEFT`).
+  Macros: KosDynWind_CODE, KosDynWind_ROW, KosDynWind_BEFORE, KosDynWind_AFTER, KosDynWind_EXTENT, KosDynWind_OB, KosDynWind_ENTERED, KosDynWind_PHASE.
+- **Try** (u.try_): handler_pc, exc (`KosExcSlot`: a `KosExcState` and a state byte, `KOS_EXC_NONE`, `KOS_EXC_HANDLING` when it holds what the region's exception displaced, `KOS_EXC_FROZEN` when it holds the region's own, off the thread; the slot lends the rest of its word, where `enabled` lives). `kos_exc_slot_out` and `kos_exc_slot_in` are the only exchange code; `kos_exc_slot_displace` and `kos_exc_slot_leave` are the owner taking over as handler and giving the displaced state back. Macros: KosDynTry_HANDLER_PC, KosDynTry_ENABLED, KosDynTry_EXC.
+- **Finally** (u.finally_): handler_pc, exc (a `KosExcSlot` as a TRY's, lending `enabled`, `handling_raise` and `handling_control`), handling (the raise being propagated through the body). Macros: KosDynFinally_HANDLER_PC, KosDynFinally_ENABLED, KosDynFinally_HANDLING_RAISE, KosDynFinally_HANDLING_CONTROL, KosDynFinally_EXC, KosDynFinally_HANDLING. handling_control holds a KosPendingReturnKind: the return, break or continue an unwind walk stored on the region, which POP_FINALLY re-issues once the body has run. The value itself rides the region stack.
 - **Loop** (u.loop): the region record (`KosDynRegionFields`: break_pc, continue_pc, result). Its enabled state is the `KOS_DYN_CAP_LOOP_REGION` capability, which CLEAR_LOOP takes away. Macros: KosDynLoop_BREAK_PC, KosDynLoop_CONTINUE_PC, KosDynLoop_ENABLED (reads the capability), KosDynLoop_RESULT.
 - **Foreach** (u.foreach): the same region record and capability (CLEAR_FOREACH takes it away), plus `req`, the `KosIterRequest` (iter, islots, send, kind) holding the loop's iterator and its in-flight step. Macros: KosDynForeach_BREAK_PC, KosDynForeach_CONTINUE_PC, KosDynForeach_ENABLED, KosDynForeach_RESULT, KosDynForeach_REQ, KosDynForeach_ITER.
 - **Ns**: no payload. The scope it introduces is the base `ns` field, owned under `KOS_DYN_CAP_OWNS_NS`.
 - **With** (u.with): context manager enter/exit, optional `as` name, `resume_pc`,
-  phases (`KOS_WITH_PHASE_*`: IDLE, PENDING_ENTER_AWAIT, PENDING_EXIT_AWAIT, LEFT),
-  and ob (`KosObligation`: the exception `__exit__` is handling, or what a
-  walk stored while it runs).
-  Macros: `KosDynWith_MGR`, `KosDynWith_ENTER`, `KosDynWith_EXIT`, `KosDynWith_OB`, `KosDynWith_LEFT`, etc.
+  extent (`KosExtent`, as a WIND's: the obligation is the exception `__exit__`
+  is handling, or what a walk stored while it runs), and exc (a `KosExcSlot`,
+  lending `self_bind`).
+  Macros: `KosDynWith_MGR`, `KosDynWith_ENTER`, `KosDynWith_EXIT`, `KosDynWith_EXTENT`,
+  `KosDynWith_OB`, `KosDynWith_PHASE`, `KosDynWith_ENTERED`, `KosDynWith_EXC`, etc.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
 
-All nodes are allocated from a single-size pool in dynchain.c (one freelist for
-all kinds). KosContinuation and KosContext have separate freelists/caches (see
-`dynchain.c` and `eval/eval_context.c`).
+Nodes come in two sizes, each with a freelist in dynchain.c. A minor node
+(PROMPT, CC, GEN) has no operand segment and ends before `iseg`: 56 bytes, the
+header and the largest minor payload. A major node is the header, the largest
+major payload (WITH, 104 bytes) and the inline segment: 232 bytes. The size
+is not stored: `kos_dynnode_alloc` reads the kind's `KOS_DYN_CAP_MAJOR` from
+the per-kind table, and each kind's clone and free know their own
+(`kos_dynnode_clone_base_minor`, `kos_dynnode_return_minor`). KosContinuation
+and KosContext have separate freelists/caches (see `dynchain.c` and
+`eval/eval_context.c`).
 
 #### KosContext -- Top-level VM Execution State
 
@@ -2076,10 +2170,17 @@ struct KosXferGoal {
   KosOp *resume_pc;            /* NULL when unset */
   KosXferRestore *restore;     /* owned array, or NULL */
   size_t restore_count;
-  uint8_t phase;               /* LEAVING, ATTACHING, ENTERING, DELIVERING */
+  uint8_t phase;               /* LEAVING, ATTACHING, ENTERING,
+                                  DELIVERING, WINDING_OUT, WINDING_IN */
   uint8_t is_cc_unwind;
   uint8_t voided_outer;        /* LEAVING unlinked an outer's frontier */
-  uint8_t in_place;            /* storage of kos_xfer_goal_run's caller */
+  uint8_t in_place;            /* 1: storage of kos_xfer_goal_run's
+                                  caller; 2: its generator's */
+
+  /* a winding goal's only (§6.6) */
+  KosGenState *gen_state;      /* whose list the goal works through */
+  uint8_t is_throw;            /* payload is raised at the yield */
+  uint8_t demand;              /* the consumer ran under demand */
 };
 ```
 
@@ -2096,8 +2197,9 @@ layout compiles to a single `dynchain.o`; the public C API is
 #### Transfer goal step (`xfer_goal.c`)
 
 **`kos_xfer_goal_drive`** loops over the active goal and each outer it
-retires into. Per phase: `goal_leave` unlinks `dyn_top` through
-`kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER` until the seam is
+retires into. Per phase: `goal_leave` unlinks `dyn_top` -- a node with a
+skip bit through `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER`, any
+other through `kos_dyn_release_top` -- until the seam is
 `dyn_top` (a root GEN as seam stops there; a missing seam is a `SystemError`);
 `goal_attach` links the next piece of the target -- on the seam the first
 time, completing the clone from the registers there (`kos_dyn_settle_clone`)
@@ -2114,7 +2216,11 @@ resume, or prepares the boundary raise for a cc-unwind
 (freeing every goal and setting `out_boundary`). `goal_wait` records the
 frontier and marks it `KOS_DYNF_GOAL_WAIT` when a leave or enter answers
 REPROLOGUE or AWAIT; LEAVING that unlinks a marked node voids the outer
-goal waiting on it.
+goal waiting on it. `goal_wind_out` and `goal_wind_in` are the two phases
+of a generator's winding goal (§6.6). `kos_xfer_goal_run` runs a goal in
+its caller's storage, `kos_xfer_goal_run_kept` in its generator's, and
+`kos_xfer_goal_run_pushed` runs the goal already active; all three answer
+through `goal_run_answer` (§6.2, "Threading").
 
 #### Continuation capture (`dynchain.c`)
 
@@ -2237,8 +2343,10 @@ KosOpResult kos_dyn_unlink_top(KosContext *ctx, KosXferEvent event,
 KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
 int kos_dyn_pop_frame(KosContext *ctx);
 
-/* Generator span: detach at a yield, attach for a step */
+/* Generator span: detach at a yield, attach for a step. The freeze
+   answers 1, with nothing changed, for a span that must wind out */
 int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen);
+int kos_dyn_gen_freeze_wound(KosContext *ctx, KosDynGen *gen);
 int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state);
 
 /* Push/pop prompts (RESET; the return of the frame on the prompt);
@@ -2254,7 +2362,8 @@ KosDynNode *kos_dyn_find_loop(KosContext *ctx);
 /* The GEN a yield in the running frame suspends; raises with no GEN */
 KosDynGen *kos_dyn_yield_gen(KosContext *ctx);
 
-/* The extent contract on WIND / WITH (dyn_wind.c, dyn_with.c) */
+/* The extent contract on WIND / WITH: one machine in dynchain.c over
+   the two calls each kind supplies (dyn_wind.c, dyn_with.c) */
 KosOpResult kos_dyn_extent_enter(KosContext *ctx, KosDynNode *node);
 KosOpResult kos_dyn_extent_leave(KosContext *ctx, KosDynNode *node, KosXferEvent ev);
 int kos_dyn_extent_settle(KosContext *ctx, KosDynNode *node);
@@ -2300,6 +2409,10 @@ KosOpResult kos_abort_to_prompt(KosContext *ctx, KosDynPrompt *prompt,
    the nodes it leaves */
 KosOpResult kos_dyn_unlink_top_keep(KosContext *ctx, KosDynNode **out_kept);
 
+/* A node with no skip bit leaving: freed, or kept for a continuation */
+void kos_dyn_release_top(KosContext *ctx, KosDynNode *node);
+void kos_dyn_keep_top(KosContext *ctx, KosDynNode *node);
+
 /* Capture continuation (call/cc) */
 int kos_capture_cc(KosContext *ctx, KosContinuation **out_k);
 
@@ -2338,6 +2451,16 @@ void kos_xfer_goal_abandon_all(KosContext *ctx);
 KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary);
 
 int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node);
+
+/* Whether the active goal would act now: it waits on no node, or on
+   dyn_top */
+int kos_xfer_goal_will_drive(KosContext *ctx);
+
+/* Run a goal in its caller's storage, in its generator's, or the one
+   already active; NORMAL when the frame left live can be threaded into */
+KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal);
+KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal);
+KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx);
 ```
 
 #### Context and Frame Lifecycle
@@ -2517,6 +2640,10 @@ The seam per transfer:
 A `dyn-wind` inside a reset whose body shifts and whose handler
 calls `k` twice runs: before, after (the abort), before, after (first
 call), before, after (second call).
+
+A yield and the step that resumes it run the same nodes in the same
+order, over the generator's span and without unlinking: the yield
+leaves innermost first, the step enters outermost first (§6.6).
 
 ---
 
