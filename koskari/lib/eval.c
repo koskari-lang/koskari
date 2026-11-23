@@ -1840,6 +1840,9 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   }
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+  /* a winder's leave installed a frame that can be threaded into */
+  if (r.kind == KOS_RES_NORMAL)
+    KOS_THREAD_NEXT(ctx);
   return r;
 }
 

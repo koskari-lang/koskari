@@ -788,10 +788,21 @@ Tuning, after every stage:
   `eval_yield_unfrozen` 154, `kos_dyn_gen_install_winding` 106,
   `kos_dyn_resync_chain` 79, the drain 71. No single change removes
   much of it.
-- **Not done.** Threading from the step straight into the before
-  segment's frame would save one prologue pass, about 130
-  instructions, but an enter that raises or awaits there has no
-  prologue to raise on. Keeping the registers recorded for a winder
+- **A fired segment's frame is threaded into.** A run that leaves its
+  goal waiting on a frame a step installed answers NORMAL when the
+  frame can be threaded into and the breaker is down
+  (`goal_run_answer`), for every transfer, and `kos_yield_deliver`
+  threads on that answer. The for-each and yield-from step run the
+  goal a wound install pushed themselves
+  (`kos_xfer_goal_run_pushed`), after the step has handed it what it
+  sends, and relay the answer as an instruction's: a failed enter
+  takes the raise ingress from there, as it did from the prologue's
+  drain. Three of the five prologue passes of a yield and step are
+  gone; the two after a segment's return stay, since a frame return
+  that looked for a waiting goal would test on every return.
+  `gen_wind` fell 1.46%. A step through `kos_iter_installed` (a
+  transform's request) still goes by the prologue.
+- **Not done.** Keeping the registers recorded for a winder
   from one yield to the next would save the resync, but nothing proves
   the chain under a winder at the same address is the same chain. An
   aside frame costs about 225 instructions to allocate and release,

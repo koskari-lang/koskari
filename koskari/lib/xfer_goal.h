@@ -348,6 +348,16 @@ KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal);
 
 
 /**
+   kos_xfer_goal_run for the active goal, which its maker pushed and
+   left for the first drive: the goal a generator's install pushes on a
+   running context to enter the winders its yield left
+   (kos_dyn_gen_install), run from the step once the step has handed
+   it what it sends. The answers are kos_xfer_goal_run's.
+*/
+KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx);
+
+
+/**
    Free a goal that is not finished and is already unlinked from its
    context: kos_xfer_goal_free, after a winding goal has told its
    generator that the nodes its lists named are gone. Every site that

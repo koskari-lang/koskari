@@ -1080,6 +1080,40 @@ static int goal_keep(KosContext *ctx, KosXferGoal *goal) {
 
 
 /**
+   What a run answers for r, the drive's own answer. A step that
+   installed a frame for a segment, or for an __enter__ or __exit__,
+   left the goal waiting on it: the frame is threaded into from here,
+   NORMAL, when it can be and the breaker is down, as a call's install
+   is. A finished run threads on from the registers the transfer
+   loaded, unless a delivery is staged for the frame's resume or an
+   outer goal is still to be looked at. Anything else is the drive's
+   answer as it stands, for the caller's ingress.
+*/
+static inline KosOpResult goal_run_answer(KosContext *ctx, KosOpResult r) {
+
+  const KosXferGoal *waiting = KosContext_GOAL(ctx);
+
+  if (r.kind == KOS_RES_REPROLOGUE) {
+    if (waiting && waiting->frontier
+        && KosContext_DYN_TOP(ctx) != waiting->frontier
+        && ! KosContext_PENDING_VALUE(ctx)
+        && kos_frame_threads(KosContext_FRAME(ctx))
+        && ! KOS_EVAL_BREAKER_UP(ctx))
+      return EVAL_NORMAL();
+    return r;
+  }
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
+
+  if (! waiting
+      && ! KosContext_PENDING_VALUE(ctx)
+      && kos_frame_threads(KosContext_FRAME(ctx)))
+    return EVAL_NORMAL();
+  return EVAL_REPROLOGUE();
+}
+
+
+/**
    The body of kos_xfer_goal_run and kos_xfer_goal_run_kept, kept the
    constant: a goal in storage that outlives it is never moved.
 */
@@ -1116,17 +1150,7 @@ KOS_OP_INLINE KosOpResult goal_run(
     }
   }
 
-  if (r.kind != KOS_RES_NORMAL)
-    return r;
-
-  /* done: thread on from the registers the transfer loaded, unless a
-     delivery is staged for the frame's resume or an outer goal is
-     still to be looked at */
-  if (! KosContext_GOAL(ctx)
-      && ! KosContext_PENDING_VALUE(ctx)
-      && kos_frame_threads(KosContext_FRAME(ctx)))
-    return EVAL_NORMAL();
-  return EVAL_REPROLOGUE();
+  return goal_run_answer(ctx, r);
 }
 
 
@@ -1137,6 +1161,16 @@ KosOpResult kos_xfer_goal_run(KosContext *ctx, KosXferGoal *goal) {
 
 KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal) {
   return goal_run(ctx, goal, 1);
+}
+
+
+KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx) {
+
+  int boundary = 0;
+
+  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+  return goal_run_answer(
+      ctx, goal_drive(ctx, KosContext_GOAL(ctx), &boundary));
 }
 
 

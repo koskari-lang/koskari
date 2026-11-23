@@ -1165,8 +1165,11 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
    thread function makes once an iteration install has left its frame
    live: into the frame's next instruction, into the live frame's
    resume (kos_eval_resume_live) for a frame halted on one, into the
-   prologue otherwise. The calling function must have the KosThreadFn
-   prototype.
+   prologue otherwise. A generator installed only up to its outermost
+   winder has its goal run here (kos_xfer_goal_run_pushed), and the
+   answer relayed as an instruction's is: the first winder's segment
+   is threaded into without a pass of the prologue. The calling
+   function must have the KosThreadFn prototype.
 */
 #define KOS_ITER_INSTALLED_THREAD(ctx)                                  \
   do {                                                                  \
@@ -1176,6 +1179,8 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
     if (kos_iit_frame_ && KosDynFrame_CODE(kos_iit_frame_)              \
         && KosDynFrame_RESUME_KIND(kos_iit_frame_))                     \
       TAILCALL(kos_eval_resume_live, (ctx), NULL, NULL);                \
+    if (! kos_iit_frame_ && KosContext_GOAL(ctx))                       \
+      RESULT_RELAY((ctx), kos_xfer_goal_run_pushed(ctx));               \
     RESULT_REPROLOGUE(ctx);                                             \
   } while (0)
 
