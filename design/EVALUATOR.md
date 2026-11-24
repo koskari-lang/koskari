@@ -153,7 +153,7 @@ These fields hold the live frame, operand-segment slot, and namespace for opcode
 | Mechanism | Role |
 | --------- | ---- |
 | **`kos_dyn_resync_after_push(ctx, new_node)`** | O(1) update after a single-node push: frame nodes replace all live fields; other nodes update only what they carry. Stamps the pushed node's unwind caches (segment `back` = displaced owning slot; frames also record `back_frame` = displaced frame). |
-| **`kos_dyn_resync_after_pop(ctx, removed, new_top)`** | O(1) update after `kos_dyn_commit_dyn_top` pops a single head: block from the removed segment's `back` (or the surviving owner), namespace read from the survivor's `ns`, frame from `back_frame`. Under **`KOS_EVAL_SAFETYNET=1`** a counted chain-walk fallback backs every cache; default builds trust the cache model and fail fast on violation. |
+| **`kos_dyn_resync_after_pop(ctx, removed, new_top)`** | O(1) update after `kos_dyn_commit_dyn_top` pops a single head: block from the removed segment's `back` (or the surviving owner), namespace read from the survivor's `ns`, frame from `back_frame`. Every build trusts the cache model and fails fast on violation; the one walk is the namespace when the survivor carries none and the dying node held the live one (counted as `retarget_walk_fallback`). |
 | **`kos_dyn_resync_chain(ctx)`** | Full walk from **`dyn_top`** when incremental retarget does not apply (a transfer that puts restore records back with no target, splices, gen freeze and install, `koskari_eval` entry). A continuation's copy is attached without it: its clone carries its own links and registers (§6.2). Finishes by **restamping** the contiguous unstamped prefix at the top of the chain -- a spliced span arrives with cleared caches, a frozen GEN span with only its bottom frame's rewritten -- so subsequent pops stay O(1). |
 
 Optional **`KOS_DEBUG_PATCH_DYN_CACHES`**: cross-check every cache answer (push retarget vs full rebuild; pop-side caches vs the walk) and raise on drift.
@@ -1676,8 +1676,8 @@ A delivery reaches a resume by one of three routes:
   no pending exception and no goal active is the first thing the
   prologue checks. The slot is live transit only:
   `KosContext_EvalExit` moves a live slot onto the frame
-  stack, a pending exception drops it, and under `KOS_EVAL_SAFETYNET`
-  instruction dispatch refuses to start over one. Besides a hop that
+  stack, a pending exception drops it, and instruction dispatch never
+  starts over one. Besides a hop that
   found the breaker up, the slot carries the unsettled-value path
   (`KosContext_SettleStage`), an awaited value at revive, and a frame
   return into a resume-carrying parent that the tail-call arm declined.
@@ -2108,10 +2108,9 @@ Rules:
    GEN span is the exception: its interior caches name nodes of the same
    span and survive the freeze, and **`kos_dyn_gen_install`** rewrites only
    the bottom frame's two, which name the consumer.
-5. **The cache model is authoritative** -- chain-walk fallbacks behind the
-   caches are compiled only under **`KOS_EVAL_SAFETYNET=1`** (counted, for
-   diagnostics); default builds trust the caches and fail fast on a model
-   violation.
+5. **The cache model is authoritative** -- every build, including
+   **`KOS_EVAL_SAFETYNET=1`**, trusts the caches and fails fast on a model
+   violation; no chain walk stands behind them.
 
 #### koskari_eval Return Value
 

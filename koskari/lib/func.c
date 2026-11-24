@@ -1834,19 +1834,6 @@ int KosFunction_CacheFrame(
   if (KosNamespace_IsRevealed(ns) || KosNamespace_BINDS(ns) != NULL)
     return 0;
 
-#if KOS_EVAL_SAFETYNET
-  if (! KosNamespace_CheckExact(ns))
-    Py_FatalError("KosFunction_CacheFrame: frame namespace is not an"
-                  " exact KosNamespace");
-  if (Py_REFCNT(ns) != 1)
-    Py_FatalError("KosFunction_CacheFrame: untracked frame namespace"
-                  " has an escaping reference");
-  if (KosDynFrame_RESUME_KIND(frame))
-    Py_FatalError("KosFunction_CacheFrame: frame carries a resume");
-  if (! KosDynFrame_STACK(frame))
-    Py_FatalError("KosFunction_CacheFrame: frame has no stack");
-#endif
-
   /* Reset to the state a fresh install would produce: the template's
      raw slots NULL and raw again (its refs retained), empty stack,
      normalized node base ready for kos_dyn_push_ready_frame. */

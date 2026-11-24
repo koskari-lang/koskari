@@ -24,16 +24,6 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   PyObject *obj;
   PyObject *res;
 
-#if KOS_EVAL_SAFETYNET
-  /* emit fills every CONST operand from the pool, which never holds
-     NULL; a NULL here is an internal misfire */
-  if (unlikely(! rules)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "OBJECT_FORMAT_CONST: rules constant is NULL");
-    RESULT_RAISE();
-  }
-#endif
-
   obj = KosContext_StackPopRef(ctx);
   if (! obj)
     RESULT_RAISE();

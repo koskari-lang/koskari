@@ -2095,7 +2095,6 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 #undef KOS_OP_REQUIRE_NS
 #undef KOS_OP_HANDLER
 #undef KOS_ELECTOR
-#undef KOS_ELECTOR_PAIR_SAFETYNET
 
 
 /* The handler table finalize resolves each KosOp's fn from.  Position
@@ -3416,18 +3415,6 @@ static int eval_step_resume_take(
       *out_res = EVAL_RAISE();
       return 0;
     }
-
-#if KOS_EVAL_SAFETYNET
-    if (KosContext_StackLen(ctx) > 0) {
-      /* The empty-stack test above is the cold-start discriminator;
-         a second staged value would make it lie. */
-      Py_DECREF(val);
-      PyErr_SetString(PyExc_SystemError,
-                      "resume frame staged more than one value");
-      *out_res = EVAL_RAISE();
-      return 0;
-    }
-#endif
   }
 
   if (val && resume->settle) {
@@ -3769,18 +3756,6 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
         && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)) != NULL) {
       KOS_PROLOGUE_DELIVER(ctx);
     }
-
-#if KOS_EVAL_SAFETYNET
-    /* Instruction dispatch never runs over a staged delivery: the slot
-       is consumed in the trip that staged it, so a capture made by an
-       opcode can never observe one. */
-    if (unlikely(KosContext_PENDING_VALUE(ctx))) {
-      Py_CLEAR(KosContext_PENDING_VALUE(ctx));
-      PyErr_SetString(PyExc_SystemError,
-                      "CPS delivery staged with no resume to take it");
-      return EVAL_FATAL();
-    }
-#endif
 
     #if KOS_STACK_TRACE
     {

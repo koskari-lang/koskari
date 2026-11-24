@@ -230,8 +230,8 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
 would create non-resumable continuations.
 
 **Implementation**: `kos_shift_capture` and `kos_abort_prompt` find the
-prompt by one walk from `dyn_top` on the chain, and `kos_validate_capture_cc` checks a call/cc
-capture. Context/token identity and type-level blocking enforce the boundary
+prompt by one walk from `dyn_top` on the chain, and `kos_dyn_find_cc`
+finds a call/cc capture's CC node the same way. Context/token identity and type-level blocking enforce the boundary
 constraint.
 
 ---

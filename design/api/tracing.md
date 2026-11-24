@@ -261,7 +261,7 @@ counts (`uint64_t` in C).
 | **raise_local_walk_iter** | Nodes visited by the raise walk (`kos_dyn_unwind_raise`). |
 | **seg_inline_install** | A node's inline operand segment installed as the live block. |
 | **seg_inline_spill** | An inline segment outgrown and spilled to the heap (`KosStack_Grow`). |
-| **retarget_walk_fallback** | `kos_dyn_resync_after_pop` recomputing the live registers by walk; expected zero. |
+| **retarget_walk_fallback** | `kos_dyn_resync_after_pop` recomputing the live namespace by walk: the survivor carries no namespace and the dying node held the live one. |
 | **live_rebuild** | Full register rebuilds from the chain (`kos_dyn_resync_chain`). |
 | **call_frame_cached** | A simple call served by a cached frame (`kos_call_install_cached_frame`). |
 | **call_simple_steal** | A simple call steal-binding into a fresh namespace. |

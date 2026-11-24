@@ -279,10 +279,6 @@ demotion), and `elector_uncached` are shared by the families.
 Deoptimization for any other reason is a write of `kind =
 KOS_CACHE_EMPTY`.
 
-Under `KOS_EVAL_SAFETYNET` a stack-pair int body refuses a site whose
-operand count is not the two it was elected for. Assert only; the
-dispatch is unchanged.
-
 An ungated site (`compiler/cache-expression` off, or `KOS_CACHE_UNSET`)
 tail-calls the electing function every time, which is today's ladder plus
 one classification.

@@ -337,7 +337,13 @@ KOS_OP_INLINE KosIterRequestStatus kos_iter_fetch(
   *out = NULL;
 
 #if KOS_EVAL_SAFETYNET
-  if (! kos_iter_kind_fits(req->iter, req->kind, req->islots)) {
+  /* the provider case calls through the suite; the python cases read
+     the iterator's type */
+  if (unlikely(req->kind == KOS_IREQ_KIND_PROVIDER
+               ? ! req->islots
+               : ((req->kind == KOS_IREQ_KIND_PY_SYNC
+                   || req->kind == KOS_IREQ_KIND_PY_ASYNC)
+                  && ! req->iter))) {
     PyErr_SetString(PyExc_SystemError,
                     "iteration request kind does not match its iterator");
     return KOS_IREQ_ERROR;

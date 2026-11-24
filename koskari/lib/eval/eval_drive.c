@@ -55,14 +55,7 @@ void KosContext_EvalExit(KosContext *ctx) {
   if (KosContext_PENDING_VALUE(ctx)) {
     PyObject *staged = KosContext_PENDING_VALUE(ctx);
     KosContext_PENDING_VALUE(ctx) = NULL;
-    if (KOS_EVAL_SAFETYNET
-        && KosContext_FRAME(ctx)
-        && KosDynFrame_CODE(KosContext_FRAME(ctx))) {
-      Py_DECREF(staged);
-      PyErr_SetString(PyExc_SystemError,
-                      "delivery staged for a bytecode frame across a"
-                      " drive exit");
-    } else if (KosContext_BLOCK(ctx))
+    if (KosContext_BLOCK(ctx))
       (void) KosContext_StackPUSH(ctx, staged);  /* consumes on failure */
     else
       Py_DECREF(staged);

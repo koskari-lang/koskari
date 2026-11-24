@@ -63,7 +63,6 @@ static KosOpResult kos_dyn_unlink_top_take(
     KosObligation *out_return);
 int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosContext *ctx, KosDynNode *new_top);
-int kos_dyn_reaches(KosContext *ctx, const KosDynNode *target);
 static void kos_dyn_restamp_spliced_prefix(KosContext *ctx);
 static void kos_dyn_stamp_span(
     KosDynNode **span,
@@ -2200,9 +2199,6 @@ static void kos_dyn_resync_after_pop(
   int need_frame = 0;
   int need_block = 0;
   int walk_ns = 0;
-  KosDynFrame *ft = NULL;
-  KosSegment **bl = NULL;
-  PyObject *ns = NULL;
   PyObject *ns_new;
 
   if (! ctx)
@@ -2250,7 +2246,7 @@ static void kos_dyn_resync_after_pop(
      slot it displaced at install (still alive here -- uninstall frees
      the node only after this retarget completes); a survivor that
      owns a stack supplies the same answer when the cache is missing.
-     When frame or ns also changed, one walk resolves everything. */
+     When frame or ns also changed, the last case below answers. */
   if (need_block && ! need_frame && ! walk_ns) {
     KosSegment **slot = KosSegment_BACK(KosDynNode_STACK(removed));
     if (! slot && new_top && KosDynNode_STACK(new_top))
@@ -2264,9 +2260,8 @@ static void kos_dyn_resync_after_pop(
 
   /* Frame pop: every fact is cache-available -- the back frame
      recorded at install, the frame segment's displaced owning slot,
-     and the reconciled ns from the survivor. A missing piece (a
-     splice-installed frame carries neither link) falls through to
-     the walk. */
+     and the reconciled ns from the survivor. A namespace walk, or a
+     missing link, falls through to the last case. */
   if (need_frame && ! walk_ns
       && KosDynFrame_BACK_FRAME(removed)
       && (! need_block
@@ -2282,39 +2277,18 @@ static void kos_dyn_resync_after_pop(
     return;
   }
 
-#if KOS_EVAL_SAFETYNET
-  /* Safety net: recompute by walk whatever the caches could not
-     answer. Under the cache model (install stamps + splice restamp +
-     detach clears) this is unreachable -- the fallback counter
-     measured zero across the full benchmark battery -- so the walk is
-     a diagnostic for model violations, not a code path. */
-  KOS_TRACE_EVENTS_INC(KOS_TE_RETARGET_WALK_FALLBACK);
-  kos_dyn_resync_from(new_top, &ft, &bl, &ns);
-
-  if (! need_frame)
-    ft = KosContext_FRAME(ctx);
-  if (! need_block)
-    bl = KosContext_BLOCK(ctx);
-  if (! walk_ns)
-    ns = ns_new;
-
-  kos_dyn_resync_apply(ctx, ft, bl, ns, 0);
-#else
-  /* The cache model is authoritative for frame and block. The one
+  /* The cache model is authoritative for frame and block: a missing
+     link puts NULL in the live register and fails fast nearby. The one
      question it cannot answer is the namespace when the survivor
      carries no namespace and the dying node held the live one; native
      frames carry an owned reference to the empty namespace
      (kos_dyn_push_frame_native), so this arises only when the surviving
-     extent genuinely has no namespace anywhere -- a native frame at the
-     root of an adapter host whose slot was NULL. Recompute by walk; applying ns_new there would
-     republish the dying frame's namespace, which the pop is about to
-     release. A model violation in the frame or block facts puts NULL
-     here and fails fast nearby; build with -DKOS_EVAL_SAFETYNET=1 to
-     diagnose by walk instead. */
-  (void) ft;
-  (void) bl;
-  (void) ns;
+     extent has no namespace anywhere -- a native frame at the root of
+     an adapter whose slot was NULL. That namespace is recomputed by
+     walk; applying ns_new there would republish the dying frame's
+     namespace, which the pop is about to release. */
   if (walk_ns) {
+    KOS_TRACE_EVENTS_INC(KOS_TE_RETARGET_WALK_FALLBACK);
     ns_new = NULL;
     kos_dyn_resync_from(new_top, NULL, NULL, &ns_new);
   }
@@ -2328,7 +2302,6 @@ static void kos_dyn_resync_after_pop(
           : KosContext_BLOCK(ctx),
       ns_new,
       0);
-#endif
 }
 
 
@@ -2539,25 +2512,6 @@ void kos_dyn_resync_chain(KosContext *ctx) {
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_rebuild_live_from_chain);
 }
-
-
-#if KOS_EVAL_SAFETYNET
-/**
-   Whether the live registers are what a walk from dyn_top derives. See
-   dynchain.h.
-*/
-int kos_dyn_live_regs_derived(KosContext *ctx) {
-
-  KosDynFrame *ft;
-  KosSegment **bl;
-  PyObject *ns;
-
-  kos_dyn_resync_from(KosContext_DYN_TOP(ctx), &ft, &bl, &ns);
-  return ft == KosContext_FRAME(ctx)
-      && bl == KosContext_BLOCK(ctx)
-      && ns == KosContext_NAMESPACE(ctx);
-}
-#endif
 
 
 /**
@@ -3129,27 +3083,7 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
 }
 
 
-/* === Prompt lookup and validation === */
-
-
-/**
-   Predicate: does the chain from dyn_top reach target?  Read-only; never
-   sets PyErr.  Callers: the transfer goal's seam and frontier checks
-   (xfer_goal.c) and kos_validate_capture_cc.
-
-   :return: 1 if target is on the chain from dyn_top, 0 otherwise
-*/
-int kos_dyn_reaches(KosContext *ctx, const KosDynNode *target) {
-  KosDynNode *node = KosContext_DYN_TOP(ctx);
-
-  while (node && node != target) {
-    node = KosDynNode_PARENT(node);
-  }
-
-  return node != NULL;
-}
-
-
+/* === CC lookup === */
 
 
 /**
@@ -3165,19 +3099,6 @@ KosDynCC *kos_dyn_find_cc(KosContext *ctx) {
   }
 
   return NULL;
-}
-
-
-/**
-   Ensure cc lies on the chain from dyn_top (call/cc capture precondition).
-   The one raising wrapper over kos_dyn_reaches.
-*/
-static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
-  if (! kos_dyn_reaches(ctx, (KosDynNode *) cc)) {
-    PyErr_SetString(PyExc_RuntimeError, "CC block not found in chain");
-    return -1;
-  }
-  return 0;
 }
 
 
@@ -3421,10 +3342,6 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
   KosDynCC *cc = kos_dyn_find_cc(ctx);
   if (! cc) {
     PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: no CC block on dynamic chain");
-    return -1;
-  }
-
-  if (kos_validate_capture_cc(ctx, cc) < 0) {
     return -1;
   }
 

@@ -449,40 +449,6 @@ static inline void kos_iter_request_bind_next(
 }
 
 
-/**
-   Whether kind and islots are safe to fetch iter by: islots is iter's
-   suite exactly when iter is a provider, the kind is the provider
-   kind exactly then, and a python kind has an iterator to step. The
-   fetch calls through islots unchecked, so a suite that is not the
-   iterator's own is the memory fault this guards. A python kind's
-   protocol is not tested: a class may lose __next__ or __anext__
-   after the bind classified it, and each python step reads its slot
-   again and answers for a missing one. The test behind a fetch under
-   KOS_EVAL_SAFETYNET.
-*/
-static inline int kos_iter_kind_fits(
-    PyObject *iter,
-    uint8_t kind,
-    KosIterSlots *islots) {
-
-  KosIterSlots *fresh = NULL;
-  int provider = KosIter_CheckSlots(iter, &fresh);
-
-  if (islots != (provider ? fresh : NULL))
-    return 0;
-  switch (kind) {
-    case KOS_IREQ_KIND_PROVIDER:
-      return provider;
-    case KOS_IREQ_KIND_PY_SYNC:
-    case KOS_IREQ_KIND_PY_ASYNC:
-      return ! provider && iter != NULL;
-    case KOS_IREQ_KIND_NONE:
-      return ! provider;
-    default:
-      return 0;
-  }
-}
-
 #define KosIter_Check(obj) kos_iter_check(obj)
 
 

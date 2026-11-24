@@ -378,7 +378,6 @@ KOS_PRESERVE_NONE KosOpResult kos_await_python(
     KosContext *kos_dsp_ctx_ = (ctx);                                   \
     KosDynFrame *kos_dsp_frame_ = KosContext_FRAME(kos_dsp_ctx_);       \
     PyObject *kos_dsp_val_ = (value);                                   \
-    KOS_DISPATCH_SAFETYNET(kos_dsp_ctx_, kos_dsp_val_);                 \
     KosContext_PENDING_VALUE(kos_dsp_ctx_) = kos_dsp_val_;              \
     KosDynFrame_RESUME_KIND(kos_dsp_frame_) = (kind);                   \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
@@ -596,22 +595,6 @@ KOS_PRESERVE_NONE KosOpResult kos_await_python(
       TAILCALL(kos_eval_poll, (ctx), NULL, NULL);                       \
     KOS_THREAD_NEXT(ctx);                                               \
   } while (0)
-
-/* At most one delivery is staged at a time; a second is an internal
-   sequencing bug, reported under the safety net instead of leaking. */
-#if KOS_EVAL_SAFETYNET
-# define KOS_DISPATCH_SAFETYNET(ctx, val)                               \
-  do {                                                                  \
-    if (unlikely(KosContext_PENDING_VALUE(ctx))) {                      \
-      Py_XDECREF(val);                                                  \
-      PyErr_SetString(PyExc_SystemError,                                \
-                      "CPS delivery staged over a live one");           \
-      return EVAL_RAISE();                                              \
-    }                                                                   \
-  } while (0)
-#else
-# define KOS_DISPATCH_SAFETYNET(ctx, val)  ((void) 0)
-#endif
 
 
 /**

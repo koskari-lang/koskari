@@ -724,14 +724,6 @@ static KosOpResult goal_attach(KosContext *ctx, KosXferGoal *goal) {
     /* a region captured while handling an exception handles it again */
     if (shape->frozen)
       kos_dyn_install_regions(ctx, regs->top, base);
-
-#if KOS_EVAL_SAFETYNET
-    if (! kos_dyn_live_regs_derived(ctx)) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: a piece's registers are not the chain's");
-      return EVAL_RAISE();
-    }
-#endif
   }
 
   /* Below the seam the extents are the ones the capture ran in; only
@@ -859,13 +851,6 @@ static KosOpResult goal_deliver(KosContext *ctx, KosXferGoal *goal) {
   if (! goal->payload) {
     /* an abort to a prompt: the handler's frame takes nothing */
   } else if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
-#if KOS_EVAL_SAFETYNET
-    if (KosContext_PENDING_VALUE(ctx)) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: delivered to a frame with a delivery already staged");
-      return EVAL_RAISE();
-    }
-#endif
     Py_XSETREF(KosContext_PENDING_VALUE(ctx), Py_NewRef(goal->payload));
   } else if (KosContext_StackPushRef(ctx, goal->payload) < 0) {
     return EVAL_RAISE();
@@ -1020,10 +1005,10 @@ static KosOpResult goal_drive(KosContext *ctx, const KosXferGoal *only) {
       if (KosContext_DYN_TOP(ctx) != goal->frontier)
         return EVAL_NORMAL();
 #if KOS_EVAL_SAFETYNET
-      if (! kos_dyn_reaches(ctx, goal->frontier)
-          || kos_dynnode_id(goal->frontier) != goal->frontier_id) {
+      if (kos_dynnode_id(goal->frontier) != goal->frontier_id) {
         PyErr_SetString(PyExc_SystemError,
-            "transfer: the node it waited on left the chain");
+            "transfer: the node it waited on is not the node the goal"
+            " recorded");
         return EVAL_RAISE();
       }
 #endif

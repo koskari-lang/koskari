@@ -1114,16 +1114,6 @@ void kos_dyn_settle_clone(KosContext *ctx, KosCloneShape *shape);
 void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs);
 
 
-#if KOS_EVAL_SAFETYNET
-/**
-   Whether the live frame, block and namespace are what a walk from
-   dyn_top derives. A diagnostic for a register load from recorded
-   facts.
-*/
-int kos_dyn_live_regs_derived(KosContext *ctx);
-#endif
-
-
 /* === Unified dynamic chain API === */
 
 
@@ -1933,14 +1923,6 @@ KosOpResult kos_dyn_unwind_to_loop(
     KosContext *ctx,
     KosXferEvent event,
     PyObject *result);
-
-
-/**
-   1 when target lies on the chain from dyn_top, 0 when not. Used to
-   validate a node pointer kept across a suspension before it is
-   dereferenced.
-*/
-int kos_dyn_reaches(KosContext *ctx, const KosDynNode *target);
 
 
 int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node);

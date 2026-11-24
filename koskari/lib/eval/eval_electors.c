@@ -454,22 +454,6 @@ KOS_ELECTOR(miss) {
 /* === Numeric bodies === */
 
 
-/* Under the safety net a stack-pair body refuses a site whose operand
-   count is not the two it was elected for. */
-#if KOS_EVAL_SAFETYNET
-# define KOS_ELECTOR_PAIR_SAFETYNET(insn)                               \
-  do {                                                                  \
-    if (unlikely(KosOpCount_COUNT(KosOp_ARG(insn)) != 2)) {             \
-      PyErr_SetString(PyExc_SystemError,                                \
-                      "pair elector on an operand site of count != 2"); \
-      return EVAL_RAISE();                                              \
-    }                                                                   \
-  } while (0)
-#else
-# define KOS_ELECTOR_PAIR_SAFETYNET(insn)  ((void) 0)
-#endif
-
-
 /* The two operand kinds a numeric body is written for, INT and FLOAT.
    Each kind names the C type of its extracted operands, the check on
    one borrowed object and the guard on two, the extraction of one or
@@ -570,7 +554,6 @@ KOS_ELECTOR(miss) {
     KOS_##KIND##_VARS;                                                  \
     PyObject *out;                                                      \
                                                                         \
-    KOS_ELECTOR_PAIR_SAFETYNET(insn);                                   \
     if (unlikely(! args))                                               \
       RESULT_RAISE_AT(ctx, insn);                                       \
     if (unlikely(! KOS_##KIND##_GUARD(args[0], args[1])))               \
@@ -1062,7 +1045,6 @@ KOS_ELECTOR(pair_str_add) {
   PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);
   PyObject *out;
 
-  KOS_ELECTOR_PAIR_SAFETYNET(insn);
   if (unlikely(! args))
     RESULT_RAISE();
   if (unlikely(! (PyUnicode_CheckExact(args[0])
@@ -2268,7 +2250,6 @@ KOS_ELECTOR_ELECT(fast_item_const_store_fast,
 #undef KOS_INT_CHECK
 #undef KOS_INT_VARS
 #undef KOS_INT_TYPE
-#undef KOS_ELECTOR_PAIR_SAFETYNET
 #undef KOS_ELECTOR_DECL
 
 
