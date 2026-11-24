@@ -1103,7 +1103,7 @@ flowchart LR
 | `restore`, `restore_count` | the captured operand stacks of the shared nodes, put back at the first ATTACHING (§6.4) |
 | `outer`, `voided_outer` | the waiting enclosing goal; set when LEAVING unlinked a node an outer goal waits on |
 | `in_place` | the goal's storage is not its own: 1, the caller of `kos_xfer_goal_run`, which the goal leaves for the heap if it pauses; 2, its generator's (`kos_xfer_goal_run_kept`), which outlives it |
-| `gen_state`, `is_throw`, `demand` | a winding goal's only (§6.6): the generator state whose list it works through, whether its payload is an exception to raise at the yield, and whether the consumer ran under demand |
+| `gen_state`, `is_throw` | a winding goal's only (§6.6): the generator state whose list it works through, and whether its payload is an exception to raise at the yield. The first winder's frame takes its demand bit from the frame below the GEN, recorded in the generator state at the splice |
 
 ### 6.2 Goal step rules
 
@@ -2182,7 +2182,6 @@ struct KosXferGoal {
   /* a winding goal's only (§6.6) */
   KosGenState *gen_state;      /* whose list the goal works through */
   uint8_t is_throw;            /* payload is raised at the yield */
-  uint8_t demand;              /* the consumer ran under demand */
 };
 ```
 

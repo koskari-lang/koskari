@@ -328,10 +328,8 @@ static KOS_NOINLINE void kos_xfer_goal_pop_cold(KosContext *ctx) {
 */
 static void goal_winding_died(KosXferGoal *goal) {
 
-  if (goal->phase >= KOS_GOAL_WINDING_OUT && goal->gen_state) {
+  if (goal->phase >= KOS_GOAL_WINDING_OUT)
     kos_dyn_gen_wind_reset(goal->gen_state);
-    goal->gen_state = NULL;
-  }
 }
 
 
@@ -889,7 +887,6 @@ static KOS_NOINLINE KosOpResult goal_wind_out(
   /* the lists stand for the freeze and the next install */
   val = goal->payload;
   goal->payload = NULL;
-  goal->gen_state = NULL;
   kos_xfer_goal_pop_cold(ctx);
   return EVAL_YIELD(val);
 }

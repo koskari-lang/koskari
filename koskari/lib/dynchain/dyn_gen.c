@@ -213,8 +213,7 @@ static int kos_dyn_gen_install_winding(
     KosContext *ctx,
     KosGenState *state,
     KosDynGen *gen,
-    KosDynNode *active,
-    uint32_t invoker_demand);
+    KosDynNode *active);
 
 
 /**
@@ -358,8 +357,7 @@ int kos_dyn_gen_install(KosContext *ctx, PyObject *owner, KosGenState *state) {
     kos_live_regs_apply(ctx, &state->frozen);
   } else {
     if (state->piece_count)
-      return kos_dyn_gen_install_winding(
-          ctx, state, gen, active, invoker_demand);
+      return kos_dyn_gen_install_winding(ctx, state, gen, active);
     kos_dyn_commit_dyn_top(ctx, active);
   }
   state->frozen.top = NULL;
@@ -474,7 +472,6 @@ KosXferGoal *kos_dyn_gen_wind_out_begin(
   goal->phase = KOS_GOAL_WINDING_OUT;
   goal->gen_state = state;
   goal->is_throw = 0;
-  goal->demand = 0;
   KosContext_FlushLiveRegsToFrame(ctx);
   kos_live_regs_capture(ctx, &goal->shape.top);
   return goal;
@@ -630,8 +627,7 @@ static KOS_NOINLINE int kos_dyn_gen_install_winding(
     KosContext *ctx,
     KosGenState *state,
     KosDynGen *gen,
-    KosDynNode *active,
-    uint32_t invoker_demand) {
+    KosDynNode *active) {
 
   KosXferPiece *first = &state->pieces[0];
   KosXferGoal *goal = kos_dyn_gen_wind_goal(state);
@@ -650,7 +646,6 @@ static KOS_NOINLINE int kos_dyn_gen_install_winding(
   goal->phase = KOS_GOAL_WINDING_IN;
   goal->gen_state = state;
   goal->is_throw = 0;
-  goal->demand = invoker_demand != 0;
   goal->shape.top = state->frozen;
   goal->shape.top.top = active;
   if (first->rest) {
@@ -672,8 +667,15 @@ static KOS_NOINLINE int kos_dyn_gen_install_winding(
 
 void kos_dyn_gen_wind_load(KosContext *ctx, KosXferGoal *goal) {
 
-  kos_live_regs_apply(ctx, &goal->gen_state->pieces[0].regs);
-  kos_dyn_gen_inherit_demand(ctx, goal->demand ? KOS_FRAME_DEMAND : 0);
+  KosGenState *state = goal->gen_state;
+  KosDynFrame *below = (KosDynFrame *) state->host.frame;
+
+  kos_live_regs_apply(ctx, &state->pieces[0].regs);
+  /* the first winder's frame runs under the frame below the GEN, which
+     the splice recorded, as each later piece's runs under the one
+     below it */
+  kos_dyn_gen_inherit_demand(
+      ctx, below ? (KosDynFrame_FLAGS(below) & KOS_FRAME_DEMAND) : 0);
 }
 
 

@@ -33,6 +33,7 @@ import unittest
 
 import pytest
 
+from koskari.lib import KoskariSyncViolation, demand_call
 from koskari.module import load_module_source_async, new_module
 
 
@@ -240,6 +241,22 @@ SRC = """
       (begin (yield 1) (yield 2))
       (finally: (log.append "finally"))))
   (yield 3))
+
+
+(def gated [log gate]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (if (gate.count "await") (await (Suspender)) None))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out"))))
+
+
+(def collect_gated [log gate]
+  (for-each [x (gated log gate)]
+    (log.append x)
+    (gate.append "await"))
+  log)
 """
 
 
@@ -353,6 +370,19 @@ async def drain(gen, log):
     async for value in gen:
         log.append(value)
     return log
+
+
+async def consume_gated(gen, gate):
+    """
+    Step gen from Python to its end, setting the gate after each value,
+    and return the values
+    """
+
+    values = []
+    async for value in gen:
+        values.append(value)
+        gate.append("await")
+    return values
 
 
 class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
@@ -676,6 +706,71 @@ class TestWindAcrossYieldFinalizer(unittest.TestCase):
         self.assertEqual(
             [(type(e).__name__, str(e)) for e in reports.seen],
             [("ValueError", "after")])
+
+
+class TestWindAcrossYieldDemand(unittest.TestCase):
+    """
+    The re-entry of a winder runs under the demand of the step that
+    enters it again: a before segment that suspends at re-entry is
+    refused under demand, and suspends under an async consumer. The
+    before segment suspends only once the gate is set, after the first
+    value
+    """
+
+    def setUp(self):
+        self.mod = asyncio.run(load())
+
+
+    def test_re_entry_under_demand_in_a_for_each(self):
+        """
+        A Koskari for-each run under demand_call steps the generator on
+        a running context
+        """
+
+        log = []
+        with self.assertRaises(KoskariSyncViolation) as raised:
+            demand_call(self.mod.collect_gated, log, [])
+        self.assertEqual(
+            str(raised.exception),
+            "async suspension is not allowed in demand_sync")
+        self.assertEqual(log, ["in", "out", 1, "in"])
+
+
+    def test_re_entry_under_a_python_step(self):
+        """
+        next() from Python is a demand step on the generator's own
+        context, which is not running at the install
+        """
+
+        log = []
+        gate = []
+        it = iter(self.mod.gated(log, gate))
+        self.assertEqual(next(it), 1)
+        gate.append("await")
+        with self.assertRaises(KoskariSyncViolation) as raised:
+            next(it)
+        self.assertEqual(
+            str(raised.exception),
+            "async suspension is not allowed in demand_sync")
+        self.assertEqual(log, ["in", "out", "in"])
+
+
+    def test_re_entry_under_an_async_consumer_suspends(self):
+        """
+        With no demand the same re-entry suspends at each step after
+        the first, and the generator completes
+        """
+
+        log = []
+        gate = []
+        coro = consume_gated(self.mod.gated(log, gate), gate)
+        suspended = []
+        with self.assertRaises(StopIteration) as done:
+            while True:
+                suspended.append(coro.send(None))
+        self.assertEqual(suspended, ["suspended", "suspended"])
+        self.assertEqual(done.exception.value, [1, 2])
+        self.assertEqual(log, ["in", "out", "in", "out", "in", "out"])
 
 
 # The end.

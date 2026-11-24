@@ -306,11 +306,11 @@ typedef struct KosExcSlot {
    An effect list: the nodes of a resting span whose effect is out
    (kos_dyn_effect_out), innermost first, the order they went out in.
    They go back in from the list's end, so each node finds the tables
-   as the node outside it left them. The nodes are the span's own and borrowed. Two entries are
-   held inline; a longer list moves to a heap array that the record
-   keeps from then on, so a list that has reached its size allocates
-   nothing more. cap is that array's capacity, or 0 while the list is
-   inline.
+   as the node outside it left them. The nodes are the span's own and
+   borrowed. Two entries are held inline; a longer list moves to a heap
+   array that the record keeps from then on, so a list that has reached
+   its size allocates nothing more. cap is that array's capacity, or 0
+   while the list is inline.
 */
 typedef struct KosDynEffects {
   union {
@@ -367,13 +367,18 @@ typedef struct KosGenState {
      (kos_dyn_gen_wind_out_next); owned, and kept from one yield to the
      next. The array's allocation begins with the storage of the goal
      that leaves and enters them, one at a time, so a yield and a step
-     allocate nothing. piece_count and wound_count are nonzero from the yield that
-     left the winders until the step that enters them again is done,
-     and frozen.top is NULL while such a span rests, which is what
-     sends the install to them. */
+     allocate nothing. piece_count and wound_count are nonzero from the
+     yield's start of the leaves (kos_dyn_gen_wind_out_begin) until the
+     step that enters the winders again is done, and frozen.top is NULL
+     while such a span rests, which is what sends the install to
+     them. */
   KosXferPiece *pieces;
   uint16_t piece_count;
+  /* the pieces the allocation holds, kept across yields, so a later
+     yield with no more winders reallocates nothing */
   uint16_t piece_cap;
+  /* the list's length while the winding owns it: effects.count stays 0
+     then, so the plain install's one test of it puts nothing back */
   uint16_t wound_count;
   KosLiveRegs host;
   KosLiveRegs frozen;
@@ -2146,10 +2151,12 @@ int kos_dyn_gen_wind_attach(KosContext *ctx, KosXferGoal *goal);
 
 
 /**
-  Load the registers of the outermost winder, which a winding in on a
-  running context was pushed without (kos_dyn_gen_install): the frame
-  under the winder is live, and runs under what the consumer's frame
-  ran under.
+  Load the registers of the outermost winder: at the install for a
+  context that is not running, and at the goal's first run for a
+  running context, whose winding in was pushed without them
+  (kos_dyn_gen_install). The frame under the winder is live, and takes
+  the demand bit of the frame below the GEN, the one the splice
+  recorded in state->host.
 */
 void kos_dyn_gen_wind_load(KosContext *ctx, KosXferGoal *goal);
 

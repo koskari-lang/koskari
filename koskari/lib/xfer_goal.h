@@ -163,17 +163,18 @@ struct KosXferGoal {
      goals of a transfer pay nothing for it. */
 
   /* The generator's state, whose effect list and winders the goal
-     works through. piece_next is its place in the list and
-     piece_entered the winders done; target is the part of the span cut
-     off above the winder at dyn_top; shape.top the registers of the
-     whole span; continuation_ref the generator. NULL for a winding
-     out that is done. */
+     works through, set when the goal is filled. piece_next is its
+     place in the list and piece_entered the winders done; target is
+     the part of the span cut off above the winder at dyn_top;
+     shape.top the registers of the whole span; continuation_ref the
+     generator. Kept here because dynchain does not know the
+     generator's type, and the GEN is reached from the goal only by a
+     walk. */
   KosGenState *gen_state;
-  /* a winding in whose payload is an exception to raise at the yield */
+  /* a winding in whose payload is an exception to raise at the yield;
+     the payload alone does not say so, since a sent value may be an
+     exception instance */
   uint8_t is_throw;
-  /* a winding in pushed with no frame live: whether the consumer's
-     frame ran under demand, for the frame it loads */
-  uint8_t demand;
 };
 
 
