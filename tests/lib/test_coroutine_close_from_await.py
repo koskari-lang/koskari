@@ -16,7 +16,7 @@ tests.lib.test_coroutine_close_from_await
 
 A Koskari coroutine waiting on a Python awaitable forwards each send,
 throw, and close into it. Code inside that awaitable which calls close,
-send, or throw on the waiting coroutine is refused with RuntimeError,
+send, or throw on the waiting coroutine is refused with ValueError,
 and the awaitable it runs in stays alive for the rest of the step.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -55,7 +55,7 @@ class Reenter:
         finally:
             try:
                 self.action(self.holder["coro"])
-            except RuntimeError:
+            except ValueError:
                 self.outcome["nested"] = "refused"
             else:
                 self.outcome["nested"] = "accepted"
@@ -83,7 +83,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
             await Suspender()
             try:
                 holder["coro"].close()
-            except RuntimeError:
+            except ValueError:
                 return "refused"
             return "closed"
 
@@ -103,7 +103,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
             await Suspender()
             try:
                 holder["coro"].send(None)
-            except RuntimeError:
+            except ValueError:
                 return "refused"
             return "sent"
 
@@ -125,7 +125,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
                 pass
             try:
                 holder["coro"].close()
-            except RuntimeError:
+            except ValueError:
                 return "refused"
             return "closed"
 

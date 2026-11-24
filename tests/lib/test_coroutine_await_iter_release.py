@@ -17,7 +17,7 @@ tests.lib.test_coroutine_await_iter_release
 A Koskari coroutine waiting on a Python awaitable releases the
 awaitable's iterator once the forward into it is over. That release
 can run the iterator's __del__, and a send from there into the waiting
-coroutine is refused with RuntimeError, as a send from inside the
+coroutine is refused with ValueError, as a send from inside the
 forward is.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -146,8 +146,8 @@ class TestCoroutineAwaitIterRelease(unittest.TestCase):
 
     def assertRefused(self, record):
         self.assertEqual(len(record), 1)
-        self.assertIsInstance(record[0], RuntimeError)
-        self.assertIn("already being awaited", str(record[0]))
+        self.assertIsInstance(record[0], ValueError)
+        self.assertIn("coroutine already executing", str(record[0]))
 
 
     def test_send_completion(self):

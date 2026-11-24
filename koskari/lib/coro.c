@@ -402,8 +402,13 @@ static PyObject *coroutine_await(PyObject *self) {
   /* A coroutine suspended under one awaiter, on a Python awaitable or
      at a yield, is that awaiter's to advance: a second await is refused
      here, as CPython refuses one, rather than sending into the first
-     awaiter's inner awaitable from another task. */
-  if (coro->state == KOS_CORO_WAITING_PY || coro->state == KOS_CORO_YIELDED) {
+     awaiter's inner awaitable from another task. A running one,
+     forwarding into its awaitable included, is returned as CPython
+     returns its own: the step that follows refuses it as already
+     executing. */
+  if (! coro->in_send &&
+      (coro->state == KOS_CORO_WAITING_PY ||
+       coro->state == KOS_CORO_YIELDED)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "coroutine is being awaited already");
     return NULL;
@@ -553,8 +558,7 @@ static int coroutine_step(
 
   /* Re-entrancy guard */
   if (coro->in_send) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "coroutine already being awaited");
+    PyErr_SetString(PyExc_ValueError, "coroutine already executing");
     return -1;
   }
 
@@ -677,8 +681,7 @@ static PyObject *coroutine_throw_pair(
      stored await iterator: this ends in koskari_eval on the same
      context a drive already holds. */
   if (coro->in_send) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "coroutine already being awaited");
+    PyErr_SetString(PyExc_ValueError, "coroutine already executing");
     return NULL;
   }
 
@@ -757,8 +760,7 @@ static PyObject *coroutine_close(PyObject *self) {
   /* Refused here rather than at the throw below, which this reaches
      only after closing and clearing the stored await iterator. */
   if (coro->in_send) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "coroutine already being awaited");
+    PyErr_SetString(PyExc_ValueError, "coroutine already executing");
     return NULL;
   }
 
@@ -988,7 +990,8 @@ static PyGetSetDef coroutine_getsets[] = {
    whoever stepped it, running, or done -- is awaited through its
    Python protocol, which refuses it: a suspended one with "coroutine
    is being awaited already", as CPython refuses a second awaiter, a
-   running one as already being awaited, a done one as reused.
+   running one with ValueError "coroutine already executing", as
+   CPython refuses a running one, a done one as reused.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     KosContext *ctx,

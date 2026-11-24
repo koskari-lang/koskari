@@ -1,0 +1,39 @@
+;; Reproducer: a Koskari coroutine reached from inside its own run --
+;; awaited by itself or by something it called, or sent, thrown into
+;; or closed from a helper it called -- is refused as already
+;; executing. The test reads the coroutine object as an attribute of
+;; the box it passes, so the read is not itself awaited.
+
+
+(def catch_self [box]
+  (try
+    (await box.c)
+    ([e BaseException] #("raised" e))))
+
+
+(def callee [box]
+  (try
+    (await box.c)
+    ([e BaseException] #("raised" e))))
+
+
+(def caller [box]
+  (callee box))
+
+
+(def call_helper [box helper]
+  (helper box.c)
+  "done")
+
+
+(def await_object [aw]
+  (await aw))
+
+
+(def catch_await [aw]
+  (try
+    (await aw)
+    ([e BaseException] #("raised" e))))
+
+
+;; The end.

@@ -211,8 +211,8 @@ class TestCoroutineReentrancy(unittest.TestCase):
             box["coro"].send(None)
 
         self.assertEqual(len(caught), 1)
-        self.assertIsInstance(caught[0], RuntimeError)
-        self.assertIn("already being awaited", str(caught[0]))
+        self.assertIsInstance(caught[0], ValueError)
+        self.assertIn("coroutine already executing", str(caught[0]))
 
 
     def test_close_during_send_is_refused(self):
@@ -237,8 +237,8 @@ class TestCoroutineReentrancy(unittest.TestCase):
             box["coro"].send(None)
 
         self.assertEqual(len(caught), 1)
-        self.assertIsInstance(caught[0], RuntimeError)
-        self.assertIn("already being awaited", str(caught[0]))
+        self.assertIsInstance(caught[0], ValueError)
+        self.assertIn("coroutine already executing", str(caught[0]))
 
 
 

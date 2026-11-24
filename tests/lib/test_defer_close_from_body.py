@@ -39,7 +39,7 @@ SRC = """
   (define d (item box 0))
   (try
     (d.close)
-    ([e RuntimeError] "refused")))
+    ([e ValueError] "refused")))
 """
 
 
