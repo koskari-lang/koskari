@@ -10,6 +10,8 @@ With **no arguments**, `compile/await` emits a **bare** cooperative suspend (`AW
 
 **Behaviour:** With one argument, compiles `EXPR` onto the stack, then emits `AWAIT` with operand **1** (one stack element). The opcode pops TOS, awaits it, and pushes the resolved value. With zero arguments, emits `AWAIT` with operand **0** alone; the resume pushes `None`.
 
+A coroutine, or a step of an async generator (`__anext__`, `asend`, `athrow`, `aclose`), can be awaited once, before anything has started it. Awaiting one that something else has already started -- an asyncio task running it, a Python coroutine awaiting it, a `send` from Python -- raises `RuntimeError`, as in Python ("coroutine is being awaited already", or "cannot reuse already awaited __anext__()/asend()" for a step), and the coroutine or step stays with whoever started it. Await the task instead of the coroutine it runs.
+
 **Examples:**
 
 ```koskari

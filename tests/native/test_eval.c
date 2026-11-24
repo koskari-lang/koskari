@@ -2396,8 +2396,8 @@ static int test_eval_yield_refused_raise_awaits_in_exit(void) {
                 POP_DYN_WITH, RETURN 1.
       First eval: the yield raises MemoryError; the unwind leaves the
       params and the with, whose __exit__ answers an awaitable, so the
-      eval answers AWAIT with the awaitable's first value recorded as
-      the one the context is suspended on. Second eval, as a coroutine's
+      eval answers AWAIT with the awaitable's first value, the context
+      suspended on that await. Second eval, as a coroutine's
       send runs it: the awaitable completes with False, the exit's
       result, and the MemoryError leaves the generator => RAISE.
     */
@@ -2431,8 +2431,10 @@ static int test_eval_yield_refused_raise_awaits_in_exit(void) {
     TEST_ASSERT_NOT_NULL(ev.val, "AWAIT carries the awaitable's value");
     TEST_ASSERT(PyUnicode_CompareWithASCIIString(ev.val, "suspended") == 0,
                 "the value is the exit awaitable's first");
-    TEST_ASSERT_SAME(KosContext_PY_AWAIT_YIELDED(ctx), ev.val,
-                     "the context records what it is suspended on");
+    TEST_ASSERT(KosContext_SuspensionEvent(ctx) == KOS_SUSP_AWAIT,
+                "the context is suspended on an await");
+    TEST_ASSERT(! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING),
+                "the context is suspended, not running");
     Py_DECREF(ev.val);
 
     /* the awaitable's next step is the driver's, as the coroutine's

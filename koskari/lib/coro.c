@@ -609,13 +609,8 @@ static int coroutine_step(
       kos_domain_pop_scope(coro->ctx);
       Py_DECREF(await_iter);
       if (step == PYGEN_NEXT) {
-        /* still yielding: the context's record of what the suspension
-           handed out follows, so a later splice suspends the awaiter
-           on this value, not the first */
-        Py_XSETREF(KosContext_PY_AWAIT_YIELDED(coro->ctx),
-                   Py_NewRef(await_result));
         coro->in_send = 0;
-        *out = await_result;
+        *out = await_result;   /* still yielding */
         return 1;
       }
       if (step == PYGEN_ERROR)
@@ -715,8 +710,6 @@ static PyObject *coroutine_throw_pair(
       Py_DECREF(await_iter);
 
       if (step == PYGEN_NEXT) {
-        Py_XSETREF(KosContext_PY_AWAIT_YIELDED(coro->ctx),
-                   Py_NewRef(await_result));
         coro->in_send = 0;
         return await_result;
       }
@@ -824,11 +817,46 @@ static PyObject *coroutine_close(PyObject *self) {
 }
 
 
+/**
+   The suspension a demand() met: the coroutine it started is closed,
+   as close() closes it, so its cleanup runs and the object is done, as
+   if it had run and failed asynchronously. The refusal is raised; an
+   error the close raised instead (a cleanup that raised, or one that
+   ignored the GeneratorExit) is raised in its place, with the refusal
+   as its context.
+*/
+static PyObject *coroutine_demand_refuse(KosCoroutine *coro) {
+
+  static const char msg[] =
+      "async suspension is not allowed in coroutine.demand()";
+  PyObject *closed = coroutine_close((PyObject *) coro);
+  PyObject *typ, *val, *tb;
+  PyObject *refusal;
+
+  if (closed) {
+    Py_DECREF(closed);
+    PyErr_SetString(PyExc_RuntimeError, msg);
+    return NULL;
+  }
+
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+  refusal = PyObject_CallFunction(PyExc_RuntimeError, "s", msg);
+  if (refusal && val)
+    PyException_SetContext(val, refusal);
+  else
+    Py_XDECREF(refusal);
+  PyErr_Restore(typ, val, tb);
+  return NULL;
+}
+
+
 /*
    demand() -- run the coroutine to completion on the demand path (no
    asyncio), stepping it directly so the return is taken as a value and
    never built into a StopIteration. A suspension on a Python awaitable
-   cannot be served here and raises RuntimeError.
+   cannot be served here: the coroutine is closed and RuntimeError is
+   raised (coroutine_demand_refuse).
 */
 static PyObject *coroutine_demand(PyObject *self) {
 
@@ -847,12 +875,8 @@ static PyObject *coroutine_demand(PyObject *self) {
     }
 
     Py_DECREF(out);
-    if (coro->state == KOS_CORO_WAITING_PY) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "coroutine.demand() cannot complete: coroutine is "
-                      "waiting on a Python awaitable; use async await");
-      return NULL;
-    }
+    if (coro->state == KOS_CORO_WAITING_PY)
+      return coroutine_demand_refuse(coro);
   }
 }
 
@@ -869,7 +893,8 @@ static PyMethodDef coroutine_methods[] = {
 
   { "demand", (PyCFunction) coroutine_demand, METH_NOARGS,
     "Run coroutine to completion from sync context on the demand path "
-    "(no asyncio). Raises if the coroutine waits on a Python awaitable." },
+    "(no asyncio). A coroutine that waits on a Python awaitable is "
+    "closed, and RuntimeError is raised." },
 
   { NULL, NULL, 0, NULL },
 };
@@ -952,117 +977,24 @@ static PyGetSetDef coroutine_getsets[] = {
 
 
 /**
-   The resume of a coroutine frame, the frame a coroutine's chain was
-   attached under: the chain's value returns from the frame, a failed
-   delivery declines. The frame holds no state. The coroutine object
-   was finished when its chain moved here, so the frame is cloned, kept
-   and moved as any frame is, and a continuation captures across it.
-*/
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_frame_resume(
-    KosContext *ctx,
-    void *state,
-    PyObject *value) {
-
-  (void) state;
-  if (! value)
-    return EVAL_RAISE();
-  RESULT_FRAME_RETURN(ctx, value, NULL);
-}
-
-
-KOS_RESUME_KIND_AS_IS(coroutine_frame_kind, "coroutine",
-                      coroutine_frame_resume, NULL,
-                      kos_resume_clone_shared);
-
-
-/**
-   Splice a coroutine's chain, at rest at a Python await, under the
-   await frame and suspend the awaiter on what the chain was suspended
-   on. The room for the chain is checked first, with the chain still
-   on the coroutine's context, so a refusal leaves the coroutine as it
-   was. Then the chain detaches from the coroutine's context and
-   attaches under the await frame, which becomes a coroutine frame
-   (coroutine_frame_kind); the pending Python await moves to the
-   awaiter's context, whose driver steps it from now on; and the
-   coroutine is finished as an object, as one taken fresh is, with its
-   own context, holding nothing, released. The program is the
-   awaiter's from here. An attach that fails after the detach puts the
-   chain back on the coroutine's context, or, failing that too, frees
-   it with the coroutine finished. coro is owned and released here.
-*/
-static KosOpResult coroutine_splice(KosContext *ctx, KosCoroutine *coro) {
-
-  KosContext *own = coro->ctx;
-  KosDynFrame *await_frame = KosContext_FRAME(ctx);
-  KosDynSpan span;
-  PyObject *yielded;
-
-  /* the chain's lowest frame is numbered 1 on its own context, so its
-     top frame's depth is its frame count */
-  if (kos_eval_check_frame_room(
-          ctx, await_frame,
-          KosContext_FRAME(own)
-              ? KosDynFrame_DEPTH(KosContext_FRAME(own)) : 0u) < 0
-      || kos_dyn_span_detach(own, &span) < 0) {
-    Py_DECREF(coro);
-    return EVAL_RAISE();
-  }
-
-  if (kos_dyn_span_attach(ctx, &span) < 0) {
-    if (kos_dyn_span_attach(own, &span) < 0) {
-      kos_dyn_span_drop(&span);
-      KosContext_DYN_TOP(own) = span.head;
-      KosContext_ReleaseChain(own);
-      coroutine_finish(coro);
-    }
-    Py_DECREF(coro);
-    return EVAL_RAISE();
-  }
-
-  /* the pending await is the awaiter's now: the iterator its driver
-     steps, and the value it is suspended on again */
-  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), KosContext_PY_AWAIT_ITER(own));
-  KosContext_PY_AWAIT_ITER(own) = NULL;
-  Py_XSETREF(KosContext_PY_RESUME_INJECT(ctx),
-             KosContext_PY_RESUME_INJECT(own));
-  KosContext_PY_RESUME_INJECT(own) = NULL;
-  yielded = KosContext_PY_AWAIT_YIELDED(own);
-  KosContext_PY_AWAIT_YIELDED(own) = NULL;
-
-  KosDynFrame_RESUME_KIND(await_frame) = &coroutine_frame_kind;
-  KosDynFrame_RESUME_STATE(await_frame) = NULL;
-  coroutine_finish(coro);
-  Py_DECREF(coro);
-
-  if (unlikely(! yielded)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "parked coroutine with nothing to suspend on");
-    return EVAL_RAISE();
-  }
-  return EVAL_AWAIT(yielded);
-}
-
-
-/**
-   The await suite's kind: the coroutine's chain, in whatever state it
-   is, continues under the await frame. Not started, its prepared frame
-   replaces the await frame, as a tail call's does, and its return
-   is delivered where the await's value would; the await frame was pushed
-   uncounted, so the room for the program is checked here, at the
-   frame's own depth, and a refusal releases the taken frame to its
-   function's cache with the coroutine finished, as CPython's is when
-   its first step cannot enter. At rest at a Python await, its chain
-   splices under the await frame and the awaiter suspends on the same
-   await (coroutine_splice). Either way the object is done from here.
-   Active or done, it is awaited through its Python protocol, which
-   refuses it.
+   The await suite's kind. A coroutine not yet started is taken: its
+   prepared frame replaces the await frame, as a tail call's does, and
+   its return is delivered where the await's value would; the await
+   frame was pushed uncounted, so the room for the program is checked
+   here, at the frame's own depth, and a refusal releases the taken
+   frame to its function's cache with the coroutine finished, as
+   CPython's is when its first step cannot enter. The object is done
+   from the take. A coroutine already started -- suspended under
+   whoever stepped it, running, or done -- is awaited through its
+   Python protocol, which refuses it: a suspended one with "coroutine
+   is being awaited already", as CPython refuses a second awaiter, a
+   running one as already being awaited, a done one as reused.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     KosContext *ctx,
     void *state,
     PyObject *value) {
 
-  KosCoroutine *coro = (KosCoroutine *) value;
   KosDynFrame *frame;
 
   /* a failed delivery, a signal taken by the poll ahead of the hop
@@ -1080,10 +1012,6 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult coroutine_await_resume(
     kos_dyn_swap_frame_for_tail(ctx, frame);
     RESULT_NEXT_POLL(ctx);
   }
-
-  if (coro->state == KOS_CORO_WAITING_PY && ! coro->in_send
-      && coro->ctx && KosContext_DYN_TOP(coro->ctx))
-    RESULT_RELAY(ctx, coroutine_splice(ctx, coro));
 
   TAILCALL(kos_await_python, ctx, state, value);
 }

@@ -1,0 +1,74 @@
+;; Reproducer: a Koskari await of a Koskari coroutine or async
+;; generator step that something else has already started is refused,
+;; and leaves the object to whoever started it. A demand that cannot
+;; complete closes the coroutine it started. Suspender is injected by
+;; the test.
+
+
+(import asyncio)
+
+
+(def sleeper [n]
+  (asyncio.sleep n)
+  "woke")
+
+
+(def guarded_waiter [log]
+  (try
+    (await (Suspender))
+    (finally:
+      (log.append "finally")))
+  "woke")
+
+
+(def await_object [aw]
+  (await aw))
+
+
+(def catch_await [aw]
+  (try
+    (await aw)
+    ([e BaseException] #("raised" e))))
+
+
+(def give [c]
+  c)
+
+
+(def suspending_gen []
+  (yield (await (Suspender)))
+  (yield 2))
+
+
+(def recovering_gen []
+  (try
+    (yield 1)
+    ([e ValueError]
+      (yield (await (Suspender))))))
+
+
+(def closing_gen [log]
+  (try
+    (yield 1)
+    (finally:
+      (await (Suspender))
+      (log.append "finally"))))
+
+
+(def recovering_waiting_gen []
+  (try
+    (yield 1)
+    ([e ValueError]
+      (yield (await (asyncio.sleep 0.05 "recovered"))))))
+
+
+(def waiting_gen [log]
+  (try
+    (begin
+      (yield (await (asyncio.sleep 0.01 "slept")))
+      (yield (await (asyncio.sleep 0.01 "slept again"))))
+    (finally:
+      (log.append "finally"))))
+
+
+;; The end.

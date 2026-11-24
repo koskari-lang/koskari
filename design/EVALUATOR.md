@@ -144,7 +144,7 @@ Eval and opcodes share the running **`KosContext *ctx`**; the eval-facing operat
 - **Settling a pending extent** -- **`kos_dyn_settle_top`** (a returning thunk, `__enter__`, or `__exit__` settles the WIND or WITH at dyn_top and unlinks it after a leave) and **`KosEval_ResumeReturn`** (resumes a return the unlink handed back).
 - **Opcode-visible flags** -- **`KosContext_MarkSuspendedNotRunning`**, **`MarkDeadAfterYield`**, **`MarkDeadAfterReturn`**.
 - **Globals / throw / iteration** -- **`KosContext_GlobalsNamespace`**, **`KosContext_ThrowAtYield`** (a throw delivered at a generator's yield: a frame whose resume kind names a throw kind gets that kind set and the exception staged, unchained, as its delivery for the delegate; any other frame, and GeneratorExit always, gets it raised at the yield by **`KosContext_RaiseThrownAtYield`**: chained through `KosExc_RaiseChained` when the generator's span holds a handled exception of its own (`kos_dyn_span_handles`: a TRY or FINALLY handling, between dyn_top and the span's GEN), and raised unchained otherwise, since a flattened generator shares the thread's handled exception with its consumer and CPython chains a throw to the generator's own only), **`kos_iter_fetch(ctx, req, &out)`** (the next element of a bound iterator by its kind: `tp_iternext`, the provider suite, or the eager `__anext__` step), **`KosContext_EagerStepAwaitable`** (first eager **`__await__`/`send(None)`** step for awaitables; used from AWAIT plumbing and **`YIELD_FROM`**).
-- **Suspension / Python bridge** (`eval.h`) -- **`KosContext_SetSuspensionEvent`**, **`KosContext_ClearSuspensionEvent`**, **`KosContext_SuspensionEvent`**; **`KosContext_PythonAwaitClearIter` / `PythonAwaitIter` / `PythonAwaitYielded`** (the iterator is stored by `KosContext_EagerStepAwaitable`); **`KosContext_PythonResumeSet`**, and `KosContext_PythonResumeTake` (static in `eval/eval_chain.c`).
+- **Suspension / Python bridge** (`eval.h`) -- **`KosContext_SetSuspensionEvent`**, **`KosContext_ClearSuspensionEvent`**, **`KosContext_SuspensionEvent`**; **`KosContext_PythonAwaitClearIter` / `PythonAwaitIter`** (the iterator is stored by `KosContext_EagerStepAwaitable`); **`KosContext_PythonResumeSet`**, and `KosContext_PythonResumeTake` (static in `eval/eval_chain.c`).
 
 ### 1.5 Live registers on `KosContext` (`frame`, `block`, `namespace`)
 
@@ -1505,10 +1505,8 @@ is freed back to its function's cache), the code-less frame reuse in
 frame count above the caller's frame for a delimited continuation, or above
 the seam's frame for an undelimited one, before anything moves), both
 generator installs (a resume that would not fit raises at the request, as
-Python's `next()` does, with the generator left suspended),
-`kos_dyn_span_attach` (which also counts the frames a moved goal's target
-holds off the chain, and shifts them by the chain's shift), and the
-coroutine and stepper attachments (`coro.c`, `iterate.c`). An await frame
+Python's `next()` does, with the generator left suspended), and the take
+of a fresh coroutine (`coro.c`). An await frame
 is pushed without the check
 (`kos_await_frame_install`). A continuation's copy is numbered by the
 clone that makes it (`kos_dyn_clone_segment`, from the depth the invoke
@@ -2020,10 +2018,8 @@ It opens with the live registers -- `dyn_top`, `frame`, **`block`**
 chain), `namespace`, `pc`, `acting_pc` (both `KosOp *`) -- then `goal`,
 `pending_value`, `breaker`, `terminal`, `suspension_event` and
 `flags`, followed by `token`, `domain`, `param_refs`, the Python await
-bridge (`py_resume_inject`, `py_await_iter`, and `py_await_yielded`,
-the value the last AWAIT suspension handed the caller of `koskari_eval`,
-kept while suspended so a chain attached to another context can be
-suspended on it again), `entry_call`, and `exc_info`. A delimited
+bridge (`py_resume_inject` and `py_await_iter`), `entry_call`, and
+`exc_info`. A delimited
 continuation's caller continues as after any call: the copy's body frame
 returns to it, so no context slot holds a return pc.
 Async **WITH** enter/exit suspension does **not** use separate `KosContext`
@@ -2051,7 +2047,6 @@ struct KosContext {
   PyObject *param_refs;
   PyObject *py_resume_inject;
   PyObject *py_await_iter;
-  PyObject *py_await_yielded;
   const struct KosEntryCall *entry_call;
   KosExcState exc_info;
 };
@@ -2261,21 +2256,21 @@ into it and counts its frames (§6.3, §6.4).
 **KosCoroutine** (coro.c):
 - Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
-- State machine: NEW → RUNNING → WAITING_PY / YIELDED → DONE. WAITING_PY is the parked state a Koskari await splices, a chain at rest on the coroutine's own context at a Python await; YIELDED, a chain at rest at a yield, is driven through the Python protocol only, which refuses a Koskari await of it. RUNNING with `in_send` set is active, on its own context under a Python drive, and every entry is refused while it lasts. A coroutine whose program moved to an awaiter, taken fresh or spliced, is DONE from that moment.
+- State machine: NEW → RUNNING → WAITING_PY / YIELDED → DONE. WAITING_PY is a chain at rest on the coroutine's own context at a Python await; YIELDED, a chain at rest at a yield. Either belongs to whoever stepped it, and its own Python protocol drives it. RUNNING with `in_send` set is active, on its own context under a Python drive, and every entry is refused while it lasts. A coroutine whose program moved to an awaiter, taken fresh, is DONE from that moment.
 - Created by an Expression (`KosCoroutine_NewFromCode`) or by a Function call from Python (`KosCoroutine_NewFromFrame` over the function's ready frame); the record holds the frame until the first send wraps it in a context, or a Koskari await takes it (`KosCoroutine_TakeFresh`, swapped into the await frame); send and throw call `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
-- A Koskari await of a coroutine parked at a Python await splices its chain under the await frame (`coroutine_splice`): the chain detaches from the coroutine's context as a span, with every transfer goal waiting on it, and attaches under the awaiter's live frame, the goals above the awaiter's own (a goal whose seam was the old context's root takes the node under the splice; a cc-unwind goal left down to a seam that is not the context's root raises its signal at the live frame as an ordinary raise, for the awaiter's ingress to judge its token), the pending await iterator and the value it yielded move to the awaiter's context, the coroutine object is finished and its own context released, and the await frame becomes a coroutine frame, whose resume holds no state and returns the chain's value from the frame. A continuation captures across a coroutine frame as across any other. The awaiter then suspends on that same yielded value, and its driver completes the await. The Python-side `__await__` of a parked coroutine is still refused, as CPython refuses one with `cr_await` set.
+- A Koskari await of a coroutine already started (WAITING_PY, YIELDED, RUNNING or DONE) goes to its Python protocol, which refuses it: "coroutine is being awaited already" for a suspended one, as CPython refuses a second awaiter with `cr_await` set, "coroutine already being awaited" for a running one, "cannot reuse already awaited coroutine" for a finished one. The refused coroutine stays on its own context, with whoever started it. The Python-side `__await__` refuses a suspended one the same way.
 
 **KosPyAsyncGen** (iter.c):
 - Wraps `KosContext` for async generator protocol
 - `__aiter__` returns self
 - `__anext__` returns a stepper awaitable (`KosIterAdapt_Anext`, `iterate.c`)
-- When stepped from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when stepped from Python (`__anext__`), the stepper enters `koskari_eval` on the adapter's context (see **Eval Entry** for the full `koskari_eval` signature). A stepper awaited from Koskari is taken on an await frame: not yet driven, its step is a next or throw request on that frame with the step kind as the resume; parked mid-await by a Python drive, its chain splices under the frame (`stepper_splice`) and the awaiter suspends on the pending await, the generator's busy mark recording a step on a consumer's chain.
+- When stepped from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when stepped from Python (`__anext__`), the stepper enters `koskari_eval` on the adapter's context (see **Eval Entry** for the full `koskari_eval` signature). A stepper awaited from Koskari is taken on an await frame: not yet started, its step is a next or throw request on that frame with the step kind as the resume; already started (its step running, or suspended mid-await under a Python drive), it is refused with the reuse error CPython gives a second await of its method, "cannot reuse already awaited __anext__()/asend()" or "cannot reuse already awaited aclose()/athrow()", and its step stays with whoever started it.
 
 #### Synchronous entry points (demand / tp_iter)
 
 For **synchronous** Python code (e.g. tests, scripts) that does not use `asyncio`:
 
-- **KosCoroutine.demand()**: Runs the coroutine to completion on the demand path (no asyncio). If the coroutine suspends on a Python awaitable, `demand()` raises; use `async`/`await` for that case.
+- **KosCoroutine.demand()**: Runs the coroutine to completion on the demand path (no asyncio). If the coroutine suspends on a Python awaitable, `demand()` closes it, as `close()` does, so its cleanup runs and the object is done, and raises RuntimeError "async suspension is not allowed in coroutine.demand()". The demand core's own refusals close what they stepped the same way (`kos_demand_refuse_suspended`, `demand.c`): the awaitable a demand root returned, and the awaitable an in-eval await stepped under a demand frame.
 - **`iter(agen)` / `for x in agen`**: `tp_iter` returns a **KosPyIter** (`KosIterAdapt_PyIter`), the CPython iterator over the provider. A step from Python applies demand; Koskari iteration through a KosPyIter flattens, since its KosIter suite forwards to the provider. Demand applies to the step, never to construction: `demand(...)` on a generator function returns the `AsyncGenerator`, and a generator-function `__iter__` is wrapped in `IterFunction` so `iter(obj)` from Python gets a KosPyIter.
 
 Use **`asyncio.run(expr())`** or **`await expr()`** when you need the full asyncio stack.

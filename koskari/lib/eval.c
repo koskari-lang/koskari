@@ -301,9 +301,6 @@ static KosOpResult revive_await(
         PyObject *throw_exc,
         KosObligation *out_return) {
 
-  /* the suspension is being resumed: what it handed out is spent */
-  Py_CLEAR(KosContext_PY_AWAIT_YIELDED(ctx));
-
   if (throw_exc != NULL) {
     PyObject *typ_eff = throw_typ ? throw_typ
         : (PyObject *) Py_TYPE(throw_exc);
@@ -2367,7 +2364,6 @@ static KosOpResult entry_revive_await(
   if (ra.kind == KOS_RES_AWAIT) {
     KosContext_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT);
     KosContext_MarkSuspendedNotRunning(ctx);
-    Py_XSETREF(KosContext_PY_AWAIT_YIELDED(ctx), Py_NewRef(ra.val));
     return ra;
   }
   *mode = (ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
@@ -2733,10 +2729,13 @@ static KosOpResult eval_event_await(KosContext *ctx, PyObject *val) {
     KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
     /* The eager step stored the __await__ iterator for a resumption
-       that is now refused; nothing will drive it again. */
-    KosContext_PythonAwaitClearIter(ctx);
-    kos_demand_set_sync_violation(
-        "async suspension is not allowed in demand_sync");
+       that is now refused; nothing will drive it again, so what the
+       step started is closed. */
+    PyObject *await_iter = KosContext_PY_AWAIT_ITER(ctx);
+
+    KosContext_PY_AWAIT_ITER(ctx) = NULL;
+    kos_demand_refuse_suspended(
+        await_iter, "async suspension is not allowed in demand_sync");
     KosOpResult rs;
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
     return rs;
@@ -2745,7 +2744,6 @@ static KosOpResult eval_event_await(KosContext *ctx, PyObject *val) {
   KosContext_MarkSuspendedNotRunning(ctx);
   KOS_TRACE_POST_OP_WRAP(event_await,
       KosContext_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT));
-  Py_XSETREF(KosContext_PY_AWAIT_YIELDED(ctx), Py_NewRef(val));
   ctx->terminal = 1;
   return EVAL_AWAIT(val);
 }

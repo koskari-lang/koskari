@@ -68,6 +68,31 @@ void kos_demand_set_sync_violation(const char *msg) {
 }
 
 
+void kos_demand_refuse_suspended(PyObject *await_iter, const char *msg) {
+
+  PyObject *typ, *val, *tb;
+  PyObject *violation;
+
+  if (! await_iter || kos_iter_close_or_raise(await_iter) == 0) {
+    Py_XDECREF(await_iter);
+    kos_demand_set_sync_violation(msg);
+    return;
+  }
+  Py_DECREF(await_iter);
+
+  /* the close raised: its error goes up, with the refusal it followed
+     as its context */
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+  violation = PyObject_CallFunction(KoskariSyncViolation, "s", msg);
+  if (violation && val)
+    PyException_SetContext(val, violation);
+  else
+    Py_XDECREF(violation);
+  PyErr_Restore(typ, val, tb);
+}
+
+
 static int register_koskari_sync_exception(PyObject *mod,
     const char *full_name,
     const char *attr_name,
@@ -95,6 +120,8 @@ static int register_koskari_sync_exception(PyObject *mod,
    through kos_await_first_step. On immediate completion, return the
    value. On suspension, throw KoskariSyncViolation into the await
    iterator; the callee may catch it and return a value, or re-raise.
+   One that suspends again is closed and the violation raised
+   (kos_demand_refuse_suspended).
 
    Steals the reference to `result`. Returns a new reference to the final
    value, or NULL with PyErr set.
@@ -134,9 +161,11 @@ static PyObject *demand_step_python_result(PyObject *result) {
     }
   }
 
-  /* throw() returned without raising: still suspended. */
+  /* throw() returned without raising: still suspended, and closed */
   Py_DECREF(value);
-  kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
+  kos_demand_refuse_suspended(
+      await_iter, "async suspension is not allowed in demand_sync");
+  return NULL;
 
 iter_fail:
   Py_DECREF(await_iter);
@@ -173,10 +202,11 @@ static PyObject *demand_finish_value(PyObject *value) {
 /**
    Finish a Koskari return that left the eval as the root frame's own,
    by the rule the in-eval await applies: a plain value passes through;
-   an awaitable is stepped once and, if it suspends, the yield and the
-   await iterator are dropped, nothing is thrown into it, and the
-   violation is raised. The same outcome a return into the demand root
-   frame's resume gets, whichever arm the entry took.
+   an awaitable is stepped once and, if it suspends, the yield is
+   dropped, nothing is thrown into it, what the step started is closed,
+   and the violation is raised (kos_demand_refuse_suspended). The same
+   outcome a return into the demand root frame's resume gets, whichever
+   arm the entry took.
 
    Steals value. Returns a new reference, or NULL with PyErr set.
 */
@@ -204,8 +234,8 @@ static PyObject *demand_deny_suspended(PyObject *value) {
     return NULL;
 
   Py_DECREF(yielded);
-  Py_DECREF(await_iter);
-  kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
+  kos_demand_refuse_suspended(
+      await_iter, "async suspension is not allowed in demand_sync");
   return NULL;
 }
 

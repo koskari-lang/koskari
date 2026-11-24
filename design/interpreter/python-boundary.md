@@ -175,12 +175,11 @@ to `KosCoroutine_NewFromFrame`; yielding code goes to
   the coroutine's await kind) takes the frame itself: it swaps into the
   await frame as a tail call's does, after a room check at that frame's
   depth; the snapshot is dropped, the grafted frame runs under the
-  awaiter's dynamic state. A record parked at a Python await after a
-  Python send splices its whole chain under the await frame instead
-  (`coroutine_splice`): the pending await iterator and the value it
-  yielded move to the awaiter's context, and the record is done and
-  its own context released at the splice, as a fresh record is at the
-  take.
+  awaiter's dynamic state. A record already started is refused there
+  through its Python protocol, as CPython refuses a second awaiter, and
+  stays on its own context with whoever started it.
+- A `demand()` that meets a suspension on a Python awaitable closes the
+  record, as `close()` does, before it raises.
 - Completion (`coroutine_settle`, `coroutine_close`, through
   `coroutine_finish`) marks the record done and releases its context
   then, so a gather holding finished coroutines holds no contexts.

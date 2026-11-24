@@ -61,8 +61,8 @@ Reference: OPCODES.md, EVALUATOR.md §6.
 The native frame an await of a Koskari awaitable runs on: pushed above
 the awaiter, uncounted against the frame limit, with the awaitable's
 await kind (its type's await suite) as the resume. The kind continues
-the awaitable's chain under it, a fresh coroutine's frame swapped in,
-a parked chain spliced beneath it, a step requested on it, and the
+the awaitable's chain under it, a fresh coroutine's frame swapped in
+or a step requested on it, and the
 frame's return delivers the awaited value where the awaiter's push would
 have. Reference: FLATTENING.md.
 
@@ -250,20 +250,17 @@ aside while the after segment or `__exit__` runs, or a RETURN crossing a
 leave in flight. Released at unlink by kind and by event. Reference:
 EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
 
-## parked (active)
+## started (suspended, active)
 
-The two states a Koskari coroutine's or generator step's chain can be
-in when it is not fresh and not done. Parked: at rest on the object's
-own context, suspended at a Python await, with nothing running on it;
-a Python `send` drives it there, a Koskari await splices it. A
-coroutine suspended at a yield is driven through its Python protocol,
-which refuses a Koskari await of it. Active: on its own chain, being
-evaluated under a Python drive; every entry from anywhere is refused
-as already in progress until the drive returns. A coroutine whose
-chain was spliced under an awaiter is neither: the object is done at
-the splice, and a suspension inside the spliced chain is the awaiter's
-context suspending. A generator's step spliced the same way is active
-on the consumer's chain until the step ends.
+The states a Koskari coroutine's or generator step's chain can be in
+when it is neither fresh nor done. Suspended: at rest on the object's
+own context, at a Python await or a yield, with nothing running on it;
+whoever stepped it there steps it on, and a Koskari await of it is
+refused, as CPython refuses a second awaiter. Active: on its own
+chain, being evaluated under a Python drive; every entry from anywhere
+is refused as already in progress until the drive returns. A fresh
+coroutine or step a Koskari await takes runs on the awaiter's chain,
+and the object is done, or the stepper spent, from the take.
 
 ## provider
 
@@ -300,11 +297,9 @@ mechanism.
 
 ## span
 
-A chain at rest between contexts: from its head down to its root node,
-each node's outward effect taken back and its frames counted
-(`KosDynSpan`). A parked coroutine's or step's chain travels onto an
-awaiter's chain as one; the generator's own resting span between
-installs is its `KosGenState`.
+A generator's chain at rest off the chain between installs, from its
+head down to its root frame, each node's outward effect taken out and
+listed; it rests in the generator's `KosGenState`.
 
 ## suite
 

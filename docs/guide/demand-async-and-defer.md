@@ -146,7 +146,11 @@ Typical uses:
 
 On the demand path, suspension that requires waiting on a Python awaitable
 raises `KoskariSyncViolation`. Koskari code meant to run under demand must
-not rely on `await` at points where the host cannot resume.
+not rely on `await` at points where the host cannot resume. A demand that
+cannot complete synchronously closes the coroutine it started, as if it
+had run and failed: its `finally` blocks and exit handlers run, and it
+cannot be awaited afterwards. A coroutine's own `demand()` method does the
+same, and raises `RuntimeError`.
 
 ### Why demand exists
 

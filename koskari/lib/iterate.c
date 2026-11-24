@@ -470,9 +470,6 @@ static int stepper_resume_await(
     Py_XDECREF(send_val);
 
     if (r == PYGEN_NEXT) {
-      /* the context's record of what the suspension handed out
-         follows the forward, for a splice of this parked step */
-      Py_XSETREF(KosContext_PY_AWAIT_YIELDED(st->ctx), Py_NewRef(step));
       *still = step;
       return 1;
     }
@@ -764,16 +761,26 @@ static PyObject *stepper_drive(
 }
 
 
+/**
+   Refuse a second await of the stepper with CPython's wording for its
+   method: "cannot reuse already awaited __anext__()/asend()", or the
+   aclose()/athrow() form for a throw or a close.
+*/
+static void stepper_set_reuse_error(KosIterStepper *st) {
+  PyErr_SetString(PyExc_RuntimeError,
+                  (st->is_throw || st->closing)
+                  ? "cannot reuse already awaited aclose()/athrow()"
+                  : "cannot reuse already awaited __anext__()/asend()");
+}
+
+
 static PyObject *stepper_iternext(PyObject *self) {
 
   KosIterStepper *st = (KosIterStepper *) self;
   KosIterSlots *islots = st->islots;
 
   if (! st->provider) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    (st->is_throw || st->closing)
-                    ? "cannot reuse already awaited aclose()/athrow()"
-                    : "cannot reuse already awaited __anext__()/asend()");
+    stepper_set_reuse_error(st);
     return NULL;
   }
 
@@ -1025,95 +1032,17 @@ static PyObject *stepper_repr(PyObject *self) {
 
 
 /**
-   Splice a step parked mid-await on the stepper's context under the
-   await frame, and suspend the awaiter on what it was parked on. The
-   room for the chain is checked first, with the chain still parked,
-   so a refusal leaves the stepper as it was. The chain detaches from
-   the stepper's context and attaches under the await frame, whose
-   resume is the step kind the priming chose, the provider its state,
-   so the chain's yield or end reaches it as a flattened step's does; a
-   GEN at the chain's root records that its step now runs on a
-   consumer's chain. The pending Python await moves to the awaiter's
-   context, the provider reference moves to the resume, and the stepper
-   is spent. An attach that fails after the detach puts the chain back
-   on the stepper's context, or, failing that too, spends the step,
-   finishing the provider and freeing the chain. st is owned and
-   released here.
-*/
-static KosOpResult stepper_splice(KosContext *ctx, KosIterStepper *st) {
-
-  KosContext *own = st->ctx;
-  KosDynFrame *await_frame = KosContext_FRAME(ctx);
-  const KosResumeKind *kind =
-      st->closing ? &kos_aclose_resume_kind : &kos_astep_resume_kind;
-  KosDynSpan span;
-  PyObject *yielded;
-
-  /* the chain's lowest frame is numbered 1 on its own context, so its
-     top frame's depth is its frame count */
-  if (kos_eval_check_frame_room(
-          ctx, await_frame,
-          KosContext_FRAME(own)
-              ? KosDynFrame_DEPTH(KosContext_FRAME(own)) : 0u) < 0
-      || kos_dyn_span_detach(own, &span) < 0) {
-    Py_DECREF(st);
-    return EVAL_RAISE();
-  }
-
-  if (span.gen)
-    KosDynGen_STATE((KosDynGen *) span.gen)->busy = KOS_GEN_BUSY_CONSUMER;
-  if (kos_dyn_span_attach(ctx, &span) < 0) {
-    if (span.gen)
-      KosDynGen_STATE((KosDynGen *) span.gen)->busy = KOS_GEN_BUSY_OWN;
-    if (kos_dyn_span_attach(own, &span) < 0) {
-      kos_dyn_span_drop(&span);
-      /* the chain can rest nowhere: the step is spent, which finishes
-         the provider so it is not left busy forever, and frees the
-         chain through the stepper's context */
-      KosContext_DYN_TOP(own) = span.head;
-      stepper_spend(st);
-    }
-    Py_DECREF(st);
-    return EVAL_RAISE();
-  }
-
-  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), KosContext_PY_AWAIT_ITER(own));
-  KosContext_PY_AWAIT_ITER(own) = NULL;
-  Py_XSETREF(KosContext_PY_RESUME_INJECT(ctx),
-             KosContext_PY_RESUME_INJECT(own));
-  KosContext_PY_RESUME_INJECT(own) = NULL;
-  yielded = KosContext_PY_AWAIT_YIELDED(own);
-  KosContext_PY_AWAIT_YIELDED(own) = NULL;
-
-  KosDynFrame_RESUME_KIND(await_frame) = kind;
-  KosDynFrame_RESUME_STATE(await_frame) = st->provider;
-  st->provider = NULL;
-  st->awaiting = 0;
-  st->drive_mode = 0;
-  Py_CLEAR(st->ctx);
-  st->ctx_owned = 0;
-  Py_DECREF(st);
-
-  if (unlikely(! yielded)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "parked step with nothing to suspend on");
-    return EVAL_RAISE();
-  }
-  return EVAL_AWAIT(yielded);
-}
-
-
-/**
-   The await suite's kind: the step the stepper stands for continues
-   on the await frame. Not yet driven, it is taken here as a next or
-   throw request on the frame, with the resume the adapter's priming
-   chose completing the frame with the element, the end, or the close's
-   None; the provider reference moves to the resume's state and the
-   stepper is spent, so a later await from Python meets the reuse
-   guard. Parked mid-await on its own context by a Python drive, its
-   chain splices under the await frame and the awaiter suspends on the
-   same await (stepper_splice). Running, or spent, it is awaited
-   through its protocol, which refuses it.
+   The await suite's kind. A stepper not yet started stands for one
+   step of its provider, taken here as a next or throw request on the
+   await frame, with the resume the adapter's priming chose completing
+   the frame with the element, the end, or the close's None; the
+   provider reference moves to the resume's state and the stepper is
+   spent, so a later await from Python meets the reuse guard. A
+   stepper already started -- its step running, or suspended under
+   whoever stepped it -- is refused here with the reuse error CPython
+   gives a second await of its method, and is left to that stepper's
+   owner. A spent one is awaited through its protocol, which refuses
+   it the same way.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
     KosContext *ctx,
@@ -1129,11 +1058,15 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult stepper_await_resume(
   if (! value)
     return EVAL_RAISE();
 
-  if (st->provider && st->awaiting && ! st->running && st->ctx
-      && KosContext_DYN_TOP(st->ctx))
-    RESULT_RELAY(ctx, stepper_splice(ctx, st));
+  /* started: its step is in flight under whoever stepped it */
+  if (st->provider && (st->started || st->awaiting || st->running)) {
+    stepper_set_reuse_error(st);
+    Py_DECREF(value);
+    RESULT_RAISE();
+  }
 
-  if (! st->provider || st->started || st->awaiting || st->running)
+  /* spent: its protocol refuses the reuse */
+  if (! st->provider)
     TAILCALL(kos_await_python, ctx, state, value);
 
   provider = st->provider;

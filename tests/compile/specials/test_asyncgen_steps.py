@@ -16,7 +16,7 @@ Koskari code stepping a Koskari async generator through __anext__,
 asend, athrow and aclose runs the step flattened on the consumer's own
 chain, as for-each and next do: the generator sees the consumer's
 dynamic state, and the awaitable the adapter returned is spent once
-the step has been taken.
+the step has been taken. A step Python has already started is refused.
 """
 
 
@@ -132,10 +132,6 @@ SRC = """
   (parameterize [[p "inner"]]
     (await st)))
 
-(def wait_on_gen [aw]
-  (yield (await aw))
-  (yield 2))
-
 (def count_down [n]
   (if (> n 0)
       (+ 1 (count_down (- n 1)))
@@ -183,18 +179,6 @@ class Suspender:
         return "woken"
 
 
-class Twice:
-    """
-    A Python awaitable that suspends with "first", then "second", and
-    completes with "woken"
-    """
-
-    def __await__(self):
-        yield "first"
-        yield "second"
-        return "woken"
-
-
 class Interrupted(Exception):
     """
     Raised by the SIGINT handler the signal test installs; the
@@ -213,7 +197,6 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         module = new_module("asyncgen_steps")
         vars(module)["__file__"] = "<asyncgen_steps>"
         vars(module)["Suspender"] = Suspender
-        vars(module)["Twice"] = Twice
         await load_module_source_async(module, SRC)
         return vars(module)
 
@@ -231,12 +214,11 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             signal.signal(signal.SIGINT, saved)
         asyncio.run(g.aclose())
 
-    async def test_step_parked_mid_await_is_spliced(self):
+    async def test_started_step_refuses_a_koskari_await(self):
         """
-        A step Python started and left parked at an await inside the
-        generator splices under the awaiter; the awaiter suspends on the
-        same await, its driver completes it, and the generator's yield
-        is the awaiter's value
+        A step Python started is in flight under Python; a Koskari await
+        of it is refused with the reuse error CPython gives a second
+        await of __anext__, and Python, which started it, completes it
         """
 
         v = await self.load()
@@ -245,28 +227,15 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(st.send(None), "suspended")
 
         outer = v["take_stepper"](st)
-        self.assertEqual(outer.send(None), "suspended")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as caught:
+            outer.send(None)
+        self.assertEqual(
+            str(caught.exception),
+            "cannot reuse already awaited __anext__()/asend()")
+        with self.assertRaises(StopIteration) as done:
             st.send(None)
-        with self.assertRaises(StopIteration) as done:
-            outer.send(None)
         self.assertEqual(done.exception.value, "woken")
 
-        self.assertEqual(2, await g.__anext__())
-        await g.aclose()
-
-    async def test_step_splice_resuspends_on_the_latest_forwarded_value(self):
-        v = await self.load()
-        g = v["wait_on_gen"](Twice())
-        st = g.__anext__()
-        self.assertEqual(st.send(None), "first")
-        self.assertEqual(st.send(None), "second")
-
-        outer = v["take_stepper"](st)
-        self.assertEqual(outer.send(None), "second")
-        with self.assertRaises(StopIteration) as done:
-            outer.send(None)
-        self.assertEqual(done.exception.value, "woken")
         self.assertEqual(2, await g.__anext__())
         await g.aclose()
 
@@ -286,23 +255,20 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         except Exception as exc:
             return ("raise", type(exc).__name__)
 
-    def test_step_suspended_in_an_after_segment_is_spliced(self):
+    def test_awaited_step_suspends_in_an_after_segment(self):
         """
-        A step Python left suspended in the after segment its yield runs
-        brings the goal leaving the dyn-wind with it: the segment
-        finishes on the awaiter's chain and the yield is the awaiter's
-        value
+        A step awaited from Koskari suspends in the after segment its
+        yield runs: the segment finishes on the awaiter's chain and the
+        yield is the awaiter's value
         """
 
         v = asyncio.run(self.load())
         log = []
         g = v["wound"](log)
-        st = g.__anext__()
-        self.assertEqual(st.send(None), "suspended")
-        self.assertEqual(log, ["in", "out"])
 
-        outer = v["take_stepper"](st)
+        outer = v["take_stepper"](g.__anext__())
         self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(log, ["in", "out"])
         self.assertEqual(self.step_out(outer), ("value", 1))
         self.assertEqual(log, ["in", "out", "out2"])
 
@@ -313,19 +279,17 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             log, ["in", "out", "out2", "in", "out", "out2",
                   "in", "out", "out2"])
 
-    def test_step_suspended_in_a_before_segment_is_spliced(self):
+    def test_awaited_step_suspends_in_a_before_segment(self):
         v = asyncio.run(self.load())
         log = []
         gate = []
         g = v["wound_on_entry"](log, gate)
         self.assertEqual(self.step_out(g.__anext__()), ("value", 1))
         gate.append(1)
-        st = g.__anext__()
-        self.assertEqual(st.send(None), "suspended")
-        self.assertEqual(log, ["in", "in2", "out", "in"])
 
-        outer = v["take_stepper"](st)
+        outer = v["take_stepper"](g.__anext__())
         self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(log, ["in", "in2", "out", "in"])
         self.assertEqual(self.step_out(outer), ("value", 2))
         self.assertEqual(log, ["in", "in2", "out", "in", "in2", "out"])
 
@@ -335,8 +299,8 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
     async def test_refused_step_releases_the_generator(self):
         """
         A Koskari await of a second step while the generator is busy
-        under a parked first step is refused, and the refusal releases
-        the provider reference the step had taken
+        under a first step Python started is refused, and the refusal
+        releases the provider reference the step had taken
         """
 
         v = await self.load()
@@ -359,9 +323,9 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done.exception.value, "woken")
         await g.aclose()
 
-    def test_generator_depth_is_renumbered_after_a_deep_splice(self):
+    def test_generator_depth_is_renumbered_after_a_deep_step(self):
         """
-        A step spliced two hundred frames deep is numbered for that
+        A step awaited two hundred frames deep is numbered for that
         depth; the next step driven from Python numbers the generator's
         frames afresh for its own base instead of trusting the record,
         so a recursion that fits the limit from the root fits
@@ -372,9 +336,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         first = g.__anext__()
         self.assertEqual(asyncio.run(self.step(first)), ("value", "first"))
 
-        parked = g.__anext__()
-        self.assertEqual(parked.send(None), "suspended")
-        outer = v["take_deep"](200, parked)
+        outer = v["take_deep"](200, g.__anext__())
         self.assertEqual(outer.send(None), "suspended")
         with self.assertRaises(StopIteration) as done:
             outer.send(None)
@@ -399,26 +361,24 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
 
         return ("value", await awaitable)
 
-    async def test_spliced_step_sees_the_awaiters_parameterize(self):
+    async def test_awaited_step_sees_the_awaiters_parameterize(self):
         v = await self.load()
         g = v["wait_pgen"]()
-        st = g.__anext__()
-        self.assertEqual(st.send(None), "suspended")
 
-        outer = v["take_under"](st)
+        outer = v["take_under"](g.__anext__())
         self.assertEqual(outer.send(None), "suspended")
         with self.assertRaises(StopIteration) as done:
             outer.send(None)
         self.assertEqual(done.exception.value, "inner")
         await g.aclose()
 
-    async def test_generator_is_busy_while_its_spliced_step_is_suspended(self):
+    async def test_generator_is_busy_while_its_awaited_step_is_suspended(
+            self):
+
         v = await self.load()
         g = v["wait_gen"]()
-        st = g.__anext__()
-        self.assertEqual(st.send(None), "suspended")
 
-        outer = v["take_stepper"](st)
+        outer = v["take_stepper"](g.__anext__())
         self.assertEqual(outer.send(None), "suspended")
         second = g.__anext__()
         with self.assertRaises(RuntimeError):

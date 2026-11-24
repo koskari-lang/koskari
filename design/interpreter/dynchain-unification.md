@@ -46,7 +46,7 @@ CPython builds coroutines on the generator mechanism. Koskari does not.
 | What it is | a transfer to the consumer, on the same thread of control | a cooperative thread release, a swap between threads of control | a call: the coroutine flattens onto the awaiter's chain |
 | dyn-wind, dyn-with, parameterize | wind out at the yield, in at re-entry | nothing runs | nothing runs |
 | with, try, finally | nothing runs (Python rule) | nothing runs | nothing runs |
-| Runtime-owned state (parameter cells, handled exception) | swapped out and in | swapped only when the chain moves to another context | not applicable |
+| Runtime-owned state (parameter cells, handled exception) | swapped out and in | not swapped: the chain stays on its context | not applicable |
 | Continuation capture across it | refused (GEN) | refused | allowed |
 | close or throw | re-entry winds in, then the raise at the yield unwinds | raise at the suspension point; no re-entry, no before code | not applicable |
 
@@ -61,8 +61,7 @@ An async generator takes both rules: its yields wind, its awaits do
 not.
 
 Code follows the same line. No coroutine or await path calls the
-generator freeze, install or winding functions. A chain moved between
-contexts (section 4.4) shares only the per-node effect functions.
+generator freeze, install or winding functions.
 
 ## 3. Baseline facts
 
@@ -80,8 +79,6 @@ contexts (section 4.4) shares only the per-node effect functions.
 | Effectful kinds | PARAM always; TRY and FINALLY while handling | `dynchain.c:1112` |
 | `kos_dyn_extent_freeze` | does the swap and returns whether it did | `dynchain.c:1112` |
 | Resting span | bottom is the generator's root frame; the GEN rests apart in `state->node` and is relinked at each install | `dyn_gen.c:65`, `:287` |
-| Span detach, attach | whole-chain walks, in the generator file, through the generator hooks | `dyn_gen.c:467`, `:505` |
-| Splice room check | `kos_dyn_frame_count` over the whole chain | `coro.c:1027`, `iterate.c:1054` |
 | Frame depth | parent frame's plus one at every push; a tail swap keeps it; `kos_dyn_renumber_frames_counted` numbers top down | `eval.h:1346`, `dyn_frame.c:356`, `:423`, `:628`, `:706` |
 | Lookups by kind | `kos_dyn_find_gen`, `kos_dyn_find_cc`, `kos_prompt_seek`, `KosDynNode_IS_FRAME` | `dyn_gen.c:126`, `dynchain.c:2677`, `:2829` |
 | PARAM on a transfer | has no leave (`kos_dyn_extent_leave` raises for it); its unlink is `kos_dyn_param_unwind` in the uninstall handler | `dynchain.c:979`, `:2296` |
@@ -92,7 +89,6 @@ contexts (section 4.4) shares only the per-node effect functions.
 | Delimited apply | clones the whole template on every call | `xfer_plan.c:36` |
 | Yield-from | the inner generator freezes into its own state per element; the outer frame then emits through its resume | `opcode/YIELD_FROM.c` |
 | Fresh coroutine awaited | marked done at the take; its frame replaces the await frame | `coro.c:1094`, `:1144` |
-| Spliced coroutine awaited | chain attached under a native frame whose resume kind has no clone and finishes the object | `coro.c:960`, `:1018` |
 
 ## 4. Design
 
@@ -164,8 +160,6 @@ audits no structure.
     already right at install and only the GEN is relinked: O(1). The
     install compares the bottom's `skip` with the GEN and relinks the
     span (`kos_dyn_relink_skips`) only when they differ.
-  - A chain moved between contexts need not end in a GEN. The attach
-    relinks the whole span with `kos_dyn_relink_skips`.
   - A clone attached in pieces repairs the first piece's tail only. A
     later piece's bottom goes back onto the split point it was cut
     from, which is its `skip` already.
@@ -200,22 +194,16 @@ order they go out in. They go back in from the list's end.
 - A span's frame count is not stored. Depths are contiguous, so it is
   the top frame's depth minus the bottom frame's plus one.
 
-### 4.4 A chain moved between contexts
+### 4.4 A started coroutine stays on its context
 
-A coroutine or a generator suspended at a Python await on its own
-context, then awaited from Koskari, has its whole chain moved onto the
-awaiter's. This is a context switch (D7): no leave, no enter, no thunk.
-Only `EFFECT` nodes act, through the effect functions. The code lives
-in its own fragment and has its own effect list in `KosDynSpan`.
-
-The room check is the depth of that context's top frame, since its
-lowest frame is numbered 1.
-
-A suspended coroutine is not a generator: its chain, the transfer goals
-waiting on that chain, its pending await and its handled exception are
-the state of a thread, and the splice makes all of it the awaiter's, as
-a call from the awaiter would have from the start. The goals travel in
-`KosDynSpan` with the chain (6.2).
+A chain never moves between contexts. A Koskari await flattens an
+unstarted Koskari coroutine or async generator step onto the awaiter's
+chain, and refuses one already started with `RuntimeError`, as CPython
+refuses a second awaiter: a suspended coroutine is the state of a
+thread, owed to whoever stepped it, and its chain, the transfer goals
+waiting on that chain, its pending await and its handled exception stay
+on its own context with that owner (D16). A demand that cannot complete
+closes the coroutine it started.
 
 ### 4.5 One exception slot
 
@@ -387,7 +375,7 @@ or restricts a continuation.
 | --- | --- | --- |
 | 0 | Kernels and baseline counters | |
 | 1 | Capability field and skip link | 0 |
-| 2 | Yield and re-entry by effect list; context move separated | 1 |
+| 2 | Yield and re-entry by effect list | 1 |
 | 3 | Exception slot | |
 | 4 | Extent machine | |
 | 5 | Walker, one walk per commit | 1 |
@@ -474,7 +462,6 @@ Parent writes:
 | `dyn_gen.c:68` `kos_dyngen_rest` | GEN off the consumer | `kos_dynnode_link(gen, NULL)` |
 | `dyn_gen.c:287`, `:419` | GEN onto `dyn_top` | `kos_dynnode_link` |
 | `dyn_gen.c:288`, `:406` | span bottom onto the GEN | `kos_dynnode_link` |
-| `dyn_gen.c:541` `kos_dyn_span_attach` | root onto `dyn_top` | `kos_dynnode_link`, then `kos_dyn_relink_skips` over the span |
 
 Lookups to convert: `kos_dyn_find_gen`, `kos_dyn_yield_gen`
 (`dyn_gen.c:126`), `kos_dyn_find_cc` (`dynchain.c:2677`), the PROMPT
@@ -484,20 +471,18 @@ and GEN cases of `kos_prompt_seek` (`dynchain.c:2838`, by `BARRIER` and
 `KosDynNode_IS_` in conditions outside a behaviour switch and list any
 left.
 
-The native tests check the skip links after a span install, a
-context-move attach and a clone attach. No safety-net check reads them.
+The native tests check the skip links after a span install and a
+clone attach. No safety-net check reads them.
 
 Nothing else reads `skip` in this stage.
 
-### 6.2 Stage 2: effect list and the context move
+### 6.2 Stage 2: effect list
 
 `dynchain.h`:
 
 - `KosGenState`: drop `nframes` and `installs`; add `fx_count`, the
   inline pair and the kept heap array. Free the array in
   `kos_gen_state_clear` (`dyn_gen.c:85`).
-- `KosDynSpan`: drop `nframes` and `installs`; add `top_frame` and an
-  effect list of its own.
 
 `dynchain.c`:
 
@@ -505,8 +490,8 @@ Nothing else reads `skip` in this stage.
   (PARAM: always; TRY, FINALLY: handling and not frozen, the test at
   `:1034`) and `kos_dyn_effect_out`. `kos_dyn_extent_install` (`:1133`)
   becomes `kos_dyn_effect_in`. The three are static to `dynchain.c`,
-  beside the list functions `kos_dyn_effects_collect`, `_out` and
-  `_in` that the freeze, the install and the context move share.
+  beside the list functions `kos_dyn_effects_collect_winds`, `_out`
+  and `_in` that the freeze and the install share.
 - `kos_dyn_keep_leave` (`:2326`) calls `kos_dyn_effect_out` for PARAM,
   TRY and FINALLY.
 
@@ -528,63 +513,6 @@ Nothing else reads `skip` in this stage.
   runs once per generator.
 - The computed counts get no safety-net audit. A native test compares
   them with an `IS_FRAME` walk.
-
-New fragment `dynchain/dyn_span.c`, included from `dynchain.c` and
-added to `depends` in `setup.py`:
-
-- Move `kos_dyn_span_detach` and `kos_dyn_span_attach` there from
-  `dyn_gen.c:467` and `:505`.
-- Detach: skip walk to `outer`, effect functions only, the thread
-  exception swap at `:484` kept. Record `top_frame`. The walk does not
-  reach a bottom with no skip bit, so the span records no root: it
-  records `gen`, the GEN at the chain's bottom when the outermost
-  skip-bit node is one with no parent. The detach can refuse, with
-  `MemoryError` and nothing changed, when its list cannot be sized.
-- Attach: room check from `DEPTH(top_frame)`; effects in from the
-  span's list; then one walk that renumbers the frames, sets their
-  demand bit and finds the bottom; `kos_dyn_relink_skips` repairs the
-  skip links. Nothing is renumbered before a refusal, so a second
-  attach reads the same count. The renumber and the demand-bit
-  assignment stay (D2), as that one walk.
-- `kos_dyn_span_drop` gives up the list of a span that could be
-  attached nowhere.
-
-`coro.c:1027` and `iterate.c:1054`: the room check reads the depth of
-the context's top frame.
-
-As implemented, the span carries the suspended thread's goals too:
-
-- `KosDynSpan.goals` holds the context's whole goal list, active goal
-  first. Detach takes it off the context with the chain: every goal on
-  a context waits on a node of its chain, or was voided by one that
-  does. Before this, the goals stayed behind, the context's clear
-  discarded them, and the awaiter settled the node a goal waited on as
-  its frame's own leave or enter.
-- Attach links the goals above the awaiter's: the awaiter's active goal
-  becomes the outer of the outermost moved goal, and a voided-outer
-  note on it passes up as `kos_xfer_goal_push` passes it. A refused
-  attach leaves the goals in the span, the re-attach to the old context
-  restores them, and `kos_dyn_span_drop` discards them, each unlinked
-  before it is freed.
-- Root seam: a moved goal whose seam was NULL, the old context's root,
-  takes the node under the splice as its seam. That is where the
-  awaiter's call was made, and below it are the awaiter's own extents.
-- Depths: the frames a goal's target holds off the chain were numbered
-  on the old context, and nothing renumbers them before they attach
-  (`goal_attach`, `kos_dyn_gen_wind_attach`). They take the chain's
-  shift by the live frame's depth, and the attach's room check counts
-  the highest of them.
-- cc-unwind delivery: the boundary raise, with
-  `kos_eval_prepare_boundary_raise` and `kos_xfer_goal_abandon_all`, is
-  made only when the goal's seam is the context's root, NULL or a GEN
-  with no parent (the seams the foreign path in `eval.c` gives). From
-  any other seam the goal retires alone and the signal is raised at the
-  live frame as an ordinary raise, so the awaiter's ingress judges the
-  continuation's token as it would have had the coroutine been called
-  from the start.
-- `KOS_SUSP_WIND` does not move. A context suspended at a Python await
-  always carries `KOS_SUSP_AWAIT`; the winding mark is consumed at the
-  entry that follows the install that set it.
 
 ### 6.3 Stage 3: exception slot
 
@@ -916,51 +844,22 @@ Tuning, after every stage:
 
 ### 6.8 Stage 8: capture across a flattened coroutine
 
-`coro.c`:
+A coroutine awaited fresh gives its frame to the await frame
+(`KosCoroutine_TakeFresh`, `coro.c`), so a `shift` or `call/cc` in it
+captures across ordinary frames, as across any call, and the object is
+done from the take. A started coroutine or step is refused at the
+await (D16), so no other frame shape sits under an awaited coroutine.
+A step awaited fresh runs on the await frame, whose resume is the step
+kind with the provider as its state; capture across it stops at the
+generator's GEN.
 
-- `coroutine_splice` (`:1018`): after a successful attach, mark the
-  object done (`coroutine_finish`; its context is already released at
-  `:1057`), drop the reference, and set the frame's resume with a NULL
-  state. The `in_send` hold across the splice goes.
-- `coroutine_stitched_kind` (`:998`): resume returns the value from the
-  frame; no clear, no traverse; clone is `kos_resume_clone_shared`.
-  Delete `coroutine_stitched_clear` and `coroutine_stitched_traverse`.
-- Rename the kind and its comments to a coroutine frame. Update the
-  terminology in [../FLATTENING.md](../FLATTENING.md) and
-  [../EVALUATOR.md](../EVALUATOR.md).
-
-`iterate.c:stepper_splice` (`:1054`): the same review for the stepper's
-resume kind.
-
-As implemented:
-
-- **`coroutine_frame_kind`** replaces `coroutine_stitched_kind`. Its
-  resume returns the value from the frame, it has no clear and no
-  traverse, and its clone is `kos_resume_clone_shared`.
-  `coroutine_splice` finishes the object and drops its reference once
-  the attach has succeeded; `in_send` is no longer set across the
-  splice.
-- **The object is done while the awaiter is still suspended.** A
-  `send` or `throw` there raises "cannot reuse already awaited
-  coroutine", where it raised "coroutine already being awaited", and
-  `close` returns None, where it raised. One existing assertion
-  changed for this, in `test_splice_resuspends_on_the_parked_await`.
-- **The await frame stays.** A fresh coroutine's frame replaces the
-  await frame; a spliced chain is attached above it, so the stack has
-  one native frame more than a call would leave. Its resume is the
-  same shape as any native frame's that returns its callee's value.
-- **`stepper_splice` needed nothing.** The stepper is spent at the
-  splice already, and the await frame's resume is the step kind with
-  the provider as its state, as for a flattened step. Capture across
-  it stops at the generator's GEN.
 - **No test for capture across a real await.** An await frame carries
   the revive kind, which has no clone, only while its context is
   suspended, and a suspended context runs no `shift`. The refusal is
   not reachable from the language.
-- **Tests.** Eight added to
-  `tests/reproducers/test_coroutine_splice.py`: done from the splice,
-  a refused second await, the object dropped, a shift applied twice,
-  a continuation applied after its reset returned, one dropped,
+- **Tests.** `tests/reproducers/test_coroutine_await_path.py`, each
+  across a coroutine object awaited fresh: a shift applied twice, a
+  continuation applied after its reset returned, one dropped,
   `call/cc`, and an applied copy that awaits again.
 
 ### 6.9 Stage 9: template move
@@ -1031,8 +930,7 @@ budget and the "Delimited apply" row of the walks table do not apply.
   the array reused on the next yield.
 - Effect list allocation failure at a yield: `MemoryError`, span and
   effects unchanged.
-- Skip links after a context move whose chain does not end in a GEN,
-  and after a template applied on another chain.
+- Skip links after a template applied on another chain.
 - `FRAME | MAJOR` survive the `func.c` and `dyn_frame.c` caps writes.
 - Minor or major size of every kind, normal build and
   `KOS_FREELIST_CAP` at 0.
@@ -1042,8 +940,9 @@ budget and the "Delimited apply" row of the walks table do not apply.
 - A parameterize, a try handling an exception, and a with in a
   generator, across many yields, from a Koskari consumer and from a
   Python `next`.
-- A parameterize and a dyn-wind inside a coroutine spliced from a
-  Python `send`: the cell is swapped and no thunk runs.
+- A parameterize and a dyn-wind inside an awaited coroutine suspended
+  at an await: no thunk runs, and the cells are the coroutine's when it
+  resumes.
 - dyn-wind, dyn-with and parameterize across yields:
   - an after thunk raising at a yield, caught in the generator and
     uncaught;
@@ -1060,10 +959,10 @@ budget and the "Delimited apply" row of the walks table do not apply.
   - a yield-from whose inner generator holds a dyn-wind;
   - a Python `next` whose before thunk awaits.
 - with, try and finally still run nothing at a yield.
-- A shift across a coroutine spliced from a Python `send` captures; the
-  continuation applies twice and drops; the coroutine reports done from
-  the splice and refuses `send`, `throw` and a second await; capture
-  across a real await suspension is refused.
+- A shift across an awaited coroutine captures; the continuation
+  applies twice and drops; a coroutine or step something else started
+  is refused at a Koskari await and left to its owner; capture across a
+  real await suspension is refused.
 - A continuation applied once and dropped, and applied several times,
   give the same results before and after stage 9.
 
@@ -1103,9 +1002,6 @@ Report how often the effect list leaves its inline pair on the kernels.
 | --- | --- | --- |
 | Yield | every span node | skip-bit nodes of the span |
 | Re-entry | none, or every span node | the effect list |
-| Context move room check | every node | one depth read |
-| Context move detach | every node | skip-bit nodes |
-| Context move attach | every frame | unchanged, with the tail repair |
 | Abort prompt seek | every node to the prompt | skip-bit nodes |
 | Shift seek and keep | every node, twice | unchanged |
 | raise, return, break, continue | every node to the stop | same count; one test on a node with no skip bit |
@@ -1118,21 +1014,21 @@ Report how often the effect list leaves its inline pair on the kernels.
 | Id | Decision |
 | --- | --- |
 | D1 | dyn-wind, dyn-with and parameterize wind out at a yield and in at re-entry |
-| D2 | The context move keeps its frame renumber and demand-bit loop; revisiting them is deferred |
+| D2 | Withdrawn by D16: no context move |
 | D3 | A real await suspension cannot be captured across. Flattening into a Koskari coroutine is a call and can |
 | D4 | Continuations are never restricted. The template move applies only where no later call is possible, or is dropped |
 | D5 | call/cc capture stays an eager copy |
 | D6 | Two node sizes, minor and major |
-| D7 | A chain moved between contexts is a context switch: effects only, no thunk |
+| D7 | Withdrawn by D16: no chain moves between contexts |
 | D8 | No copy on return for delimited apply in this work |
 | D9 | A node is found by a bit. `FRAME`, `GEN` and `CC` are bits |
 | D10 | A node's size is not stored; `MAJOR` selects the freelist |
-| D11 | `KosDynSpan` and `KosGenState` stay separate records |
+| D11 | Withdrawn by D16: no span record besides `KosGenState` |
 | D12 | A span's frame count is computed from depths |
 | D13 | The freeze collects with a predicate that changes nothing, then acts |
 | D14 | A generator state keeps its effect array across yields |
-| D15 | The context move lives outside the generator code and calls only the effect functions |
-| D16 | A spliced coroutine is finished at the splice, as a fresh one is at the take; its frame's resume holds no state |
+| D15 | Withdrawn by D16: no context move |
+| D16 | A Koskari await refuses a Koskari coroutine or step that something else has started, as CPython refuses a second awaiter, and leaves it to its owner; no chain moves between contexts. Reverses the splice of a started coroutine, and withdraws D2, D7, D11 and D15 |
 | D17 | Yield-from needs no winding of its own |
 
 ## 11. Follow-ups, not part of this work
@@ -1141,9 +1037,8 @@ Report how often the effect list leaves its inline pair on the kernels.
   once every stage is complete.
 - Copy on return for delimited apply; its cost is a shared-flag test on
   every frame return.
-- The frame renumber and demand-bit loop of the context move (D2).
 - An await of a Koskari awaitable without the await frame. It is
-  harmless where it stays, under a spliced chain (section 6.8), and a
+  harmless where it stays, under a step or a Python awaitable, and a
   fresh coroutine's frame already replaces it; the aim is not to push
   it at all.
 - The cost of an aside frame, for each segment of every dyn-wind, in

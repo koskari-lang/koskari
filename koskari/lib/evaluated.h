@@ -239,8 +239,9 @@ static inline void kos_iter_finish(
    resume on a native frame does: a value in hand returns from the
    frame (RESULT_FRAME_RETURN); work it stands for replaces the frame
    (kos_dyn_swap_frame_for_tail) or sets a resume of its own on it and
-   makes its request; an awaitable already in flight hands itself to
-   kos_await_python, the Python-protocol drive on the same frame. Any
+   makes its request; an awaitable something else has already started
+   is refused, by the kind itself or by its Python protocol through
+   kos_await_python on the same frame, and stays with its owner. Any
    reference the kind owes is released before it tails. A failed
    delivery, NULL with the error pending, reaches the kind when a poll
    between the settle and the hop took a signal and dropped the staged

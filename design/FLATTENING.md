@@ -39,35 +39,25 @@ Current corrective work:
   suite (`kos_await` on `KosEvaluatedTypeObject`, `evaluated.h`) on an
   await frame: a native frame pushed above the awaiter, uncounted
   against the frame limit, whose resume is the suite's kind, entered
-  with the owned awaitable. The kind continues the awaitable's chain
-  under that frame, in whatever state the chain is. A fresh
-  coroutine's prepared frame swaps into the await frame as a tail
-  call's does, whether it came from a Python wrapper such as
-  `functools.partial` or from a `defer` (`coro.c`). A coroutine parked
-  at a Python await, started by a Python `send` and left there, splices
-  its whole chain under the await frame (`kos_dyn_span_detach`,
-  `kos_dyn_span_attach`, `dynchain/dyn_gen.c`); the pending Python
-  await moves to the awaiter's context, and the awaiter suspends on the
-  value the coroutine had handed its driver, which the context records
-  at every suspension (`py_await_yielded`). The coroutine object is
-  finished at the splice, as one taken fresh is at the take: the
-  program is the awaiter's from there, and the object refuses `send`,
-  `throw` and a second await as a spent coroutine does. The frame the
-  chain is attached under is a coroutine frame: its resume holds no
-  state and returns the chain's value from the frame, and it clones,
-  keeps and moves as any frame does, so a `shift` or `call/cc` in the
-  coroutine captures across it. A Defer delegating to an awaitable
-  with a suite hands it on and is spent (`defer.c`). An awaited
-  `__anext__`, `asend`, `athrow` or `aclose` stepper over a Koskari
-  async generator is a next or throw request on the await frame with
-  the step kind as its resume (`iterate.c`, `eval/eval_iter.c`), and a
-  step a Python drive left parked mid-await splices as a coroutine's
-  chain does, its generator recording that the step runs on a
-  consumer's chain. A Python awaitable, or a Koskari one that is
-  active or done, goes to the Python-protocol drive on the same frame
-  (`kos_await_python`, `eval/eval_await.c`). A splice refused for frame
-  room leaves the chain parked; a fresh coroutine refused is finished,
-  as CPython's is when its first step cannot enter.
+  with the owned awaitable. A fresh coroutine's prepared frame swaps
+  into the await frame as a tail call's does, whether it came from a
+  Python wrapper such as `functools.partial` or from a `defer`
+  (`coro.c`), and the object is finished at the take: the program is
+  the awaiter's from there, and the object refuses `send`, `throw` and
+  a second await as a spent coroutine does. A Defer delegating to an
+  awaitable with a suite hands it on and is spent (`defer.c`). An
+  awaited `__anext__`, `asend`, `athrow` or `aclose` stepper over a
+  Koskari async generator, not yet started, is a next or throw request
+  on the await frame with the step kind as its resume (`iterate.c`,
+  `eval/eval_iter.c`). A Python awaitable goes to the Python-protocol
+  drive on the same frame (`kos_await_python`, `eval/eval_await.c`). A
+  fresh coroutine refused for frame room is finished, as CPython's is
+  when its first step cannot enter. A Koskari coroutine or stepper
+  that something else has already started -- a Task, a Python
+  coroutine awaiting it, a hand `send` -- is refused with
+  RuntimeError, as CPython refuses a second awaiter, and stays on its
+  own context with whoever started it; a chain never moves between
+  contexts.
 - **Generator construction.** A generator function call binds arguments
   and returns the generator; nothing is evaluated.
 - **Iteration and delegation over KosIter providers.** `for-each`,
@@ -145,13 +135,14 @@ and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry.
   `close` / `list` / `for` from Python through the sync adapter;
   `__anext__` / `asend` / `athrow` / `aclose` through the async steppers
   (`iterate.c`); coroutine `send` / `throw` / `close` (`coro.c`). A
-  Python `await` of a Koskari coroutine parked at an inner await is
-  refused at `__await__`, as CPython refuses its own; the Koskari
-  await of the same coroutine splices it (Flattens, above).
-- **A Koskari await of an active or finished Koskari awaitable.** The
-  await kind hands a coroutine or stepper that is running, on this or
-  any chain, or already done, to the Python-protocol drive, whose
-  `send` refuses it as in progress or as reused.
+  Python `await` of a Koskari coroutine suspended at an inner await is
+  refused at `__await__`, as CPython refuses its own, and so is a
+  Koskari await of it (Flattens, above).
+- **A Koskari await of a started or finished Koskari awaitable.** It is
+  refused, not run: a coroutine through its Python protocol, whose
+  `__await__` or `send` refuses it as awaited already, in progress or
+  reused; a stepper at the await kind, with the reuse error of its
+  method.
 - **The demand API from Python.** `demand_call`, `demand_apply`,
   `demand(...)(...)` (`demand.c`).
 

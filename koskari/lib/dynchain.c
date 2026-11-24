@@ -933,18 +933,17 @@ int kos_dyn_skips_hold(KosDynNode *top, KosDynNode *stop) {
   live. in returns 0, or -1 with PyErr set and the node's effect not
   applied. Defined below, after the region exchanges they call.
 
-  lists, with winds set, also answers for a winder, which a
-  generator's yield lists among the effects, and counts it in
-  *winders. The winder test sits in the arm of the kind switch that
-  no kind with an effect reaches, so a node with an effect, live or
-  not, costs a walk nothing for the winders it looks for.
+  lists also answers for a winder, which a generator's yield lists
+  among the effects, and counts it in *winders. The winder test sits
+  in the arm of the kind switch that no kind with an effect reaches,
+  so a node with an effect, live or not, costs a walk nothing for the
+  winders it looks for.
 
   Callers: the effect list functions here, and the keep of a node for
   a continuation (out).
 */
 KOS_OP_INLINE int kos_dyn_effect_lists(
     const KosDynNode *node,
-    const int winds,
     int *winders);
 
 static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node);
@@ -1015,40 +1014,34 @@ static inline int kos_dyn_node_winder(const KosDynNode *node) {
 
 
 /**
-   List the live effects of the nodes from top down to stop, innermost
-   first, by a walk over the skip links that changes nothing. The walk
+   List the live effects and the winders of the nodes from top down to
+   stop, innermost first, by a walk over the skip links that changes
+   nothing: what a generator's yield takes out and leaves. The walk
    fills the room the list has as it counts; a list that needs more is
    sized and the walk made again. stop carries a skip bit or is NULL,
-   so the walk meets it. last, when given, receives the outermost node
-   the walk visited, or NULL. With winds set the walk lists every
-   winder too, in its place among the effects. The list is empty on
-   entry. Returns the number of winders listed, or -1 with MemoryError
-   set and the list still empty.
+   so the walk meets it. A function of its own, so that it is not
+   folded into a caller whose common path never lists. The list is
+   empty on entry. Returns the number of winders listed, or -1 with
+   MemoryError set and the list still empty.
 */
-KOS_OP_INLINE int kos_dyn_effects_collect_as(
+static KOS_NOINLINE int kos_dyn_effects_collect_winds(
     KosDynEffects *fx,
     KosDynNode *top,
-    KosDynNode *stop,
-    KosDynNode **last,
-    const int winds) {
+    KosDynNode *stop) {
 
   KosDynNode *first = kos_dyn_skip_from(top);
-  KosDynNode *seen = NULL;
   KosDynNode **items = kos_dyn_effects_items(fx);
   size_t room = fx->cap ? (size_t) fx->cap : 2u;
   size_t count = 0;
   int winders = 0;
 
   for (KosDynNode *n = first; n && n != stop; n = KosDynNode_SKIP(n)) {
-    if (kos_dyn_effect_lists(n, winds, &winders)) {
+    if (kos_dyn_effect_lists(n, &winders)) {
       if (count < room)
         items[count] = n;
       count++;
     }
-    seen = n;
   }
-  if (last)
-    *last = seen;
 
   if (unlikely(count > room)) {
     size_t at = 0;
@@ -1059,38 +1052,12 @@ KOS_OP_INLINE int kos_dyn_effects_collect_as(
     for (KosDynNode *n = first; at < count; n = KosDynNode_SKIP(n)) {
       int again = 0;
 
-      if (kos_dyn_effect_lists(n, winds, &again))
+      if (kos_dyn_effect_lists(n, &again))
         items[at++] = n;
     }
   }
   fx->count = (uint16_t) count;
   return winders;
-}
-
-
-/**
-   The two forms of the collect, each a function of its own so that
-   neither tests for the other and neither is folded into a caller
-   whose common path never lists: the effects alone, for a span moved
-   between contexts, and the effects with the winders, for a
-   generator's yield.
-*/
-static KOS_NOINLINE int kos_dyn_effects_collect(
-    KosDynEffects *fx,
-    KosDynNode *top,
-    KosDynNode *stop,
-    KosDynNode **last) {
-
-  return kos_dyn_effects_collect_as(fx, top, stop, last, 0);
-}
-
-
-static KOS_NOINLINE int kos_dyn_effects_collect_winds(
-    KosDynEffects *fx,
-    KosDynNode *top,
-    KosDynNode *stop) {
-
-  return kos_dyn_effects_collect_as(fx, top, stop, NULL, 1);
 }
 
 
@@ -1133,7 +1100,6 @@ static int kos_dyn_effects_in(KosContext *ctx, KosDynEffects *fx) {
 #include "dynchain/dyn_cc.c"
 #include "dynchain/dyn_shift.c"
 #include "dynchain/dyn_gen.c"
-#include "dynchain/dyn_span.c"
 #include "dynchain/dyn_wind.c"
 
 
@@ -1573,7 +1539,6 @@ int kos_dyn_span_handles(const KosDynNode *top) {
 
 KOS_OP_INLINE int kos_dyn_effect_lists(
     const KosDynNode *node,
-    const int winds,
     int *winders) {
 
   switch (KosDynNode_KIND(node)) {
@@ -1586,7 +1551,7 @@ KOS_OP_INLINE int kos_dyn_effect_lists(
     default:
       /* no kind left here carries an effect: one a transfer runs is a
          winder, a dyn-wind or a dyn-with */
-      if (winds && (KosDynNode_CAPS(node) & KOS_DYN_CAP_WINDS)) {
+      if (KosDynNode_CAPS(node) & KOS_DYN_CAP_WINDS) {
         (*winders)++;
         return 1;
       }
@@ -1604,8 +1569,7 @@ static inline void kos_dyn_effect_out(KosContext *ctx, KosDynNode *node) {
      effect is the handled exception it installed on the thread, which
      the consumer shares the same way. A dyn-wind and a dyn-with are
      not effects: a generator's yield leaves them and its next step
-     enters them (kos_dyn_gen_wind_out_next), and a chain moved between
-     contexts carries them entered. */
+     enters them (kos_dyn_gen_wind_out_next). */
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);

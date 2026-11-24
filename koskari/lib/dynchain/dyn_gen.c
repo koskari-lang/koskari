@@ -18,7 +18,7 @@
   Included by dynchain.c. The KOS_DYN_GEN node: the generator boundary
   that intercepts yields and denies shifts, on the chain only while
   the generator's span is installed, and the installs of a resting
-  span. A chain moved between contexts is dyn_span.c's.
+  span.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -95,7 +95,7 @@ static inline KosXferGoal *kos_dyn_gen_wind_goal(KosGenState *state) {
    out), and goes with its chain.
 
    The winding goal at the head of the pieces allocation may still be
-   on a goal list (a context's, or a span's) when the state is cleared:
+   on a context's goal list when the state is cleared:
    the collector's clear of the owner can come before the clear of the
    context holding it. A live goal holds the owner through
    continuation_ref, from kos_xfer_goal_init until kos_xfer_goal_free

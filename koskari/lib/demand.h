@@ -107,6 +107,18 @@ PyObject *KosDemand_CallVector(
 void kos_demand_set_sync_violation(const char *msg);
 
 
+/**
+   Refuse an await the demand path stepped and found suspended: the
+   await iterator, the awaitable's own __await__ iterator, which is the
+   coroutine itself for a coroutine, is closed through its close(), so
+   what was started is finished as if it had run and failed
+   asynchronously, and KoskariSyncViolation with msg is set. An error
+   the close raises is set in its place, with the violation as its
+   context. await_iter is stolen and may be NULL (nothing to close).
+*/
+void kos_demand_refuse_suspended(PyObject *await_iter, const char *msg);
+
+
 #endif /* KOSKARI_DEMAND_H */
 
 

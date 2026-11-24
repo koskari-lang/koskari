@@ -62,7 +62,7 @@ This preserves Koskari's flattened/greedy default for ordinary calls while still
 
 ### Explicit await
 
-`DeferCoroutine` is **awaitable**. Python's `await` drives it through `__await__`, which consumes the handle (see the lifecycle model below). Koskari's AWAIT opcode takes it on an await frame through the type's await kind: a DELEGATING handle whose inner carries an await suite of its own, a Koskari coroutine or an async generator stepper, is spent and the inner continues on the awaiter's chain under its own kind; any other handle is driven through `__await__` on that frame.
+`DeferCoroutine` is **awaitable**. Python's `await` drives it through `__await__`, which consumes the handle (see the lifecycle model below). Koskari's AWAIT opcode takes it on an await frame through the type's await kind: a DELEGATING handle whose inner carries an await suite of its own, a Koskari coroutine or an async generator stepper, is spent and the inner continues on the awaiter's chain under its own kind, which refuses an inner something else has already started; any other handle is driven through `__await__` on that frame.
 
 ### Implicit greedy await
 

@@ -808,33 +808,18 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 
 /**
    DELIVERING for a cc-unwind: raise its signal. The signal leaves the
-   context only from its root: a NULL seam, or the GEN at the bottom of
-   a generator's own context, the seams the foreign path in eval.c
-   gives. Every goal, waiting outers included, is void with it. Left
-   down to any other seam -- a suspended thread's goal an awaiter's
-   splice made its own, whose seam is the top the awaiter's call was
-   made from -- the signal is raised at the live frame as any raise is,
-   and the ingress there judges its token as it would have had the
-   awaiter called the thread from the start. Only this goal retires
-   then: the awaiter's own goals are the raise's to judge.
-
-   From the root the raise is prepared as the boundary raise, which sets
-   ctx->terminal: that is the record by which the drain and the goal
-   thread return the answer as it stands, without the raise ingress.
+   context from its root, the seam the foreign path in eval.c gives: a
+   NULL seam, or the GEN at the bottom of a generator's own context.
+   Every goal, waiting outers included, is void with it. The raise is
+   prepared as the boundary raise, which sets ctx->terminal: that is
+   the record by which the drain and the goal thread return the answer
+   as it stands, without the raise ingress.
 */
 static KOS_NOINLINE KosOpResult goal_deliver_signal(
     KosContext *ctx,
     KosXferGoal *goal) {
 
   PyErr_SetObject((PyObject *) Py_TYPE(goal->payload), goal->payload);
-
-  if (goal->seam
-      && ! (KosDynNode_IS_GEN(goal->seam)
-            && ! KosDynNode_PARENT(goal->seam))) {
-    kos_xfer_goal_pop_cold(ctx);
-    return EVAL_RAISE();
-  }
-
   kos_eval_prepare_boundary_raise(ctx);
   kos_xfer_goal_abandon_all(ctx);
   return EVAL_RAISE();
@@ -843,9 +828,8 @@ static KOS_NOINLINE KosOpResult goal_deliver_signal(
 
 /**
    DELIVERING: push the payload, stage it for the receiving frame's
-   resume, set it as a pending throw, or raise a cc-unwind's signal,
-   at the boundary from the context's root or at the live frame from
-   any other seam; then retire the goal. An abort to a prompt has no
+   resume, set it as a pending throw, or raise a cc-unwind's signal at
+   the boundary; then retire the goal. An abort to a prompt has no
    payload: its target is the handler's frame, which takes nothing,
    and the goal only retires.
    A shift's abort carries the continuation, pushed for the handler's

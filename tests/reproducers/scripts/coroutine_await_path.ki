@@ -3,10 +3,10 @@
 ;; a Python wrapper (functools.partial, a helper) calling a Koskari
 ;; function returns, is installed as a call frame; awaiting it, or a
 ;; defer over it, runs on the caller's chain and meets the caller's
-;; frame-depth limit. One Python already started and left parked at an
-;; await splices its chain under the awaiter and continues from its
-;; suspend point, with the goals waiting on its chain. sleeper_partial,
-;; Suspender, handled, started and finish_via are injected by the test.
+;; frame-depth limit, and its suspensions, extents, handlers and
+;; continuations are the awaiter's. One Python already started is
+;; refused. sleeper_partial, Suspender and handled are injected by the
+;; test.
 
 
 (import _thread)
@@ -61,10 +61,6 @@
 
 (def wait_value []
   (await (Suspender)))
-
-
-(def wait_on [aw]
-  (await aw))
 
 
 (def wait_then_read []
@@ -164,13 +160,6 @@
   (+ v (len (await (Suspender)))))
 
 
-(def await_twice [c]
-  (define r (await c))
-  (try
-    (await c)
-    ([e RuntimeError] #(r (str e)))))
-
-
 (def await_after_interrupt [c]
   (_thread.interrupt_main)
   (await c))
@@ -218,44 +207,6 @@
       (before: (log.append "in"))
       (body: (shift k "aborted"))
       (after: (log.append "out") (await (Suspender)) (log.append "out2")))))
-
-
-(def jumper [log k]
-  (dyn-wind
-    (before: (log.append "in"))
-    (body: (k "jumped"))
-    (after: (log.append "out") (await (Suspender)) (log.append "out2"))))
-
-
-(def await_in_extent [log c]
-  (dyn-wind
-    (before: (log.append "a-in"))
-    (body: (await c))
-    (after: (log.append "a-out"))))
-
-
-(def owner_awaits_jumper [log]
-  (define r
-    (call/cc
-      (lambda [k]
-        (define box (started jumper log k))
-        (log.append box.first)
-        (await_in_extent log box.c)
-        "not reached")))
-  (log.append r)
-  log)
-
-
-(def other_awaits_jumper [log]
-  (define r
-    (call/cc
-      (lambda [k]
-        (define box (started jumper log k))
-        (log.append box.first)
-        (finish_via await_in_extent log box.c)
-        "not reached")))
-  (log.append r)
-  log)
 
 
 ;; The end.
