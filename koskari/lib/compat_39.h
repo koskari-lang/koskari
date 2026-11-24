@@ -23,6 +23,9 @@
 /* PyErr_GetRaisedException added in 3.12 */
 #define PyErr_GetRaisedException koskari_Err_GetRaisedException
 
+/* PyErr_SetRaisedException added in 3.12 */
+#define PyErr_SetRaisedException koskari_Err_SetRaisedException
+
 /* PyObject_GetOptionalAttr public from 3.13; the private form has the
    same contract: 1 and *result set on a hit, 0 and NULL when the
    attribute is absent with no error raised, -1 with an error set */

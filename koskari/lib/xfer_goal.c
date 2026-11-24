@@ -370,16 +370,47 @@ void kos_xfer_goal_abandon_all(KosContext *ctx) {
 }
 
 
-void kos_xfer_goal_abandon_stepping(KosContext *ctx) {
+/**
+   A winding in given up by the error pending: when its step carried a
+   throw, the error is raised from the thrown exception, as `raise
+   error from thrown` would, so the throw is not lost with the goal.
+   No link when the error is the thrown exception itself, or already
+   names a cause or suppresses its context: an explicit `from`,
+   `from None` included, stands.
+*/
+static KOS_NOINLINE void goal_wind_in_failed(KosXferGoal *goal) {
+
+  PyObject *err;
+  PyObject *cause;
+
+  if (goal->phase != KOS_GOAL_WINDING_IN || ! goal->is_throw
+      || ! goal->payload || ! PyErr_Occurred())
+    return;
+
+  err = PyErr_GetRaisedException();
+  cause = PyException_GetCause(err);
+  if (err != goal->payload && ! cause
+      && ! ((PyBaseExceptionObject *) err)->suppress_context)
+    PyException_SetCause(err, Py_NewRef(goal->payload));
+  Py_XDECREF(cause);
+  PyErr_SetRaisedException(err);
+}
+
+
+void kos_xfer_goal_abandon_stepping(KosContext *ctx, int failure) {
+
+  KosXferGoal *goal;
 
   /* A waiter whose node is dyn_top has no thunk above it any more: the
      call returned or failed, or what it waits on is an awaitable, so
      the raise is its thunk's. Every outer of a waiting goal waits on a
      node further down. */
-  while (KosContext_GOAL(ctx)
-         && (! KosContext_GOAL(ctx)->frontier
-             || KosContext_GOAL(ctx)->frontier == KosContext_DYN_TOP(ctx)))
+  while ((goal = KosContext_GOAL(ctx))
+         && (! goal->frontier || goal->frontier == KosContext_DYN_TOP(ctx))) {
+    if (failure)
+      goal_wind_in_failed(goal);
     kos_xfer_goal_pop_dead(ctx);
+  }
 }
 
 
@@ -400,6 +431,7 @@ void kos_xfer_goal_thunk_died(
   /* the goals started inside the thunk, then its waiter */
   while (KosContext_GOAL(ctx) != goal)
     kos_xfer_goal_pop_dead(ctx);
+  goal_wind_in_failed(goal);
   kos_xfer_goal_pop_dead(ctx);
 
   /* the outers its LEAVING voided: their nodes left the chain, and the
@@ -898,8 +930,10 @@ static KOS_NOINLINE KosOpResult goal_wind_out(
    WINDING_IN: enter the winder at dyn_top, then attach what rested on
    it, until the span is whole; then deliver what the step sent, as the
    install of a span with no winder leaves it: a frame waiting on a
-   resume takes the value, or the throw, as its delivery, any other
-   takes the value on its stack or the raise at its yield.
+   resume takes the value as its delivery, any other takes it on its
+   stack, and a throw is delivered at the yield as every throw is
+   (KosContext_ThrowAtYield), chained to the generator's own handled
+   exception, if it has one, now that every effect is back in.
 */
 static KOS_NOINLINE KosOpResult goal_wind_in(
     KosContext *ctx,
@@ -936,10 +970,9 @@ static KOS_NOINLINE KosOpResult goal_wind_in(
   kos_xfer_goal_pop_cold(ctx);
   frame = KosContext_FRAME(ctx);
 
-  if (is_throw) {
-    PyErr_SetRaisedException(payload);
-    return KosContext_ThrowIntoResume(ctx) ? EVAL_NORMAL() : EVAL_RAISE();
-  }
+  if (is_throw)
+    return KosContext_ThrowAtYield(ctx, payload)
+        ? EVAL_NORMAL() : EVAL_RAISE();
   if (frame && KosDynFrame_RESUME_KIND(frame)) {
     if (payload)
       Py_XSETREF(KosContext_PENDING_VALUE(ctx), payload);
@@ -957,14 +990,12 @@ static KOS_NOINLINE KosOpResult goal_wind_in(
 void kos_xfer_goal_hand(
     KosContext *ctx,
     PyObject *send_val,
-    PyObject *throw_typ,
     PyObject *throw_exc) {
 
   KosXferGoal *goal = KosContext_GOAL(ctx);
 
   if (throw_exc) {
-    PyErr_SetObject(throw_typ, throw_exc);
-    goal->payload = PyErr_GetRaisedException();
+    goal->payload = Py_NewRef(throw_exc);
     goal->is_throw = 1;
   } else if (send_val) {
     goal->payload = Py_NewRef(send_val);
@@ -975,13 +1006,12 @@ void kos_xfer_goal_hand(
 void kos_xfer_goal_take_entry(
     KosContext *ctx,
     PyObject *send_val,
-    PyObject *throw_typ,
     PyObject *throw_exc) {
 
   KosXferGoal *goal = KosContext_GOAL(ctx);
 
   if (goal && goal->phase == KOS_GOAL_WINDING_IN && ! goal->payload)
-    kos_xfer_goal_hand(ctx, send_val, throw_typ, throw_exc);
+    kos_xfer_goal_hand(ctx, send_val, throw_exc);
 }
 
 

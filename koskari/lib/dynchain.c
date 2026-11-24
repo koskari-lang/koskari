@@ -1556,6 +1556,21 @@ void kos_dyn_install_regions(
 }
 
 
+int kos_dyn_span_handles(const KosDynNode *top) {
+
+  const uint32_t region = KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_EFFECT;
+
+  for (const KosDynNode *n = top;
+       n && ! (KosDynNode_CAPS(n) & KOS_DYN_CAP_GEN);
+       n = KosDynNode_PARENT(n)) {
+    if ((KosDynNode_CAPS(n) & region) == region
+        && kos_dyn_region_slot((KosDynNode *) n)->state == KOS_EXC_HANDLING)
+      return 1;
+  }
+  return 0;
+}
+
+
 KOS_OP_INLINE int kos_dyn_effect_lists(
     const KosDynNode *node,
     const int winds,

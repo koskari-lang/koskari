@@ -1919,6 +1919,18 @@ void kos_dyn_install_regions(
 
 
 /**
+   Whether the generator span whose top is top holds a handled
+   exception of its own on the thread: a TRY or FINALLY region (the
+   nodes carrying both KOS_DYN_CAP_INTERCEPT and KOS_DYN_CAP_EFFECT)
+   handling its exception, between top and the span's GEN, the first
+   node down carrying KOS_DYN_CAP_GEN. The consumer's regions below the
+   GEN are not the span's. Proportional to the span; for the throw
+   paths only.
+*/
+int kos_dyn_span_handles(const KosDynNode *top);
+
+
+/**
    Whether node can be part of a continuation's template: what its
    clone refuses, kos_dyn_unlink_top_keep's caller refuses here, before
    any node leaves. A wind or a with whose thunk is in flight, or that

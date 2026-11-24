@@ -323,6 +323,26 @@ PyObject *koskari_Err_GetRaisedException(void) {
 
 
 /**
+   Raise exc as the current exception, unchained, stealing the
+   reference; NULL clears.  Uses PyErr_SetRaisedException on 3.12+,
+   PyErr_Restore with the instance's own type and traceback on older.
+*/
+void koskari_Err_SetRaisedException(PyObject *exc) {
+#if PY_MINOR_VERSION >= 12
+  PyErr_SetRaisedException(exc);
+#else
+  if (! exc) {
+    PyErr_Restore(NULL, NULL, NULL);
+    return;
+  }
+  Py_INCREF(Py_TYPE(exc));
+  PyErr_Restore((PyObject *) Py_TYPE(exc), exc,
+                PyException_GetTraceback(exc));
+#endif
+}
+
+
+/**
    Return dict.items() view.  Uses PyObject_CallMethod on 3.13+ (replaces
    _PyDictView_New removed in 3.13).
 */

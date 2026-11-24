@@ -293,6 +293,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_iter(
     KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
     KosContext *ctx, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_thrown_kos_iter(
+    KosContext *ctx, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_athrow_py_async_gen(
+    KosContext *ctx, void *state, PyObject *value);
 
 /* The throw kinds: a throw into a waiting drive, the exception object
    as the value, thrown into the delegate per its kind. */
@@ -327,6 +331,14 @@ YF_KIND(yf_emit_kos_iter_kind, yf_emit_kos_iter,
 YF_KIND(yf_await_py_async_iter_kind, yf_await_py_async_iter,
         yf_state_clear_py_async);
 YF_KIND(yf_await_py_async_gen_kind, yf_await_py_async_gen,
+        yf_state_clear_py_async);
+
+/* The same waits after a throw into the delegate: a failure the
+   delegate raises comes back as the throw's own outcome, raised again
+   at the delegating generator's yield (yf_thrown_back). */
+YF_KIND(yf_emit_thrown_kos_iter_kind, yf_emit_thrown_kos_iter,
+        yf_state_clear_kos_iter);
+YF_KIND(yf_athrow_py_async_gen_kind, yf_athrow_py_async_gen,
         yf_state_clear_py_async);
 
 
@@ -438,6 +450,23 @@ static int yf_take_failure(PyObject *delegate, int kind) {
 }
 
 
+/**
+   A throw into the delegate failed, with the delegate's exception
+   pending: CPython's yield from resumes the delegating generator with
+   it as a throw of its own, so it is raised again at the delegating
+   generator's yield (KosContext_RaiseThrownAtYield), chained to that
+   generator's own handled exception when it has one. The end of the
+   delegate, which ends the delegation, is no failure and stays as it
+   is. A send that fails is not passed here: its exception propagates
+   as it was raised.
+*/
+static KOS_NOINLINE void yf_thrown_back(KosContext *ctx, int kind) {
+
+  if (! yf_is_end(kind))
+    KosContext_RaiseThrownAtYield(ctx, PyErr_GetRaisedException());
+}
+
+
 /* The drive kinds' common entry: a NULL delivery with an error
    pending is a failure delivered to the waiting frame. Relays it or
    finishes the delegation; falls through on a delivery to step on. */
@@ -538,6 +567,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_iter(
 
   sr = kos_iter_throw(delegate, exc, &res);
   Py_DECREF(exc);
+  if (sr == PYGEN_ERROR)
+    yf_thrown_back(ctx, KOS_YF_SYNC_ITER);
   YF_SYNC_OUTCOME(ctx, frame, &yf_drive_sync_iter_kind, delegate, sr, res);
 }
 
@@ -572,6 +603,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_gen(
 
   sr = kos_iter_throw(delegate, exc, &res);
   Py_DECREF(exc);
+  if (sr == PYGEN_ERROR)
+    yf_thrown_back(ctx, KOS_YF_SYNC_GEN);
   YF_SYNC_OUTCOME(ctx, frame, &yf_drive_sync_gen_kind, delegate, sr, res);
 }
 
@@ -700,7 +733,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_gen(
 
 /* A throw into a python async iterator with no athrow: a
    StopAsyncIteration closes the delegation quietly, anything else
-   raises at the yield-from point. */
+   raises at the yield-from point, as a throw into the delegating
+   generator itself. */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_iter(
     KosContext *ctx, void *state, PyObject *exc) {
 
@@ -712,21 +746,23 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_iter(
     Py_DECREF(exc);
     YF_FINISH(ctx, delegate);
   }
-  PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
-  Py_DECREF(exc);
+  KosContext_RaiseThrownAtYield(ctx, exc);
   Py_DECREF(delegate);
   RESULT_RAISE();
 }
 
 
 /* A throw into a python async generator: through athrow, awaited as
-   a step. A StopAsyncIteration closes the delegation quietly. */
+   a step, with the thrown await kind set for a step that suspends. A
+   StopAsyncIteration closes the delegation quietly; a failure is the
+   throw's own (yf_thrown_back). */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
     KosContext *ctx, void *state, PyObject *exc) {
 
   PyObject *delegate = (PyObject *) state;
   KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *awaitable;
+  KosOpResult r;
 
   YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_PY_ASYNC_GEN);
 
@@ -736,8 +772,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
   }
   awaitable = PyObject_CallMethodObjArgs(delegate, str_athrow, exc, NULL);
   Py_DECREF(exc);
-  YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable,
-                   &yf_drive_py_async_gen_kind, &yf_await_py_async_gen_kind);
+  r = awaitable
+      ? yf_py_async_await(ctx, frame, delegate, awaitable,
+                          &yf_drive_py_async_gen_kind,
+                          &yf_athrow_py_async_gen_kind)
+      : yf_py_async_no_awaitable(delegate);
+  if (r.kind == KOS_RES_RAISE)
+    yf_thrown_back(ctx, KOS_YF_PY_ASYNC_GEN);
+  RESULT_RELAY(ctx, r);
 }
 
 
@@ -783,13 +825,27 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
 }
 
 
+/* The awaited athrow of a python async delegate: a failure is the
+   throw's own (yf_thrown_back), then taken as the plain await's. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_athrow_py_async_gen(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  if (! value && PyErr_Occurred())
+    yf_thrown_back(ctx, KOS_YF_PY_ASYNC_GEN);
+  TAILCALL(yf_await_py_async_gen, ctx, state, value);
+}
+
+
 /* === the provider drive === */
 
 
 /* The outcome of a provider delegate's step or throw, sr with out: an
-   install leaves the frame read at entry waiting on the emit kind for
-   the element, a value is emitted, the end ends the delegation. */
-#define YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out)      \
+   install leaves the frame read at entry waiting on emit for the
+   element, a value is emitted, the end ends the delegation. thrown is
+   1 for a throw, whose failure is the throw's own (yf_thrown_back),
+   and its emit kind is the thrown one. */
+#define YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out,      \
+                            emit, thrown)                               \
   do {                                                                  \
     switch (sr) {                                                       \
       case KOS_ITER_INSTALLED:                                          \
@@ -798,7 +854,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
            emit kind, which finishes the delegate's step. The          \
            installed frame is live now, so the phase goes on the       \
            frame read at entry, never on KosContext_FRAME. */          \
-        KosDynFrame_RESUME_KIND(frame) = &yf_emit_kos_iter_kind;       \
+        KosDynFrame_RESUME_KIND(frame) = (emit);                       \
         KosDynFrame_RESUME_STATE(frame) = (void *) (delegate);         \
         /* A throw the ingress left raised for the installed frame is  \
            processed by the prologue, never threaded past; otherwise   \
@@ -816,6 +872,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
         YF_FINISH((ctx), (delegate));                                   \
       case KOS_ITER_ERROR:                                              \
       default:                                                          \
+        if (thrown)                                                     \
+          yf_thrown_back((ctx), KOS_YF_KOS_ITER);                       \
         Py_DECREF(delegate);                                            \
         RESULT_RAISE();                                                 \
     }                                                                   \
@@ -856,7 +914,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_kos_iter(
 
   sr = kos_iter_step_provider(ctx, delegate, islots, value, &out);
   Py_XDECREF(value);
-  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out);
+  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out,
+                      &yf_emit_kos_iter_kind, 0);
 }
 
 
@@ -884,7 +943,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_kos_iter(
   }
   sr = islots->ki_throw(ctx, delegate, (PyObject *) Py_TYPE(exc), exc, &out);
   Py_DECREF(exc);
-  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out);
+  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out,
+                      &yf_emit_thrown_kos_iter_kind, 1);
 }
 
 
@@ -917,6 +977,18 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_kos_iter(
   if (islots)
     kos_iter_finish(delegate, islots, 0);
   YF_EMIT(ctx, frame, &yf_drive_kos_iter_kind, delegate, value);
+}
+
+
+/* The installed step of a throw into a provider delegate: a failure
+   is the throw's own (yf_thrown_back), then taken as the plain emit
+   takes it. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_thrown_kos_iter(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  if (! value && PyErr_Occurred())
+    yf_thrown_back(ctx, KOS_YF_KOS_ITER);
+  TAILCALL(yf_emit_kos_iter, ctx, state, value);
 }
 
 

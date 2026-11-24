@@ -792,14 +792,29 @@ As implemented:
   entry hands the goal the sent value or the throw instead of reviving
   a yield.
 - **Delivery after the last enter.** The goal carries the sent value
-  or the thrown exception. A frame waiting on a resume takes it as its
-  delivery, a throw through `KosContext_ThrowIntoResume`; any other
-  frame takes the value on its stack or the raise at its yield. No
+  or the thrown exception instance, as it was handed, unchained
+  (`kos_xfer_goal_hand`). A frame waiting on a resume takes a value as
+  its delivery and any other frame on its stack. A throw is delivered
+  as every throw into a generator is, through
+  `KosContext_ThrowAtYield` once every effect is back in: a delegation
+  in flight takes it as it is, and any other frame gets it raised at
+  the yield chained to the generator's own handled exception when its
+  span holds one, unchained otherwise
+  (`KosContext_RaiseThrownAtYield`, `kos_dyn_span_handles`). No
   placeholder is pushed for a wound span.
 - **Failures.** A refusal while the outermost batch of effects goes
   back takes the span off its GEN again and leaves it resting. Any
   later failure raises on the chain as section 4.9 says, and the goal's
-  death frees the pieces not attached.
+  death frees the pieces not attached. When the step carried a throw,
+  the error that ends the winding in is raised from the thrown
+  exception (`__cause__`, `__suppress_context__` set) unless it is that
+  exception or already names a cause or suppresses its context. The
+  link is made where the goal is given up with the error in hand: the
+  raise ingress's `kos_xfer_goal_abandon_stepping` (a synchronous
+  `__enter__`, an attach refusal, a settle failure, an awaitable wait
+  that fails), told by `process_raise` that the raise is not a
+  continuation signal, and `kos_xfer_goal_thunk_died` (a before segment
+  or an `__enter__` thunk that raises, before or after a suspension).
 - **`KosGenState` is 136 bytes**, 16 more: the pieces array, its count
   and capacity, and `wound_count`.
 - **`gen_wind` costs 57% more.** Its two segments are `None`, and both

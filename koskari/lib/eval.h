@@ -1616,21 +1616,46 @@ KosOpResult koskari_eval(
 
 
 /**
-   Route the raised exception to the current frame's resume when its
-   kind takes a throw: the frame's kind becomes the throw kind and the
-   exception object is staged as its delivery, so a delegation in
-   flight throws it into the delegate and a delegate that catches it
-   answers with its next value, as CPython's yield from does.
-   GeneratorExit is not routed: it raises at the frame, the raise
-   offers it to the same resume as a NULL with the exception pending,
-   and the yf_drive_* kind closes the delegate.
+   Deliver exc, an exception thrown into a generator, at the yield the
+   generator's installed span rests at, with every effect of the span
+   back in. A frame waiting on a resume whose kind takes a throw (a
+   delegation in flight) takes it as its delivery: the frame's kind
+   becomes the throw kind and exc is staged, unchained, so it is thrown
+   into the delegate as it is and a delegate that catches it answers
+   with its next value, as CPython's yield from does. Any other frame,
+   and GeneratorExit always, gets exc raised at the yield by
+   KosContext_RaiseThrownAtYield; a GeneratorExit at a delegation is
+   offered by the raise to the same resume as a NULL, and the
+   yf_drive_* kind closes the delegate.
 
-   Callers: revive_yield, the flattened generator throw ingress.
+   Callers: revive_yield, the flattened throw (agen_iter_drive), and
+   the winding in of a generator's dyn-wind and dyn-with extents
+   (goal_wind_in).
 
-   :return: 1 when the exception was staged for the throw kind, 0 when
-       it stays raised for the frame
+   :param exc: the exception instance; stolen
+   :return: 1 when exc was staged for the throw kind, 0 when it is
+       raised for the frame
 */
-int KosContext_ThrowIntoResume(KosContext *ctx);
+int KosContext_ThrowAtYield(KosContext *ctx, PyObject *exc);
+
+
+/**
+   Raise exc, thrown into the generator whose span's top is dyn_top,
+   at that generator's yield, as CPython resumes a generator with a
+   throw: chained to the generator's own handled exception, the one a
+   TRY or FINALLY region of its span holds on the thread
+   (kos_dyn_span_handles, KosExc_RaiseChained), and to nothing when
+   the span holds none, so a consumer's handled exception, which
+   shares the thread with a flattened generator, is never linked; exc
+   is then raised as it is, its __context__ as it carried it.
+
+   Callers: KosContext_ThrowAtYield, and the yield-from throw kinds
+   for a delegated throw whose delegate raised, which CPython raises
+   again in the delegating generator the same way.
+
+   :param exc: the exception instance; stolen
+*/
+void KosContext_RaiseThrownAtYield(KosContext *ctx, PyObject *exc);
 
 
 /**

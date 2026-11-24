@@ -30,7 +30,8 @@
 
    The KosExc_NormalizeThrow pair turns the arguments of a
    generator-style throw into an owned (class, instance) pair for the
-   evaluator's throw ingress.
+   evaluator's throw ingress, and KosExc_RaiseChained raises a thrown
+   exception at a generator's yield.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -188,6 +189,25 @@ int KosExc_NormalizeThrowArgs(
     const char *format,
     PyObject **typ_out,
     PyObject **exc_out);
+
+
+/**
+   Raise exc, an exception instance thrown into a generator, at the
+   generator's yield, chained to the exception the thread shows as
+   handled. CPython chains a throw to the generator's own handled
+   exception only, so the caller calls this only when that exception
+   is the generator's own (KosContext_RaiseThrownAtYield), and raises
+   exc unchained otherwise. PyErr_SetObject is the mechanism because
+   it is the call that chains: it sets exc.__context__ to the thread's
+   handled exception, after cutting any cycle that link would close,
+   and leaves __context__ as exc carried it when the handled exception
+   is exc itself.
+
+   :param exc: the exception instance; borrowed
+*/
+static inline void KosExc_RaiseChained(PyObject *exc) {
+  PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
+}
 
 
 #endif /* KOSKARI_EXCEPTION_H */

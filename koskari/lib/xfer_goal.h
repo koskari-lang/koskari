@@ -264,8 +264,13 @@ void kos_xfer_goal_abandon_all(KosContext *ctx);
    if it does not, the walk unlinks the node and retires the goal there
    (kos_xfer_goal_thunk_died). Every outer of a waiting goal waits on a
    node further down.
+
+   failure is 1 when the raise is an error, 0 for a continuation
+   signal: a generator's winding in freed by an error raises the error
+   from the exception its step threw (as kos_xfer_goal_thunk_died
+   does), and one freed by a signal links nothing.
 */
-void kos_xfer_goal_abandon_stepping(KosContext *ctx);
+void kos_xfer_goal_abandon_stepping(KosContext *ctx, int failure);
 
 
 /**
@@ -275,7 +280,9 @@ void kos_xfer_goal_abandon_stepping(KosContext *ctx);
    started above it, and the outers its LEAVING voided, which its
    ATTACHING would have retired. The node is never dereferenced.
    Nothing to do when no goal waits on it (a mark a freed goal left
-   behind).
+   behind). A waiter that is a generator's winding in whose step threw
+   raises the pending error from the thrown exception, unless the error
+   is that exception or names its own cause.
 */
 void kos_xfer_goal_thunk_died(
     KosContext *ctx,
@@ -373,26 +380,27 @@ void kos_xfer_goal_discard(KosXferGoal *goal);
 
 /**
    Give the winding in just pushed on ctx what the step sends into its
-   generator: send_val, or the exception throw_exc of type throw_typ,
-   all borrowed, or nothing. The goal delivers it at the suspended
-   yield once the last winder is entered.
+   generator: send_val, or the exception instance throw_exc, both
+   borrowed, or nothing. The goal keeps a reference to it as it is,
+   with nothing chained and the error indicator untouched, and delivers
+   it at the suspended yield once the last winder is entered; a throw
+   is chained there to the generator's own handled exception, if it
+   has one (KosContext_ThrowAtYield).
 */
 void kos_xfer_goal_hand(
     KosContext *ctx,
     PyObject *send_val,
-    PyObject *throw_typ,
     PyObject *throw_exc);
 
 
 /**
    The evaluator's entry on a context whose suspension event is
    KOS_SUSP_WIND: the winding in pushed there takes send_val or the
-   throw, unless the step handed it one already.
+   thrown exception instance, unless the step handed it one already.
 */
 void kos_xfer_goal_take_entry(
     KosContext *ctx,
     PyObject *send_val,
-    PyObject *throw_typ,
     PyObject *throw_exc);
 
 

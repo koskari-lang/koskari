@@ -1,0 +1,196 @@
+;; Reproducer: generators thrown into at a yield, with and without a handled
+;; exception at that yield, inside dyn-wind and dyn-with extents, and
+;; the Koskari throwers that throw into them, delegations through
+;; yield-from, and an owner whose continuation a before segment calls.
+;; The test module supplies handled, check, Manager and AsyncManager.
+
+
+(import-from asyncio sleep)
+
+
+(def plain [log fail]
+  (yield 1)
+  (yield 2))
+
+
+(def handling [log fail]
+  (try
+    (raise (KeyError "gen-handled"))
+    ([e KeyError] (yield 1) (yield 2))))
+
+
+(def wind_plain [log fail]
+  (dyn-wind
+    (before: (log.append (handled "in")) (check fail))
+    (body: (yield 1) (yield 2))
+    (after: (log.append (handled "out")))))
+
+
+(def wind_inside [log fail]
+  (dyn-wind
+    (before: (log.append (handled "in")) (check fail))
+    (body:
+      (try
+        (raise (KeyError "gen-handled"))
+        ([e KeyError] (yield 1) (yield 2))))
+    (after: (log.append (handled "out")))))
+
+
+(def wind_outside [log fail]
+  (try
+    (raise (KeyError "gen-handled"))
+    ([e KeyError]
+      (dyn-wind
+        (before: (log.append (handled "in")) (check fail))
+        (body: (yield 1) (yield 2))
+        (after: (log.append (handled "out")))))))
+
+
+(def wind_slow [log fail]
+  (dyn-wind
+    (before: (sleep 0) (log.append (handled "in")) (check fail))
+    (body: (yield 1) (yield 2))
+    (after: (log.append (handled "out")))))
+
+
+(def with_plain [log fail]
+  (dyn-with [c (Manager log fail)]
+    (yield 1)
+    (yield 2)))
+
+
+(def with_inside [log fail]
+  (dyn-with [c (Manager log fail)]
+    (try
+      (raise (KeyError "gen-handled"))
+      ([e KeyError] (yield 1) (yield 2)))))
+
+
+(def throw_from [g exc in_handler]
+  (if in_handler
+    (try
+      (raise (IndexError "thrower-handled"))
+      ([e IndexError] (await (g.athrow exc))))
+    (await (g.athrow exc))))
+
+
+(def send_from [g in_handler]
+  (if in_handler
+    (try
+      (raise (IndexError "thrower-handled"))
+      ([e IndexError] (await (g.asend None))))
+    (await (g.asend None))))
+
+
+(def close_from [g in_handler]
+  (if in_handler
+    (try
+      (raise (IndexError "thrower-handled"))
+      ([e IndexError] (await (g.aclose))))
+    (await (g.aclose))))
+
+
+(def delegate_plain [inner]
+  (yield-from inner))
+
+
+(def delegate_handling [inner]
+  (try
+    (raise (OSError "outer-handled"))
+    ([o OSError] (yield-from inner))))
+
+
+(def inner_plain [seen]
+  (try
+    (begin (yield 1) (yield 2))
+    ([e ValueError] (seen.append (repr e.__context__)) (raise))))
+
+
+(def inner_handling [seen]
+  (try
+    (raise (KeyError "inner-handled"))
+    ([k KeyError]
+      (try
+        (begin (yield 1) (yield 2))
+        ([e ValueError] (seen.append (repr e.__context__)) (raise))))))
+
+
+(def inner_reraise [seen]
+  (try
+    (begin (yield 1) (yield 2))
+    ([e ValueError] (raise (RuntimeError "inner-raised")))))
+
+
+(def inner_returns [seen]
+  (try
+    (begin (yield 1) (yield 2))
+    ([e ValueError] (seen.append "caught"))))
+
+
+(def inner_send_raises [seen]
+  (yield 1)
+  (raise (RuntimeError "inner-raised")))
+
+
+(def inner_closes [seen]
+  (try
+    (begin (yield 1) (yield 2))
+    ([e GeneratorExit] (seen.append (repr e.__context__)) (raise))))
+
+
+(def continuing_plain [inner seen]
+  (yield-from inner)
+  (yield "after"))
+
+
+(def continuing_handling [inner seen]
+  (try
+    (raise (OSError "outer-handled"))
+    ([o OSError]
+      (try
+        (yield-from inner)
+        ([e GeneratorExit] (seen.append (repr e.__context__)) (raise)))
+      (yield "after"))))
+
+
+(def with_async [log fail]
+  (dyn-with [c (AsyncManager log fail)]
+    (yield 1)
+    (yield 2)))
+
+
+(def escaping [log k flags]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (if (flags.count "escape") (k "escaped") None))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out"))))
+
+
+(def owner [log helper fn]
+  (define r
+    (call/cc
+      (lambda [k]
+        (helper fn log k)
+        "not reached")))
+  (log.append r)
+  log)
+
+
+(def closer_plain [seen]
+  (try
+    (yield 1)
+    ([e GeneratorExit] (seen.append (repr e.__context__)) (raise))))
+
+
+(def closer_handling [seen]
+  (try
+    (raise (KeyError "gen-handled"))
+    ([k KeyError]
+      (try
+        (yield 1)
+        ([e GeneratorExit] (seen.append (repr e.__context__)) (raise))))))
+
+
+;; The end.

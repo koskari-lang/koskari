@@ -408,15 +408,14 @@ static KosEvalMode revive_yield(
 
   /* A frame waiting on a resume (a yield-from delegation in flight)
      took no placeholder at install and takes its delivery through the
-     pending slot. A throw goes to the resume the same way, which
-     throws it into the delegate; GeneratorExit raises at the frame
-     instead, the raise offers it to the same resume as a NULL with
-     the exception pending, and the yf_drive_* kind closes the delegate. */
+     pending slot. A throw, an instance from every entry, goes to the
+     resume the same way, which throws it into the delegate; any other
+     frame, and GeneratorExit at a delegation, gets it raised at the
+     yield (KosContext_ThrowAtYield). */
   if (KosContext_FRAME(ctx)
       && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
     if (throw_exc != NULL) {
-      PyErr_SetObject(throw_typ, throw_exc);
-      return KosContext_ThrowIntoResume(ctx)
+      return KosContext_ThrowAtYield(ctx, Py_NewRef(throw_exc))
           ? KOS_MODE_NORMAL : KOS_MODE_EXCEPTION;
     }
     to_push = (send_val != NULL) ? send_val : Py_None;
@@ -427,7 +426,7 @@ static KosEvalMode revive_yield(
   if (throw_exc != NULL) {
     if (KosContext_FRAME(ctx))
       Py_XDECREF(KosContext_StackPopRef(ctx));
-    PyErr_SetObject(throw_typ, throw_exc);
+    (void) KosContext_ThrowAtYield(ctx, Py_NewRef(throw_exc));
     return KOS_MODE_EXCEPTION;
   }
   if (KosContext_FRAME(ctx)) {
@@ -925,9 +924,10 @@ static KosOpResult process_raise(KosContext *ctx) {
      were stepping when the raise came, and it ends them, a continuation
      signal included: the transfer it starts voids a waiter whose node
      it unlinks, and would leave a stepping goal linked over nodes it
-     freed. */
+     freed. An error, not a signal, that ends a generator's winding in
+     is raised from the exception its step threw. */
   if (KosContext_GOAL(ctx))
-    kos_xfer_goal_abandon_stepping(ctx);
+    kos_xfer_goal_abandon_stepping(ctx, ! is_cc_apply);
 
   if (is_cc_apply)
     return handle_continuation_apply(ctx);
@@ -2505,7 +2505,7 @@ static KosOpResult eval_phase_entry(
       case KOS_SUSP_WIND:
         /* no yield to revive yet: the goal that enters the generator's
            winders delivers what this entry sends after the last enter */
-        kos_xfer_goal_take_entry(ctx, send_val, throw_typ, throw_exc);
+        kos_xfer_goal_take_entry(ctx, send_val, throw_exc);
         break;
       case KOS_SUSP_AWAIT:
       default: {

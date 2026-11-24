@@ -456,6 +456,14 @@ PyObject *koskari_Err_GetRaisedException(void);
 
 
 /**
+   Raise exc, an exception instance, as the current exception with no
+   __context__ chained, stealing the reference; NULL clears the current
+   exception.  Replaces PyErr_SetRaisedException (added in 3.12).
+*/
+void koskari_Err_SetRaisedException(PyObject *exc);
+
+
+/**
    Raise the AttributeError getattr raises for a name obj lacks: CPython's
    message, with name and obj recorded on the exception from 3.10 on.
 */

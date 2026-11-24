@@ -580,8 +580,8 @@ static int agen_iter_busy(PyObject *self, const char *method) {
    The step of a generator whose yield left a dyn-wind or a dyn-with:
    the span is on the chain only up to the outermost, and the goal the
    install pushed enters each and attaches the rest. It takes what this
-   step sends, the value or the exception the throw ingress primed, and
-   delivers it at the yield after the last enter.
+   step sends, the value or the exception the throw ingress primed,
+   unchained, and delivers it at the yield after the last enter.
 */
 static KOS_NOINLINE KosIterStepResult agen_iter_winding(
     KosContext *ctx,
@@ -591,10 +591,10 @@ static KOS_NOINLINE KosIterStepResult agen_iter_winding(
   if (throwing) {
     PyObject *exc = PyErr_GetRaisedException();
 
-    kos_xfer_goal_hand(ctx, NULL, (PyObject *) Py_TYPE(exc), exc);
+    kos_xfer_goal_hand(ctx, NULL, exc);
     Py_DECREF(exc);
   } else {
-    kos_xfer_goal_hand(ctx, send_val, NULL, NULL);
+    kos_xfer_goal_hand(ctx, send_val, NULL);
   }
   return KOS_ITER_INSTALLED;
 }
@@ -697,11 +697,12 @@ static KosIterStepResult agen_iter_drive(
   if (! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING))
     KosContext_SetSuspensionEvent(ctx, KOS_SUSP_YIELD);
 
-  /* A throw ingress primed the exception: a frame waiting on a
-     resume takes it there and throws it into its delegate; any
-     other frame raises it at the resume point as before. */
+  /* A throw ingress primed the exception, unchained: with the span
+     installed and its effects back in, it is delivered at the yield,
+     to a delegate in flight as it is or raised there chained to the
+     generator's own handled exception, if it has one. */
   if (throwing)
-    (void) KosContext_ThrowIntoResume(ctx);
+    (void) KosContext_ThrowAtYield(ctx, PyErr_GetRaisedException());
 
   /* The frozen install pushed the Py_None placeholder for the
      suspended yield expression; replace it with the sent value. The
@@ -783,12 +784,13 @@ static KosIterStepResult agen_iter_throw(
     return KOS_ITER_EXHAUSTED;
   }
 
-  /* Throw ingress: prime the exception, then attach; the pending error
-     is delivered at the resume point inside the flattened drive. A
-     generator the drive finds spent takes no delivery: a throw into a
-     finished generator completes quietly, and EXHAUSTED carries no
-     exception. */
-  PyErr_SetObject(throw_typ, throw_exc);
+  /* Throw ingress: prime the exception instance as it is, chained to
+     nothing the thrower handles, then attach; the install delivers it
+     at the generator's yield, where it is chained to the generator's
+     own handled exception, if it has one. A generator the drive finds
+     spent takes no delivery: a throw into a finished generator
+     completes quietly, and EXHAUSTED carries no exception. */
+  PyErr_SetRaisedException(Py_NewRef(throw_exc));
   {
     KosIterStepResult r = agen_iter_drive(ctx, agen, NULL, 1, out);
     if (r == KOS_ITER_EXHAUSTED)

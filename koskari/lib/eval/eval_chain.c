@@ -26,21 +26,34 @@
 
 /* --- Context accessors and the transfer goal --- */
 
-int KosContext_ThrowIntoResume(KosContext *ctx) {
+void KosContext_RaiseThrownAtYield(KosContext *ctx, PyObject *exc) {
+
+  if (kos_dyn_span_handles(KosContext_DYN_TOP(ctx))) {
+    KosExc_RaiseChained(exc);
+    Py_DECREF(exc);
+  } else {
+    PyErr_SetRaisedException(exc);
+  }
+}
+
+
+int KosContext_ThrowAtYield(KosContext *ctx, PyObject *exc) {
 
   KosDynFrame *frame = KosContext_FRAME(ctx);
   const KosResumeKind *kind = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
 
-  if (! kind || ! kind->throw_kind)
-    return 0;
-  if (PyErr_ExceptionMatches(PyExc_GeneratorExit))
-    return 0;
+  /* A delegation in flight: the throw is the delivery, and the throw
+     kind takes the exception object as its value, over the same state,
+     into the delegate as it is. */
+  if (kind && kind->throw_kind
+      && ! PyErr_GivenExceptionMatches(exc, PyExc_GeneratorExit)) {
+    KosDynFrame_RESUME_KIND(frame) = kind->throw_kind;
+    KosContext_StageDelivery(ctx, exc);
+    return 1;
+  }
 
-  /* The throw is the delivery: the throw kind takes the exception
-     object as its value, over the same state. */
-  KosDynFrame_RESUME_KIND(frame) = kind->throw_kind;
-  KosContext_StageDelivery(ctx, PyErr_GetRaisedException());
-  return 1;
+  KosContext_RaiseThrownAtYield(ctx, exc);
+  return 0;
 }
 
 

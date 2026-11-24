@@ -19,7 +19,9 @@ thunk's does.
 does. The yield calls exit, with no exception, before the consumer has the
 value, and the generator's next step calls enter again and binds `name` to
 its result before the body continues. An exit that raises at a yield raises
-from the `dyn-with`, and the value is not presented. The order among nested
+from the `dyn-with`, and the value is not presented. An enter that raises
+while a throw or a close steps the generator raises from the exception
+thrown, which is its `__cause__`. The order among nested
 extents, and a generator closed or dropped at such a yield, are as for a
 [`dyn-wind`](compile-dyn-wind.md). A plain [`with`](with.md) calls neither
 at a yield.
