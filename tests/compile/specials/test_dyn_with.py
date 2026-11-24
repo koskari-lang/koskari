@@ -19,6 +19,7 @@ exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. A continuation transfer runs
 its exit and enter.
 """
 
+import gc
 import sys
 
 import pytest
@@ -65,6 +66,32 @@ class SeeingMgr:
 
     def __exit__(self, typ, val, tb):
         self.seen = sys.exc_info()[1]
+        return True
+
+
+class ReferrersMgr:
+    """
+    While __exit__ runs, records the contexts that refer to a held
+    exception and the referrers the collector reports for it
+    """
+
+    def __init__(self, held):
+        self.held = held
+        self.owners = None
+        self.referrers = None
+
+
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, typ, val, tb):
+        target = self.held["e1"]
+        self.owners = [
+            o for o in gc.get_objects()
+            if type(o).__name__ == "Context"
+            and any(r is target for r in gc.get_referents(o))]
+        self.referrers = gc.get_referrers(target)
         return True
 
 
@@ -530,6 +557,59 @@ class TestReenteredWithBindsItsOwnScope(SpecialsTestCase):
             log,
             [managers[0], "after-with", managers[1], "after-with",
              "after-cond"])
+
+
+class TestWithDisplacedExceptionReferrers(SpecialsTestCase):
+    """
+    A with whose exit runs inside an except handler holds the handled
+    exception it displaced. The running context refers to it, and the
+    collector reports that context among its referrers.
+    """
+
+    async def check_displaced_referrers(self, form):
+        held = {}
+
+        def raise_first():
+            held["e1"] = ValueError("first")
+            raise held["e1"]
+
+        def raise_second():
+            raise KeyError("second")
+
+        mgr = ReferrersMgr(held)
+        src_str = f"""
+        (try
+          (call raise_first)
+          ([e1 ValueError]
+            (setq e1 None)
+            ({form} [(call make_mgr)] (call raise_second))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, raise_first=raise_first, raise_second=raise_second,
+            make_mgr=lambda: mgr, ValueError=ValueError)
+        await expr()
+
+        self.assertTrue(mgr.owners)
+        for owner in mgr.owners:
+            self.assertTrue(any(r is owner for r in mgr.referrers))
+
+
+    async def test_with_context_refers_to_displaced_exception(self):
+        """
+        a with's exit sees its context among the displaced exception's
+        referrers
+        """
+
+        await self.check_displaced_referrers("with")
+
+
+    async def test_dyn_with_context_refers_to_displaced_exception(self):
+        """
+        a dyn-with's exit sees its context among the displaced
+        exception's referrers
+        """
+
+        await self.check_displaced_referrers("dyn-with")
 
 
 # The end.

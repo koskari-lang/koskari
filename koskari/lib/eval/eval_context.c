@@ -319,8 +319,9 @@ static int context_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosContext_PARAM_REFS(ctx));
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
-  if (KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg))
-    return -1;
+  res = KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg);
+  if (res)
+    return res;
 
   Py_VISIT(KosContext_PENDING_VALUE(ctx));
   dyn_top = KosContext_DYN_TOP(ctx);

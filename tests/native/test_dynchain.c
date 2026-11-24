@@ -512,6 +512,178 @@ static int test_dynwith_free_exc_unconditional(void) {
 }
 
 
+/* === Traverse return propagation === */
+
+
+/* The object stop_visit answers on, whether it has been seen, and how
+   many visits came after it */
+static PyObject *stop_target = NULL;
+static int stop_seen = 0;
+static int stop_visits_after = 0;
+
+
+#define STOP_VISIT_RESULT 7
+
+
+/* A visitor that answers a positive value on stop_target, the way
+   gc.get_referrers' visitor answers a match */
+static int stop_visit(PyObject *obj, void *arg) {
+
+    (void) arg;
+    if (stop_seen)
+        stop_visits_after++;
+    if (obj == stop_target) {
+        stop_seen = 1;
+        return STOP_VISIT_RESULT;
+    }
+    return 0;
+}
+
+
+static void stop_visit_reset(PyObject *target) {
+    stop_target = target;
+    stop_seen = 0;
+    stop_visits_after = 0;
+}
+
+
+/* A match in a WITH node's displaced exception ends the traverse with
+   the visitor's value; the obligation behind it is not visited. */
+static int test_traverse_with_saved_returns_visit_result(void) {
+
+    KosContext *ctx;
+    PyObject *ns;
+    KosDynFrame *frame;
+    PyObject *mgr;
+    PyObject *enter;
+    PyObject *exit;
+    PyObject *target;
+    KosDynWith *with_node;
+    int res;
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new(NULL, NULL, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosContext_EvalEnter(ctx, NULL);
+
+    mgr = PyLong_FromLong(200011);
+    enter = PyLong_FromLong(200012);
+    exit = PyLong_FromLong(200013);
+    target = PyList_New(0);
+    TEST_ASSERT_NOT_NULL(mgr, "mgr");
+    TEST_ASSERT_NOT_NULL(enter, "enter");
+    TEST_ASSERT_NOT_NULL(exit, "exit");
+    TEST_ASSERT_NOT_NULL(target, "target");
+
+    with_node = kos_dyn_push_with_provisional(
+        ctx, mgr, enter, exit, 0, NULL, 0, KOS_DYN_CAP_WINDS);
+    TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
+
+    KosDynWith_PHASE(with_node) = KOS_EXTENT_IDLE;
+    KosDynWith_EXC(with_node)->saved.value = Py_NewRef(target);
+    TEST_ASSERT(kos_dyn_ob_store_exception(
+        (KosDynNode *) with_node,
+        Py_NewRef(PyExc_ValueError),
+        PyUnicode_FromString("pending"),
+        NULL) == 0,
+        "store exception on WITH");
+
+    stop_visit_reset(target);
+    res = kos_dynnode_traverse((KosDynNode *) with_node, stop_visit, NULL);
+    TEST_ASSERT_EQ(res, STOP_VISIT_RESULT,
+                   "traverse answers the visitor's value");
+    TEST_ASSERT_EQ(stop_visits_after, 0, "no visit after the match");
+    stop_visit_reset(NULL);
+
+    /* the pop re-raises the stored exception and frees the node, which
+       releases the displaced one */
+    TEST_ASSERT(kos_dyn_pop_with(ctx, with_node) == -1,
+        "pop WITH re-raises the stored exception");
+    PyErr_Clear();
+
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    TEST_ASSERT_EQ(Py_REFCNT(target), 1, "the node released the target");
+    Py_DECREF(target);
+
+    return 0;
+}
+
+
+/* A match in a FINALLY node's displaced exception ends the traverse
+   with the visitor's value. */
+static int test_traverse_finally_saved_returns_visit_result(void) {
+
+    KosDynFinally *node;
+    PyObject *target;
+    int res;
+
+    node = kos_dynfinally_new(NULL, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(node, "create FINALLY node");
+
+    target = PyList_New(0);
+    TEST_ASSERT_NOT_NULL(target, "target");
+    KosDynFinally_EXC(node)->saved.value = Py_NewRef(target);
+
+    stop_visit_reset(target);
+    res = kos_dynnode_traverse((KosDynNode *) node, stop_visit, NULL);
+    TEST_ASSERT_EQ(res, STOP_VISIT_RESULT,
+                   "traverse answers the visitor's value");
+    TEST_ASSERT_EQ(stop_visits_after, 0, "no visit after the match");
+    stop_visit_reset(NULL);
+
+    kos_dynfinally_free(node);
+    TEST_ASSERT_EQ(Py_REFCNT(target), 1, "the node released the target");
+    Py_DECREF(target);
+
+    return 0;
+}
+
+
+/* A match in a context's handled exception ends the context's traverse
+   with the visitor's value. */
+static int test_traverse_context_exc_returns_visit_result(void) {
+
+    KosContext *ctx;
+    PyObject *ns;
+    KosDynFrame *frame;
+    PyObject *target;
+    int res;
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new(NULL, NULL, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    target = PyList_New(0);
+    TEST_ASSERT_NOT_NULL(target, "target");
+    KosContext_EXC_INFO(ctx)->value = Py_NewRef(target);
+
+    stop_visit_reset(target);
+    res = Py_TYPE(ctx)->tp_traverse((PyObject *) ctx, stop_visit, NULL);
+    TEST_ASSERT_EQ(res, STOP_VISIT_RESULT,
+                   "traverse answers the visitor's value");
+    TEST_ASSERT_EQ(stop_visits_after, 0, "no visit after the match");
+    stop_visit_reset(NULL);
+
+    Py_DECREF(ctx);
+    TEST_ASSERT_EQ(Py_REFCNT(target), 1, "the context released the target");
+    Py_DECREF(target);
+
+    return 0;
+}
+
+
 static int test_dynforeach_free_with_iter(void) {
 
     KosDynForeach *node;
@@ -1251,6 +1423,11 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dyngen_chain_free_leaves_the_owner_alone);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dynforeach_free_with_iter);
+
+    /* Traverse return propagation */
+    RUN_TEST(test_traverse_with_saved_returns_visit_result);
+    RUN_TEST(test_traverse_finally_saved_returns_visit_result);
+    RUN_TEST(test_traverse_context_exc_returns_visit_result);
 
     /* Capability and skip link tests */
     RUN_TEST(test_node_header_size);

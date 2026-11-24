@@ -506,12 +506,15 @@ static int kos_dyn_with_leave_done(KosContext *ctx, KosDynWith *node) {
 */
 static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWith *with_node = (KosDynWith *) node;
+  int res;
+
   Py_VISIT(KosDynWith_MGR(with_node));
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));
   Py_VISIT(KosDynWith_NAME(with_node));
-  if (KosExc_Traverse(&KosDynWith_EXC(with_node)->saved, visit, arg) < 0)
-    return -1;
+  res = KosExc_Traverse(&KosDynWith_EXC(with_node)->saved, visit, arg);
+  if (res)
+    return res;
   return kos_dyn_ob_traverse(KosDynWith_OB(with_node), visit, arg);
 }
 

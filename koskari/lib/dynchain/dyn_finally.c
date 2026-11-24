@@ -135,8 +135,10 @@ int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
    GC traverse a KOS_DYN_FINALLY: both exception states.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
-  if (KosExc_Traverse(&KosDynFinally_EXC(node)->saved, visit, arg))
-    return -1;
+  int res = KosExc_Traverse(&KosDynFinally_EXC(node)->saved, visit, arg);
+
+  if (res)
+    return res;
   return KosExc_Traverse(KosDynFinally_HANDLING((KosDynFinally *) node),
                          visit, arg);
 }
