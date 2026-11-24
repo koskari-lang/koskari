@@ -2648,9 +2648,11 @@ static KOS_NOINLINE KosOpResult eval_yield_wound(
    before the value is presented, innermost first, through a goal run
    from here. A leave that runs a frame or awaits ends the pass with
    that answer, already through the ingress, and the goal's last step
-   answers the yield from the prologue's drain. The answer is the
-   yield's own, whatever it is: this never goes back into
-   eval_event_yield, which folds into the YIELD row.
+   answers the yield from the prologue's drain. An effect list or a
+   goal that could not be sized raises at the yield, through the
+   ingress too. The answer is the yield's own, whatever it is: this
+   never goes back into eval_event_yield, which folds into the YIELD
+   row.
 */
 static KOS_NOINLINE KosOpResult eval_yield_unfrozen(
     KosContext *ctx,
@@ -2675,7 +2677,9 @@ static KOS_NOINLINE KosOpResult eval_yield_unfrozen(
   Py_DECREF(val);
   /* -2: the freeze's effect list could not be sized, and nothing
      has changed, so the yield raises where it stands */
-  return frozen == -2 ? EVAL_RAISE() : EVAL_FATAL();
+  if (frozen == -2)
+    return kos_eval_walk_outcome(ctx, EVAL_RAISE());
+  return EVAL_FATAL();
 }
 
 
@@ -3461,9 +3465,30 @@ static inline KosOpResult apply_resume_result(KosContext *ctx, KosOpResult r) {
 
 
 /**
+   The raise ingress for a raise apply_kos_op_result takes: process_raise,
+   and an AWAIT it answers (a leave in the unwind suspended) through
+   eval_event_await, as the trampoline applies the AWAIT that
+   kos_eval_raise returns raw. The trampoline leaves with whatever
+   apply_kos_op_result answers short of DISPATCH or REPROLOGUE, so the
+   answer from here is never applied again.
+*/
+static KosOpResult apply_raise(KosContext *ctx) {
+
+  KosOpResult r;
+
+  KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
+  if (r.kind == KOS_RES_AWAIT)
+    KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(ctx, r.val));
+  return r;
+}
+
+
+/**
    Route a non-NORMAL opcode result through the appropriate event handler.
    NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (re-enter through the prologue).
-   A RESUME answer from any event is applied by apply_resume_result.
+   A raise, the one a RAISE signals or a YIELD's with no generator to
+   suspend, enters through apply_raise. A RESUME answer from any event
+   is applied by apply_resume_result.
 */
 static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   switch (res.kind) {
@@ -3472,11 +3497,8 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   case KOS_RES_POLL:
     return EVAL_REPROLOGUE();
 
-  case KOS_RES_RAISE: {
-    KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
-    return apply_resume_result(ctx, r);
-  }
+  case KOS_RES_RAISE:
+    return apply_resume_result(ctx, apply_raise(ctx));
 
   case KOS_RES_YIELD: {
     KosOpResult r;
@@ -3485,8 +3507,7 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
     if (unlikely(! gen)) {
       /* the lookup set the error */
       Py_DECREF(res.val);
-      KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
-      return apply_resume_result(ctx, r);
+      return apply_resume_result(ctx, apply_raise(ctx));
     }
     KOS_TRACE_POST_OP_WRAP(event_yield,
         r = eval_event_yield(ctx, gen, res.val));

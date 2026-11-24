@@ -949,17 +949,6 @@ static int test_freeze_install_three_effects(void) {
 }
 
 
-static PyMemAllocatorEx refusing_base;
-static int refusing = 0;
-
-
-static void *refusing_realloc(void *ctx, void *ptr, size_t size) {
-    if (refusing)
-        return NULL;
-    return refusing_base.realloc(ctx, ptr, size);
-}
-
-
 /* A freeze whose list cannot be sized refuses with MemoryError and
    leaves the chain, the span and its effects as they were. */
 static int test_freeze_refused_changes_nothing(void) {
@@ -967,7 +956,6 @@ static int test_freeze_refused_changes_nothing(void) {
     PyObject *owner = PyList_New(0);
     KosGenState state;
     KosDynNode *trys[4] = { NULL, NULL, NULL, NULL };
-    PyMemAllocatorEx hook;
     KosContext *ctx;
     KosDynNode *top;
     KosDynGen *gen;
@@ -980,14 +968,9 @@ static int test_freeze_refused_changes_nothing(void) {
     gen = kos_dyn_find_gen(ctx);
     TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
 
-    PyMem_GetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
-    hook = refusing_base;
-    hook.realloc = refusing_realloc;
-    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &hook);
-    refusing = 1;
+    test_refuse_realloc_begin(0);
     r = kos_dyn_gen_freeze(ctx, gen);
-    refusing = 0;
-    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
+    test_refuse_realloc_end();
 
     TEST_ASSERT_EQ(r, -2, "the freeze refuses");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),

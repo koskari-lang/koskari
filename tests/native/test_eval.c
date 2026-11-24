@@ -2289,6 +2289,251 @@ static int test_eval_opcode_error_caught_by_try(void) {
 }
 
 
+/* === Test: a yield whose effect list cannot be sized === */
+/*
+  The yield's span holds three listed nodes (set_refusal_span). The
+  list's room past the inline pair is refused at the yield, so the
+  yield raises MemoryError where it stands. The CM's __exit__ answers
+  an awaitable for a raise and None otherwise.
+*/
+
+
+static PyObject *make_refusal_cm(PyObject **pre_out) {
+
+    PyObject *pre = PyDict_New();
+    PyObject *cm_class;
+    PyObject *ran;
+
+    *pre_out = NULL;
+    if (! pre)
+        return NULL;
+    ran = PyRun_String(
+            "class AW:\n"
+            "    def __await__(self):\n"
+            "        yield 'suspended'\n"
+            "        return False\n"
+            "class CM:\n"
+            "    def __init__(self):\n"
+            "        self.log = []\n"
+            "    def __enter__(self):\n"
+            "        self.log.append('enter')\n"
+            "    def __exit__(self, typ, val, tb):\n"
+            "        self.log.append(typ)\n"
+            "        return AW() if typ is not None else None\n",
+            Py_file_input, pre, pre);
+    if (! ran) {
+        Py_DECREF(pre);
+        return NULL;
+    }
+    Py_DECREF(ran);
+
+    cm_class = PyDict_GetItemString(pre, "CM");
+    if (! cm_class) {
+        Py_DECREF(pre);
+        return NULL;
+    }
+    *pre_out = pre;
+    return PyObject_CallNoArgs(cm_class);
+}
+
+
+/*
+  The span's opening, three listed nodes: the with over cm, or with cm
+  NULL a parameterize of p0, then p1 and p2. The close is POP_DYN_WITH
+  or POP_PARAM to match.
+*/
+static void set_refusal_span(PyObject *instr, PyObject *cm) {
+
+    PyObject *a = PyUnicode_FromString("a");
+    PyObject *b = PyUnicode_FromString("b");
+    PyObject *p1 = Py_BuildValue("(s)", "p1");
+    PyObject *p2 = Py_BuildValue("(s)", "p2");
+
+    if (cm) {
+        PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, cm));
+        PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_PUSH_DYN_WITH, Py_None));
+    } else {
+        PyObject *z = PyUnicode_FromString("z");
+        PyObject *p0 = Py_BuildValue("(s)", "p0");
+
+        PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, z));
+        PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_PUSH_PARAM, p0));
+        Py_DECREF(z);
+        Py_DECREF(p0);
+    }
+    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, a));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_PUSH_PARAM, p1));
+    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_CONST, b));
+    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_PUSH_PARAM, p2));
+
+    Py_DECREF(a);
+    Py_DECREF(b);
+    Py_DECREF(p1);
+    Py_DECREF(p2);
+}
+
+
+/* The log the CM kept: enter, then the type its __exit__ saw. */
+static int check_refusal_log(PyObject *cm, PyObject *exit_typ) {
+
+    PyObject *log = PyObject_GetAttrString(cm, "log");
+
+    TEST_ASSERT_NOT_NULL(log, "the CM's log");
+    TEST_ASSERT_EQ(PyList_GET_SIZE(log), 2, "enter and exit ran once each");
+    TEST_ASSERT(PyUnicode_CompareWithASCIIString(
+                    PyList_GET_ITEM(log, 0), "enter") == 0,
+                "enter ran first");
+    TEST_ASSERT_SAME(PyList_GET_ITEM(log, 1), exit_typ,
+                     "exit saw the expected type");
+    Py_DECREF(log);
+    return 0;
+}
+
+
+static int test_eval_yield_refused_raise_awaits_in_exit(void) {
+    /*
+      Bytecode: <span>, CONST 1, YIELD 1, POP_PARAM, POP_PARAM,
+                POP_DYN_WITH, RETURN 1.
+      First eval: the yield raises MemoryError; the unwind leaves the
+      params and the with, whose __exit__ answers an awaitable, so the
+      eval answers AWAIT with the awaitable's first value recorded as
+      the one the context is suspended on. Second eval, as a coroutine's
+      send runs it: the awaitable completes with False, the exit's
+      result, and the MemoryError leaves the generator => RAISE.
+    */
+    PyObject *pre = NULL;
+    PyObject *cm = make_refusal_cm(&pre);
+    TEST_ASSERT_NOT_NULL(cm, "create the CM");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(12);
+    set_refusal_span(instr, cm);
+    PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_POP_PARAM, 0));
+    PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_POP_PARAM, 0));
+    PyList_SET_ITEM(instr, 10, make_instr_int(KOS_OP_POP_DYN_WITH, 0));
+    PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_RETURN, 1));
+    Py_DECREF(one);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    PyObject *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    test_refuse_realloc_begin(3 * sizeof(KosDynNode *));
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+    int refused = test_refuse_realloc_end();
+    TEST_ASSERT_EQ(refused, 1, "the yield's list was refused");
+    TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "first event is AWAIT");
+    TEST_ASSERT_NOT_NULL(ev.val, "AWAIT carries the awaitable's value");
+    TEST_ASSERT(PyUnicode_CompareWithASCIIString(ev.val, "suspended") == 0,
+                "the value is the exit awaitable's first");
+    TEST_ASSERT_SAME(KosContext_PY_AWAIT_YIELDED(ctx), ev.val,
+                     "the context records what it is suspended on");
+    Py_DECREF(ev.val);
+
+    /* the awaitable's next step is the driver's, as the coroutine's
+       send takes it: it completes with False, which goes back in as the
+       exit's result */
+    PyObject *await_iter = KosContext_PythonAwaitIter(ctx);
+    TEST_ASSERT_NOT_NULL(await_iter, "the exit's awaitable is stored");
+    PyObject *exit_result = NULL;
+    Py_INCREF(await_iter);
+    PySendResult step = PyIter_Send(await_iter, Py_None, &exit_result);
+    Py_DECREF(await_iter);
+    TEST_ASSERT(step == PYGEN_RETURN, "the awaitable completes");
+    TEST_ASSERT_SAME(exit_result, Py_False, "with False");
+    KosContext_PythonAwaitClearIter(ctx);
+
+    ev = koskari_eval(ctx, NULL, exit_result, NULL, NULL);
+    Py_DECREF(exit_result);
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "second event is RAISE");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
+                "the yield's MemoryError leaves the generator");
+    PyErr_Clear();
+    TEST_ASSERT(check_refusal_log(cm, PyExc_MemoryError) == 0,
+                "the with was entered and left once");
+
+    Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
+    Py_DECREF(code_obj);
+    Py_DECREF(cm);
+    Py_DECREF(pre);
+
+    return 0;
+}
+
+
+static int test_eval_yield_refused_raise_caught_in_span(void) {
+    /*
+      Bytecode: <span of three params>, PUSH_TRY(10), CONST 1, YIELD 1,
+                JUMP 13, LABEL(10), EXCEPTION, YIELD 1,
+                LABEL(13), POP_TRY, POP_PARAM x3, RETURN 1.
+      First eval: the first yield raises MemoryError, the TRY in the
+      span takes it, and its handler yields the exception => YIELD.
+      Second eval: install, send 77 => the generator leaves its span
+      through every node and returns 77.
+    */
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *label_10 = PyLong_FromLong(10);
+    PyObject *label_13 = PyLong_FromLong(13);
+    PyObject *instr = PyList_New(19);
+    set_refusal_span(instr, NULL);
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_PUSH_TRY, 10));
+    PyList_SET_ITEM(instr, 7, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_JUMP, 13));
+    PyList_SET_ITEM(instr, 10, make_instr(KOS_OP_LABEL, label_10));
+    PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 12, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 13, make_instr(KOS_OP_LABEL, label_13));
+    PyList_SET_ITEM(instr, 14, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 15, make_instr_int(KOS_OP_POP_PARAM, 0));
+    PyList_SET_ITEM(instr, 16, make_instr_int(KOS_OP_POP_PARAM, 0));
+    PyList_SET_ITEM(instr, 17, make_instr_int(KOS_OP_POP_PARAM, 0));
+    PyList_SET_ITEM(instr, 18, make_instr_int(KOS_OP_RETURN, 1));
+    Py_DECREF(one);
+    Py_DECREF(label_10);
+    Py_DECREF(label_13);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    PyObject *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    test_refuse_realloc_begin(3 * sizeof(KosDynNode *));
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+    int refused = test_refuse_realloc_end();
+    TEST_ASSERT_EQ(refused, 1, "the yield's list was refused");
+    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
+    TEST_ASSERT_NOT_NULL(ev.val, "the handler yields");
+    TEST_ASSERT(PyErr_GivenExceptionMatches(ev.val, PyExc_MemoryError),
+                "the handler took the yield's MemoryError");
+    Py_DECREF(ev.val);
+
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
+
+    PyObject *send_val = PyLong_FromLong(77);
+    ev = koskari_eval(ctx, NULL, send_val, NULL, NULL);
+    Py_DECREF(send_val);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "return val");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 77, "the generator returns 77");
+    Py_DECREF(ev.val);
+
+    Py_DECREF(ctx);
+    Py_XDECREF(dyn_gen);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: frozen async gen teardown without resume install === */
 
 
@@ -3407,6 +3652,8 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_yield_throw_resume);
     RUN_TEST(test_eval_yield_throw_caught);
     RUN_TEST(test_eval_opcode_error_caught_by_try);
+    RUN_TEST(test_eval_yield_refused_raise_awaits_in_exit);
+    RUN_TEST(test_eval_yield_refused_raise_caught_in_span);
     RUN_TEST(test_eval_frozen_gen_teardown_without_install);
     RUN_TEST(test_gen_return_into_frame_without_resume_is_fatal);
     RUN_TEST(test_agen_flatten_clears_wrapper_registers);

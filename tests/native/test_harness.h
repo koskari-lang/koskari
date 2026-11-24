@@ -150,6 +150,18 @@ extern TestContext test_ctx;
 } while(0)
 
 
+/* === allocation refusal === */
+
+/*
+  Refuse PYMEM_DOMAIN_MEM reallocs from begin to end: with size 0,
+  every one; otherwise only the first that asks for a fresh block
+  (ptr NULL) of exactly size bytes. end restores the allocator begin
+  found and answers the number refused.
+*/
+void test_refuse_realloc_begin(size_t size);
+int test_refuse_realloc_end(void);
+
+
 /* === unit test runners === */
 
 /*

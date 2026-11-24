@@ -37,6 +37,48 @@ TestContext test_ctx = {0, 0, NULL};
 static PyObject *kos_lib_module = NULL;
 
 
+/* === refusing realloc === */
+
+
+static PyMemAllocatorEx refusing_base;
+static size_t refusing_size = 0;
+static int refusing_left = 0;
+static int refusing_count = 0;
+
+
+static void *refusing_realloc(void *ctx, void *ptr, size_t size) {
+    if (refusing_left
+        && (! refusing_size || (! ptr && size == refusing_size))) {
+        if (refusing_size)
+            refusing_left = 0;
+        refusing_count++;
+        return NULL;
+    }
+    return refusing_base.realloc(ctx, ptr, size);
+}
+
+
+void test_refuse_realloc_begin(size_t size) {
+
+    PyMemAllocatorEx hook;
+
+    PyMem_GetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
+    hook = refusing_base;
+    hook.realloc = refusing_realloc;
+    refusing_size = size;
+    refusing_left = 1;
+    refusing_count = 0;
+    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &hook);
+}
+
+
+int test_refuse_realloc_end(void) {
+    refusing_left = 0;
+    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
+    return refusing_count;
+}
+
+
 static int initialize_python(void) {
     /* Initialize the Python interpreter */
     Py_Initialize();
