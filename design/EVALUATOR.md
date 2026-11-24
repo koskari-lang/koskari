@@ -298,7 +298,7 @@ flowchart TD
 
 A goal records where control is going and never what to do: the goal step re-derives its next action from the live chain on every pass (§6). A leave or enter that hands control to a thunk frame or an awaitable leaves the goal waiting on that node with `dyn_top` as it was; the goal step does nothing until `dyn_top` is that node again, which means the thunk's frame came and went. Goals nest: a continuation called from inside a thunk pushes an inner goal while the outer keeps waiting, and the goal step retires into the outer when the inner delivers. A goal's ATTACHING frees each outer goal whose waited-on node its LEAVING unlinked, and every outer goal when its seam is NULL.
 
-**Failed transfer:** a step that raises enters **`process_raise`** (the unified RAISE ingress), which frees the goals not waiting on a live thunk (`kos_xfer_goal_abandon_stepping`; a goal whose thunk is still above its node stays, and the walk frees it through `kos_xfer_goal_thunk_died` if it unlinks that node) and runs **`kos_dyn_unwind_raise`** on the chain as the goal step left it; there is no rollback to the invoke site. `EVAL_REPROLOGUE` continues when a handler applies, `EVAL_AWAIT` when the unwind suspended (tagged for the caller of `koskari_eval`), `EVAL_RAISE` / `EVAL_FATAL` otherwise. The walk answers `EVAL_RESUME(NULL)` when the live frame has a resume set, at entry and after every pop that reveals one, which is how a failed delivery reaches its consumer (§8.2). The one non-ingress carve-out is a foreign cc-unwind's boundary raise, which `kos_xfer_goal_drive` reports through `out_boundary` and the drain returns as it stands (§4.1).
+**Failed transfer:** a step that raises enters **`process_raise`** (the unified RAISE ingress), which frees the goals not waiting on a live thunk (`kos_xfer_goal_abandon_stepping`; a goal whose thunk is still above its node stays, and the walk frees it through `kos_xfer_goal_thunk_died` if it unlinks that node) and runs **`kos_dyn_unwind_raise`** on the chain as the goal step left it; there is no rollback to the invoke site. `EVAL_REPROLOGUE` continues when a handler applies, `EVAL_AWAIT` when the unwind suspended (tagged for the caller of `koskari_eval`), `EVAL_RAISE` / `EVAL_FATAL` otherwise. The walk answers `EVAL_RESUME(NULL)` when the live frame has a resume set, at entry and after every pop that reveals one, which is how a failed delivery reaches its consumer (§8.2). The one non-ingress carve-out is a foreign cc-unwind's boundary raise: its delivery prepares it with `kos_eval_prepare_boundary_raise`, which sets `ctx->terminal`, and the drain and `kos_eval_goal_thread` return a RAISE with `terminal` set as it stands (§4.1). Nothing else in a goal drive sets `terminal`.
 
 ### 2.3 Phase 3: Pending Exception Check
 
@@ -746,9 +746,10 @@ continuation-signal test → goal abandon (non-signal only) →
 `handle_continuation_apply` → `kos_dyn_unwind_raise` → outcome map
 (REPROLOGUE / RESUME into the live frame's resume / AWAIT with
 suspension tagging / RAISE / FATAL). The one non-ingress carve-out is in
-`kos_eval_drain_goal`: a foreign cc-unwind's boundary raise (signal
-delivery, not a failed transfer) is returned as it stands and never
-reaches `kos_dyn_unwind_raise`.
+`kos_eval_drain_goal` and `kos_eval_goal_thread`: a foreign cc-unwind's
+boundary raise (signal delivery, not a failed transfer), a RAISE with
+`ctx->terminal` set, is returned as it stands and never comes back
+through `process_raise`.
 
 ```mermaid
 flowchart TD
@@ -1839,7 +1840,7 @@ Tests: `TestDelimitedTransferNested` in `tests/compile/specials/test_continuatio
 ### 9.8 Scenario: Transfer Goal Step Fails
 
 1. A goal is being processed. A leave or enter answers RAISE (a thunk raised synchronously, `__exit__` refused, the seam went missing).
-2. **Foreign cc-unwind delivery:** `kos_xfer_goal_drive` reports `out_boundary`, and `kos_eval_drain_goal` returns the boundary raise as it stands; no `kos_dyn_unwind_raise`.
+2. **Foreign cc-unwind delivery:** from the context's root the delivery prepares the boundary raise, which sets `ctx->terminal`; `kos_eval_drain_goal` and `kos_eval_goal_thread` return a RAISE with `terminal` set as it stands; no second `process_raise`.
 3. **Ordinary failure:** `process_raise` frees the goals not waiting on a live thunk and runs `kos_dyn_unwind_raise`. `EVAL_REPROLOGUE()` continues the loop when a handler applies; `EVAL_RAISE()` propagates when unhandled.
 4. **Async unwind during abandonment:** when the raise walk pops an extent whose exit is async, `process_raise` tags `KOS_SUSP_AWAIT` and the `EVAL_AWAIT` reaches the caller; the revive settles the node and the walk continues.
 5. **Thunk bytecode raise** under a waiting goal: the goal stays while the thunk's frame is above its node. A raise the thunk catches leaves the transfer going; one that leaves the thunk frees the goal when the raise walk unlinks the node it waits on (`kos_xfer_goal_thunk_died`).
@@ -2214,8 +2215,9 @@ unlinked (every outer when the seam is NULL);
 at, a `KOS_DYN_CAP_WINDS` node (WIND, PARAM, dyn-with), and the goal step
 goes back to ATTACHING while target remains; `goal_deliver` pushes the payload,
 or stages it in the pending slot when the frame delivered to carries a
-resume, or prepares the boundary raise for a cc-unwind
-(freeing every goal and setting `out_boundary`). `goal_wait` records the
+resume, or raises a cc-unwind's signal: from the context's root as the
+boundary raise (freeing every goal; `ctx->terminal` is set), from any
+other seam at the live frame (retiring only this goal). `goal_wait` records the
 frontier and marks it `KOS_DYNF_GOAL_WAIT` when a leave or enter answers
 REPROLOGUE or AWAIT; LEAVING that unlinks a marked node voids the outer
 goal waiting on it. `goal_wind_out` and `goal_wind_in` are the two phases
@@ -2448,9 +2450,9 @@ void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal);
 void kos_xfer_goal_abandon_all(KosContext *ctx);
 
 /* Proceed as far as the chain allows: NORMAL (none left, or waiting),
-   REPROLOGUE (a frame was installed), AWAIT, RAISE (*out_boundary = 1 for
-   a foreign cc-unwind's boundary raise) */
-KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary);
+   REPROLOGUE (a frame was installed), AWAIT, RAISE (with ctx->terminal
+   set for a foreign cc-unwind's boundary raise) */
+KosOpResult kos_xfer_goal_drive(KosContext *ctx);
 
 int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node);
 

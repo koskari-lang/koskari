@@ -1127,7 +1127,6 @@ static int test_wind_out_and_in(void) {
     KosDynNode *top;
     KosXferPiece *pieces;
     KosContext *ctx;
-    int boundary = 0;
 
     TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
     TEST_ASSERT_NOT_NULL(val, "create a value to yield");
@@ -1198,7 +1197,7 @@ static int test_wind_out_and_in(void) {
         TEST_ASSERT(KosDynTry_EXC(trys[1])->state == KOS_EXC_FROZEN,
                     "the effect inside it is not");
 
-        TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx, &boundary).kind,
+        TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind,
                        KOS_RES_NORMAL, "the goal enters and attaches");
         TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
         TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");

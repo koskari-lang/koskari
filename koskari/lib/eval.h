@@ -845,10 +845,13 @@ struct KosContext {
                          up */
   uint8_t terminal;         /* the result in flight is a boundary that
                          has been through its event: a raise walked to
-                         no handler, a suspension recorded for AWAIT or
-                         YIELD, a root return. The trampoline and the
-                         resume delivery leave with it instead of
-                         applying it again */
+                         no handler, a foreign cc-unwind's signal
+                         raised from the root, a suspension recorded
+                         for AWAIT or YIELD, a root return. The
+                         trampoline and the resume delivery leave with
+                         it instead of applying it again, and the goal
+                         drain and goal thread return a transfer's
+                         answer as it stands when it is set */
 
   /* Last eval boundary reason for revive */
   uint8_t suspension_event;  /* KosSuspensionEvent */

@@ -785,11 +785,14 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
    and the ingress there judges its token as it would have had the
    awaiter called the thread from the start. Only this goal retires
    then: the awaiter's own goals are the raise's to judge.
+
+   From the root the raise is prepared as the boundary raise, which sets
+   ctx->terminal: that is the record by which the drain and the goal
+   thread return the answer as it stands, without the raise ingress.
 */
 static KOS_NOINLINE KosOpResult goal_deliver_signal(
     KosContext *ctx,
-    KosXferGoal *goal,
-    int *out_boundary) {
+    KosXferGoal *goal) {
 
   PyErr_SetObject((PyObject *) Py_TYPE(goal->payload), goal->payload);
 
@@ -802,7 +805,6 @@ static KOS_NOINLINE KosOpResult goal_deliver_signal(
 
   kos_eval_prepare_boundary_raise(ctx);
   kos_xfer_goal_abandon_all(ctx);
-  *out_boundary = 1;
   return EVAL_RAISE();
 }
 
@@ -825,13 +827,10 @@ static KOS_NOINLINE KosOpResult goal_deliver_signal(
    the instruction the transfer left: it is cleared and the payload is
    pushed.
 */
-static KosOpResult goal_deliver(
-    KosContext *ctx,
-    KosXferGoal *goal,
-    int *out_boundary) {
+static KosOpResult goal_deliver(KosContext *ctx, KosXferGoal *goal) {
 
   if (unlikely(goal->is_cc_unwind))
-    return goal_deliver_signal(ctx, goal, out_boundary);
+    return goal_deliver_signal(ctx, goal);
 
   if (! KosContext_FRAME(ctx)) {
     PyErr_SetString(PyExc_SystemError,
@@ -989,14 +988,10 @@ void kos_xfer_goal_take_entry(
 /**
    Drive the active goal as far as the chain allows, and each outer it
    retires into; with only set, stop once only is no longer the active
-   goal.
+   goal. A RAISE with ctx->terminal set is a cc-unwind's boundary
+   raise, already prepared (goal_deliver_signal).
 */
-static KosOpResult goal_drive(
-    KosContext *ctx,
-    const KosXferGoal *only,
-    int *out_boundary) {
-
-  *out_boundary = 0;
+static KosOpResult goal_drive(KosContext *ctx, const KosXferGoal *only) {
 
   while (KosContext_GOAL(ctx) && (! only || KosContext_GOAL(ctx) == only)) {
     KosXferGoal *goal = KosContext_GOAL(ctx);
@@ -1060,7 +1055,7 @@ static KosOpResult goal_drive(
         /* fall through */
       case KOS_GOAL_DELIVERING:
       default:
-        r = goal_deliver(ctx, goal, out_boundary);
+        r = goal_deliver(ctx, goal);
         if (r.kind != KOS_RES_NORMAL)
           return r;
         break;
@@ -1070,8 +1065,8 @@ static KosOpResult goal_drive(
 }
 
 
-KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
-  return goal_drive(ctx, NULL, out_boundary);
+KosOpResult kos_xfer_goal_drive(KosContext *ctx) {
+  return goal_drive(ctx, NULL);
 }
 
 
@@ -1150,7 +1145,6 @@ KOS_OP_INLINE KosOpResult goal_run(
     KosXferGoal *goal,
     const int kept) {
 
-  int boundary = 0;
   KosOpResult r;
 
   goal->in_place = kept ? 2 : 1;
@@ -1160,7 +1154,7 @@ KOS_OP_INLINE KosOpResult goal_run(
      path the transfer replaces is dropped */
   Py_CLEAR(KosContext_PENDING_VALUE(ctx));
 
-  r = goal_drive(ctx, goal, &boundary);
+  r = goal_drive(ctx, goal);
 
   if (! kept) {
     int linked = 0;
@@ -1195,14 +1189,13 @@ KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal) {
 KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx) {
 
   KosXferGoal *goal = KosContext_GOAL(ctx);
-  int boundary = 0;
 
   /* as the prologue does ahead of a drive: a goal whose frame has just
      returned may find the frame's result staged, which its settle
      takes; any other staged delivery is dropped */
   if (! goal->frontier)
     Py_CLEAR(KosContext_PENDING_VALUE(ctx));
-  return goal_run_answer(ctx, goal_drive(ctx, goal, &boundary));
+  return goal_run_answer(ctx, goal_drive(ctx, goal));
 }
 
 

@@ -880,8 +880,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
 
   kos_xfer_goal_push(ctx, goal);
   {
-    int boundary = 0;
-    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
+    KosOpResult r = kos_xfer_goal_drive(ctx);
     TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
   }
   TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal retired");
@@ -1040,8 +1039,7 @@ static int test_capture_restore_apply_unnames_prior_before_clear(void) {
 
   kos_xfer_goal_push(ctx, goal);
   {
-    int boundary = 0;
-    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
+    KosOpResult r = kos_xfer_goal_drive(ctx);
     TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
   }
   observed_frame = NULL;

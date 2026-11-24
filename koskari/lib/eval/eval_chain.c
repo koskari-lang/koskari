@@ -112,8 +112,8 @@ KosEvaluatorToken *KosContext_Token(const KosContext *ctx) {
 /**
   Drive the active transfer goal as far as the chain allows and route its
   answer: a step failure enters the raise ingress, an awaitable is tagged
-  for the driver, and a foreign cc-unwind's boundary raise goes back as
-  it stands.
+  for the driver, and a foreign cc-unwind's boundary raise, a RAISE
+  with ctx->terminal set, goes back as it stands.
 
   :return: EVAL_NORMAL when no goal remains or the goal is waiting;
            EVAL_REPROLOGUE when a leave or enter installed a frame;
@@ -124,10 +124,9 @@ KosEvaluatorToken *KosContext_Token(const KosContext *ctx) {
 */
 static KosOpResult kos_eval_drain_goal(KosContext *ctx) {
 
-  int boundary = 0;
-  KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
+  KosOpResult r = kos_xfer_goal_drive(ctx);
 
-  if (boundary)
+  if (ctx->terminal)
     return r;
 
   /* a generator's yield whose last winder is left: the span rests and

@@ -1,0 +1,72 @@
+;; Reproducer: a continuation captured by one evaluation and called
+;; from a coroutine or generator another evaluation steps. The signal
+;; leaves the escaping context's extents down to its root and goes up
+;; to the owner as it stands. Leaving a dyn-wind's after segment or a
+;; dyn-with's Koskari __exit__ runs a frame, and its return delivers
+;; the signal from the transfer's own run rather than from the
+;; prologue.
+
+
+(def wound [log k]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (k "wound"))
+    (after: (log.append "out"))))
+
+
+(def nested [log k]
+  (dyn-wind (log.append "in1")
+            (dyn-wind (log.append "in2")
+                      (k "nested")
+                      (log.append "out2"))
+            (log.append "out1")))
+
+
+(def caught [log k]
+  (try
+    (wound log k)
+    ([e BaseException] (log.append "handler") "caught")))
+
+
+(def finished [log k]
+  (try
+    (wound log k)
+    (except: (log.append "handler") "caught")
+    (finally: (log.append "finally"))))
+
+
+(def generated [log k]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (yield 1) (k "generated") (yield 2))
+    (after: (log.append "out"))))
+
+
+(class Manager ()
+  (begin
+    (def __init__ [self log]
+      (set-attr self log log))
+    (def __enter__ [self]
+      (self.log.append "enter")
+      self)
+    (def __exit__ [self typ val tb]
+      (self.log.append "exit")
+      False)))
+
+
+(def managed [log k]
+  (dyn-with [m (Manager log)]
+    (k "managed")))
+
+
+(def owner [log helper fn]
+  (define r
+    (call/cc
+      (lambda [k]
+        (helper fn log k)
+        "not reached")))
+  (log.append r)
+  log)
+
+
+;; The end.

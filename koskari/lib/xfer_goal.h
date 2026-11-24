@@ -285,17 +285,17 @@ void kos_xfer_goal_thunk_died(
 
 /**
    Drive the active goal, and each outer it retires into, as far as the
-   chain allows.
+   chain allows. A RAISE with ctx->terminal set is a foreign
+   cc-unwind's signal, already prepared as a boundary raise and every
+   goal abandoned: the caller returns it to the driver as it stands,
+   without the raise ingress. Nothing else in a drive sets terminal.
 
-   :param out_boundary: set to 1 when the answer is a RAISE the caller
-     must return to the driver as it stands (a foreign cc-unwind's
-     signal, already prepared as a boundary raise), 0 otherwise
    :return: EVAL_NORMAL when no goal remains or the active goal is
      waiting; EVAL_REPROLOGUE when a leave or enter installed a frame;
      EVAL_AWAIT with the awaitable when one suspended; EVAL_RAISE with
      PyErr set when a step failed, or on a boundary raise
 */
-KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary);
+KosOpResult kos_xfer_goal_drive(KosContext *ctx);
 
 
 /**
@@ -354,8 +354,9 @@ KosOpResult kos_xfer_goal_run_kept(KosContext *ctx, KosXferGoal *goal);
    (kos_dyn_gen_install), run from the step once the step has handed
    it what it sends; and a goal whose frame has just returned onto the
    node it waits on, run from that return. The answers are
-   kos_xfer_goal_run's, and YIELD from a generator's yield whose last
-   winder is left.
+   kos_xfer_goal_run's, YIELD from a generator's yield whose last
+   winder is left, and, for a cc-unwind goal, the boundary raise as
+   kos_xfer_goal_drive answers it, a RAISE with ctx->terminal set.
 */
 KosOpResult kos_xfer_goal_run_pushed(KosContext *ctx);
 

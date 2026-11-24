@@ -862,9 +862,11 @@ own_fail:
    ingress converges here: post-opcode results (apply_kos_op_result),
    the prologue's pending PyErr (kos_eval_prologue),
    revive-throw (eval_phase_entry KOS_MODE_EXCEPTION), and transfer goal
-   step failures (kos_eval_drain_goal).  One deliberate non-ingress
-   carve-out lives in kos_eval_drain_goal: a foreign cc-unwind's boundary
-   raise (signal delivery, not a failed transfer; must not see try_local).
+   step failures (kos_eval_drain_goal, kos_eval_goal_thread).  One
+   deliberate non-ingress carve-out lives in kos_eval_drain_goal and
+   kos_eval_goal_thread: a foreign cc-unwind's boundary raise, a RAISE
+   with ctx->terminal set (signal delivery, not a failed transfer; it
+   is already through its event and must not come here).
 
    Ordering contract:
      1. guard        - no PyErr: SystemError + prepare_boundary_raise,
@@ -1658,8 +1660,10 @@ static KosOpResult kos_op_call_star(
    Run the active goal, which will drive, and thread on its answer:
    what the prologue's drain does (kos_eval_drain_goal), without the
    pass. A generator's yield whose last winder is left rests the span
-   and presents the value; any other answer is relayed as an
-   instruction's is. insn and val are unused.
+   and presents the value; a foreign cc-unwind's boundary raise, a
+   RAISE with ctx->terminal set, goes back to the trampoline as it
+   stands; any other answer is relayed as an instruction's is. insn
+   and val are unused.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_eval_goal_thread(
     KosContext *ctx,
@@ -1685,6 +1689,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_eval_goal_thread(
       TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
     return r;
   }
+  /* a foreign cc-unwind's boundary raise, through its event already */
+  if (unlikely(r.kind == KOS_RES_RAISE && ctx->terminal))
+    return r;
   RESULT_RELAY(ctx, r);
 }
 
