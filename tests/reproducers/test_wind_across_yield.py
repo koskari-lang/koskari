@@ -257,6 +257,45 @@ SRC = """
     (log.append x)
     (gate.append "await"))
   log)
+
+
+(def deepening [log]
+  (dyn-wind
+    (before: (log.append "a-in"))
+    (body:
+      (yield 1)
+      (dyn-wind
+        (before: (log.append "b-in"))
+        (body: (yield 2))
+        (after: (log.append "b-out"))))
+    (after: (log.append "a-out"))))
+
+
+(def managed_slow [log]
+  (dyn-with [c (SlowCtx log)]
+    (yield 1)
+    (yield 2))
+  (yield 3))
+
+
+(def slow_after [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (yield 1) (yield 2))
+    (after: (log.append "out") (await (Suspender)) (log.append "out2"))))
+
+
+(def self_stepping [log box]
+  (dyn-wind
+    (before:
+      (log.append "in")
+      (try (next (item box 0))
+        ([e RuntimeError] (log.append "in-refused"))))
+    (body: (yield 1) (yield 2))
+    (after:
+      (log.append "out")
+      (try (next (item box 0))
+        ([e RuntimeError] (log.append "out-refused"))))))
 """
 
 
@@ -318,6 +357,43 @@ class Suspender:
         return "woken"
 
 
+class Settling:
+    """
+    A Python awaitable that suspends once with "suspended", then logs
+    its tag and completes with False
+    """
+
+    def __init__(self, log, tag):
+        self.log = log
+        self.tag = tag
+
+
+    def __await__(self):
+        yield "suspended"
+        self.log.append(self.tag)
+        return False
+
+
+class SlowCtx:
+    """
+    A context manager whose enter and exit each log, then hand back an
+    awaitable that suspends once
+    """
+
+    def __init__(self, log):
+        self.log = log
+
+
+    def __enter__(self):
+        self.log.append("enter")
+        return Settling(self.log, "entered")
+
+
+    def __exit__(self, exc_type, exc, tb):
+        self.log.append("exit")
+        return Settling(self.log, "exited")
+
+
 class Unraisables:
     """
     Collects sys.unraisablehook reports for the extent of a block
@@ -345,7 +421,8 @@ async def load():
 
     module = new_module("wind_across_yield")
     vars(module)["__file__"] = "<wind_across_yield>"
-    vars(module).update(Ctx=Ctx, Flaky=Flaky, Suspender=Suspender)
+    vars(module).update(
+        Ctx=Ctx, Flaky=Flaky, Suspender=Suspender, SlowCtx=SlowCtx)
     await load_module_source_async(module, SRC)
     return module
 
@@ -670,6 +747,48 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await drain(self.mod.local_only(log), log), expect)
 
 
+    async def test_a_later_yield_under_more_winders(self):
+        """
+        The second yield is under two dyn-winds, the first under one:
+        each yield leaves every extent around it and each step enters
+        them again, outermost first
+        """
+
+        expect = ["a-in", "a-out", 1,
+                  "a-in", "b-in", "b-out", "a-out", 2,
+                  "a-in", "b-in", "b-out", "a-out"]
+
+        log = []
+        self.assertEqual(
+            await self.mod.collect(self.mod.deepening(log), log), expect)
+
+        log = []
+        self.assertEqual(await drain(self.mod.deepening(log), log), expect)
+
+
+    async def test_segment_stepping_its_own_generator_is_refused(self):
+        """
+        A segment that steps the generator it winds is refused as a
+        re-entrant step is: at the first entry, at each yield's leave
+        and at each step's re-entry. The generator goes on undisturbed
+        """
+
+        seg = ["in", "in-refused", "out", "out-refused"]
+        expect = seg + [1] + seg + [2] + seg
+
+        log = []
+        box = []
+        gen = self.mod.self_stepping(log, box)
+        box.append(gen)
+        self.assertEqual(await self.mod.collect(gen, log), expect)
+
+        log = []
+        box = []
+        gen = self.mod.self_stepping(log, box)
+        box.append(gen)
+        self.assertEqual(await drain(gen, log), expect)
+
+
 class TestWindAcrossYieldFinalizer(unittest.TestCase):
     """
     A generator dropped at a yield inside a dyn-wind is closed where it
@@ -771,6 +890,47 @@ class TestWindAcrossYieldDemand(unittest.TestCase):
         self.assertEqual(suspended, ["suspended", "suspended"])
         self.assertEqual(done.exception.value, [1, 2])
         self.assertEqual(log, ["in", "out", "in", "out", "in", "out"])
+
+
+    def test_dyn_with_awaits_in_its_exit_and_its_enter(self):
+        """
+        An exit that hands back an awaitable suspends the yield's leave
+        and an enter that does suspends the step's re-entry; each
+        completes before the value is presented or the body goes on
+        """
+
+        log = []
+        coro = drain(self.mod.managed_slow(log), log)
+        suspended = []
+        with self.assertRaises(StopIteration) as done:
+            while True:
+                suspended.append(coro.send(None))
+        self.assertEqual(suspended, ["suspended"] * 6)
+        self.assertIs(done.exception.value, log)
+        self.assertEqual(log, [
+            "enter", "entered", "exit", "exited", 1,
+            "enter", "entered", "exit", "exited", 2,
+            "enter", "entered", "exit", "exited", 3])
+
+
+    def test_wind_out_under_a_python_step(self):
+        """
+        next() from Python is a demand step: the after segment a yield
+        runs is refused at its await, the value is never presented, and
+        the raise leaves through the generator, which is done
+        """
+
+        log = []
+        it = iter(self.mod.slow_after(log))
+        with self.assertRaises(KoskariSyncViolation) as raised:
+            next(it)
+        self.assertEqual(
+            str(raised.exception),
+            "async suspension is not allowed in demand_sync")
+        self.assertEqual(log, ["in", "out"])
+        with self.assertRaises(StopIteration):
+            next(it)
+        self.assertEqual(log, ["in", "out"])
 
 
 # The end.

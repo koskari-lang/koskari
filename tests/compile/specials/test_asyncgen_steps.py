@@ -296,6 +296,28 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.step_out(g.__anext__()), ("raise", "StopAsyncIteration"))
 
+    def test_awaiting_coroutine_closed_in_an_after_segment(self):
+        """
+        A Koskari coroutine awaiting a step that suspended in the after
+        segment its yield runs, closed there: GeneratorExit is raised at
+        the segment's await on the awaiter's chain, the segment does not
+        finish, the value is never presented, and the generator is done
+        """
+
+        v = asyncio.run(self.load())
+        log = []
+        g = v["wound"](log)
+
+        outer = v["take_stepper"](g.__anext__())
+        self.assertEqual(outer.send(None), "suspended")
+        self.assertEqual(log, ["in", "out"])
+        outer.close()
+        self.assertEqual(log, ["in", "out"])
+
+        self.assertEqual(
+            self.step_out(g.__anext__()), ("raise", "StopAsyncIteration"))
+        self.assertEqual(log, ["in", "out"])
+
     async def test_refused_step_releases_the_generator(self):
         """
         A Koskari await of a second step while the generator is busy

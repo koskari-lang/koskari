@@ -44,6 +44,16 @@
           (log.append "after2"))))))
 
 
+(def on_exit [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body: (yield 1) (yield 2))
+    (after:
+      (log.append "out")
+      (await (Suspender))
+      (log.append "out2"))))
+
+
 (def managed [mgr]
   (dyn-with [c mgr]
     (yield 1)

@@ -1386,6 +1386,211 @@ static int test_wind_goal_outlives_the_state_clear(void) {
 }
 
 
+/* Push a dyn-wind, entered, and a frame on it. Returns 0, or -1. */
+static int push_entered_wind(
+    KosContext *ctx,
+    KosDynNode **wind,
+    KosDynNode **top) {
+
+    *wind = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
+    TEST_ASSERT_NOT_NULL(*wind, "push a wind");
+    KosDynWind_ENTERED(*wind) = 1;
+    *top = (KosDynNode *) kos_dyn_push_frame_empty(ctx);
+    TEST_ASSERT_NOT_NULL(*top, "push a frame on it");
+    return 0;
+}
+
+
+/* On an installed span of a root frame, a dyn-wind and a frame: yield
+   under the one winder, enter it again, then push a second dyn-wind
+   and a frame on the first frame. Returns 0, or -1. */
+static int grow_one_winder_span(
+    KosContext *ctx,
+    PyObject *owner,
+    PyObject *val,
+    KosGenState *state,
+    KosDynNode **winds,
+    KosDynNode **tops) {
+
+    TEST_ASSERT_EQ(push_entered_wind(ctx, &winds[0], &tops[0]), 0,
+                   "the outer wind");
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield under one");
+    TEST_ASSERT_EQ(state->piece_count, 1, "one winder is recorded");
+    TEST_ASSERT_EQ(state->piece_cap, 1, "the allocation holds one");
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, state), 1,
+                   "the install stops at the winder");
+    TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+                   "the goal enters it and attaches");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), tops[0], "the span is back");
+    TEST_ASSERT_EQ(push_entered_wind(ctx, &winds[1], &tops[1]), 0,
+                   "the inner wind");
+    return 0;
+}
+
+
+/* The second yield of a span has two winders, one more than the
+   pieces allocation holds after the first: the allocation grows, the
+   records are made in it, and the goal that enters them is at its
+   head. A third yield with as many winders reallocates nothing. */
+static int test_pieces_grow_between_yields(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *winds[2];
+    KosDynNode *tops[2];
+    KosXferPiece *pieces;
+    KosXferGoal *goal;
+    KosContext *ctx;
+    Py_ssize_t owner_refs;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+    owner_refs = Py_REFCNT(owner);
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+    TEST_ASSERT_EQ(
+        grow_one_winder_span(ctx, owner, val, &state, winds, tops), 0,
+        "a second wind on a span yielded under one");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield under two");
+    TEST_ASSERT_EQ(state.piece_cap, 2, "the allocation grew to two");
+    TEST_ASSERT_EQ(state.piece_count, 2, "both winders are recorded");
+    TEST_ASSERT_SAME(state.pieces[0].regs.top, winds[0], "outermost first");
+    TEST_ASSERT_SAME(state.pieces[0].rest, tops[0],
+                     "with the frame resting on it");
+    TEST_ASSERT_SAME(state.pieces[1].regs.top, winds[1], "then the inner");
+    TEST_ASSERT_SAME(state.pieces[1].rest, tops[1], "under the top frame");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs, "no goal holds the owner");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
+                   "the install stops at the outermost winder");
+    goal = KosContext_GOAL(ctx);
+    TEST_ASSERT_NOT_NULL(goal, "a goal is pushed");
+    TEST_ASSERT_SAME((KosXferPiece *) (goal + 1), state.pieces,
+                     "at the head of the grown allocation");
+    TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+                   "the goal enters both and attaches");
+    TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), tops[1], "the span is back");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(tops[0]), winds[0], "whole");
+    for (int i = 0; i < 2; i++)
+        TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 1,
+                       "the wind is entered");
+    TEST_ASSERT(kos_dyn_skips_hold(tops[1], NULL), "the skip links hold");
+
+    pieces = state.pieces;
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0,
+                   "yield under two again");
+    TEST_ASSERT_SAME(state.pieces, pieces, "the grown allocation is kept");
+    TEST_ASSERT_EQ(state.piece_cap, 2, "at two");
+
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_NULL(state.pieces, "the clear frees the records");
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    return 0;
+}
+
+
+/* The same second yield with the grow refused: MemoryError, the list
+   emptied, and the chain, the winders and the allocation as they were.
+   A later yield grows the allocation. */
+static int test_pieces_grow_refused_changes_nothing(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *winds[2];
+    KosDynNode *tops[2];
+    KosXferPiece *pieces;
+    KosXferGoal *goal;
+    KosDynGen *gen;
+    KosContext *ctx;
+    Py_ssize_t owner_refs;
+    int refused;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+    owner_refs = Py_REFCNT(owner);
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+    TEST_ASSERT_EQ(
+        grow_one_winder_span(ctx, owner, val, &state, winds, tops), 0,
+        "a second wind on a span yielded under one");
+
+    gen = kos_dyn_find_gen(ctx);
+    TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 1,
+                   "a span with winders is not frozen");
+    pieces = state.pieces;
+
+    test_refuse_realloc_begin(0);
+    goal = kos_dyn_gen_wind_out_begin(ctx, gen, val);
+    refused = test_refuse_realloc_end();
+
+    TEST_ASSERT_NULL(goal, "the records cannot be made");
+    TEST_ASSERT_EQ(refused, 1, "the grow was refused");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
+                "with MemoryError");
+    PyErr_Clear();
+    TEST_ASSERT_SAME(state.pieces, pieces, "the allocation stands");
+    TEST_ASSERT_EQ(state.piece_cap, 1, "at one");
+    TEST_ASSERT_EQ(state.piece_count, 0, "nothing is recorded");
+    TEST_ASSERT_EQ(state.wound_count, 0, "nothing is listed");
+    TEST_ASSERT_EQ(state.effects.count, 0, "the list is emptied");
+    TEST_ASSERT_NULL(KosContext_GOAL(ctx), "no goal is pushed");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs, "nothing holds the owner");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), tops[1], "the chain is whole");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(tops[0]), winds[0], "and uncut");
+    for (int i = 0; i < 2; i++)
+        TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 1, "no wind is left");
+    TEST_ASSERT(kos_dyn_skips_hold(tops[1], NULL), "the skip links hold");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "a later yield works");
+    TEST_ASSERT_EQ(state.piece_cap, 2, "and grows the allocation");
+
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    return 0;
+}
+
+
 /* === Effects refused at an install === */
 
 
@@ -1633,6 +1838,114 @@ static int test_winding_install_refused_takes_effects_out_again(void) {
 }
 
 
+/* A span of a root frame, a dyn-wind, a handling TRY, a PARAM bound by
+   a RefusingKey, a second dyn-wind and a frame on top. The yield lists
+   the inner wind, the PARAM, the TRY and the outer wind. The install
+   stops at the outer wind; once it is entered, the attach puts back
+   what lies between the two winds, the TRY first. The PARAM refuses:
+   the TRY goes out again and nothing is attached. The goal given up by
+   the raise frees what it held. */
+static int test_winding_attach_refused_takes_effects_out_again(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *type = PyType_FromSpecWithBases(
+        &refusing_key_spec, (PyObject *) &PyUnicode_Type);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *winds[2];
+    KosDynNode *try_;
+    KosDynNode *param;
+    KosDynNode **items;
+    KosContext *ctx;
+    KosOpResult r;
+    Py_ssize_t owner_refs;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT_NOT_NULL(type, "create the refusing key type");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    winds[0] = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
+    TEST_ASSERT_NOT_NULL(winds[0], "push the outer wind");
+    KosDynWind_ENTERED(winds[0]) = 1;
+    try_ = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(try_, "push a try");
+    KosDynTry_EXC(try_)->state = KOS_EXC_HANDLING;
+    param = push_refusing_param(ctx, type);
+    TEST_ASSERT_NOT_NULL(param, "push the param");
+    winds[1] = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
+    TEST_ASSERT_NOT_NULL(winds[1], "push the inner wind");
+    KosDynWind_ENTERED(winds[1]) = 1;
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
+    items = effects_items(&state.effects);
+    TEST_ASSERT_EQ(state.wound_count, 4, "both winds and both effects");
+    TEST_ASSERT_EQ(state.piece_count, 2, "two winders are recorded");
+    TEST_ASSERT_SAME(items[0], winds[1], "the inner wind innermost");
+    TEST_ASSERT_SAME(items[1], param, "then the param");
+    TEST_ASSERT_SAME(items[2], try_, "then the try");
+    TEST_ASSERT_SAME(items[3], winds[0], "then the outer wind");
+    owner_refs = Py_REFCNT(owner);
+
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
+                   "the install stops at the outer wind");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0], "which is the top");
+    TEST_ASSERT_NULL(KosDynNode_PARENT(try_), "what rests on it is cut off");
+
+    refuse_hash = 1;
+    r = kos_xfer_goal_drive(ctx);
+    refuse_hash = 0;
+
+    TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "the attach refuses");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "with the param's error");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out again");
+    TEST_ASSERT_NULL(KosDynNode_PARENT(try_), "nothing is attached");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0],
+                     "the outer wind is the top");
+    TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[0]), 1, "and is entered");
+    TEST_ASSERT_NOT_NULL(KosContext_GOAL(ctx), "the goal is still pushed");
+
+    /* the raise ingress gives the goal up with the error in hand */
+    kos_xfer_goal_abandon_stepping(ctx, 1);
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "the error stands");
+    PyErr_Clear();
+    TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal is given up");
+    TEST_ASSERT_EQ(state.piece_count, 0, "with the records");
+    TEST_ASSERT_EQ(state.wound_count, 0, "and the list");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs, "and the owner");
+    TEST_ASSERT(kos_dyn_skips_hold(winds[0], NULL), "the skip links hold");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield to tear down");
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    Py_DECREF(type);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -1698,10 +2011,13 @@ int run_dynchain_tests(void) {
     /* Winding across a yield */
     RUN_TEST(test_wind_out_and_in);
     RUN_TEST(test_wind_goal_outlives_the_state_clear);
+    RUN_TEST(test_pieces_grow_between_yields);
+    RUN_TEST(test_pieces_grow_refused_changes_nothing);
 
     /* Effects refused at an install */
     RUN_TEST(test_install_refused_takes_effects_out_again);
     RUN_TEST(test_winding_install_refused_takes_effects_out_again);
+    RUN_TEST(test_winding_attach_refused_takes_effects_out_again);
 
     return 0;
 }

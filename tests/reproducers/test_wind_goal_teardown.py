@@ -266,4 +266,56 @@ class TestWindGoalTeardown(unittest.TestCase):
         self.assertEqual(seen, [IGNORED])
 
 
+    def test_step_closed_in_an_after_segment(self):
+        """
+        A step suspended in the after segment its yield runs, closed:
+        GeneratorExit is raised at the segment's await, the segment
+        does not finish, the value is never presented, and the
+        generator is done
+        """
+
+        log = []
+        gen = self.mod.on_exit(log)
+        step = gen.__anext__()
+        self.assertEqual(step.send(None), "suspended")
+        self.assertEqual(log, ["in", "out"])
+
+        with unraisables() as seen:
+            self.assertIsNone(step.close())
+
+        self.assertEqual(log, ["in", "out"])
+        self.assertEqual(seen, [])
+        with self.assertRaises(StopAsyncIteration):
+            gen.__anext__().send(None)
+        self.assertEqual(log, ["in", "out"])
+
+
+    def test_step_thrown_into_in_a_before_segment(self):
+        """
+        A step suspended in the before segment that re-enters its
+        dyn-wind, thrown into: the exception is raised at the segment's
+        await, the extent is never entered and its after segment does
+        not run, and the step raises the exception unlinked, since the
+        step itself carried no throw
+        """
+
+        log = []
+        gate = []
+        gen = self.mod.on_entry(log, gate)
+        self.assertEqual(self.first_step(gen), 1)
+        gate.append(1)
+
+        step = gen.__anext__()
+        self.assertEqual(step.send(None), "suspended")
+        self.assertEqual(log, ["in", "in2", "out", "in"])
+
+        with self.assertRaises(KeyError) as raised:
+            step.throw(KeyError("thrown"))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertEqual(log, ["in", "in2", "out", "in"])
+        with self.assertRaises(StopAsyncIteration):
+            gen.__anext__().send(None)
+        self.assertEqual(log, ["in", "in2", "out", "in"])
+
+
 # The end.
