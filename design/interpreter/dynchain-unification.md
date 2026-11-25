@@ -661,7 +661,9 @@ As implemented:
 - **Two goal phases.** `KOS_GOAL_WINDING_OUT` and `KOS_GOAL_WINDING_IN`
   work through the generator's own records. Neither has a target clone
   or a seam, and neither runs `goal_leave` or `goal_attach`: the nodes
-  stay the generator's, and a cut is one parent write.
+  are the generator's own, never copies, and a cut is one parent
+  write. While a cut exists the goal holds the part cut off, in
+  `target`, and frees and traverses it.
 - **The list is mixed.** The freeze lists the winders among the
   effects, in chain order, and answers 1 with nothing changed. The
   yield then records each winder's piece, the node resting on it and,

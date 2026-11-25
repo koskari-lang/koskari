@@ -116,8 +116,9 @@ typedef struct KosXferRestore {
 struct KosXferGoal {
   KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
 
-  /* owned clone still to attach, NULL once all of it is attached or
-     when there is nothing to attach */
+  /* owned: a transfer's clone still to attach, or a winding goal's
+     part of the span cut off above the winder at dyn_top; NULL once
+     all of it is attached or when there is nothing to attach */
   KosDynNode *target;
   KosDynNode *seam;            /* borrowed: leave down to this node and
                                   attach to it; NULL means the root */
