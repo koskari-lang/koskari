@@ -109,21 +109,17 @@ KosDynFinally *kos_dyn_push_finally(KosContext *ctx, KosOp *handler_pc) {
 
 
 /**
-   Pop FINALLY when top. Callers: opcode POP_FINALLY.
+   Pop the FINALLY that is the top of the chain; the caller has read it
+   from there and tested its kind. Callers: opcode POP_FINALLY.
 */
 int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
-    PyErr_SetString(PyExc_RuntimeError, "FINALLY node is not at top of chain");
-    return -1;
-  }
-  {
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
-    kos_dyn_region_leave_exc((KosDynNode *) node);
-    kos_dyn_commit_dyn_top(ctx, parent);
-    KosDynNode_PARENT((KosDynNode *) node) = NULL;
-    kos_dynfinally_free(node);
-  }
+  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
+
+  kos_dyn_region_leave_exc((KosDynNode *) node);
+  kos_dyn_commit_dyn_top(ctx, parent);
+  KosDynNode_PARENT((KosDynNode *) node) = NULL;
+  kos_dynfinally_free(node);
   return 0;
 }
 

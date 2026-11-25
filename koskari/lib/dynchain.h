@@ -1606,10 +1606,12 @@ KosDynGen *kos_dyn_yield_gen(KosContext *ctx);
 
 
 /**
-   Pop a region from the dynamic chain.
+   Pop a region from the dynamic chain. The caller passes dyn_top as it
+   read it. kos_dyn_pop_try refuses a NULL or a node of another kind;
+   kos_dyn_pop_finally takes a node its caller has already tested.
 
    :param ctx: execution context
-   :param region: region to pop (must be dyn_top)
+   :param node: the region to pop, which is dyn_top
 */
 int kos_dyn_pop_try(KosContext *ctx, KosDynTry *node);
 int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node);

@@ -95,11 +95,13 @@ KosDynTry *kos_dyn_push_try(KosContext *ctx, KosOp *handler_pc) {
 
 
 /**
-   Pop TRY when it is top (fast path). Callers: opcode POP_TRY.
+   Pop the TRY that is the top of the chain. The caller passes the top
+   as it read it, untested: an empty chain or another kind is refused
+   here. Callers: opcode POP_TRY.
 */
 int kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
-    PyErr_SetString(PyExc_RuntimeError, "TRY node is not at top of chain");
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_TRY: the chain is empty");
     return -1;
   }
 
