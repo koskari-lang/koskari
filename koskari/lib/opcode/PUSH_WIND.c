@@ -33,7 +33,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (! wind)
     RESULT_RAISE();
 
-  wr = kos_dyn_extent_enter(ctx, (KosDynNode *) wind);
+  wr = kos_dyn_wind_call_enter(ctx, wind);
   if (wr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
 

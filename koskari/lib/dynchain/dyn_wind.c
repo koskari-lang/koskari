@@ -150,7 +150,7 @@ static KosOpResult kos_dyn_wind_fire(
    The enter call: the before segment, when the wind has one. See the
    extent machine in dynchain.c.
 */
-static KosOpResult kos_dyn_wind_call_enter(KosContext *ctx, KosDynWind *node) {
+KosOpResult kos_dyn_wind_call_enter(KosContext *ctx, KosDynWind *node) {
 
   if (! KosDynWind_BEFORE(node)) {
     KosDynWind_ENTERED(node) = 1;

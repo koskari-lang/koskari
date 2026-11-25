@@ -61,7 +61,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
   }
 
   KosDynFrame *const caller = KosContext_FRAME(ctx);
-  KosOpResult wr = kos_dyn_extent_enter(ctx, (KosDynNode *) with_node);
+  KosOpResult wr = kos_dyn_with_call_enter(ctx, with_node);
   /* AWAIT: __enter__ returned an awaitable and the node stays pending;
      the revive settles it with the awaited value and continues into
      the body. */

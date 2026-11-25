@@ -342,7 +342,7 @@ static void kos_dyn_with_exit_resume(KosContext *ctx, KosDynWith *node) {
 /**
    The enter call: __enter__. See the extent machine in dynchain.c.
 */
-static KosOpResult kos_dyn_with_call_enter(KosContext *ctx, KosDynWith *node) {
+KosOpResult kos_dyn_with_call_enter(KosContext *ctx, KosDynWith *node) {
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
 

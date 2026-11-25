@@ -60,7 +60,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
   }
 
   KosDynFrame *const caller = KosContext_FRAME(ctx);
-  KosOpResult wr = kos_dyn_extent_enter(ctx, (KosDynNode *) with_node);
+  KosOpResult wr = kos_dyn_with_call_enter(ctx, with_node);
 
   if (wr.kind == KOS_RES_RAISE) {
     kos_dyn_pop_with(ctx, with_node);

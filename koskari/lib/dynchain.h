@@ -1544,6 +1544,17 @@ KosDynWind *kos_dyn_push_wind(
 
 
 /**
+   Enter a wind fresh from kos_dyn_push_wind: phase IDLE, not entered.
+   Runs the before segment, or with none marks the wind entered. Any
+   other wind enters through kos_dyn_extent_enter.
+
+   :return: EVAL_NORMAL, EVAL_REPROLOGUE with the segment's frame
+     installed, or EVAL_RAISE
+*/
+KosOpResult kos_dyn_wind_call_enter(KosContext *ctx, KosDynWind *node);
+
+
+/**
    Push a region onto the dynamic chain. TRY and FINALLY take the
    handler instruction; LOOP and FOREACH take the break and continue
    targets.
@@ -1701,6 +1712,17 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *name,
     KosOp *resume_pc,
     uint32_t winds);
+
+
+/**
+   Enter a WITH fresh from kos_dyn_push_with_provisional: phase IDLE,
+   not entered. Calls __enter__ and binds its result when it returns
+   in hand. Any other WITH enters through kos_dyn_extent_enter.
+
+   :return: EVAL_NORMAL, EVAL_REPROLOGUE with __enter__'s frame
+     installed, EVAL_AWAIT, or EVAL_RAISE
+*/
+KosOpResult kos_dyn_with_call_enter(KosContext *ctx, KosDynWith *node);
 
 
 /**
