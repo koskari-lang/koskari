@@ -138,16 +138,9 @@ static KosOpResult kos_eval_drain_goal(KosContext *ctx) {
     return r;
 
   /* a generator's yield whose last winder is left: the span rests and
-     the value is presented */
-  if (r.kind == KOS_RES_YIELD) {
-    KosDynGen *gen = kos_dyn_yield_gen(ctx);
-
-    if (! gen) {
-      Py_DECREF(r.val);
-      return kos_eval_walk_outcome(ctx, EVAL_RAISE());
-    }
-    return eval_yield_wound(ctx, gen, r.val);
-  }
+     the value is presented, an answer the ingress passes as it is */
+  if (r.kind == KOS_RES_YIELD)
+    r = eval_goal_yielded(ctx, r.val);
   return kos_eval_walk_outcome(ctx, r);
 }
 

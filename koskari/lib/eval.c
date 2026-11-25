@@ -141,10 +141,7 @@ static KosOpResult eval_event_yield(
     KosDynGen *gen,
     PyObject *val);
 
-static KosOpResult eval_yield_wound(
-    KosContext *ctx,
-    KosDynGen *gen,
-    PyObject *val);
+static KosOpResult eval_goal_yielded(KosContext *ctx, PyObject *val);
 
 static KosOpResult eval_event_await(KosContext *ctx, PyObject *val);
 
@@ -1657,7 +1654,9 @@ static KosOpResult kos_op_call_star(
    Run the active goal, which will drive, and thread on its answer:
    what the prologue's drain does (kos_eval_drain_goal), without the
    pass. A generator's yield whose last winder is left rests the span
-   and presents the value; a foreign cc-unwind's boundary raise, a
+   and presents the value (eval_goal_yielded), and its answer, through
+   the ingress, threads into a resume or the prologue or goes back to
+   the trampoline as it stands; a foreign cc-unwind's boundary raise, a
    RAISE with ctx->terminal set, goes back to the trampoline as it
    stands; any other answer is relayed as an instruction's is. insn
    and val are unused.
@@ -1673,13 +1672,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_eval_goal_thread(
   (void) val;
 
   if (r.kind == KOS_RES_YIELD) {
-    KosDynGen *gen = kos_dyn_yield_gen(ctx);
-
-    if (! gen) {
-      Py_DECREF(r.val);
-      RESULT_RAISE();
-    }
-    r = kos_eval_walk_outcome(ctx, eval_yield_wound(ctx, gen, r.val));
+    r = kos_eval_walk_outcome(ctx, eval_goal_yielded(ctx, r.val));
     if (likely(r.kind == KOS_RES_RESUME))
       TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
     if (r.kind == KOS_RES_REPROLOGUE)
@@ -2627,9 +2620,10 @@ KOS_OP_INLINE KosOpResult eval_yield_present(KosContext *ctx, PyObject *val) {
 /**
    The rest of a yield whose span held winders, each now left: rest the
    span, which lists and takes out nothing more, and present the value.
-   Reached from the yield itself when no leave ran a frame, and from
-   the prologue's drain when the goal's last leave is done. val is
-   consumed.
+   Reached from the yield itself when no leave ran a frame, and through
+   eval_goal_yielded when the goal's last leave is done. Answers
+   RESUME, the terminal YIELD, or FATAL when the span could not rest;
+   never RAISE, AWAIT or REPROLOGUE. val is consumed.
 */
 static KOS_NOINLINE KosOpResult eval_yield_wound(
     KosContext *ctx,
@@ -2645,12 +2639,32 @@ static KOS_NOINLINE KosOpResult eval_yield_wound(
 
 
 /**
+   A winding goal's YIELD answer, from the run that left the span's
+   last winder after the yield's own pass (kos_eval_drain_goal,
+   kos_eval_goal_thread): the running frame's GEN rests the span and
+   the value is presented (eval_yield_wound). With no GEN the answer is
+   a raw RAISE with the lookup's error set, which the caller routes as
+   it routes its other raises. val is consumed.
+*/
+static KosOpResult eval_goal_yielded(KosContext *ctx, PyObject *val) {
+
+  KosDynGen *gen = kos_dyn_yield_gen(ctx);
+
+  if (! gen) {
+    Py_DECREF(val);
+    return EVAL_RAISE();
+  }
+  return eval_yield_wound(ctx, gen, val);
+}
+
+
+/**
    The freeze did not rest the span: frozen is its answer, and val is
    consumed. A span that holds a dyn-wind or a dyn-with has each left
    before the value is presented, innermost first, through a goal run
    from here. A leave that runs a frame or awaits ends the pass with
    that answer, already through the ingress, and the goal's last step
-   answers the yield from the prologue's drain. An effect list or a
+   answers the yield through eval_goal_yielded. An effect list or a
    goal that could not be sized raises at the yield, through the
    ingress too. The answer is the yield's own, whatever it is: this
    never goes back into eval_event_yield, which folds into the YIELD

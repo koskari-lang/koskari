@@ -1386,6 +1386,253 @@ static int test_wind_goal_outlives_the_state_clear(void) {
 }
 
 
+/* === Effects refused at an install === */
+
+
+/* While set, a RefusingKey's hash raises RuntimeError. A PARAM bound
+   by one then refuses its wind: kos_dynparam_enter records the prior
+   cell with a dict store, which hashes the key. */
+static int refuse_hash = 0;
+
+
+static Py_hash_t refusing_key_hash(PyObject *self) {
+    if (refuse_hash) {
+        PyErr_SetString(PyExc_RuntimeError, "refused hash");
+        return -1;
+    }
+    return PyUnicode_Type.tp_hash(self);
+}
+
+
+static PyType_Slot refusing_key_slots[] = {
+    {Py_tp_hash, (void *) refusing_key_hash},
+    {0, NULL},
+};
+
+
+/* a str subclass, as a PARAM's binding names a str */
+static PyType_Spec refusing_key_spec = {
+    "test_dynchain.RefusingKey",
+    0,
+    0,
+    Py_TPFLAGS_DEFAULT,
+    refusing_key_slots,
+};
+
+
+/* Push a PARAM binding a RefusingKey of type to True. Returns the
+   node, or NULL with an error set. */
+static KosDynNode *push_refusing_param(KosContext *ctx, PyObject *type) {
+
+    PyObject *key = PyObject_CallFunction(type, "s", "refusing");
+    PyObject *bindings = PyDict_New();
+    KosDynNode *node = NULL;
+
+    if (key && bindings && PyDict_SetItem(bindings, key, Py_True) == 0)
+        node = (KosDynNode *) kos_dyn_push_param_dict(ctx, bindings);
+    Py_XDECREF(bindings);
+    Py_XDECREF(key);
+    return node;
+}
+
+
+/* A span of a root frame, a handling TRY, a PARAM bound by a
+   RefusingKey and a frame on top. The freeze lists the PARAM then the
+   TRY, innermost first. The plain install puts the TRY back first;
+   the PARAM refuses, and the TRY goes out again. */
+static int test_install_refused_takes_effects_out_again(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *type = PyType_FromSpecWithBases(
+        &refusing_key_spec, (PyObject *) &PyUnicode_Type);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *try_;
+    KosDynNode *param;
+    KosDynNode *top;
+    KosDynNode **items;
+    KosContext *ctx;
+    int r;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(type, "create the refusing key type");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    try_ = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(try_, "push a try");
+    KosDynTry_EXC(try_)->state = KOS_EXC_HANDLING;
+    param = push_refusing_param(ctx, type);
+    TEST_ASSERT_NOT_NULL(param, "push the param");
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+    top = KosContext_DYN_TOP(ctx);
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze the span");
+    items = effects_items(&state.effects);
+    TEST_ASSERT_EQ(state.effects.count, 2, "both effects are listed");
+    TEST_ASSERT_SAME(items[0], param, "the param innermost");
+    TEST_ASSERT_SAME(items[1], try_, "then the try");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out");
+
+    refuse_hash = 1;
+    r = kos_dyn_gen_install(ctx, owner, &state);
+    refuse_hash = 0;
+
+    TEST_ASSERT_EQ(r, -1, "the install refuses");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "with the param's error");
+    PyErr_Clear();
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out again");
+    TEST_ASSERT_EQ(state.effects.count, 2, "the list stands");
+    TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
+    TEST_ASSERT_NULL(KosDynNode_PARENT(state.bottom),
+                     "off any GEN");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), (KosDynNode *) consumer,
+                     "the consumer is the chain's top");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
+                   "a later install works");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
+    TEST_ASSERT_EQ(state.effects.count, 0, "the list is used up");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_HANDLING,
+                "the try's effect is in");
+    TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze to tear down");
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(type);
+    return 0;
+}
+
+
+/* A span of a root frame, a handling TRY, a PARAM bound by a
+   RefusingKey, a dyn-wind and a frame on top. The yield lists the
+   wind, the PARAM and the TRY, innermost first. The install puts back
+   what is outside the wind, the TRY first; the PARAM refuses, the TRY
+   goes out again, and the span rests with no goal pushed. */
+static int test_winding_install_refused_takes_effects_out_again(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *type = PyType_FromSpecWithBases(
+        &refusing_key_spec, (PyObject *) &PyUnicode_Type);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *try_;
+    KosDynNode *param;
+    KosDynNode *wind;
+    KosDynNode *top;
+    KosDynNode **items;
+    KosContext *ctx;
+    Py_ssize_t owner_refs;
+    int r;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT_NOT_NULL(type, "create the refusing key type");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    try_ = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(try_, "push a try");
+    KosDynTry_EXC(try_)->state = KOS_EXC_HANDLING;
+    param = push_refusing_param(ctx, type);
+    TEST_ASSERT_NOT_NULL(param, "push the param");
+    wind = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
+    TEST_ASSERT_NOT_NULL(wind, "push a wind");
+    KosDynWind_ENTERED(wind) = 1;
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+    top = KosContext_DYN_TOP(ctx);
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
+    items = effects_items(&state.effects);
+    TEST_ASSERT_EQ(state.wound_count, 3, "the wind and both effects");
+    TEST_ASSERT_EQ(state.piece_count, 1, "one winder is recorded");
+    TEST_ASSERT_SAME(items[0], wind, "the wind innermost");
+    TEST_ASSERT_SAME(items[1], param, "then the param");
+    TEST_ASSERT_SAME(items[2], try_, "then the try");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out");
+    owner_refs = Py_REFCNT(owner);
+
+    refuse_hash = 1;
+    r = kos_dyn_gen_install(ctx, owner, &state);
+    refuse_hash = 0;
+
+    TEST_ASSERT_EQ(r, -1, "the install refuses");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "with the param's error");
+    PyErr_Clear();
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out again");
+    TEST_ASSERT_EQ(state.wound_count, 3, "the list stands");
+    TEST_ASSERT_EQ(state.piece_count, 1, "and the record");
+    TEST_ASSERT_NULL(KosContext_GOAL(ctx), "no goal is pushed");
+    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs,
+                   "the freed goal let go of the owner");
+    TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
+    TEST_ASSERT_NULL(KosDynNode_PARENT(state.bottom), "off any GEN");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), (KosDynNode *) consumer,
+                     "the consumer is the chain's top");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
+                   "a later install stops at the winder");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), wind, "which is the top");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_HANDLING,
+                "the try's effect is in");
+    TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+                   "the goal enters and attaches");
+    TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
+    TEST_ASSERT_EQ(KosDynWind_ENTERED(wind), 1, "the wind is entered");
+    TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield to tear down");
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    Py_DECREF(type);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -1451,6 +1698,10 @@ int run_dynchain_tests(void) {
     /* Winding across a yield */
     RUN_TEST(test_wind_out_and_in);
     RUN_TEST(test_wind_goal_outlives_the_state_clear);
+
+    /* Effects refused at an install */
+    RUN_TEST(test_install_refused_takes_effects_out_again);
+    RUN_TEST(test_winding_install_refused_takes_effects_out_again);
 
     return 0;
 }
