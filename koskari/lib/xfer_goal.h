@@ -130,7 +130,7 @@ struct KosXferGoal {
 
   /* what the clone of the target met: its bottom, its split points
      with their registers (shape.pieces, owned), and the registers at
-     its top; empty when there is no target */
+     its top; with no target only pieces is set, to NULL */
   KosCloneShape shape;
   size_t piece_next;           /* the entry the next ATTACHING splits at */
   size_t piece_entered;        /* entries whose node ENTERING has run */
@@ -189,10 +189,12 @@ struct KosXferGoal {
    payload is borrowed and a reference is taken; continuation_ref
    likewise. Cannot fail.
 
-   The shape is cleared only when there is no target. A caller with a
-   target sets the whole of shape to what its clone recorded, before or
-   after this call, and the goal then owns it: this call leaves it as
-   it stands.
+   Of the shape only pieces is set, to NULL, and only when there is no
+   target: a goal without one reads no other field of it but the
+   registers at its top, which a winding goal's caller sets. A caller
+   with a target sets the whole of shape to what its clone recorded,
+   before or after this call, and the goal then owns it: this call
+   leaves it as it stands.
 */
 void kos_xfer_goal_init(
     KosXferGoal *goal,

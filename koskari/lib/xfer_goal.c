@@ -48,9 +48,10 @@ void kos_xfer_goal_init(
   goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  /* with a target the shape is the caller's to set */
+  /* with a target the shape is the caller's to set; without one the
+     free reads pieces, and a winding goal the top its caller sets */
   if (! target)
-    memset(&goal->shape, 0, sizeof(goal->shape));
+    goal->shape.pieces = NULL;
   goal->piece_next = 0;
   goal->piece_entered = 0;
   goal->keep = NULL;
@@ -130,7 +131,7 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
   }
   /* the split points borrow nodes of the target or the chain */
   PyMem_Free(goal->shape.pieces);
-  memset(&goal->shape, 0, sizeof(goal->shape));
+  goal->shape.pieces = NULL;
   /* The reference goes last: a winding goal is storage of the
      generator it names, which this may free. A goal run in place is
      its caller's storage. */
