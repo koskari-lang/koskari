@@ -2586,6 +2586,8 @@ static KosOpResult kos_dyn_unlink_top_take(
   }
 
   if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_LEAVES)) {
+    KosObligation *slot;
+
     if (ev == KOS_XFER_EVENT_TRANSFER
         && ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_WINDS)) {
       /* a transfer does not run a local extent: a call in flight is
@@ -2596,16 +2598,15 @@ static KosOpResult kos_dyn_unlink_top_take(
       if (r.kind != KOS_RES_NORMAL)
         return r;
     }
+
+    /* the extent is left: what it stored is taken off the node */
+    slot = kos_dyn_node_ob(node);
+    ob = *slot;
+    slot->kind = KOS_OB_NONE;
   } else {
     KosOpResult r = kos_dyn_uninstall_handler(ctx, node, ev, &after);
     if (r.kind != KOS_RES_NORMAL)
       return r;
-  }
-
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_LEAVES)) {
-    KosObligation *slot = kos_dyn_node_ob(node);
-    ob = *slot;
-    slot->kind = KOS_OB_NONE;
   }
 
   parent = KosDynNode_PARENT(node);
