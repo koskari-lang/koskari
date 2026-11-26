@@ -1535,6 +1535,53 @@ class TestWindAcrossYieldSyncSteps(unittest.TestCase):
             "in", "out"])
 
 
+    def test_next_re_enters_nested_winders_in_order(self):
+        """
+        Each next() through the iterator enters the three extents
+        around the yield, outermost first, and the yield or the return
+        leaves them, innermost first
+        """
+
+        step = ["a-in", "b-in", "c-in", "c-out", "b-out", "a-out"]
+
+        log = []
+        it = iter(self.mod.nested(log, []))
+        self.assertEqual(next(it), 1)
+        self.assertEqual(log, step)
+        self.assertEqual(next(it), 2)
+        self.assertEqual(log, step + step)
+        with self.assertRaises(StopIteration):
+            next(it)
+        self.assertEqual(log, step + step + step)
+
+
+    def test_before_raising_at_re_entry_through_next(self):
+        """
+        A before segment that raises at the re-entry of next() never
+        enters its body: the extents already entered are left again,
+        the exception comes out of next(), and the generator is done
+        """
+
+        for which, failed in (
+                ("c", ["a-in", "b-in", "c-in", "b-out", "a-out"]),
+                ("b", ["a-in", "b-in", "a-out"])):
+            log = []
+            fail = []
+            it = iter(self.mod.nested(log, fail))
+            self.assertEqual(next(it), 1)
+            fail.append(which)
+            del log[:]
+            with self.assertRaises(ValueError) as raised:
+                next(it)
+            self.assertEqual(str(raised.exception), which)
+            self.assertIsNone(raised.exception.__cause__)
+            self.assertIsNone(raised.exception.__context__)
+            self.assertEqual(log, failed)
+            with self.assertRaises(StopIteration):
+                next(it)
+            self.assertEqual(log, failed)
+
+
 class TestWindAcrossYieldDemand(unittest.TestCase):
     """
     The re-entry of a winder runs under the demand of the step that
