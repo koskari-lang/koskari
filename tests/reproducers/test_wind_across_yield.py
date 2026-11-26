@@ -42,6 +42,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 SRC = """
 (import-from asyncio sleep)
+(import sys)
 
 
 (def winder [log]
@@ -296,10 +297,114 @@ SRC = """
       (log.append "out")
       (try (next (item box 0))
         ([e RuntimeError] (log.append "out-refused"))))))
+
+
+(def between_param [log fail]
+  (dyn-wind
+    (before:
+      (log.append #("outer-in" (parameterq p "unset")))
+      (if (fail.count "outer-in") (raise (ValueError "outer-in")) None))
+    (body:
+      (parameterize [[p "gen"]]
+        (dyn-wind
+          (before:
+            (log.append #("inner-in" (parameterq p "unset")))
+            (if (fail.count "inner-in") (raise (ValueError "inner-in")) None))
+          (body: (yield 1) (yield 2))
+          (after:
+            (log.append #("inner-out" (parameterq p "unset")))
+            (if (fail.count "inner-out")
+              (raise (ValueError "inner-out")) None)))))
+    (after:
+      (log.append #("outer-out" (parameterq p "unset")))
+      (if (fail.count "outer-out") (raise (ValueError "outer-out")) None))))
+
+
+(def between_try [log fail]
+  (dyn-wind
+    (before:
+      (log.append #("outer-in" (repr (item (sys.exc_info) 1))))
+      (if (fail.count "outer-in") (raise (ValueError "outer-in")) None))
+    (body:
+      (try
+        (raise (KeyError "held"))
+        ([e KeyError]
+          (dyn-wind
+            (before:
+              (log.append #("inner-in" (repr (item (sys.exc_info) 1))))
+              (if (fail.count "inner-in")
+                (raise (ValueError "inner-in")) None))
+            (body: (yield 1) (yield 2))
+            (after:
+              (log.append #("inner-out" (repr (item (sys.exc_info) 1))))
+              (if (fail.count "inner-out")
+                (raise (ValueError "inner-out")) None))))))
+    (after:
+      (log.append #("outer-out" (repr (item (sys.exc_info) 1))))
+      (if (fail.count "outer-out") (raise (ValueError "outer-out")) None))))
+
+
+(def caught_between [log fail]
+  (dyn-wind
+    (before: (log.append #("outer-in" (parameterq p "unset"))))
+    (body:
+      (try
+        (parameterize [[p "gen"]]
+          (dyn-wind
+            (before:
+              (log.append #("inner-in" (parameterq p "unset")))
+              (if (fail.count "inner-in")
+                (raise (ValueError "inner-in")) None))
+            (body: (yield 1) (yield 2))
+            (after:
+              (log.append #("inner-out" (parameterq p "unset")))
+              (if (fail.count "inner-out")
+                (raise (ValueError "inner-out")) None))))
+        ([e ValueError]
+          (log.append #("gen-caught" (str e) (parameterq p "unset")))
+          (yield "recovered"))))
+    (after: (log.append #("outer-out" (parameterq p "unset"))))))
+
+
+(def flaky_between [log fail]
+  (dyn-wind
+    (before: (log.append #("outer-in" (parameterq p "unset"))))
+    (body:
+      (parameterize [[p "gen"]]
+        (dyn-with [c (Flaky log fail)]
+          (yield 1)
+          (yield 2))))
+    (after: (log.append #("outer-out" (parameterq p "unset"))))))
+
+
+(def two_steps [it log fail which]
+  (parameterize [[p "c1"]]
+    (log.append (next it)))
+  (fail.append which)
+  (parameterize [[p "c2"]]
+    (try
+      (log.append (next it))
+      ([e ValueError]
+        (log.append
+          #("caught" (str e) (parameterq p "unset") (repr e.__context__))))))
+  (log.append #("after" (parameterq p "unset") (repr (item (sys.exc_info) 1))))
+  log)
 """
 
 
 WOUND = ["in", "out", 1, "in", "out", 2, "in", "out", 3]
+
+HELD = "KeyError('held')"
+
+FIRST_PARAM = [
+    ("outer-in", "c1"), ("inner-in", "gen"),
+    ("inner-out", "gen"), ("outer-out", "c1"), 1]
+
+FIRST_TRY = [
+    ("outer-in", "None"), ("inner-in", HELD),
+    ("inner-out", HELD), ("outer-out", "None"), 1]
+
+LEFT = [("after", "unset", "None")]
 
 
 class Ctx:
@@ -646,6 +751,273 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
             ("inner-out", "gen"), ("outer-out", "c2"),
             ("consumer", "c2"),
         ])
+
+
+    async def finished(self, gen, log):
+        """
+        Assert gen is done and that stepping it runs no segment
+        """
+
+        del log[:]
+        self.assertEqual(
+            await outcome(gen.__anext__()),
+            ("raise", "StopAsyncIteration", ""))
+        self.assertEqual(log, [])
+
+
+    async def test_inner_after_raising_with_a_parameterize_between(self):
+        """
+        The parameterize between the two dyn-winds is still in effect
+        for the inner after segment that raises; the raise unwinds it,
+        so the outer after segment and the step's handler read the
+        binding of the step
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_param(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "inner-out"),
+            FIRST_PARAM + [
+                ("outer-in", "c2"), ("inner-in", "gen"),
+                ("inner-out", "gen"), ("outer-out", "c2"),
+                ("caught", "inner-out", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+
+    async def test_outer_after_raising_with_a_parameterize_between(self):
+        """
+        The parameterize between the two dyn-winds is out when the outer
+        after segment raises at a yield: that segment and the step's
+        handler read the binding of the step, and the generator is done
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_param(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "outer-out"),
+            FIRST_PARAM + [
+                ("outer-in", "c2"), ("inner-in", "gen"),
+                ("inner-out", "gen"), ("outer-out", "c2"),
+                ("caught", "outer-out", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+
+    async def test_inner_before_raising_with_a_parameterize_between(self):
+        """
+        The parameterize is back in effect for the inner before segment
+        that raises at re-entry; the raise unwinds it, the inner after
+        segment does not run, and the outer one reads the binding of
+        the step
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_param(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "inner-in"),
+            FIRST_PARAM + [
+                ("outer-in", "c2"), ("inner-in", "gen"),
+                ("outer-out", "c2"),
+                ("caught", "inner-in", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+
+    async def test_outer_before_raising_with_a_parameterize_between(self):
+        """
+        The outer before segment that raises at re-entry reads the
+        binding of the step, the parameterize inside it is never put
+        back, no after segment runs, and the generator is done
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_param(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "outer-in"),
+            FIRST_PARAM + [
+                ("outer-in", "c2"),
+                ("caught", "outer-in", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+
+    async def test_inner_after_raising_with_a_handling_try_between(self):
+        """
+        The try between the two dyn-winds is still handling its
+        exception for the inner after segment that raises, which is the
+        new exception's context; the raise ends the handler, and the
+        outer after segment and the step see no handled exception
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_try(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "inner-out"),
+            FIRST_TRY + [
+                ("outer-in", "None"), ("inner-in", HELD),
+                ("inner-out", HELD), ("outer-out", "None"),
+                ("caught", "inner-out", "c2", HELD),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+        log = []
+        fail = []
+        gen = self.mod.between_try(log, fail)
+        self.assertEqual(await gen.__anext__(), 1)
+        fail.append("inner-out")
+        del log[:]
+        with self.assertRaises(ValueError) as raised:
+            await gen.__anext__()
+        self.assertEqual(str(raised.exception), "inner-out")
+        self.assertEqual(repr(raised.exception.__context__), HELD)
+        self.assertEqual(log, [
+            ("outer-in", "None"), ("inner-in", HELD),
+            ("inner-out", HELD), ("outer-out", "None")])
+        self.assertIsNone(sys.exc_info()[1])
+        await self.finished(gen, log)
+
+
+    async def test_outer_after_raising_with_a_handling_try_between(self):
+        """
+        The handling try between the two dyn-winds is out when the outer
+        after segment raises at a yield: that segment sees no handled
+        exception, the new exception has no context, and the step sees
+        no handled exception afterwards
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_try(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "outer-out"),
+            FIRST_TRY + [
+                ("outer-in", "None"), ("inner-in", HELD),
+                ("inner-out", HELD), ("outer-out", "None"),
+                ("caught", "outer-out", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+
+    async def test_inner_before_raising_with_a_handling_try_between(self):
+        """
+        The try is handling its exception again for the inner before
+        segment that raises at re-entry, which is the new exception's
+        context; the raise ends the handler before the outer after
+        segment runs
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_try(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "inner-in"),
+            FIRST_TRY + [
+                ("outer-in", "None"), ("inner-in", HELD),
+                ("outer-out", "None"),
+                ("caught", "inner-in", "c2", HELD),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+        log = []
+        fail = []
+        gen = self.mod.between_try(log, fail)
+        self.assertEqual(await gen.__anext__(), 1)
+        fail.append("inner-in")
+        del log[:]
+        with self.assertRaises(ValueError) as raised:
+            await gen.__anext__()
+        self.assertEqual(str(raised.exception), "inner-in")
+        self.assertEqual(repr(raised.exception.__context__), HELD)
+        self.assertEqual(log, [
+            ("outer-in", "None"), ("inner-in", HELD), ("outer-out", "None")])
+        self.assertIsNone(sys.exc_info()[1])
+        await self.finished(gen, log)
+
+
+    async def test_outer_before_raising_with_a_handling_try_between(self):
+        """
+        The outer before segment that raises at re-entry sees no handled
+        exception, the try inside it never handles its exception again,
+        the new exception has no context, and the generator is done
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.between_try(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "outer-in"),
+            FIRST_TRY + [
+                ("outer-in", "None"),
+                ("caught", "outer-in", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+
+    async def test_raise_between_winders_caught_in_the_generator(self):
+        """
+        A try between the two dyn-winds, outside the parameterize,
+        catches a raise from the inner segments with the parameterize
+        unwound; the generator yields again from the handler, leaving
+        the outer dyn-wind, and finishes at the next step
+        """
+
+        for which, ran in (
+                ("inner-out", [("inner-in", "gen"), ("inner-out", "gen")]),
+                ("inner-in", [("inner-in", "gen")])):
+            log = []
+            fail = []
+            gen = self.mod.caught_between(log, fail)
+            self.assertEqual(
+                await self.mod.two_steps(gen, log, fail, which),
+                FIRST_PARAM + [("outer-in", "c2")] + ran + [
+                    ("gen-caught", which, "c2"), ("outer-out", "c2"),
+                    "recovered",
+                ] + LEFT)
+            del log[:]
+            self.assertEqual(
+                await outcome(gen.__anext__()),
+                ("raise", "StopAsyncIteration", ""))
+            self.assertEqual(
+                log, [("outer-in", "unset"), ("outer-out", "unset")])
+
+
+    async def test_dyn_with_raising_with_a_parameterize_between(self):
+        """
+        An exit at a yield and an enter at re-entry that raise inside a
+        parameterize inside a dyn-wind: the raise unwinds the
+        parameterize, and the outer after segment reads the binding of
+        the step
+        """
+
+        first = [("outer-in", "c1"), "enter", "exit", ("outer-out", "c1"), 1]
+
+        log = []
+        fail = []
+        gen = self.mod.flaky_between(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "exit"),
+            first + [
+                ("outer-in", "c2"), "enter", "exit", ("outer-out", "c2"),
+                ("caught", "exit", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
+
+        log = []
+        fail = []
+        gen = self.mod.flaky_between(log, fail)
+        self.assertEqual(
+            await self.mod.two_steps(gen, log, fail, "enter"),
+            first + [
+                ("outer-in", "c2"), "enter", ("outer-out", "c2"),
+                ("caught", "enter", "c2", "None"),
+            ] + LEFT)
+        await self.finished(gen, log)
 
 
     async def test_yield_from_winds_the_inner_generator(self):
