@@ -389,6 +389,85 @@ SRC = """
           #("caught" (str e) (parameterq p "unset") (repr e.__context__))))))
   (log.append #("after" (parameterq p "unset") (repr (item (sys.exc_info) 1))))
   log)
+
+
+(def receiver [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body:
+      (var x (yield 1))
+      (log.append #("got" x))
+      (var y (yield 2))
+      (log.append #("got" y)))
+    (after: (log.append "out"))))
+
+
+(def receiver_slow [log]
+  (dyn-wind
+    (before: (sleep 0) (log.append "in"))
+    (body:
+      (var x (yield 1))
+      (log.append #("got" x))
+      (yield 2))
+    (after: (log.append "out"))))
+
+
+(def receiver_wrapped [log]
+  (dyn-wind
+    (before: (log.append "wrap-in"))
+    (body: (yield-from (receiver log)))
+    (after: (log.append "wrap-out"))))
+
+
+(def catcher_seen [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body:
+      (try
+        (yield 1)
+        ([e ValueError]
+          (log.append #("caught" (str e) (repr e.__context__)))
+          (yield 2))))
+    (after: (log.append "out"))))
+
+
+(def catcher_handling [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body:
+      (try
+        (raise (KeyError "held"))
+        ([k KeyError]
+          (try
+            (yield 1)
+            ([e ValueError]
+              (log.append #("caught" (str e) (repr e.__context__)))
+              (yield 2))))))
+    (after: (log.append "out"))))
+
+
+(def send_two [g log]
+  (log.append (await (g.__anext__)))
+  (log.append (await (g.asend "a")))
+  (try
+    (log.append (await (g.asend "b")))
+    ([e StopAsyncIteration] (log.append "done")))
+  log)
+
+
+(def throw_one [g log]
+  (log.append (await (g.__anext__)))
+  (log.append (await (g.athrow (ValueError "thrown"))))
+  log)
+
+
+(def throw_one_handling [g log]
+  (log.append (await (g.__anext__)))
+  (try
+    (raise (IndexError "thrower"))
+    ([i IndexError]
+      (log.append (await (g.athrow (ValueError "thrown"))))))
+  log)
 """
 
 
@@ -405,6 +484,18 @@ FIRST_TRY = [
     ("inner-out", HELD), ("outer-out", "None"), 1]
 
 LEFT = [("after", "unset", "None")]
+
+RECEIVED = [
+    "in", "out", 1, "in", ("got", "a"), "out", 2,
+    "in", ("got", "b"), "out", "done"]
+
+RECEIVED_SLOW = [
+    "in", "out", 1, "in", ("got", "a"), "out", 2, "in", "out", "done"]
+
+RECEIVED_WRAPPED = [
+    "wrap-in", "in", "out", "wrap-out", 1,
+    "wrap-in", "in", ("got", "a"), "out", "wrap-out", 2,
+    "wrap-in", "in", ("got", "b"), "out", "wrap-out", "done"]
 
 
 class Ctx:
@@ -565,6 +656,22 @@ async def consume_gated(gen, gate):
         values.append(value)
         gate.append("await")
     return values
+
+
+async def asend_two(gen, log):
+    """
+    Step gen from Python to its first yield, then send "a" and "b",
+    logging each value after the segments its step ran, and "done"
+    when the generator ends
+    """
+
+    log.append(await gen.__anext__())
+    log.append(await gen.asend("a"))
+    try:
+        log.append(await gen.asend("b"))
+    except StopAsyncIteration:
+        log.append("done")
+    return log
 
 
 class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
@@ -1161,6 +1268,187 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await drain(gen, log), expect)
 
 
+    async def test_send_is_delivered_after_the_before_segment(self):
+        """
+        A value sent at a yield inside a dyn-wind is the value of the
+        yield once the before segment has run, from Koskari and from
+        Python
+        """
+
+        log = []
+        self.assertEqual(
+            await self.mod.send_two(self.mod.receiver(log), log),
+            RECEIVED)
+
+        log = []
+        self.assertEqual(
+            await asend_two(self.mod.receiver(log), log), RECEIVED)
+
+
+    async def test_send_is_held_while_the_before_segment_awaits(self):
+        """
+        A before segment that awaits at re-entry does not lose the
+        value sent: it is the value of the yield once the segment has
+        finished, from Koskari and from Python
+        """
+
+        log = []
+        self.assertEqual(
+            await self.mod.send_two(self.mod.receiver_slow(log), log),
+            RECEIVED_SLOW)
+
+        log = []
+        self.assertEqual(
+            await asend_two(self.mod.receiver_slow(log), log),
+            RECEIVED_SLOW)
+
+
+    async def test_send_through_a_wound_delegation(self):
+        """
+        A value sent to a generator delegating from inside a dyn-wind
+        to a generator whose yield is inside its own dyn-wind enters
+        the outer extent, then the inner one, and is the inner yield's
+        value
+        """
+
+        log = []
+        self.assertEqual(
+            await self.mod.send_two(self.mod.receiver_wrapped(log), log),
+            RECEIVED_WRAPPED)
+
+        log = []
+        self.assertEqual(
+            await asend_two(self.mod.receiver_wrapped(log), log),
+            RECEIVED_WRAPPED)
+
+
+    async def test_koskari_throw_at_a_yield_enters_before_it_raises(self):
+        """
+        An exception thrown from Koskari at a yield inside a dyn-wind is
+        raised there once the before segment has run; the handler in the
+        generator catches it with no context, whatever the thrower is
+        handling
+        """
+
+        caught = ("caught", "thrown", "None")
+        expect = ["in", "out", 1, "in", caught, "out", 2]
+
+        log = []
+        self.assertEqual(
+            await self.mod.throw_one(self.mod.catcher_seen(log), log),
+            expect)
+
+        log = []
+        self.assertEqual(
+            await self.mod.throw_one_handling(
+                self.mod.catcher_seen(log), log),
+            expect)
+
+        log = []
+        gen = self.mod.catcher_seen(log)
+        log.append(await gen.__anext__())
+        log.append(await gen.athrow(ValueError("thrown")))
+        self.assertEqual(log, expect)
+
+
+    async def test_throw_at_a_yield_is_chained_to_the_generators_handled(
+            self):
+        """
+        An exception thrown at a yield inside a dyn-wind, inside a try
+        handling its exception, is caught in the generator with that
+        exception as its context, from Koskari and from Python
+        """
+
+        caught = ("caught", "thrown", HELD)
+        expect = ["in", "out", 1, "in", caught, "out", 2]
+
+        log = []
+        self.assertEqual(
+            await self.mod.throw_one(self.mod.catcher_handling(log), log),
+            expect)
+
+        log = []
+        gen = self.mod.catcher_handling(log)
+        log.append(await gen.__anext__())
+        log.append(await gen.athrow(ValueError("thrown")))
+        self.assertEqual(log, expect)
+
+
+    async def test_throw_through_a_wound_delegation(self):
+        """
+        An exception thrown at a generator delegating from inside a
+        dyn-wind enters the outer extent, then the inner one, is raised
+        at the inner yield, and leaves both extents on its way out, from
+        Koskari and from Python
+        """
+
+        step = ["wrap-in", "in", "out", "wrap-out"]
+
+        log = []
+        self.assertEqual(
+            await outcome(self.mod.throw_one(self.mod.wrapping(log), log)),
+            ("raise", "ValueError", "thrown"))
+        self.assertEqual(log, step + [1] + step)
+
+        log = []
+        gen = self.mod.wrapping(log)
+        self.assertEqual(await gen.__anext__(), 1)
+        self.assertEqual(
+            await outcome(gen.athrow(KeyError("thrown"))),
+            ("raise", "KeyError", "'thrown'"))
+        self.assertEqual(log, step + step)
+        await self.finished(gen, log)
+
+
+    async def test_value_sent_into_a_failing_re_entry_is_released(self):
+        """
+        A value sent at a yield whose re-entry fails in a before segment
+        is never delivered, and the step lets go of it: its reference
+        count is what it was before the send
+        """
+
+        log = []
+        fail = []
+        gen = self.mod.nested(log, fail)
+        self.assertEqual(await gen.__anext__(), 1)
+        fail.append("c")
+        del log[:]
+        token = object()
+        before = sys.getrefcount(token)
+        self.assertEqual(
+            await outcome(gen.asend(token)), ("raise", "ValueError", "c"))
+        self.assertEqual(log, ["a-in", "b-in", "c-in", "b-out", "a-out"])
+        self.assertEqual(sys.getrefcount(token), before)
+        await self.finished(gen, log)
+
+
+    async def test_value_held_by_a_suspended_re_entry_is_released(self):
+        """
+        A value sent at a yield whose before segment is suspended at
+        re-entry, thrown into there: the exception is raised at the
+        segment's await with no cause, the value is never delivered and
+        is let go of, and the generator is done
+        """
+
+        log = []
+        gate = []
+        gen = self.mod.gated(log, gate)
+        self.assertEqual(await gen.__anext__(), 1)
+        gate.append("await")
+        token = object()
+        before = sys.getrefcount(token)
+        step = gen.asend(token)
+        self.assertEqual(step.send(None), "suspended")
+        self.assertEqual(log, ["in", "out", "in"])
+        with self.assertRaises(KeyError) as raised:
+            step.throw(KeyError("thrown"))
+        self.assertIsNone(raised.exception.__cause__)
+        del step
+        self.assertEqual(log, ["in", "out", "in"])
+        self.assertEqual(sys.getrefcount(token), before)
+        await self.finished(gen, log)
+
+
 class TestWindAcrossYieldFinalizer(unittest.TestCase):
     """
     A generator dropped at a yield inside a dyn-wind is closed where it
@@ -1197,6 +1485,54 @@ class TestWindAcrossYieldFinalizer(unittest.TestCase):
         self.assertEqual(
             [(type(e).__name__, str(e)) for e in reports.seen],
             [("ValueError", "after")])
+
+
+class TestWindAcrossYieldSyncSteps(unittest.TestCase):
+    """
+    A send or a throw through the Python iterator over a generator
+    enters the extents around its yield again before the value is
+    delivered or the exception raised
+    """
+
+    def setUp(self):
+        self.mod = asyncio.run(load())
+
+
+    def test_send_is_delivered_after_the_before_segment(self):
+        """
+        A value sent through the iterator is the value of the yield
+        once the before segment has run
+        """
+
+        log = []
+        it = iter(self.mod.receiver(log))
+        self.assertEqual(next(it), 1)
+        self.assertEqual(it.send("a"), 2)
+        self.assertEqual(log, ["in", "out", "in", ("got", "a"), "out"])
+        with self.assertRaises(StopIteration):
+            it.send("b")
+        self.assertEqual(log, [
+            "in", "out", "in", ("got", "a"), "out",
+            "in", ("got", "b"), "out"])
+
+
+    def test_throw_enters_before_it_raises(self):
+        """
+        An exception thrown through the iterator is raised at the yield
+        once the before segment has run
+        """
+
+        log = []
+        it = iter(self.mod.catcher_seen(log))
+        self.assertEqual(next(it), 1)
+        self.assertEqual(it.throw(ValueError("thrown")), 2)
+        self.assertEqual(
+            log, ["in", "out", "in", ("caught", "thrown", "None"), "out"])
+        with self.assertRaises(StopIteration):
+            next(it)
+        self.assertEqual(log, [
+            "in", "out", "in", ("caught", "thrown", "None"), "out",
+            "in", "out"])
 
 
 class TestWindAcrossYieldDemand(unittest.TestCase):
