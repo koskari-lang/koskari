@@ -468,6 +468,59 @@ SRC = """
     ([i IndexError]
       (log.append (await (g.athrow (ValueError "thrown"))))))
   log)
+
+
+(def recorded [log]
+  (dyn-with [c (Recorder log "gen")]
+    (try
+      (yield 1)
+      ([e ValueError]
+        (log.append "caught")
+        (yield 2)))))
+
+
+(def close_one [g log]
+  (log.append (await (g.__anext__)))
+  (await (g.aclose))
+  log)
+
+
+(def answering [log]
+  (dyn-wind
+    (before: (log.append "in"))
+    (body:
+      (var x (yield 1))
+      (log.append #("got" x))
+      (try
+        (yield 2)
+        ([e ValueError]
+          (log.append #("caught" (str e)))
+          (yield 3))))
+    (after: (log.append "out"))))
+
+
+(def awaits_wound [g log]
+  (dyn-wind
+    (before: (log.append "caller-in"))
+    (body:
+      (dyn-with [c (Recorder log "caller")]
+        (log.append (await (g.__anext__)))
+        (log.append (await (g.asend "a")))
+        (log.append (await (g.athrow (ValueError "thrown"))))
+        (await (g.aclose))
+        (log.append "closed")))
+    (after: (log.append "caller-out")))
+  log)
+
+
+(def awaits_positions [g log]
+  (parameterize [[p "c1"]]
+    (log.append (await (g.__anext__)))
+    (log.append #("consumer" (parameterq p "unset"))))
+  (parameterize [[p "c2"]]
+    (log.append (await (g.asend "a")))
+    (log.append #("consumer" (parameterq p "unset"))))
+  log)
 """
 
 
@@ -496,6 +549,8 @@ RECEIVED_WRAPPED = [
     "wrap-in", "in", "out", "wrap-out", 1,
     "wrap-in", "in", ("got", "a"), "out", "wrap-out", 2,
     "wrap-in", "in", ("got", "b"), "out", "wrap-out", "done"]
+
+RECORDED = [("gen", "enter"), ("gen", "exit", None)]
 
 
 class Ctx:
@@ -590,6 +645,28 @@ class SlowCtx:
         return Settling(self.log, "exited")
 
 
+class Recorder:
+    """
+    A context manager that logs its enter, and its exit with the name of
+    the exception type it is handed, or None
+    """
+
+    def __init__(self, log, tag):
+        self.log = log
+        self.tag = tag
+
+
+    def __enter__(self):
+        self.log.append((self.tag, "enter"))
+        return self
+
+
+    def __exit__(self, exc_type, exc, tb):
+        name = None if exc_type is None else exc_type.__name__
+        self.log.append((self.tag, "exit", name))
+        return False
+
+
 class Unraisables:
     """
     Collects sys.unraisablehook reports for the extent of a block
@@ -618,7 +695,8 @@ async def load():
     module = new_module("wind_across_yield")
     vars(module)["__file__"] = "<wind_across_yield>"
     vars(module).update(
-        Ctx=Ctx, Flaky=Flaky, Suspender=Suspender, SlowCtx=SlowCtx)
+        Ctx=Ctx, Flaky=Flaky, Suspender=Suspender, SlowCtx=SlowCtx,
+        Recorder=Recorder)
     await load_module_source_async(module, SRC)
     return module
 
@@ -672,6 +750,15 @@ async def asend_two(gen, log):
     except StopAsyncIteration:
         log.append("done")
     return log
+
+
+async def turns(count):
+    """
+    Let the running loop run its ready callbacks count times
+    """
+
+    for _ in range(count):
+        await asyncio.sleep(0)
 
 
 class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
@@ -792,6 +879,45 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         log.append(await gen.__anext__())
         await gen.aclose()
         self.assertEqual(log, expect)
+
+
+    async def test_drop_under_a_loop_closes_in_a_task(self):
+        """
+        A generator dropped at a yield inside a dyn-wind while the loop
+        runs is handed to the loop's finalizer hook: nothing runs at the
+        drop, and the aclose the hook schedules enters the extent and
+        leaves it once when the loop runs it
+        """
+
+        log = []
+        gen = self.mod.winder(log)
+        log.append(await gen.__anext__())
+        with Unraisables() as reports:
+            del gen
+            gc.collect()
+            self.assertEqual(log, ["in", "out", 1])
+            await turns(5)
+        self.assertEqual(log, ["in", "out", 1, "in", "out"])
+        self.assertEqual(reports.seen, [])
+
+
+    async def test_drop_under_a_loop_awaits_in_its_segment(self):
+        """
+        The close a loop's finalizer hook schedules runs as a task, so a
+        before segment that awaits at the close's re-entry completes and
+        the after segment runs
+        """
+
+        log = []
+        gen = self.mod.sleepy(log)
+        log.append(await gen.__anext__())
+        with Unraisables() as reports:
+            del gen
+            gc.collect()
+            self.assertEqual(log, ["in", "out", 1])
+            await turns(5)
+        self.assertEqual(log, ["in", "out", 1, "in", "out"])
+        self.assertEqual(reports.seen, [])
 
 
     async def test_throw_at_a_yield_enters_before_it_raises(self):
@@ -1215,6 +1341,68 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(log, ["enter", "exit", "enter", "caught:enter"])
 
 
+    async def test_dyn_with_close_at_a_yield_exits_with_generator_exit(self):
+        """
+        A close at a yield inside a dyn-with enters it again, raises
+        GeneratorExit at the yield, and hands that to the exit, which
+        runs once, from Koskari and from Python
+        """
+
+        expect = RECORDED + [
+            1, ("gen", "enter"), ("gen", "exit", "GeneratorExit")]
+
+        log = []
+        gen = self.mod.recorded(log)
+        self.assertEqual(await self.mod.close_one(gen, log), expect)
+        await self.finished(gen, log)
+
+        log = []
+        gen = self.mod.recorded(log)
+        log.append(await gen.__anext__())
+        self.assertIsNone(await gen.aclose())
+        self.assertEqual(log, expect)
+        await self.finished(gen, log)
+
+
+    async def test_dyn_with_throw_caught_at_a_yield(self):
+        """
+        An exception thrown at a yield inside a dyn-with is raised once
+        the enter has run; the generator catches it inside the dyn-with
+        and yields again, which hands the exit no exception
+        """
+
+        log = []
+        gen = self.mod.recorded(log)
+        log.append(await gen.__anext__())
+        log.append(await gen.athrow(ValueError("thrown")))
+        self.assertEqual(log, RECORDED + [
+            1, ("gen", "enter"), "caught", ("gen", "exit", None), 2])
+        del log[:]
+        self.assertEqual(
+            await outcome(gen.__anext__()),
+            ("raise", "StopAsyncIteration", ""))
+        self.assertEqual(log, RECORDED)
+        await self.finished(gen, log)
+
+
+    async def test_dyn_with_throw_uncaught_exits_with_the_exception(self):
+        """
+        An exception thrown at a yield inside a dyn-with that the
+        generator does not catch is handed to the exit, which runs once,
+        and reaches the thrower
+        """
+
+        log = []
+        gen = self.mod.recorded(log)
+        log.append(await gen.__anext__())
+        self.assertEqual(
+            await outcome(gen.athrow(KeyError("thrown"))),
+            ("raise", "KeyError", "'thrown'"))
+        self.assertEqual(log, RECORDED + [
+            1, ("gen", "enter"), ("gen", "exit", "KeyError")])
+        await self.finished(gen, log)
+
+
     async def test_with_and_finally_run_nothing_at_a_yield(self):
         expect = ["enter", 1, 2, "finally", "exit", 3]
 
@@ -1400,6 +1588,46 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         await self.finished(gen, log)
 
 
+    async def test_awaited_steps_leave_the_callers_extents_entered(self):
+        """
+        A Koskari caller inside its own dyn-wind and dyn-with awaits each
+        step of a generator whose yields are inside a dyn-wind: the
+        generator's segments run at every step, in order, and the
+        caller's extents are entered once and left once
+        """
+
+        log = []
+        self.assertEqual(
+            await self.mod.awaits_wound(self.mod.answering(log), log),
+            [
+                "caller-in", ("caller", "enter"),
+                "in", "out", 1,
+                "in", ("got", "a"), "out", 2,
+                "in", ("caught", "thrown"), "out", 3,
+                "in", "out", "closed",
+                ("caller", "exit", None), "caller-out",
+            ])
+
+
+    async def test_awaited_steps_see_the_callers_parameterize(self):
+        """
+        A Koskari caller awaits each step inside its own parameterize:
+        the generator's outer segments read the caller's cell of that
+        step, the inner ones the generator's own, and the caller reads
+        its own cell after each step
+        """
+
+        log = []
+        self.assertEqual(
+            await self.mod.awaits_positions(self.mod.positions(log), log),
+            FIRST_PARAM + [
+                ("consumer", "c1"),
+                ("outer-in", "c2"), ("inner-in", "gen"),
+                ("inner-out", "gen"), ("outer-out", "c2"), 2,
+                ("consumer", "c2"),
+            ])
+
+
     async def test_value_sent_into_a_failing_re_entry_is_released(self):
         """
         A value sent at a yield whose re-entry fails in a before segment
@@ -1469,6 +1697,23 @@ class TestWindAcrossYieldFinalizer(unittest.TestCase):
             del it
             gc.collect()
         self.assertEqual(log, ["in", "out", "in", "out"])
+        self.assertEqual(reports.seen, [])
+
+
+    def test_finalizer_at_a_yield_in_a_dyn_with(self):
+        """
+        A generator dropped at a yield inside a dyn-with is entered again
+        and its exit is handed GeneratorExit, once
+        """
+
+        log = []
+        it = iter(self.mod.recorded(log))
+        self.assertEqual(next(it), 1)
+        with Unraisables() as reports:
+            del it
+            gc.collect()
+        self.assertEqual(log, RECORDED + [
+            ("gen", "enter"), ("gen", "exit", "GeneratorExit")])
         self.assertEqual(reports.seen, [])
 
 
