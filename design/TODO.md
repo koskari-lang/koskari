@@ -388,6 +388,16 @@ traced. Design the rule under which the value carries across every
 path that reads a generator's end, with `yield-from` evaluating to it.
 Ref: [interpreter/generator-return-value.md](interpreter/generator-return-value.md).
 
+### Flattening generator methods and the native iterator (investigate)
+
+`(next it)` runs a generator on the caller's own evaluator, but a
+Koskari call of `send`, `throw`, `close` or `__next__` on a generator's
+step awaitable, or on the iterator `iter()` returns over one, starts a
+second evaluator. On the iterator that evaluator is synchronous, so an
+await in the generator raises KoskariSyncViolation under an async
+caller. Investigate flattening these calls like any other.
+Ref: [interpreter/generator-method-flattening.md](interpreter/generator-method-flattening.md).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
