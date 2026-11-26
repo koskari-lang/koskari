@@ -1165,6 +1165,155 @@ static int test_freeze_refused_changes_nothing(void) {
 }
 
 
+/* Push count TRY nodes onto the chain's top, each handling an
+   exception, and a frame on them. The trys are stored outermost
+   first. Returns 0, or -1. */
+static int push_trys_and_frame(
+    KosContext *ctx,
+    int count,
+    KosDynNode **trys) {
+
+    for (int i = 0; i < count; i++) {
+        trys[i] = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+        TEST_ASSERT_NOT_NULL(trys[i], "push a try");
+        KosDynTry_EXC(trys[i])->state = KOS_EXC_HANDLING;
+    }
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx),
+                         "push a frame on them");
+    return 0;
+}
+
+
+/* A span frozen under three effects, then under five: the heap array
+   grows to five, the list innermost first. A later freeze under one
+   effect keeps the array of five where it is. */
+static int test_freeze_effects_grow_between_yields(void) {
+
+    PyObject *owner = PyList_New(0);
+    KosGenState state;
+    KosDynNode *trys[5] = { NULL, NULL, NULL, NULL, NULL };
+    KosDynNode **items;
+    KosDynNode **heap;
+    KosDynNode *top;
+    KosContext *ctx;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    ctx = span_with_effects(owner, &state, 3, trys);
+    TEST_ASSERT_NOT_NULL(ctx, "build the installed span");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze under three");
+    TEST_ASSERT_EQ(state.effects.cap, 3, "the array holds three");
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
+                   "install the span");
+    TEST_ASSERT_EQ(push_trys_and_frame(ctx, 2, &trys[3]), 0,
+                   "two more effects on the span");
+    top = KosContext_DYN_TOP(ctx);
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze under five");
+    TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
+    TEST_ASSERT_EQ(state.effects.count, 5, "every effect is listed");
+    TEST_ASSERT_EQ(state.effects.cap, 5, "the array grew to five");
+    items = effects_items(&state.effects);
+    for (int i = 0; i < 5; i++) {
+        TEST_ASSERT_SAME(items[i], trys[4 - i],
+                         "the list is innermost first");
+        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
+                    "the effect is out");
+    }
+    heap = state.effects.items.heap;
+
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
+                   "install the span");
+    for (int i = 0; i < 5; i++)
+        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+                    "the effect is in");
+
+    /* the outer four are done handling */
+    for (int i = 0; i < 4; i++)
+        KosDynTry_EXC(trys[i])->state = KOS_EXC_NONE;
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze under one");
+    TEST_ASSERT_EQ(state.effects.count, 1, "one effect is listed");
+    TEST_ASSERT_SAME(effects_items(&state.effects)[0], trys[4],
+                     "the innermost");
+    TEST_ASSERT(KosDynTry_EXC(trys[4])->state == KOS_EXC_FROZEN,
+                "its effect is out");
+    TEST_ASSERT_EQ(state.effects.cap, 5, "the array of five is kept");
+    TEST_ASSERT_SAME(state.effects.items.heap, heap, "where it was");
+
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    return 0;
+}
+
+
+/* A freeze whose list must grow the array it already has, refused:
+   MemoryError, and the array, its size, the chain and every effect as
+   they were. A later freeze grows the array. */
+static int test_freeze_regrow_refused_changes_nothing(void) {
+
+    PyObject *owner = PyList_New(0);
+    KosGenState state;
+    KosDynNode *trys[5] = { NULL, NULL, NULL, NULL, NULL };
+    KosDynNode **heap;
+    KosDynNode *top;
+    KosDynGen *gen;
+    KosContext *ctx;
+    int refused;
+    int r;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    ctx = span_with_effects(owner, &state, 3, trys);
+    TEST_ASSERT_NOT_NULL(ctx, "build the installed span");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze under three");
+    TEST_ASSERT_EQ(state.effects.cap, 3, "the array holds three");
+    heap = state.effects.items.heap;
+    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
+                   "install the span");
+    TEST_ASSERT_EQ(push_trys_and_frame(ctx, 2, &trys[3]), 0,
+                   "two more effects on the span");
+    top = KosContext_DYN_TOP(ctx);
+    gen = kos_dyn_find_gen(ctx);
+    TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
+
+    test_refuse_realloc_begin(0);
+    r = kos_dyn_gen_freeze(ctx, gen);
+    refused = test_refuse_realloc_end();
+
+    TEST_ASSERT_EQ(r, -2, "the freeze refuses");
+    TEST_ASSERT_EQ(refused, 1, "the regrow was refused");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
+                "with MemoryError");
+    PyErr_Clear();
+    TEST_ASSERT_SAME(state.effects.items.heap, heap, "the array stands");
+    TEST_ASSERT_EQ(state.effects.cap, 3, "at three");
+    TEST_ASSERT_EQ(state.effects.count, 0, "nothing is listed");
+    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the chain is whole");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(state.bottom), (KosDynNode *) gen,
+                     "the span is still on its GEN");
+    TEST_ASSERT_NULL(state.active, "the state holds no span");
+    for (int i = 0; i < 5; i++)
+        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+                    "no effect went out");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 0, "a later freeze works");
+    TEST_ASSERT_EQ(state.effects.count, 5, "and lists every effect");
+    TEST_ASSERT_EQ(state.effects.cap, 5, "in a grown array");
+
+    kos_gen_state_clear(&state);
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    return 0;
+}
+
+
 /* === Winding across a yield === */
 
 
@@ -1946,6 +2095,196 @@ static int test_winding_attach_refused_takes_effects_out_again(void) {
 }
 
 
+/* === Clearing a resting span === */
+
+
+/* Push a TRY handling exc, which displaced nothing: exc is the
+   thread's handled exception, as the TRY's consume of a raise leaves
+   it. Returns the node, or NULL. */
+static KosDynNode *push_handling_try(KosContext *ctx, PyObject *exc) {
+
+    KosDynNode *node = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+
+    if (! node)
+        return NULL;
+    KosDynTry_EXC(node)->state = KOS_EXC_HANDLING;
+    PyErr_SetExcInfo(Py_NewRef((PyObject *) Py_TYPE(exc)),
+                     Py_NewRef(exc), NULL);
+    return node;
+}
+
+
+/* Push a PARAM binding name to value. Returns the node, or NULL with
+   an error set. */
+static KosDynNode *push_bound_param(
+    KosContext *ctx,
+    PyObject *name,
+    PyObject *value) {
+
+    PyObject *bindings = PyDict_New();
+    KosDynNode *node = NULL;
+
+    if (bindings && PyDict_SetItem(bindings, name, value) == 0)
+        node = (KosDynNode *) kos_dyn_push_param_dict(ctx, bindings);
+    Py_XDECREF(bindings);
+    return node;
+}
+
+
+/* A span of a root frame, a TRY handling an exception, a PARAM and a
+   frame on top, frozen with both effects out, then cleared from its
+   state: the exception the TRY holds off the thread is released once,
+   and the PARAM's cell lets go of its value. */
+static int test_state_clear_releases_resting_effects(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *exc = PyObject_CallFunction(PyExc_ValueError, "s", "held");
+    PyObject *name = PyUnicode_FromString("bound");
+    PyObject *value = PyList_New(0);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *try_;
+    KosContext *ctx;
+    Py_ssize_t exc_refs;
+    Py_ssize_t value_refs;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(exc, "create the handled exception");
+    TEST_ASSERT(name && value, "create the binding");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+    exc_refs = Py_REFCNT(exc);
+    value_refs = Py_REFCNT(value);
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    try_ = push_handling_try(ctx, exc);
+    TEST_ASSERT_NOT_NULL(try_, "push a try handling the exception");
+    TEST_ASSERT_NOT_NULL(push_bound_param(ctx, name, value),
+                         "push a param");
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+
+    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+                   "freeze the span");
+    TEST_ASSERT_EQ(state.effects.count, 2, "both effects are listed");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out");
+    TEST_ASSERT_SAME(KosDynTry_EXC(try_)->saved.value, exc,
+                     "holding its exception");
+    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs + 1,
+                   "by the reference the thread gave up");
+    TEST_ASSERT_NULL(PyDict_GetItem(KosContext_PARAM_REFS(ctx), name),
+                     "the param's effect is out");
+    TEST_ASSERT_EQ(Py_REFCNT(value), value_refs + 1,
+                   "its cell holds the value");
+
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs,
+                   "the clear releases the exception once");
+    TEST_ASSERT_EQ(Py_REFCNT(value), value_refs,
+                   "and the param's value");
+
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(exc);
+    Py_DECREF(name);
+    Py_DECREF(value);
+    return 0;
+}
+
+
+/* A span of a root frame, a TRY handling an exception, a PARAM, a
+   dyn-wind and a frame on top, rested by a yield that left the wind.
+   The span rests whole, so the clear reaches the nodes under the wind
+   and releases what their effects hold, and frees the list's array. */
+static int test_state_clear_releases_wound_span(void) {
+
+    PyObject *owner = PyList_New(0);
+    PyObject *val = PyLong_FromLong(7);
+    PyObject *exc = PyObject_CallFunction(PyExc_ValueError, "s", "held");
+    PyObject *name = PyUnicode_FromString("bound");
+    PyObject *value = PyList_New(0);
+    PyObject *ns = PyDict_New();
+    PyObject *gen_ns = PyDict_New();
+    KosGenState state;
+    KosDynFrame *consumer;
+    KosDynFrame *root;
+    KosDynNode *try_;
+    KosDynNode *wind;
+    KosContext *ctx;
+    Py_ssize_t exc_refs;
+    Py_ssize_t value_refs;
+
+    TEST_ASSERT_NOT_NULL(owner, "create a stand-in owner");
+    TEST_ASSERT_NOT_NULL(val, "create a value to yield");
+    TEST_ASSERT_NOT_NULL(exc, "create the handled exception");
+    TEST_ASSERT(name && value, "create the binding");
+    TEST_ASSERT(ns && gen_ns, "create the namespaces");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    root = kos_dynframe_new(NULL, NULL, gen_ns);
+    TEST_ASSERT(consumer && root, "create the frames");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the consumer's context");
+    exc_refs = Py_REFCNT(exc);
+    value_refs = Py_REFCNT(value);
+
+    KosContext_EvalEnter(ctx, NULL);
+    kos_gen_state_init(&state, root);
+    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
+                       ctx, owner, &state, (KosDynNode *) root), 0,
+                   "install the generator's frame");
+    state.active = NULL;
+
+    try_ = push_handling_try(ctx, exc);
+    TEST_ASSERT_NOT_NULL(try_, "push a try handling the exception");
+    TEST_ASSERT_NOT_NULL(push_bound_param(ctx, name, value),
+                         "push a param");
+    wind = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
+    TEST_ASSERT_NOT_NULL(wind, "push a wind");
+    KosDynWind_ENTERED(wind) = 1;
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
+
+    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
+    TEST_ASSERT_EQ(state.wound_count, 3, "the wind and both effects");
+    TEST_ASSERT_EQ(state.effects.cap, 3, "listed on the heap");
+    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+                "the try's effect is out");
+    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs + 1,
+                   "holding its exception off the thread");
+    TEST_ASSERT_NULL(PyDict_GetItem(KosContext_PARAM_REFS(ctx), name),
+                     "the param's effect is out");
+
+    kos_gen_state_clear(&state);
+    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs,
+                   "the clear releases the exception once");
+    TEST_ASSERT_EQ(Py_REFCNT(value), value_refs,
+                   "and the param's value");
+    TEST_ASSERT_EQ(state.effects.cap, 0, "and frees the array");
+
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    Py_DECREF(owner);
+    Py_DECREF(val);
+    Py_DECREF(exc);
+    Py_DECREF(name);
+    Py_DECREF(value);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -2007,6 +2346,8 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_freeze_install_two_effects);
     RUN_TEST(test_freeze_install_three_effects);
     RUN_TEST(test_freeze_refused_changes_nothing);
+    RUN_TEST(test_freeze_effects_grow_between_yields);
+    RUN_TEST(test_freeze_regrow_refused_changes_nothing);
 
     /* Winding across a yield */
     RUN_TEST(test_wind_out_and_in);
@@ -2018,6 +2359,10 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_install_refused_takes_effects_out_again);
     RUN_TEST(test_winding_install_refused_takes_effects_out_again);
     RUN_TEST(test_winding_attach_refused_takes_effects_out_again);
+
+    /* Clearing a resting span */
+    RUN_TEST(test_state_clear_releases_resting_effects);
+    RUN_TEST(test_state_clear_releases_wound_span);
 
     return 0;
 }
