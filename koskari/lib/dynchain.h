@@ -903,6 +903,11 @@ struct KosContinuation {
 /* === DynNode allocation and lifecycle === */
 
 
+/* How many freed nodes each size's freelist keeps; tunable. */
+#define DYN_MAJOR_MAX_FREE KOS_FREELIST_CAP(128)
+#define DYN_MINOR_MAX_FREE KOS_FREELIST_CAP(64)
+
+
 /**
    Allocate a new frame node.
 

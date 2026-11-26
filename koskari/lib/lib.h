@@ -37,8 +37,8 @@
 
 
 /* Every per-type freelist caps how many freed objects it keeps for
-   reuse. A recycled object's memory stays mapped and is zeroed on
-   return, so a read of a freed node yields quiet nonsense instead of
+   reuse. A recycled object's memory stays mapped and keeps what it
+   held, so a read of a freed node yields quiet nonsense instead of
    the fault ASan or Valgrind would report. Building with
    -DKOS_NOFREELIST=1 (the KOS_NOFREELIST=1 environment variable through
    setup.py, tests.mk, and the container targets) sets every cap to zero

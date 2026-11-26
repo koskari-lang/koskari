@@ -933,15 +933,31 @@ static int test_node_sizes_by_kind(void) {
 
 
 /* Minor and major nodes come and go through their own freelists: a
-   node of one size is never handed out as the other. Each kind's
-   constructor writes its whole payload, and a major one its embedded
-   segment, so a wrong-sized block is an overrun the ASan run sees. */
+   node of one size is never handed out as the other. With the minor
+   freelist emptied first, a freed prompt is the only block on it, so
+   neither major node made next may be that block and the next prompt
+   must be. Each kind's constructor writes its whole payload, and a
+   major one its embedded segment, so a wrong-sized block is also an
+   overrun the ASan run sees. */
 static int test_node_sizes_do_not_mix(void) {
+#ifndef KOS_NOFREELIST
+    KosDynNode *drain[DYN_MINOR_MAX_FREE];
+
+    /* take what earlier tests left on the minor freelist, so the
+       prompts freed below find room there */
+    for (int i = 0; i < DYN_MINOR_MAX_FREE; i++) {
+        drain[i] = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
+        TEST_ASSERT_NOT_NULL(drain[i], "create a draining prompt");
+    }
+#endif
 
     for (int round = 0; round < 4; round++) {
         KosDynNode *prompt = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
         KosDynNode *try_;
         KosDynNode *frame;
+#ifndef KOS_NOFREELIST
+        KosDynNode *was = prompt;
+#endif
 
         TEST_ASSERT_NOT_NULL(prompt, "create a prompt");
         kos_dynchain_free(prompt, NULL);
@@ -950,15 +966,28 @@ static int test_node_sizes_do_not_mix(void) {
         try_ = skip_node(NULL);
         frame = plain_node(try_);
         TEST_ASSERT_NOT_NULL(frame, "create major nodes");
+#ifndef KOS_NOFREELIST
+        TEST_ASSERT_NOT_SAME(try_, was, "the try is not the freed prompt");
+        TEST_ASSERT_NOT_SAME(frame, was, "the frame is not the freed prompt");
+#endif
         TEST_ASSERT(KosDynNode_STACK(try_) != NULL, "the try has its segment");
         kos_dynchain_free(frame, NULL);
 
-        /* and the freed major blocks may serve a minor node or not */
+        /* nor do the freed major blocks serve a minor node: the freed
+           prompt's block is the one the next prompt takes */
         prompt = (KosDynNode *) kos_dynprompt_new(NULL, Py_True);
         TEST_ASSERT_NOT_NULL(prompt, "create a prompt again");
+#ifndef KOS_NOFREELIST
+        TEST_ASSERT_SAME(prompt, was, "the prompt takes the minor block back");
+#endif
         TEST_ASSERT_NULL(KosDynNode_STACK(prompt), "a prompt owns no segment");
         kos_dynchain_free(prompt, NULL);
     }
+
+#ifndef KOS_NOFREELIST
+    for (int i = 0; i < DYN_MINOR_MAX_FREE; i++)
+        kos_dynchain_free(drain[i], NULL);
+#endif
     return 0;
 }
 

@@ -190,10 +190,6 @@ static void kos_dynnode_init(
 #define KOS_DYN_MINOR_SIZE  (offsetof(KosDynNode, u) + KOS_DYN_MINOR_PAYLOAD)
 #define KOS_DYN_MAJOR_SIZE  sizeof(KosDynNode)
 
-/* cached node caps; tunable */
-#define DYN_MAJOR_MAX_FREE KOS_FREELIST_CAP(128)
-#define DYN_MINOR_MAX_FREE KOS_FREELIST_CAP(64)
-
 static size_t dyn_major_freecount = 0;
 static KosDynNode *dyn_major_freelist = NULL;
 static size_t dyn_minor_freecount = 0;
