@@ -36,7 +36,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    KoskariSyncViolation, get_frame_depth_limit, set_frame_depth_limit)
+    KoskariSyncViolation, defer, get_frame_depth_limit,
+    set_frame_depth_limit)
 from koskari.module import init_module, load_module_async, new_module
 
 
@@ -273,6 +274,12 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         outer = self.fresh(mod.wait_then_callcc(), mod.await_object)
         self.assertEqual(self.finish(outer), 11)
 
+        box = []
+        seen = []
+        c = mod.wait_then_callcc_keep(box)
+        outer = self.fresh(c, lambda c: mod.await_reentered(c, box, seen))
+        self.assertEqual(self.finish(outer), (11, 21))
+
 
     def test_applied_continuation_suspends_on_its_own_await(self):
         """
@@ -311,10 +318,12 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         """
 
         mod = asyncio.run(self.load_module())
-        c = mod.two_awaits(Suspender(), Suspender())
+        log = []
+        c = mod.two_awaits(Suspender(), Suspender(), log)
         d = mod.demand_await(c)
         with self.assertRaises(KoskariSyncViolation):
             d.send(None)
+        self.assertEqual(log, [KoskariSyncViolation])
 
 
     def test_awaited_handler_keeps_its_handled_exception(self):
@@ -364,12 +373,15 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
             outer = mod.await_after_interrupt(c)
             with self.assertRaises(Interrupted):
                 outer.send(None)
+            self.assertIn("[new]", repr(c))
             c.close()
 
-            d = mod.make_defer()
+            d = defer(mod.add, 1, 2)
             outer = mod.await_after_interrupt(d)
             with self.assertRaises(Interrupted):
                 outer.send(None)
+            self.assertIn("delegating", repr(d))
+            self.assertIn("[new]", repr(d))
             d.close()
         finally:
             signal.signal(signal.SIGINT, saved)
@@ -407,18 +419,22 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
             await mod.demand_over_partial()
 
 
-    def run_out(self, outer):
+    def run_out(self, outer, suspensions):
         """
-        Step a coroutine to its return, each step suspending on
-        "suspended"
+        Step a coroutine to its return, each step before it suspending
+        on "suspended"
 
         :param outer: the coroutine
+        :param suspensions: the number of suspensions expected
         :return: its value
         """
 
+        count = 0
         with self.assertRaises(StopIteration) as done:
             while True:
                 self.assertEqual(outer.send(None), "suspended")
+                count += 1
+        self.assertEqual(count, suspensions)
         return done.exception.value
 
 
@@ -435,7 +451,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         outer = mod.await_object(mod.collect(mod.wound(log), log))
         expect = ["in", "out", "out2", 1, "in", "out", "out2", 2,
                   "in", "out", "out2"]
-        self.assertEqual(self.run_out(outer), expect)
+        self.assertEqual(self.run_out(outer, 3), expect)
         self.assertEqual(log, expect)
 
 
@@ -447,7 +463,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         outer = mod.await_object(c)
         expect = ["in", "in2", "out", 1, "in", "in2", "out", 2,
                   "in", "in2", "out"]
-        self.assertEqual(self.run_out(outer), expect)
+        self.assertEqual(self.run_out(outer, 2), expect)
         self.assertEqual(log, expect)
 
 
@@ -458,7 +474,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         outer = mod.await_object(c)
         expect = ["enter", "exit", "exit2", 1, "enter", "exit", "exit2", 2,
                   "enter", "exit", "exit2"]
-        self.assertEqual(self.run_out(outer), expect)
+        self.assertEqual(self.run_out(outer, 3), expect)
         self.assertEqual(log, expect)
 
 
@@ -470,7 +486,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         outer = mod.await_object(mod.collect_gated(gen, log, gate))
         expect = ["enter", "exit", 1, "enter", "enter2", "exit", 2,
                   "enter", "enter2", "exit"]
-        self.assertEqual(self.run_out(outer), expect)
+        self.assertEqual(self.run_out(outer, 2), expect)
         self.assertEqual(log, expect)
 
 
@@ -484,7 +500,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         mod = asyncio.run(self.load_module())
         log = []
         outer = mod.await_object(mod.abort_through_wait(log))
-        self.assertEqual(self.run_out(outer), "aborted")
+        self.assertEqual(self.run_out(outer, 1), "aborted")
         self.assertEqual(log, ["in", "out", "out2"])
 
 

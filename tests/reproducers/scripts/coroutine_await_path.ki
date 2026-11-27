@@ -39,10 +39,6 @@
   (+ a b))
 
 
-(def make_defer []
-  (defer add 1 2))
-
-
 (def await_object [c]
   (await c))
 
@@ -109,14 +105,16 @@
   #(r p))
 
 
-(def catch_await [aw]
+(def catch_await [aw log]
   (try
     (await aw)
-    ([e Exception] (str (type e)))))
+    ([e Exception]
+      (log.append (type e))
+      (str (type e)))))
 
 
-(def two_awaits [first second]
-  (define r1 (catch_await first))
+(def two_awaits [first second log]
+  (define r1 (catch_await first log))
   (define r2 (await second))
   #(r1 r2))
 
@@ -143,6 +141,19 @@
 (def wait_then_callcc []
   (await (Suspender))
   (+ 1 (call/cc (lambda [k] (k 10)))))
+
+
+(def wait_then_callcc_keep [box]
+  (await (Suspender))
+  (+ 1 (call/cc (lambda [k] (begin (box.append k) 10)))))
+
+
+(def await_reentered [c box seen]
+  (define r (await c))
+  (seen.append r)
+  (if (== (len seen) 1)
+      (box[0] 20)
+      (tuple seen)))
 
 
 (def reset_await [c]
