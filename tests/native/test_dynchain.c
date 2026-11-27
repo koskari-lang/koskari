@@ -622,14 +622,19 @@ static int test_traverse_finally_saved_returns_visit_result(void) {
 
     KosDynFinally *node;
     PyObject *target;
+    PyObject *after;
     int res;
 
     node = kos_dynfinally_new(NULL, FAKE_INSN(1));
     TEST_ASSERT_NOT_NULL(node, "create FINALLY node");
 
     target = PyList_New(0);
+    after = PyList_New(0);
     TEST_ASSERT_NOT_NULL(target, "target");
+    TEST_ASSERT_NOT_NULL(after, "after");
     KosDynFinally_EXC(node)->saved.value = Py_NewRef(target);
+    /* the handling triple is visited after the displaced one */
+    KosDynFinally_HANDLING(node)->value = Py_NewRef(after);
 
     stop_visit_reset(target);
     res = kos_dynnode_traverse((KosDynNode *) node, stop_visit, NULL);
@@ -640,7 +645,9 @@ static int test_traverse_finally_saved_returns_visit_result(void) {
 
     kos_dynfinally_free(node);
     TEST_ASSERT_EQ(Py_REFCNT(target), 1, "the node released the target");
+    TEST_ASSERT_EQ(Py_REFCNT(after), 1, "and the handled exception");
     Py_DECREF(target);
+    Py_DECREF(after);
 
     return 0;
 }
@@ -1103,7 +1110,8 @@ static int freeze_install_effects(int count) {
             TEST_ASSERT_EQ(state.effects.cap, 0, "two entries stay inline");
         }
 
-        /* the count the install computes from depths is the walk's */
+        /* the span's frames are numbered without a gap, which the
+           install's count from depths relies on */
         TEST_ASSERT_EQ(
             (unsigned) KosDynFrame_DEPTH(state.frozen.frame)
                 - KosDynFrame_DEPTH(state.bottom) + 1u,
@@ -1112,6 +1120,12 @@ static int freeze_install_effects(int count) {
 
         TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
                        "install the span");
+        /* the first install renumbers by its count over the consumer at
+           depth 1: the root frame at 2, the top frame at 3 */
+        TEST_ASSERT_EQ(KosDynFrame_DEPTH(state.bottom), 2,
+                       "the install numbers the root over the consumer");
+        TEST_ASSERT_EQ(KosDynFrame_DEPTH(top), 3,
+                       "and the top frame over the root");
         TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
         TEST_ASSERT_EQ(state.effects.count, 0, "the list is used up");
         for (int i = 0; i < count; i++)
@@ -1778,8 +1792,16 @@ static int test_pieces_grow_refused_changes_nothing(void) {
 static int refuse_hash = 0;
 
 
+/* A TRY the refusing hash looks at when it refuses, and the state of
+   its effect it saw then */
+static KosDynNode *refuse_watch = NULL;
+static int refuse_watch_state = -1;
+
+
 static Py_hash_t refusing_key_hash(PyObject *self) {
     if (refuse_hash) {
+        if (refuse_watch)
+            refuse_watch_state = KosDynTry_EXC(refuse_watch)->state;
         PyErr_SetString(PyExc_RuntimeError, "refused hash");
         return -1;
     }
@@ -1873,14 +1895,19 @@ static int test_install_refused_takes_effects_out_again(void) {
     TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
                 "the try's effect is out");
 
+    refuse_watch = try_;
+    refuse_watch_state = -1;
     refuse_hash = 1;
     r = kos_dyn_gen_install(ctx, owner, &state);
     refuse_hash = 0;
+    refuse_watch = NULL;
 
     TEST_ASSERT_EQ(r, -1, "the install refuses");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
                 "with the param's error");
     PyErr_Clear();
+    TEST_ASSERT(refuse_watch_state == KOS_EXC_HANDLING,
+                "the try was back in when the param refused");
     TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
                 "the try's effect is out again");
     TEST_ASSERT_EQ(state.effects.count, 2, "the list stands");
@@ -1973,14 +2000,19 @@ static int test_winding_install_refused_takes_effects_out_again(void) {
                 "the try's effect is out");
     owner_refs = Py_REFCNT(owner);
 
+    refuse_watch = try_;
+    refuse_watch_state = -1;
     refuse_hash = 1;
     r = kos_dyn_gen_install(ctx, owner, &state);
     refuse_hash = 0;
+    refuse_watch = NULL;
 
     TEST_ASSERT_EQ(r, -1, "the install refuses");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
                 "with the param's error");
     PyErr_Clear();
+    TEST_ASSERT(refuse_watch_state == KOS_EXC_HANDLING,
+                "the try was back in when the param refused");
     TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
                 "the try's effect is out again");
     TEST_ASSERT_EQ(state.wound_count, 3, "the list stands");
@@ -2087,13 +2119,18 @@ static int test_winding_attach_refused_takes_effects_out_again(void) {
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0], "which is the top");
     TEST_ASSERT_NULL(KosDynNode_PARENT(try_), "what rests on it is cut off");
 
+    refuse_watch = try_;
+    refuse_watch_state = -1;
     refuse_hash = 1;
     r = kos_xfer_goal_drive(ctx);
     refuse_hash = 0;
+    refuse_watch = NULL;
 
     TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "the attach refuses");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
                 "with the param's error");
+    TEST_ASSERT(refuse_watch_state == KOS_EXC_HANDLING,
+                "the try was back in when the param refused");
     TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
                 "the try's effect is out again");
     TEST_ASSERT_NULL(KosDynNode_PARENT(try_), "nothing is attached");
