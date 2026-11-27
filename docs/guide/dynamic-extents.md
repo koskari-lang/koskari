@@ -199,9 +199,10 @@ def resume-mixed []:
 ```
 
 `__enter__` ran once and `__exit__` ran once, but not around the same
-stretch of the program: the manager was entered while the handler ran.
-A continuation called twice would run the `finally:` and the exit twice
-against one enter, and one never called would run neither.
+stretch of the program: the manager stayed entered while the handler
+ran, outside the body of the `with`. A continuation called twice would
+run the `finally:` and the exit twice against one enter, and one never
+called would run neither.
 
 Choose by what the cleanup protects:
 
@@ -210,8 +211,9 @@ Choose by what the cleanup protects:
 - a `with` or a `finally:` is enough in code that no continuation
   crosses, and it costs less;
 - inside a `reset` whose continuation may be called more than once, a
-  plain `with` holds one manager for every copy of its body, and a
-  `dyn-with` enters the manager once per copy.
+  plain `with` enters its manager once and exits it once for each copy
+  of its body, and a `dyn-with` enters and exits its manager around its
+  first run and around each copy.
 
 ### Python code between two Koskari extents
 
@@ -221,7 +223,9 @@ blocks line up with the Koskari extents around them.
 
 A Koskari function called from Python returns an awaitable. Python code
 that returns that awaitable has left its own blocks before the function
-body runs:
+body runs. The Python functions in this section live in a module
+`helpers.py` on `sys.path`, and the Koskari examples run after
+`import helpers`:
 
 ```python
 def guarded(log, fn):
