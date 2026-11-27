@@ -18,7 +18,7 @@ What a suspended generator holds outside its own chain. A parameterize
 swaps cells into the consumer's table and a try that is handling an
 exception puts it on the thread; both go out at every yield and come
 back at every re-entry, so the consumer never sees them and the
-generator always does. A with runs nothing at a yield.
+generator always does. A with runs nothing at a yield
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

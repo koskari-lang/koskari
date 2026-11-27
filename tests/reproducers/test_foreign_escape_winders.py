@@ -18,7 +18,7 @@ Full-stack reproducer: a continuation captured in one evaluation and
 called from a coroutine or generator that Python steps in another. The
 signal leaves the escaping context's dyn-wind and dyn-with extents,
 each exit running once, and reaches the owner without any handler in
-the escaping context taking it.
+the escaping context taking it
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

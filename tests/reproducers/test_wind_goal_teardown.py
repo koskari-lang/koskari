@@ -18,7 +18,7 @@ Full-stack reproducer: a generator closed or collected while the goal
 that winds it into or out of a dyn-wind or dyn-with is still waiting.
 The goal lives in the generator's own storage; the close that cannot
 finish gives the goal up with the chain it waits on, and the storage
-outlives the goal.
+outlives the goal
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

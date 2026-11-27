@@ -2290,6 +2290,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
 
 /* === Test: a yield whose effect list cannot be sized === */
+
 /*
   The yield's span holds three listed nodes (set_refusal_span). The
   list's room past the inline pair is refused at the yield, so the
@@ -2308,19 +2309,19 @@ static PyObject *make_refusal_cm(PyObject **pre_out) {
     if (! pre)
         return NULL;
     ran = PyRun_String(
-            "class AW:\n"
-            "    def __await__(self):\n"
-            "        yield 'suspended'\n"
-            "        return False\n"
-            "class CM:\n"
-            "    def __init__(self):\n"
-            "        self.log = []\n"
-            "    def __enter__(self):\n"
-            "        self.log.append('enter')\n"
-            "    def __exit__(self, typ, val, tb):\n"
-            "        self.log.append(typ)\n"
-            "        return AW() if typ is not None else None\n",
-            Py_file_input, pre, pre);
+        "class AW:\n"
+        "    def __await__(self):\n"
+        "        yield 'suspended'\n"
+        "        return False\n"
+        "class CM:\n"
+        "    def __init__(self):\n"
+        "        self.log = []\n"
+        "    def __enter__(self):\n"
+        "        self.log.append('enter')\n"
+        "    def __exit__(self, typ, val, tb):\n"
+        "        self.log.append(typ)\n"
+        "        return AW() if typ is not None else None\n",
+        Py_file_input, pre, pre);
     if (! ran) {
         Py_DECREF(pre);
         return NULL;
@@ -2380,17 +2381,19 @@ static int check_refusal_log(PyObject *cm, PyObject *exit_typ) {
 
     TEST_ASSERT_NOT_NULL(log, "the CM's log");
     TEST_ASSERT_EQ(PyList_GET_SIZE(log), 2, "enter and exit ran once each");
-    TEST_ASSERT(PyUnicode_CompareWithASCIIString(
-                    PyList_GET_ITEM(log, 0), "enter") == 0,
-                "enter ran first");
-    TEST_ASSERT_SAME(PyList_GET_ITEM(log, 1), exit_typ,
-                     "exit saw the expected type");
+    TEST_ASSERT(
+        PyUnicode_CompareWithASCIIString(
+            PyList_GET_ITEM(log, 0), "enter") == 0,
+        "enter ran first");
+    TEST_ASSERT_SAME(
+        PyList_GET_ITEM(log, 1), exit_typ, "exit saw the expected type");
     Py_DECREF(log);
     return 0;
 }
 
 
 static int test_eval_yield_refused_raise_awaits_in_exit(void) {
+
     /*
       Bytecode: <span>, CONST 1, YIELD 1, POP_PARAM, POP_PARAM,
                 POP_DYN_WITH, RETURN 1.
@@ -2429,17 +2432,20 @@ static int test_eval_yield_refused_raise_awaits_in_exit(void) {
     TEST_ASSERT_EQ(refused, 1, "the yield's list was refused");
     TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "first event is AWAIT");
     TEST_ASSERT_NOT_NULL(ev.val, "AWAIT carries the awaitable's value");
-    TEST_ASSERT(PyUnicode_CompareWithASCIIString(ev.val, "suspended") == 0,
-                "the value is the exit awaitable's first");
-    TEST_ASSERT(KosContext_SuspensionEvent(ctx) == KOS_SUSP_AWAIT,
-                "the context is suspended on an await");
-    TEST_ASSERT(! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING),
-                "the context is suspended, not running");
+    TEST_ASSERT(
+        PyUnicode_CompareWithASCIIString(ev.val, "suspended") == 0,
+        "the value is the exit awaitable's first");
+    TEST_ASSERT(
+        KosContext_SuspensionEvent(ctx) == KOS_SUSP_AWAIT,
+        "the context is suspended on an await");
+    TEST_ASSERT(
+        ! (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING),
+        "the context is suspended, not running");
     Py_DECREF(ev.val);
 
-    /* the awaitable's next step is the driver's, as the coroutine's
-       send takes it: it completes with False, which goes back in as the
-       exit's result */
+    /* the code stepping the context takes the awaitable's next step, as
+       the coroutine's send does: it completes with False, which goes
+       back in as the exit's result */
     PyObject *await_iter = KosContext_PythonAwaitIter(ctx);
     TEST_ASSERT_NOT_NULL(await_iter, "the exit's awaitable is stored");
     PyObject *exit_result = NULL;
@@ -2453,11 +2459,13 @@ static int test_eval_yield_refused_raise_awaits_in_exit(void) {
     ev = koskari_eval(ctx, NULL, exit_result, NULL, NULL);
     Py_DECREF(exit_result);
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "second event is RAISE");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
-                "the yield's MemoryError leaves the generator");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_MemoryError),
+        "the yield's MemoryError leaves the generator");
     PyErr_Clear();
-    TEST_ASSERT(check_refusal_log(cm, PyExc_MemoryError) == 0,
-                "the with was entered and left once");
+    TEST_ASSERT(
+        check_refusal_log(cm, PyExc_MemoryError) == 0,
+        "the with was entered and left once");
 
     Py_DECREF(ctx);
     Py_XDECREF(dyn_gen);
@@ -2470,6 +2478,7 @@ static int test_eval_yield_refused_raise_awaits_in_exit(void) {
 
 
 static int test_eval_yield_refused_raise_caught_in_span(void) {
+
     /*
       Bytecode: <span of three params>, PUSH_TRY(10), CONST 1, YIELD 1,
                 JUMP 13, LABEL(10), EXCEPTION, YIELD 1,
@@ -2514,8 +2523,9 @@ static int test_eval_yield_refused_raise_caught_in_span(void) {
     TEST_ASSERT_EQ(refused, 1, "the yield's list was refused");
     TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
     TEST_ASSERT_NOT_NULL(ev.val, "the handler yields");
-    TEST_ASSERT(PyErr_GivenExceptionMatches(ev.val, PyExc_MemoryError),
-                "the handler took the yield's MemoryError");
+    TEST_ASSERT(
+        PyErr_GivenExceptionMatches(ev.val, PyExc_MemoryError),
+        "the handler took the yield's MemoryError");
     Py_DECREF(ev.val);
 
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
@@ -3402,6 +3412,7 @@ static int test_cache_frame_takes_self_binding_function(void) {
 
 
 static int test_cache_frame_keeps_frame_caps(void) {
+
     /*
       The cache's reset adds the scope cap and clears no other: a
       cached frame is still a major frame, so its free returns it to
@@ -3409,8 +3420,8 @@ static int test_cache_frame_keeps_frame_caps(void) {
     */
     PyObject *pos = Py_BuildValue("(s)", "a");
     TEST_ASSERT_NOT_NULL(pos, "pos tuple");
-    PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
-                                           NULL, NULL, NULL, NULL);
+    PyObject *formals = KosFormals_NewFull(
+        pos, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     Py_DECREF(pos);
     TEST_ASSERT_NOT_NULL(formals, "formals");
 
@@ -3420,19 +3431,19 @@ static int test_cache_frame_keeps_frame_caps(void) {
 
     KosDynFrame *frame = make_offered_frame(fn);
     TEST_ASSERT_NOT_NULL(frame, "offered frame");
-    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
-                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR
-                   | KOS_DYN_CAP_OWNS_NS,
-                   "a code frame is a major frame owning its scope");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(frame),
+        KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR | KOS_DYN_CAP_OWNS_NS,
+        "a code frame is a major frame owning its scope");
 
     int cached = KosFunction_CacheFrame(fn, frame);
     if (! cached)
         kos_dynframe_free(frame);
     TEST_ASSERT_EQ(cached, 1, "the frame is cached");
-    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
-                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR
-                   | KOS_DYN_CAP_OWNS_NS,
-                   "the reset keeps the frame's caps beside the scope cap");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(frame),
+        KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR | KOS_DYN_CAP_OWNS_NS,
+        "the reset keeps the frame's caps beside the scope cap");
 
     Py_DECREF(fn);
     return 0;

@@ -16,7 +16,7 @@ Koskari code stepping a Koskari async generator through __anext__,
 asend, athrow and aclose runs the step flattened on the consumer's own
 chain, as for-each and next do: the generator sees the consumer's
 dynamic state, and the awaitable the adapter returned is spent once
-the step has been taken. A step Python has already started is refused.
+the step has been taken. A step Python has already started is refused
 """
 
 
@@ -214,6 +214,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             signal.signal(signal.SIGINT, saved)
         asyncio.run(g.aclose())
 
+
     async def test_started_step_refuses_a_koskari_await(self):
         """
         A step Python started is in flight under Python; a Koskari await
@@ -239,6 +240,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, await g.__anext__())
         await g.aclose()
 
+
     def step_out(self, awaitable):
         """
         Step an awaitable from Python to its end, each step suspending
@@ -254,6 +256,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             return ("value", done.value)
         except Exception as exc:
             return ("raise", type(exc).__name__)
+
 
     def test_awaited_step_suspends_in_an_after_segment(self):
         """
@@ -276,8 +279,9 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.step_out(g.__anext__()), ("raise", "StopAsyncIteration"))
         self.assertEqual(
-            log, ["in", "out", "out2", "in", "out", "out2",
-                  "in", "out", "out2"])
+            log,
+            ["in", "out", "out2", "in", "out", "out2", "in", "out", "out2"])
+
 
     def test_awaited_step_suspends_in_a_before_segment(self):
         v = asyncio.run(self.load())
@@ -295,6 +299,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             self.step_out(g.__anext__()), ("raise", "StopAsyncIteration"))
+
 
     def test_awaiting_coroutine_closed_in_an_after_segment(self):
         """
@@ -345,6 +350,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done.exception.value, "woken")
         await g.aclose()
 
+
     def test_generator_depth_is_renumbered_after_a_deep_step(self):
         """
         A step awaited two hundred frames deep is numbered for that
@@ -383,6 +389,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
 
         return ("value", await awaitable)
 
+
     async def test_awaited_step_sees_the_awaiters_parameterize(self):
         v = await self.load()
         g = v["wait_pgen"]()
@@ -393,6 +400,7 @@ class TestKoskariStepsAreFlattened(unittest.IsolatedAsyncioTestCase):
             outer.send(None)
         self.assertEqual(done.exception.value, "inner")
         await g.aclose()
+
 
     async def test_generator_is_busy_while_its_awaited_step_is_suspended(
             self):

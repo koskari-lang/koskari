@@ -39,7 +39,6 @@ static PyObject *kos_lib_module = NULL;
 
 /* === refusing realloc === */
 
-
 static PyMemAllocatorEx refusing_base;
 static size_t refusing_size = 0;
 static int refusing_left = 0;
@@ -47,6 +46,7 @@ static int refusing_count = 0;
 
 
 static void *refusing_realloc(void *ctx, void *ptr, size_t size) {
+
     if (refusing_left
         && (! refusing_size || (! ptr && size == refusing_size))) {
         if (refusing_size)
@@ -73,6 +73,7 @@ void test_refuse_realloc_begin(size_t size) {
 
 
 int test_refuse_realloc_end(void) {
+
     refusing_left = 0;
     PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &refusing_base);
     return refusing_count;

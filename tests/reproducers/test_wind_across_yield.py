@@ -20,7 +20,7 @@ the value, innermost first; the next step enters it again, outermost
 first, before the body continues. Each segment runs with the chain as
 it stands outside its own extent. A try, a finally and a plain with run
 nothing at a yield. A coroutine suspended in an await is not a yield:
-nothing runs until it is closed.
+nothing runs until it is closed
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -1272,10 +1272,11 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         """
 
         step = ["wrap-in", "in", "out", "wrap-out"]
-        expect = (["wrap-in", "in", "out", "wrap-out", 1]
-                  + step + [2]
-                  + step + [3]
-                  + ["wrap-in", "wrap-out", 4])
+        expect = (
+            ["wrap-in", "in", "out", "wrap-out", 1]
+            + step + [2]
+            + step + [3]
+            + ["wrap-in", "wrap-out", 4])
 
         log = []
         self.assertEqual(
@@ -1421,9 +1422,10 @@ class TestWindAcrossYield(unittest.IsolatedAsyncioTestCase):
         them again, outermost first
         """
 
-        expect = ["a-in", "a-out", 1,
-                  "a-in", "b-in", "b-out", "a-out", 2,
-                  "a-in", "b-in", "b-out", "a-out"]
+        expect = [
+            "a-in", "a-out", 1,
+            "a-in", "b-in", "b-out", "a-out", 2,
+            "a-in", "b-in", "b-out", "a-out"]
 
         log = []
         self.assertEqual(

@@ -514,7 +514,6 @@ static int test_dynwith_free_exc_unconditional(void) {
 
 /* === Traverse return propagation === */
 
-
 /* The object stop_visit answers on, whether it has been seen, and how
    many visits came after it */
 static PyObject *stop_target = NULL;
@@ -541,6 +540,7 @@ static int stop_visit(PyObject *obj, void *arg) {
 
 
 static void stop_visit_reset(PyObject *target) {
+
     stop_target = target;
     stop_seen = 0;
     stop_visits_after = 0;
@@ -596,14 +596,15 @@ static int test_traverse_with_saved_returns_visit_result(void) {
 
     stop_visit_reset(target);
     res = kos_dynnode_traverse((KosDynNode *) with_node, stop_visit, NULL);
-    TEST_ASSERT_EQ(res, STOP_VISIT_RESULT,
-                   "traverse answers the visitor's value");
+    TEST_ASSERT_EQ(
+        res, STOP_VISIT_RESULT, "traverse answers the visitor's value");
     TEST_ASSERT_EQ(stop_visits_after, 0, "no visit after the match");
     stop_visit_reset(NULL);
 
     /* the pop re-raises the stored exception and frees the node, which
        releases the displaced one */
-    TEST_ASSERT(kos_dyn_pop_with(ctx, with_node) == -1,
+    TEST_ASSERT(
+        kos_dyn_pop_with(ctx, with_node) == -1,
         "pop WITH re-raises the stored exception");
     PyErr_Clear();
 
@@ -638,8 +639,8 @@ static int test_traverse_finally_saved_returns_visit_result(void) {
 
     stop_visit_reset(target);
     res = kos_dynnode_traverse((KosDynNode *) node, stop_visit, NULL);
-    TEST_ASSERT_EQ(res, STOP_VISIT_RESULT,
-                   "traverse answers the visitor's value");
+    TEST_ASSERT_EQ(
+        res, STOP_VISIT_RESULT, "traverse answers the visitor's value");
     TEST_ASSERT_EQ(stop_visits_after, 0, "no visit after the match");
     stop_visit_reset(NULL);
 
@@ -678,8 +679,8 @@ static int test_traverse_context_exc_returns_visit_result(void) {
 
     stop_visit_reset(target);
     res = Py_TYPE(ctx)->tp_traverse((PyObject *) ctx, stop_visit, NULL);
-    TEST_ASSERT_EQ(res, STOP_VISIT_RESULT,
-                   "traverse answers the visitor's value");
+    TEST_ASSERT_EQ(
+        res, STOP_VISIT_RESULT, "traverse answers the visitor's value");
     TEST_ASSERT_EQ(stop_visits_after, 0, "no visit after the match");
     stop_visit_reset(NULL);
 
@@ -716,9 +717,9 @@ static int test_dynforeach_free_with_iter(void) {
 
 /* === Capability and skip link tests === */
 
-
 /* A code-less frame on parent: a node with no skip bit. */
 static KosDynNode *plain_node(KosDynNode *parent) {
+
     PyObject *ns = PyDict_New();
 
     if (! ns)
@@ -735,28 +736,34 @@ static KosDynNode *skip_node(KosDynNode *parent) {
 
 static int test_node_header_size(void) {
 
-    TEST_ASSERT_EQ(offsetof(KosDynNode, u), 40,
-                   "the node header is 40 bytes");
+    TEST_ASSERT_EQ(
+        offsetof(KosDynNode, u), 40, "the node header is 40 bytes");
     /* the slot's state and the bytes it lends fit the padding the
        exception triple leaves, so a payload embedding one grows by a
        word over the triple and no more */
-    TEST_ASSERT_EQ(sizeof(KosExcSlot), sizeof(KosExcState) + sizeof(void *),
-                   "the exception slot is the triple and one word");
+    TEST_ASSERT_EQ(
+        sizeof(KosExcSlot), sizeof(KosExcState) + sizeof(void *),
+        "the exception slot is the triple and one word");
     /* an extent's phase and entered flag live in its obligation's
        lent bytes */
-    TEST_ASSERT_EQ(sizeof(KosExtent), sizeof(KosObligation),
-                   "an extent is no larger than its obligation");
-    TEST_ASSERT_EQ(sizeof(((KosDynNode *) 0)->u.wind), 6 * sizeof(void *),
-                   "the WIND payload is six words");
-    TEST_ASSERT_EQ(sizeof(((KosDynNode *) 0)->u.with), 13 * sizeof(void *),
-                   "the WITH payload is thirteen words");
-    TEST_ASSERT_EQ(sizeof(((KosDynNode *) 0)->u), 13 * sizeof(void *),
-                   "the WITH payload is the largest");
+    TEST_ASSERT_EQ(
+        sizeof(KosExtent), sizeof(KosObligation),
+        "an extent is no larger than its obligation");
+    TEST_ASSERT_EQ(
+        sizeof(((KosDynNode *) 0)->u.wind), 6 * sizeof(void *),
+        "the WIND payload is six words");
+    TEST_ASSERT_EQ(
+        sizeof(((KosDynNode *) 0)->u.with), 13 * sizeof(void *),
+        "the WITH payload is thirteen words");
+    TEST_ASSERT_EQ(
+        sizeof(((KosDynNode *) 0)->u), 13 * sizeof(void *),
+        "the WITH payload is the largest");
     return 0;
 }
 
 
 static int test_caps_by_kind(void) {
+
     /* every node of a kind carries the kind's caps from its init */
     KosDynNode *frame = plain_node(NULL);
     KosDynNode *prompt = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
@@ -775,27 +782,28 @@ static int test_caps_by_kind(void) {
     gen = (KosDynNode *) kos_dyngen_new(owner, &state);
     TEST_ASSERT_NOT_NULL(gen, "create the GEN node");
 
-    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
-                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
-                   "a code-less frame is a major frame and no more");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(frame), KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
+        "a code-less frame is a major frame and no more");
     TEST_ASSERT(KosDynNode_IS_FRAME(frame), "a frame is found by its cap");
-    TEST_ASSERT(! (KosDynNode_CAPS(frame) & KOS_DYN_CAP_SKIP),
-                "a frame carries no skip bit");
+    TEST_ASSERT(
+        ! (KosDynNode_CAPS(frame) & KOS_DYN_CAP_SKIP),
+        "a frame carries no skip bit");
 
-    TEST_ASSERT_EQ(KosDynNode_CAPS(prompt),
-                   KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_BARRIER,
-                   "a prompt intercepts and is a barrier, and is minor");
-    TEST_ASSERT_EQ(KosDynNode_CAPS(try_),
-                   KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_EFFECT
-                   | KOS_DYN_CAP_MAJOR,
-                   "a try intercepts and holds an effect");
-    TEST_ASSERT_EQ(KosDynNode_CAPS(wind),
-                   KOS_DYN_CAP_LEAVES | KOS_DYN_CAP_WINDS
-                   | KOS_DYN_CAP_MAJOR,
-                   "a wind leaves and winds");
-    TEST_ASSERT_EQ(KosDynNode_CAPS(gen),
-                   KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_GEN,
-                   "a GEN intercepts and is minor");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(prompt), KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_BARRIER,
+        "a prompt intercepts and is a barrier, and is minor");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(try_),
+        KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_EFFECT | KOS_DYN_CAP_MAJOR,
+        "a try intercepts and holds an effect");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(wind),
+        KOS_DYN_CAP_LEAVES | KOS_DYN_CAP_WINDS | KOS_DYN_CAP_MAJOR,
+        "a wind leaves and winds");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(gen), KOS_DYN_CAP_INTERCEPT | KOS_DYN_CAP_GEN,
+        "a GEN intercepts and is minor");
     TEST_ASSERT(KosDynNode_IS_GEN(gen), "a GEN is found by its cap");
     TEST_ASSERT(! KosDynNode_IS_GEN(prompt), "a prompt is not a GEN");
 
@@ -811,6 +819,7 @@ static int test_caps_by_kind(void) {
 
 
 static int test_skip_links_at_init(void) {
+
     /* a node's skip link is its nearest ancestor with a skip bit */
     KosDynNode *f1 = plain_node(NULL);
     KosDynNode *t1 = skip_node(f1);
@@ -823,8 +832,9 @@ static int test_skip_links_at_init(void) {
     TEST_ASSERT_NULL(KosDynNode_SKIP(f1), "the root names nothing");
     TEST_ASSERT_NULL(KosDynNode_SKIP(t1), "nothing below the try has a bit");
     TEST_ASSERT_SAME(KosDynNode_SKIP(f2), t1, "a node on the try names it");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(f3), t1,
-                     "a node above a plain node names what that names");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(f3), t1,
+        "a node above a plain node names what that names");
     TEST_ASSERT_SAME(KosDynNode_SKIP(p), t1, "the prompt names the try");
     TEST_ASSERT_SAME(KosDynNode_SKIP(f4), p, "a node on the prompt names it");
     TEST_ASSERT(kos_dyn_skips_hold(f4, NULL), "the chain's links hold");
@@ -844,6 +854,7 @@ static int test_skip_links_at_init(void) {
    node at where (0 top, 1 middle, 2 bottom, 3 none), and attach the
    clone onto another prompt. */
 static int clone_segment_skip_links(int where) {
+
     KosDynNode *stop = (KosDynNode *) kos_dynprompt_new(NULL, NULL);
     KosDynNode *onto = (KosDynNode *) kos_dynprompt_new(NULL, Py_True);
     KosDynNode *a = where == 2 ? skip_node(stop) : plain_node(stop);
@@ -891,8 +902,8 @@ static int clone_segment_skip_links(int where) {
     /* the attach: the bottom is linked, and the tail takes its link */
     kos_dynnode_link(bottom, onto);
     kos_dyn_repair_tail(shape.tail, bottom);
-    TEST_ASSERT_SAME(KosDynNode_SKIP(bottom), onto,
-                     "the bottom names the node it is on");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(bottom), onto, "the bottom names the node it is on");
     TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the attached clone holds");
 
     kos_dynchain_free(top, NULL);
@@ -996,36 +1007,40 @@ static int test_keep_skip_links(void) {
     TEST_ASSERT_NOT_NULL(top, "push the top frame");
 
     /* the two links the keep must re-point name the live prompt */
-    TEST_ASSERT_SAME(KosDynNode_SKIP(prompt), outside,
-                     "the prompt names the try under it");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(body), prompt,
-                     "the body frame names the prompt");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(outer), prompt,
-                     "and so does the outer try");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(prompt), outside, "the prompt names the try under it");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(body), prompt, "the body frame names the prompt");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(outer), prompt, "and so does the outer try");
 
-    TEST_ASSERT_EQ(kos_shift_capture(ctx, NULL, &k, &found), 0,
-                   "begin the capture");
+    TEST_ASSERT_EQ(
+        kos_shift_capture(ctx, NULL, &k, &found), 0, "begin the capture");
     TEST_ASSERT_SAME((KosDynNode *) found, prompt, "at the prompt");
     copy = KosContinuation_CAPTURED_CHAIN(k);
     TEST_ASSERT_NOT_SAME(copy, prompt, "the template starts on a copy");
-    TEST_ASSERT_EQ(KosDynNode_KIND(copy), KOS_DYN_PROMPT,
-                   "a copy of the prompt");
+    TEST_ASSERT_EQ(
+        KosDynNode_KIND(copy), KOS_DYN_PROMPT, "a copy of the prompt");
 
-    r = kos_abort_to_prompt(ctx, found, (KosCode *) aside, PyDict_New(),
-                            0, NULL, k);
+    r = kos_abort_to_prompt(
+        ctx, found, (KosCode *) aside, PyDict_New(), 0, NULL, k);
     TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL, "the aside's frame is live");
 
     /* the chain: the aside's frame on the prompt, the rest untouched */
-    TEST_ASSERT_SAME(KosDynNode_PARENT(KosContext_DYN_TOP(ctx)), prompt,
-                     "the aside stands on the prompt");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(prompt), outside,
-                     "the prompt still names the try under it");
-    TEST_ASSERT(kos_dyn_skips_hold(KosContext_DYN_TOP(ctx), NULL),
-                "the chain's links hold");
+    TEST_ASSERT_SAME(
+        KosDynNode_PARENT(KosContext_DYN_TOP(ctx)), prompt,
+        "the aside stands on the prompt");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(prompt), outside,
+        "the prompt still names the try under it");
+    TEST_ASSERT(
+        kos_dyn_skips_hold(KosContext_DYN_TOP(ctx), NULL),
+        "the chain's links hold");
 
     /* the template: the kept run, top first, on the prompt's copy */
-    TEST_ASSERT_SAME(KosContinuation_CAPTURED_CHAIN(k), top,
-                     "the top frame is the template's top");
+    TEST_ASSERT_SAME(
+        KosContinuation_CAPTURED_CHAIN(k), top,
+        "the top frame is the template's top");
     TEST_ASSERT_SAME(KosDynNode_PARENT(top), inner, "then the inner try");
     TEST_ASSERT_SAME(KosDynNode_PARENT(inner), mid, "the middle frame");
     TEST_ASSERT_SAME(KosDynNode_PARENT(mid), outer, "the outer try");
@@ -1034,16 +1049,16 @@ static int test_keep_skip_links(void) {
     TEST_ASSERT_NULL(KosDynNode_PARENT(copy), "which ends the template");
     TEST_ASSERT_EQ(KosContinuation_FRAMES(k), 3, "three frames are kept");
 
-    TEST_ASSERT_SAME(KosDynNode_SKIP(top), inner,
-                     "the top frame names the inner try");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(inner), outer,
-                     "the inner try names the outer one");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(mid), outer,
-                     "and so does the middle frame");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(outer), copy,
-                     "the outer try names the prompt's copy");
-    TEST_ASSERT_SAME(KosDynNode_SKIP(body), copy,
-                     "and so does the body frame");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(top), inner, "the top frame names the inner try");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(inner), outer, "the inner try names the outer one");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(mid), outer, "and so does the middle frame");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(outer), copy, "the outer try names the prompt's copy");
+    TEST_ASSERT_SAME(
+        KosDynNode_SKIP(body), copy, "and so does the body frame");
     TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the template's links hold");
 
     KosContext_EvalExit(ctx);
@@ -1055,6 +1070,7 @@ static int test_keep_skip_links(void) {
 
 
 static int test_node_sizes_by_kind(void) {
+
     /* a PROMPT, CC or GEN is a minor node; every other kind is major */
     size_t minor = offsetof(KosDynNode, u) + 2 * sizeof(void *);
     KosDynKind kind;
@@ -1063,9 +1079,9 @@ static int test_node_sizes_by_kind(void) {
         int is_minor = kind == KOS_DYN_PROMPT || kind == KOS_DYN_CC
             || kind == KOS_DYN_GEN;
 
-        TEST_ASSERT_EQ(kos_dyn_kind_size(kind),
-                       is_minor ? minor : sizeof(KosDynNode),
-                       "the kind's size follows its MAJOR cap");
+        TEST_ASSERT_EQ(
+            kos_dyn_kind_size(kind), is_minor ? minor : sizeof(KosDynNode),
+            "the kind's size follows its MAJOR cap");
     }
     TEST_ASSERT_EQ(minor, 56, "a minor node is 56 bytes");
     return 0;
@@ -1080,6 +1096,7 @@ static int test_node_sizes_by_kind(void) {
    major one its embedded segment, so a wrong-sized block is also an
    overrun the ASan run sees. */
 static int test_node_sizes_do_not_mix(void) {
+
 #ifndef KOS_NOFREELIST
     KosDynNode *drain[DYN_MINOR_MAX_FREE];
 
@@ -1110,7 +1127,7 @@ static int test_node_sizes_do_not_mix(void) {
         TEST_ASSERT_NOT_SAME(try_, was, "the try is not the freed prompt");
         TEST_ASSERT_NOT_SAME(frame, was, "the frame is not the freed prompt");
 #endif
-        TEST_ASSERT(KosDynNode_STACK(try_) != NULL, "the try has its segment");
+        TEST_ASSERT(KosDynNode_STACK(try_), "the try has its segment");
         kos_dynchain_free(frame, NULL);
 
         /* nor do the freed major blocks serve a minor node: the freed
@@ -1133,6 +1150,7 @@ static int test_node_sizes_do_not_mix(void) {
 
 
 static int test_frame_caps_survive_cache_reset(void) {
+
     /* a frame stripped for a holder's cache stays a major frame */
     KosDynFrame *frame = (KosDynFrame *) plain_node(NULL);
     KosDynFrame *cache = NULL;
@@ -1141,9 +1159,9 @@ static int test_frame_caps_survive_cache_reset(void) {
     KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
     TEST_ASSERT(kos_dynframe_cache_inert(frame, &cache), "the cache takes it");
     TEST_ASSERT_SAME(cache, frame, "the frame is in the cache");
-    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
-                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
-                   "the reset clears the scope cap and keeps the frame's");
+    TEST_ASSERT_EQ(
+        KosDynNode_CAPS(frame), KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR,
+        "the reset clears the scope cap and keeps the frame's");
 
     KosDynFrame_NS(frame) = PyDict_New();
     kos_dynframe_free(frame);
@@ -1152,7 +1170,6 @@ static int test_frame_caps_survive_cache_reset(void) {
 
 
 /* === Effect list tests === */
-
 
 /* A consumer's context with a generator's span installed on it: a
    consumer frame, the GEN, the generator's frame, then count TRY nodes
@@ -1227,17 +1244,20 @@ static int freeze_install_effects(int count) {
         TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
         TEST_ASSERT_EQ(state.effects.count, count, "every effect is listed");
         for (int i = 0; i < count; i++) {
-            TEST_ASSERT_SAME(effects_items(&state.effects)[i],
-                             trys[count - 1 - i],
-                             "the list is innermost first");
-            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN, "the effect is out");
+            TEST_ASSERT_SAME(
+                effects_items(&state.effects)[i], trys[count - 1 - i],
+                "the list is innermost first");
+            TEST_ASSERT(
+                KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
+                "the effect is out");
         }
         if (count > 2) {
-            TEST_ASSERT_EQ(state.effects.cap, count,
-                           "past two the list is on the heap");
+            TEST_ASSERT_EQ(
+                state.effects.cap, count, "past two the list is on the heap");
             if (round)
-                TEST_ASSERT_SAME(state.effects.items.heap, heap,
-                                 "the array is kept for the next yield");
+                TEST_ASSERT_SAME(
+                    state.effects.items.heap, heap,
+                    "the array is kept for the next yield");
             heap = state.effects.items.heap;
         } else {
             TEST_ASSERT_EQ(state.effects.cap, 0, "two entries stay inline");
@@ -1251,23 +1271,27 @@ static int freeze_install_effects(int count) {
             kos_dyn_frame_count(state.active, NULL),
             "the span's depths give its frame count");
 
-        TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
-                       "install the span");
+        TEST_ASSERT_EQ(
+            kos_dyn_gen_install(ctx, owner, &state), 0, "install the span");
         /* the first install renumbers by its count over the consumer at
            depth 1: the root frame at 2, the top frame at 3 */
-        TEST_ASSERT_EQ(KosDynFrame_DEPTH(state.bottom), 2,
-                       "the install numbers the root over the consumer");
-        TEST_ASSERT_EQ(KosDynFrame_DEPTH(top), 3,
-                       "and the top frame over the root");
+        TEST_ASSERT_EQ(
+            KosDynFrame_DEPTH(state.bottom), 2,
+            "the install numbers the root over the consumer");
+        TEST_ASSERT_EQ(
+            KosDynFrame_DEPTH(top), 3, "and the top frame over the root");
         TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
         TEST_ASSERT_EQ(state.effects.count, 0, "the list is used up");
         for (int i = 0; i < count; i++)
-            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING, "the effect is in");
+            TEST_ASSERT(
+                KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+                "the effect is in");
         TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
     }
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze to tear down");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+        "freeze to tear down");
     kos_gen_state_clear(&state);
     TEST_ASSERT_EQ(state.effects.cap, 0, "the clear frees the array");
     KosContext_EvalExit(ctx);
@@ -1321,16 +1345,19 @@ static int test_freeze_refused_changes_nothing(void) {
     test_refuse_realloc_end();
 
     TEST_ASSERT_EQ(r, -2, "the freeze refuses");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
-                "with MemoryError");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_MemoryError), "with MemoryError");
     PyErr_Clear();
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the chain is whole");
-    TEST_ASSERT_SAME(KosDynNode_PARENT(state.bottom), (KosDynNode *) gen,
-                     "the span is still on its GEN");
+    TEST_ASSERT_SAME(
+        KosDynNode_PARENT(state.bottom), (KosDynNode *) gen,
+        "the span is still on its GEN");
     TEST_ASSERT_NULL(state.active, "the state holds no span");
     TEST_ASSERT_EQ(state.effects.count, 0, "nothing is listed");
     for (int i = 0; i < 3; i++)
-        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING, "no effect went out");
+        TEST_ASSERT(
+            KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+            "no effect went out");
 
     TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 0, "a later freeze works");
     kos_gen_state_clear(&state);
@@ -1344,18 +1371,15 @@ static int test_freeze_refused_changes_nothing(void) {
 /* Push count TRY nodes onto the chain's top, each handling an
    exception, and a frame on them. The trys are stored outermost
    first. Returns 0, or -1. */
-static int push_trys_and_frame(
-    KosContext *ctx,
-    int count,
-    KosDynNode **trys) {
+static int push_trys_and_frame(KosContext *ctx, int count, KosDynNode **trys) {
 
     for (int i = 0; i < count; i++) {
         trys[i] = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
         TEST_ASSERT_NOT_NULL(trys[i], "push a try");
         KosDynTry_EXC(trys[i])->state = KOS_EXC_HANDLING;
     }
-    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx),
-                         "push a frame on them");
+    TEST_ASSERT_NOT_NULL(
+        kos_dyn_push_frame_empty(ctx), "push a frame on them");
     return 0;
 }
 
@@ -1377,45 +1401,50 @@ static int test_freeze_effects_grow_between_yields(void) {
     ctx = span_with_effects(owner, &state, 3, trys);
     TEST_ASSERT_NOT_NULL(ctx, "build the installed span");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze under three");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+        "freeze under three");
     TEST_ASSERT_EQ(state.effects.cap, 3, "the array holds three");
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
-                   "install the span");
-    TEST_ASSERT_EQ(push_trys_and_frame(ctx, 2, &trys[3]), 0,
-                   "two more effects on the span");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 0, "install the span");
+    TEST_ASSERT_EQ(
+        push_trys_and_frame(ctx, 2, &trys[3]), 0,
+        "two more effects on the span");
     top = KosContext_DYN_TOP(ctx);
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze under five");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+        "freeze under five");
     TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
     TEST_ASSERT_EQ(state.effects.count, 5, "every effect is listed");
     TEST_ASSERT_EQ(state.effects.cap, 5, "the array grew to five");
     items = effects_items(&state.effects);
     for (int i = 0; i < 5; i++) {
-        TEST_ASSERT_SAME(items[i], trys[4 - i],
-                         "the list is innermost first");
-        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
-                    "the effect is out");
+        TEST_ASSERT_SAME(
+            items[i], trys[4 - i], "the list is innermost first");
+        TEST_ASSERT(
+            KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
+            "the effect is out");
     }
     heap = state.effects.items.heap;
 
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
-                   "install the span");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 0, "install the span");
     for (int i = 0; i < 5; i++)
-        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
-                    "the effect is in");
+        TEST_ASSERT(
+            KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+            "the effect is in");
 
     /* the outer four are done handling */
     for (int i = 0; i < 4; i++)
         KosDynTry_EXC(trys[i])->state = KOS_EXC_NONE;
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze under one");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0, "freeze under one");
     TEST_ASSERT_EQ(state.effects.count, 1, "one effect is listed");
-    TEST_ASSERT_SAME(effects_items(&state.effects)[0], trys[4],
-                     "the innermost");
-    TEST_ASSERT(KosDynTry_EXC(trys[4])->state == KOS_EXC_FROZEN,
-                "its effect is out");
+    TEST_ASSERT_SAME(
+        effects_items(&state.effects)[0], trys[4], "the innermost");
+    TEST_ASSERT(
+        KosDynTry_EXC(trys[4])->state == KOS_EXC_FROZEN, "its effect is out");
     TEST_ASSERT_EQ(state.effects.cap, 5, "the array of five is kept");
     TEST_ASSERT_SAME(state.effects.items.heap, heap, "where it was");
 
@@ -1446,14 +1475,16 @@ static int test_freeze_regrow_refused_changes_nothing(void) {
     ctx = span_with_effects(owner, &state, 3, trys);
     TEST_ASSERT_NOT_NULL(ctx, "build the installed span");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze under three");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+        "freeze under three");
     TEST_ASSERT_EQ(state.effects.cap, 3, "the array holds three");
     heap = state.effects.items.heap;
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
-                   "install the span");
-    TEST_ASSERT_EQ(push_trys_and_frame(ctx, 2, &trys[3]), 0,
-                   "two more effects on the span");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 0, "install the span");
+    TEST_ASSERT_EQ(
+        push_trys_and_frame(ctx, 2, &trys[3]), 0,
+        "two more effects on the span");
     top = KosContext_DYN_TOP(ctx);
     gen = kos_dyn_find_gen(ctx);
     TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
@@ -1464,19 +1495,21 @@ static int test_freeze_regrow_refused_changes_nothing(void) {
 
     TEST_ASSERT_EQ(r, -2, "the freeze refuses");
     TEST_ASSERT_EQ(refused, 1, "the regrow was refused");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
-                "with MemoryError");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_MemoryError), "with MemoryError");
     PyErr_Clear();
     TEST_ASSERT_SAME(state.effects.items.heap, heap, "the array stands");
     TEST_ASSERT_EQ(state.effects.cap, 3, "at three");
     TEST_ASSERT_EQ(state.effects.count, 0, "nothing is listed");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the chain is whole");
-    TEST_ASSERT_SAME(KosDynNode_PARENT(state.bottom), (KosDynNode *) gen,
-                     "the span is still on its GEN");
+    TEST_ASSERT_SAME(
+        KosDynNode_PARENT(state.bottom), (KosDynNode *) gen,
+        "the span is still on its GEN");
     TEST_ASSERT_NULL(state.active, "the state holds no span");
     for (int i = 0; i < 5; i++)
-        TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
-                    "no effect went out");
+        TEST_ASSERT(
+            KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+            "no effect went out");
 
     TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 0, "a later freeze works");
     TEST_ASSERT_EQ(state.effects.count, 5, "and lists every effect");
@@ -1492,7 +1525,6 @@ static int test_freeze_regrow_refused_changes_nothing(void) {
 
 /* === Winding across a yield === */
 
-
 /* a dyn-wind's row with neither segment: its enter and its leave
    complete at once */
 static const KosExtra bare_wind_row;
@@ -1507,8 +1539,8 @@ static int wind_out_and_freeze(KosContext *ctx, PyObject *val) {
     KosOpResult r;
 
     TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 1,
-                   "a span with winders is not frozen");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, gen), 1, "a span with winders is not frozen");
     goal = kos_dyn_gen_wind_out_begin(ctx, gen, val);
     TEST_ASSERT_NOT_NULL(goal, "record the winders");
     r = kos_xfer_goal_run_kept(ctx, goal);
@@ -1551,9 +1583,9 @@ static int test_wind_out_and_in(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     for (int i = 0; i < 2; i++) {
@@ -1572,57 +1604,65 @@ static int test_wind_out_and_in(void) {
         TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
 
         TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
-        TEST_ASSERT_EQ(state.wound_count, 4,
-                       "the winders are listed with the effects");
+        TEST_ASSERT_EQ(
+            state.wound_count, 4, "the winders are listed with the effects");
         TEST_ASSERT_EQ(state.piece_count, 2, "both winders are recorded");
         if (round)
-            TEST_ASSERT_SAME(state.pieces, pieces,
-                             "the records are kept for the next yield");
+            TEST_ASSERT_SAME(
+                state.pieces, pieces,
+                "the records are kept for the next yield");
         pieces = state.pieces;
         TEST_ASSERT_SAME(pieces[0].regs.top, winds[0], "outermost first");
-        TEST_ASSERT_SAME(pieces[0].rest, trys[1],
-                         "with the node resting on it");
+        TEST_ASSERT_SAME(
+            pieces[0].rest, trys[1], "with the node resting on it");
         TEST_ASSERT_SAME(pieces[1].regs.top, winds[1], "then the inner");
         TEST_ASSERT_SAME(pieces[1].rest, top, "under the top frame");
-        TEST_ASSERT_SAME(KosDynNode_PARENT(top), winds[1],
-                         "the span rests whole");
-        TEST_ASSERT_SAME(KosDynNode_PARENT(trys[1]), winds[0],
-                         "at both winders");
+        TEST_ASSERT_SAME(
+            KosDynNode_PARENT(top), winds[1], "the span rests whole");
+        TEST_ASSERT_SAME(
+            KosDynNode_PARENT(trys[1]), winds[0], "at both winders");
         for (int i = 0; i < 2; i++) {
-            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
-                        "the effect is out");
-            TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 0,
-                           "the wind is left");
-            TEST_ASSERT_EQ(KosDynWind_PHASE(winds[i]), KOS_EXTENT_IDLE,
-                           "and can be entered again");
+            TEST_ASSERT(
+                KosDynTry_EXC(trys[i])->state == KOS_EXC_FROZEN,
+                "the effect is out");
+            TEST_ASSERT_EQ(
+                KosDynWind_ENTERED(winds[i]), 0, "the wind is left");
+            TEST_ASSERT_EQ(
+                KosDynWind_PHASE(winds[i]), KOS_EXTENT_IDLE,
+                "and can be entered again");
         }
 
-        TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
-                       "the install stops at the outermost winder");
-        TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0],
-                         "which is the chain's top");
-        TEST_ASSERT_NULL(KosDynNode_PARENT(trys[1]),
-                         "what rests on it is cut off");
+        TEST_ASSERT_EQ(
+            kos_dyn_gen_install(ctx, owner, &state), 1,
+            "the install stops at the outermost winder");
+        TEST_ASSERT_SAME(
+            KosContext_DYN_TOP(ctx), winds[0], "which is the chain's top");
+        TEST_ASSERT_NULL(
+            KosDynNode_PARENT(trys[1]), "what rests on it is cut off");
         TEST_ASSERT_NOT_NULL(KosContext_GOAL(ctx), "and a goal is pushed");
-        TEST_ASSERT(KosDynTry_EXC(trys[0])->state == KOS_EXC_HANDLING,
-                    "the effect outside it is in");
-        TEST_ASSERT(KosDynTry_EXC(trys[1])->state == KOS_EXC_FROZEN,
-                    "the effect inside it is not");
+        TEST_ASSERT(
+            KosDynTry_EXC(trys[0])->state == KOS_EXC_HANDLING,
+            "the effect outside it is in");
+        TEST_ASSERT(
+            KosDynTry_EXC(trys[1])->state == KOS_EXC_FROZEN,
+            "the effect inside it is not");
 
-        TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind,
-                       KOS_RES_NORMAL, "the goal enters and attaches");
+        TEST_ASSERT_EQ(
+            kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+            "the goal enters and attaches");
         TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
         TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
         TEST_ASSERT_SAME(KosDynNode_PARENT(top), winds[1], "whole");
-        TEST_ASSERT_SAME(KosDynNode_PARENT(trys[1]), winds[0],
-                         "at both winders");
+        TEST_ASSERT_SAME(
+            KosDynNode_PARENT(trys[1]), winds[0], "at both winders");
         TEST_ASSERT_EQ(state.piece_count, 0, "the records are used up");
         TEST_ASSERT_EQ(state.effects.count, 0, "and the list");
         for (int i = 0; i < 2; i++) {
-            TEST_ASSERT(KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
-                        "the effect is in");
-            TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 1,
-                           "the wind is entered");
+            TEST_ASSERT(
+                KosDynTry_EXC(trys[i])->state == KOS_EXC_HANDLING,
+                "the effect is in");
+            TEST_ASSERT_EQ(
+                KosDynWind_ENTERED(winds[i]), 1, "the wind is entered");
         }
         TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
     }
@@ -1670,9 +1710,9 @@ static int test_wind_goal_outlives_the_state_clear(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     wind = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
@@ -1681,25 +1721,27 @@ static int test_wind_goal_outlives_the_state_clear(void) {
     TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
 
     TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
-                   "the install stops at the winder");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 1,
+        "the install stops at the winder");
     goal = KosContext_GOAL(ctx);
     TEST_ASSERT_NOT_NULL(goal, "a goal is pushed");
-    TEST_ASSERT_SAME((KosXferPiece *) (goal + 1), state.pieces,
-                     "in the state's storage");
-    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs + 1,
-                   "the goal holds the owner");
+    TEST_ASSERT_SAME(
+        (KosXferPiece *) (goal + 1), state.pieces, "in the state's storage");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(owner), owner_refs + 1, "the goal holds the owner");
     KosContext_EvalExit(ctx);
 
     kos_gen_state_clear(&state);
-    TEST_ASSERT_SAME(state.pieces, (KosXferPiece *) (goal + 1),
-                     "the live goal keeps its storage");
+    TEST_ASSERT_SAME(
+        state.pieces, (KosXferPiece *) (goal + 1),
+        "the live goal keeps its storage");
     TEST_ASSERT_EQ(state.piece_count, 0, "with no records");
     TEST_ASSERT_EQ(state.wound_count, 0, "and no list");
 
     Py_DECREF(ctx);
-    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs,
-                   "the context's clear gave the goal up");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(owner), owner_refs, "the context's clear gave the goal up");
 
     kos_gen_state_clear(&state);
     TEST_ASSERT_NULL(state.pieces, "the next clear frees the storage");
@@ -1737,18 +1779,20 @@ static int grow_one_winder_span(
     KosDynNode **winds,
     KosDynNode **tops) {
 
-    TEST_ASSERT_EQ(push_entered_wind(ctx, &winds[0], &tops[0]), 0,
-                   "the outer wind");
+    TEST_ASSERT_EQ(
+        push_entered_wind(ctx, &winds[0], &tops[0]), 0, "the outer wind");
     TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield under one");
     TEST_ASSERT_EQ(state->piece_count, 1, "one winder is recorded");
     TEST_ASSERT_EQ(state->piece_cap, 1, "the allocation holds one");
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, state), 1,
-                   "the install stops at the winder");
-    TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
-                   "the goal enters it and attaches");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, state), 1,
+        "the install stops at the winder");
+    TEST_ASSERT_EQ(
+        kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+        "the goal enters it and attaches");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), tops[0], "the span is back");
-    TEST_ASSERT_EQ(push_entered_wind(ctx, &winds[1], &tops[1]), 0,
-                   "the inner wind");
+    TEST_ASSERT_EQ(
+        push_entered_wind(ctx, &winds[1], &tops[1]), 0, "the inner wind");
     return 0;
 }
 
@@ -1785,9 +1829,9 @@ static int test_pieces_grow_between_yields(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
     TEST_ASSERT_EQ(
         grow_one_winder_span(ctx, owner, val, &state, winds, tops), 0,
@@ -1797,31 +1841,34 @@ static int test_pieces_grow_between_yields(void) {
     TEST_ASSERT_EQ(state.piece_cap, 2, "the allocation grew to two");
     TEST_ASSERT_EQ(state.piece_count, 2, "both winders are recorded");
     TEST_ASSERT_SAME(state.pieces[0].regs.top, winds[0], "outermost first");
-    TEST_ASSERT_SAME(state.pieces[0].rest, tops[0],
-                     "with the frame resting on it");
+    TEST_ASSERT_SAME(
+        state.pieces[0].rest, tops[0], "with the frame resting on it");
     TEST_ASSERT_SAME(state.pieces[1].regs.top, winds[1], "then the inner");
     TEST_ASSERT_SAME(state.pieces[1].rest, tops[1], "under the top frame");
     TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs, "no goal holds the owner");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
-                   "the install stops at the outermost winder");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 1,
+        "the install stops at the outermost winder");
     goal = KosContext_GOAL(ctx);
     TEST_ASSERT_NOT_NULL(goal, "a goal is pushed");
-    TEST_ASSERT_SAME((KosXferPiece *) (goal + 1), state.pieces,
-                     "at the head of the grown allocation");
-    TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
-                   "the goal enters both and attaches");
+    TEST_ASSERT_SAME(
+        (KosXferPiece *) (goal + 1), state.pieces,
+        "at the head of the grown allocation");
+    TEST_ASSERT_EQ(
+        kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+        "the goal enters both and attaches");
     TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), tops[1], "the span is back");
     TEST_ASSERT_SAME(KosDynNode_PARENT(tops[0]), winds[0], "whole");
     for (int i = 0; i < 2; i++)
-        TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[i]), 1,
-                       "the wind is entered");
+        TEST_ASSERT_EQ(
+            KosDynWind_ENTERED(winds[i]), 1, "the wind is entered");
     TEST_ASSERT(kos_dyn_skips_hold(tops[1], NULL), "the skip links hold");
 
     pieces = state.pieces;
-    TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0,
-                   "yield under two again");
+    TEST_ASSERT_EQ(
+        wind_out_and_freeze(ctx, val), 0, "yield under two again");
     TEST_ASSERT_SAME(state.pieces, pieces, "the grown allocation is kept");
     TEST_ASSERT_EQ(state.piece_cap, 2, "at two");
 
@@ -1868,9 +1915,9 @@ static int test_pieces_grow_refused_changes_nothing(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
     TEST_ASSERT_EQ(
         grow_one_winder_span(ctx, owner, val, &state, winds, tops), 0,
@@ -1878,8 +1925,8 @@ static int test_pieces_grow_refused_changes_nothing(void) {
 
     gen = kos_dyn_find_gen(ctx);
     TEST_ASSERT_NOT_NULL(gen, "the running frame is a generator's");
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, gen), 1,
-                   "a span with winders is not frozen");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, gen), 1, "a span with winders is not frozen");
     pieces = state.pieces;
 
     test_refuse_realloc_begin(0);
@@ -1888,8 +1935,8 @@ static int test_pieces_grow_refused_changes_nothing(void) {
 
     TEST_ASSERT_NULL(goal, "the records cannot be made");
     TEST_ASSERT_EQ(refused, 1, "the grow was refused");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError),
-                "with MemoryError");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_MemoryError), "with MemoryError");
     PyErr_Clear();
     TEST_ASSERT_SAME(state.pieces, pieces, "the allocation stands");
     TEST_ASSERT_EQ(state.piece_cap, 1, "at one");
@@ -1918,7 +1965,6 @@ static int test_pieces_grow_refused_changes_nothing(void) {
 
 /* === Effects refused at an install === */
 
-
 /* While set, a RefusingKey's hash raises RuntimeError. A PARAM bound
    by one then refuses its wind: kos_dynparam_enter records the prior
    cell with a dict store, which hashes the key. */
@@ -1932,6 +1978,7 @@ static int refuse_watch_state = -1;
 
 
 static Py_hash_t refusing_key_hash(PyObject *self) {
+
     if (refuse_hash) {
         if (refuse_watch)
             refuse_watch_state = KosDynTry_EXC(refuse_watch)->state;
@@ -2006,9 +2053,9 @@ static int test_install_refused_takes_effects_out_again(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     try_ = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
@@ -2019,14 +2066,15 @@ static int test_install_refused_takes_effects_out_again(void) {
     TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
     top = KosContext_DYN_TOP(ctx);
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze the span");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0, "freeze the span");
     items = effects_items(&state.effects);
     TEST_ASSERT_EQ(state.effects.count, 2, "both effects are listed");
     TEST_ASSERT_SAME(items[0], param, "the param innermost");
     TEST_ASSERT_SAME(items[1], try_, "then the try");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out");
 
     refuse_watch = try_;
     refuse_watch_state = -1;
@@ -2036,30 +2084,35 @@ static int test_install_refused_takes_effects_out_again(void) {
     refuse_watch = NULL;
 
     TEST_ASSERT_EQ(r, -1, "the install refuses");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
-                "with the param's error");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_RuntimeError), "with the param's error");
     PyErr_Clear();
-    TEST_ASSERT(refuse_watch_state == KOS_EXC_HANDLING,
-                "the try was back in when the param refused");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out again");
+    TEST_ASSERT(
+        refuse_watch_state == KOS_EXC_HANDLING,
+        "the try was back in when the param refused");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out again");
     TEST_ASSERT_EQ(state.effects.count, 2, "the list stands");
     TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
-    TEST_ASSERT_NULL(KosDynNode_PARENT(state.bottom),
-                     "off any GEN");
-    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), (KosDynNode *) consumer,
-                     "the consumer is the chain's top");
+    TEST_ASSERT_NULL(
+        KosDynNode_PARENT(state.bottom), "off any GEN");
+    TEST_ASSERT_SAME(
+        KosContext_DYN_TOP(ctx), (KosDynNode *) consumer,
+        "the consumer is the chain's top");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 0,
-                   "a later install works");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 0, "a later install works");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
     TEST_ASSERT_EQ(state.effects.count, 0, "the list is used up");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_HANDLING,
-                "the try's effect is in");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_HANDLING,
+        "the try's effect is in");
     TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the skip links hold");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze to tear down");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
+        "freeze to tear down");
     kos_gen_state_clear(&state);
     KosContext_EvalExit(ctx);
     Py_DECREF(ctx);
@@ -2106,9 +2159,9 @@ static int test_winding_install_refused_takes_effects_out_again(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     try_ = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
@@ -2129,8 +2182,9 @@ static int test_winding_install_refused_takes_effects_out_again(void) {
     TEST_ASSERT_SAME(items[0], wind, "the wind innermost");
     TEST_ASSERT_SAME(items[1], param, "then the param");
     TEST_ASSERT_SAME(items[2], try_, "then the try");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out");
     owner_refs = Py_REFCNT(owner);
 
     refuse_watch = try_;
@@ -2141,30 +2195,36 @@ static int test_winding_install_refused_takes_effects_out_again(void) {
     refuse_watch = NULL;
 
     TEST_ASSERT_EQ(r, -1, "the install refuses");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
-                "with the param's error");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_RuntimeError), "with the param's error");
     PyErr_Clear();
-    TEST_ASSERT(refuse_watch_state == KOS_EXC_HANDLING,
-                "the try was back in when the param refused");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out again");
+    TEST_ASSERT(
+        refuse_watch_state == KOS_EXC_HANDLING,
+        "the try was back in when the param refused");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out again");
     TEST_ASSERT_EQ(state.wound_count, 3, "the list stands");
     TEST_ASSERT_EQ(state.piece_count, 1, "and the record");
     TEST_ASSERT_NULL(KosContext_GOAL(ctx), "no goal is pushed");
-    TEST_ASSERT_EQ(Py_REFCNT(owner), owner_refs,
-                   "the freed goal let go of the owner");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(owner), owner_refs, "the freed goal let go of the owner");
     TEST_ASSERT_SAME(state.active, top, "the span rests in the state");
     TEST_ASSERT_NULL(KosDynNode_PARENT(state.bottom), "off any GEN");
-    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), (KosDynNode *) consumer,
-                     "the consumer is the chain's top");
+    TEST_ASSERT_SAME(
+        KosContext_DYN_TOP(ctx), (KosDynNode *) consumer,
+        "the consumer is the chain's top");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
-                   "a later install stops at the winder");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 1,
+        "a later install stops at the winder");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), wind, "which is the top");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_HANDLING,
-                "the try's effect is in");
-    TEST_ASSERT_EQ(kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
-                   "the goal enters and attaches");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_HANDLING,
+        "the try's effect is in");
+    TEST_ASSERT_EQ(
+        kos_xfer_goal_drive(ctx).kind, KOS_RES_NORMAL,
+        "the goal enters and attaches");
     TEST_ASSERT_NULL(KosContext_GOAL(ctx), "and retires");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), top, "the span is back");
     TEST_ASSERT_EQ(KosDynWind_ENTERED(wind), 1, "the wind is entered");
@@ -2219,9 +2279,9 @@ static int test_winding_attach_refused_takes_effects_out_again(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     winds[0] = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
@@ -2247,8 +2307,9 @@ static int test_winding_attach_refused_takes_effects_out_again(void) {
     TEST_ASSERT_SAME(items[3], winds[0], "then the outer wind");
     owner_refs = Py_REFCNT(owner);
 
-    TEST_ASSERT_EQ(kos_dyn_gen_install(ctx, owner, &state), 1,
-                   "the install stops at the outer wind");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install(ctx, owner, &state), 1,
+        "the install stops at the outer wind");
     TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0], "which is the top");
     TEST_ASSERT_NULL(KosDynNode_PARENT(try_), "what rests on it is cut off");
 
@@ -2260,22 +2321,24 @@ static int test_winding_attach_refused_takes_effects_out_again(void) {
     refuse_watch = NULL;
 
     TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "the attach refuses");
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
-                "with the param's error");
-    TEST_ASSERT(refuse_watch_state == KOS_EXC_HANDLING,
-                "the try was back in when the param refused");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out again");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_RuntimeError), "with the param's error");
+    TEST_ASSERT(
+        refuse_watch_state == KOS_EXC_HANDLING,
+        "the try was back in when the param refused");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out again");
     TEST_ASSERT_NULL(KosDynNode_PARENT(try_), "nothing is attached");
-    TEST_ASSERT_SAME(KosContext_DYN_TOP(ctx), winds[0],
-                     "the outer wind is the top");
+    TEST_ASSERT_SAME(
+        KosContext_DYN_TOP(ctx), winds[0], "the outer wind is the top");
     TEST_ASSERT_EQ(KosDynWind_ENTERED(winds[0]), 1, "and is entered");
     TEST_ASSERT_NOT_NULL(KosContext_GOAL(ctx), "the goal is still pushed");
 
     /* the raise ingress gives the goal up with the error in hand */
     kos_xfer_goal_abandon_stepping(ctx, 1);
-    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
-                "the error stands");
+    TEST_ASSERT(
+        PyErr_ExceptionMatches(PyExc_RuntimeError), "the error stands");
     PyErr_Clear();
     TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal is given up");
     TEST_ASSERT_EQ(state.piece_count, 0, "with the records");
@@ -2296,7 +2359,6 @@ static int test_winding_attach_refused_takes_effects_out_again(void) {
 
 /* === Clearing a resting span === */
 
-
 /* Push a TRY handling exc, which displaced nothing: exc is the
    thread's handled exception, as the TRY's consume of a raise leaves
    it. Returns the node, or NULL. */
@@ -2307,8 +2369,8 @@ static KosDynNode *push_handling_try(KosContext *ctx, PyObject *exc) {
     if (! node)
         return NULL;
     KosDynTry_EXC(node)->state = KOS_EXC_HANDLING;
-    PyErr_SetExcInfo(Py_NewRef((PyObject *) Py_TYPE(exc)),
-                     Py_NewRef(exc), NULL);
+    PyErr_SetExcInfo(
+        Py_NewRef((PyObject *) Py_TYPE(exc)), Py_NewRef(exc), NULL);
     return node;
 }
 
@@ -2364,36 +2426,38 @@ static int test_state_clear_releases_resting_effects(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     try_ = push_handling_try(ctx, exc);
     TEST_ASSERT_NOT_NULL(try_, "push a try handling the exception");
-    TEST_ASSERT_NOT_NULL(push_bound_param(ctx, name, value),
-                         "push a param");
+    TEST_ASSERT_NOT_NULL(
+        push_bound_param(ctx, name, value), "push a param");
     TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push the top frame");
 
-    TEST_ASSERT_EQ(kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0,
-                   "freeze the span");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_freeze(ctx, kos_dyn_find_gen(ctx)), 0, "freeze the span");
     TEST_ASSERT_EQ(state.effects.count, 2, "both effects are listed");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out");
-    TEST_ASSERT_SAME(KosDynTry_EXC(try_)->saved.value, exc,
-                     "holding its exception");
-    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs + 1,
-                   "by the reference the thread gave up");
-    TEST_ASSERT_NULL(PyDict_GetItem(KosContext_PARAM_REFS(ctx), name),
-                     "the param's effect is out");
-    TEST_ASSERT_EQ(Py_REFCNT(value), value_refs + 1,
-                   "its cell holds the value");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out");
+    TEST_ASSERT_SAME(
+        KosDynTry_EXC(try_)->saved.value, exc, "holding its exception");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(exc), exc_refs + 1, "by the reference the thread gave up");
+    TEST_ASSERT_NULL(
+        PyDict_GetItem(KosContext_PARAM_REFS(ctx), name),
+        "the param's effect is out");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(value), value_refs + 1, "its cell holds the value");
 
     kos_gen_state_clear(&state);
-    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs,
-                   "the clear releases the exception once");
-    TEST_ASSERT_EQ(Py_REFCNT(value), value_refs,
-                   "and the param's value");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(exc), exc_refs, "the clear releases the exception once");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(value), value_refs, "and the param's value");
 
     KosContext_EvalExit(ctx);
     Py_DECREF(ctx);
@@ -2442,15 +2506,15 @@ static int test_state_clear_releases_wound_span(void) {
 
     KosContext_EvalEnter(ctx, NULL);
     kos_gen_state_init(&state, root);
-    TEST_ASSERT_EQ(kos_dyn_gen_install_bootstrap(
-                       ctx, owner, &state, (KosDynNode *) root), 0,
-                   "install the generator's frame");
+    TEST_ASSERT_EQ(
+        kos_dyn_gen_install_bootstrap(ctx, owner, &state, (KosDynNode *) root),
+        0, "install the generator's frame");
     state.active = NULL;
 
     try_ = push_handling_try(ctx, exc);
     TEST_ASSERT_NOT_NULL(try_, "push a try handling the exception");
-    TEST_ASSERT_NOT_NULL(push_bound_param(ctx, name, value),
-                         "push a param");
+    TEST_ASSERT_NOT_NULL(
+        push_bound_param(ctx, name, value), "push a param");
     wind = (KosDynNode *) kos_dyn_push_wind(ctx, NULL, &bare_wind_row);
     TEST_ASSERT_NOT_NULL(wind, "push a wind");
     KosDynWind_ENTERED(wind) = 1;
@@ -2459,18 +2523,20 @@ static int test_state_clear_releases_wound_span(void) {
     TEST_ASSERT_EQ(wind_out_and_freeze(ctx, val), 0, "yield");
     TEST_ASSERT_EQ(state.wound_count, 3, "the wind and both effects");
     TEST_ASSERT_EQ(state.effects.cap, 3, "listed on the heap");
-    TEST_ASSERT(KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
-                "the try's effect is out");
-    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs + 1,
-                   "holding its exception off the thread");
-    TEST_ASSERT_NULL(PyDict_GetItem(KosContext_PARAM_REFS(ctx), name),
-                     "the param's effect is out");
+    TEST_ASSERT(
+        KosDynTry_EXC(try_)->state == KOS_EXC_FROZEN,
+        "the try's effect is out");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(exc), exc_refs + 1, "holding its exception off the thread");
+    TEST_ASSERT_NULL(
+        PyDict_GetItem(KosContext_PARAM_REFS(ctx), name),
+        "the param's effect is out");
 
     kos_gen_state_clear(&state);
-    TEST_ASSERT_EQ(Py_REFCNT(exc), exc_refs,
-                   "the clear releases the exception once");
-    TEST_ASSERT_EQ(Py_REFCNT(value), value_refs,
-                   "and the param's value");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(exc), exc_refs, "the clear releases the exception once");
+    TEST_ASSERT_EQ(
+        Py_REFCNT(value), value_refs, "and the param's value");
     TEST_ASSERT_EQ(state.effects.cap, 0, "and frees the array");
 
     KosContext_EvalExit(ctx);

@@ -23,7 +23,7 @@ that cannot complete synchronously closes the coroutine it started.
 Where CPython has the same shape, the expected refusal is CPython's
 own, taken from the equivalent Python coroutine or async generator on
 the running version. Every shape runs under asyncio.wait_for, so a
-regression fails instead of hanging.
+regression fails instead of hanging
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -327,9 +327,9 @@ class TestStartedStepAwait(unittest.TestCase):
     def test_task_owned_anext_is_refused(self):
         self.assertEqual(
             self.compare(lambda g: g.__anext__()),
-            ((RuntimeError,
-              "cannot reuse already awaited __anext__()/asend()"),
-             "slept", ["finally"]))
+            (
+                (RuntimeError, "cannot reuse already awaited __anext__()/asend()"),
+                "slept", ["finally"]))
 
 
     def test_task_owned_asend_is_refused(self):
@@ -351,8 +351,9 @@ class TestStartedStepAwait(unittest.TestCase):
 
         self.assertEqual(
             bounded(main),
-            ((RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
-             None, ["finally"]))
+            (
+                (RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
+                None, ["finally"]))
 
 
     def test_task_owned_athrow_is_refused(self):
@@ -371,8 +372,9 @@ class TestStartedStepAwait(unittest.TestCase):
 
         self.assertEqual(
             bounded(main),
-            ((RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
-             "recovered"))
+            (
+                (RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
+                "recovered"))
 
 
     def hand_started(self, g, st):
@@ -392,9 +394,9 @@ class TestStartedStepAwait(unittest.TestCase):
         g = self.mod.suspending_gen()
         self.assertEqual(
             self.hand_started(g, g.__anext__()),
-            ((RuntimeError,
-              "cannot reuse already awaited __anext__()/asend()"),
-             ("value", "woken")))
+            (
+                (RuntimeError, "cannot reuse already awaited __anext__()/asend()"),
+                ("value", "woken")))
         asyncio.run(g.aclose())
 
 
@@ -402,9 +404,9 @@ class TestStartedStepAwait(unittest.TestCase):
         g = self.mod.suspending_gen()
         self.assertEqual(
             self.hand_started(g, g.asend(None)),
-            ((RuntimeError,
-              "cannot reuse already awaited __anext__()/asend()"),
-             ("value", "woken")))
+            (
+                (RuntimeError, "cannot reuse already awaited __anext__()/asend()"),
+                ("value", "woken")))
         asyncio.run(g.aclose())
 
 
@@ -413,8 +415,9 @@ class TestStartedStepAwait(unittest.TestCase):
         self.assertEqual(step_out(g.__anext__()), ("value", 1))
         self.assertEqual(
             self.hand_started(g, g.athrow(ValueError("t"))),
-            ((RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
-             ("value", "woken")))
+            (
+                (RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
+                ("value", "woken")))
         asyncio.run(g.aclose())
 
 
@@ -424,8 +427,9 @@ class TestStartedStepAwait(unittest.TestCase):
         self.assertEqual(step_out(g.__anext__()), ("value", 1))
         self.assertEqual(
             self.hand_started(g, g.aclose()),
-            ((RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
-             ("value", None)))
+            (
+                (RuntimeError, "cannot reuse already awaited aclose()/athrow()"),
+                ("value", None)))
         self.assertEqual(log, ["finally"])
 
 

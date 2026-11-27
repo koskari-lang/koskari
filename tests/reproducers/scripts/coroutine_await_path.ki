@@ -1,5 +1,5 @@
 ;; Reproducer: a Koskari coroutine reaching the await path continues
-;; on the running chain, not driven on its own context. A fresh one, as
+;; on the running chain, not evaluated on its own context. A fresh one, as
 ;; a Python wrapper (functools.partial, a helper) calling a Koskari
 ;; function returns, is installed as a call frame; awaiting it, or a
 ;; defer over it, runs on the caller's chain and meets the caller's

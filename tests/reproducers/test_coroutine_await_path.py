@@ -16,9 +16,9 @@ tests.reproducers.test_coroutine_await_path
 
 Full-stack reproducer: a fresh Koskari coroutine handed to the await
 path, by a Python wrapper or as an object, is installed on the running
-chain instead of being driven on its own context, and its suspensions,
-extents, handlers and continuations are the awaiter's. One Python
-already started is refused and left to Python.
+chain instead of being evaluated on its own context, and its
+suspensions, extents, handlers and continuations are the awaiter's. One
+Python already started is refused and left to Python
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -284,8 +284,8 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
     def test_applied_continuation_suspends_on_its_own_await(self):
         """
         The applied copy of an awaited coroutine's frames awaits as any
-        frame does: the awaiter suspends again and its driver completes
-        the await
+        frame does: the awaiter suspends again and the code stepping it
+        completes the await
         """
 
         mod = asyncio.run(self.load_module())
@@ -311,7 +311,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
     def test_demand_over_an_awaited_coroutine_refuses_every_frames_await(
             self):
         """
-        An awaited coroutine under a demand drive: the callee's await is
+        An awaited coroutine evaluated under demand: the callee's await is
         refused, and so is the await the caller frame beneath it makes
         once the callee returns, since every frame carries the demand
         bit
@@ -390,7 +390,7 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
     def test_refusal_comes_before_the_room_check(self):
         """
         A started coroutine too deep for the awaiter's room is refused as
-        started, not for room, and stays drivable by Python
+        started, not for room, and Python can still step it
         """
 
         mod = asyncio.run(self.load_module())
@@ -449,8 +449,9 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         mod = asyncio.run(self.load_module())
         log = []
         outer = mod.await_object(mod.collect(mod.wound(log), log))
-        expect = ["in", "out", "out2", 1, "in", "out", "out2", 2,
-                  "in", "out", "out2"]
+        expect = [
+            "in", "out", "out2", 1, "in", "out", "out2", 2,
+            "in", "out", "out2"]
         self.assertEqual(self.run_out(outer, 3), expect)
         self.assertEqual(log, expect)
 
@@ -461,8 +462,9 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         gate = []
         c = mod.collect_gated(mod.wound_on_entry(log, gate), log, gate)
         outer = mod.await_object(c)
-        expect = ["in", "in2", "out", 1, "in", "in2", "out", 2,
-                  "in", "in2", "out"]
+        expect = [
+            "in", "in2", "out", 1, "in", "in2", "out", 2,
+            "in", "in2", "out"]
         self.assertEqual(self.run_out(outer, 2), expect)
         self.assertEqual(log, expect)
 
@@ -472,8 +474,9 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         log = []
         c = mod.collect(mod.managed(AwaitedExit(log)), log)
         outer = mod.await_object(c)
-        expect = ["enter", "exit", "exit2", 1, "enter", "exit", "exit2", 2,
-                  "enter", "exit", "exit2"]
+        expect = [
+            "enter", "exit", "exit2", 1, "enter", "exit", "exit2", 2,
+            "enter", "exit", "exit2"]
         self.assertEqual(self.run_out(outer, 3), expect)
         self.assertEqual(log, expect)
 
@@ -484,8 +487,9 @@ class TestCoroutineAwaitPath(unittest.IsolatedAsyncioTestCase):
         gate = []
         gen = mod.managed(AwaitedEnter(log, gate))
         outer = mod.await_object(mod.collect_gated(gen, log, gate))
-        expect = ["enter", "exit", 1, "enter", "enter2", "exit", 2,
-                  "enter", "enter2", "exit"]
+        expect = [
+            "enter", "exit", 1, "enter", "enter2", "exit", 2,
+            "enter", "enter2", "exit"]
         self.assertEqual(self.run_out(outer, 2), expect)
         self.assertEqual(log, expect)
 

@@ -21,7 +21,7 @@ is forwarding into -- is refused with ValueError, as CPython refuses a
 running coroutine. Its __await__ succeeds, as CPython's does; the step
 that follows is refused. A coroutine suspended under another awaiter
 is still refused with RuntimeError. Each expected outcome is taken
-from the equivalent Python coroutine on the running version.
+from the equivalent Python coroutine on the running version
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -65,6 +65,7 @@ class Forwarded:
     def __init__(self, box, action):
         self.box = box
         self.action = action
+
 
     def __await__(self):
         yield "suspended"

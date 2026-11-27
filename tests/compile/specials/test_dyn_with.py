@@ -563,7 +563,7 @@ class TestWithDisplacedExceptionReferrers(SpecialsTestCase):
     """
     A with whose exit runs inside an except handler holds the handled
     exception it displaced. The running context refers to it, and the
-    collector reports that context among its referrers.
+    collector reports that context among its referrers
     """
 
     async def check_displaced_referrers(self, form):

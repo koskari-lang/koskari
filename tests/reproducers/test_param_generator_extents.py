@@ -20,14 +20,14 @@ reads see the binding across its suspensions, the code stepping it
 never does, and the binding undoes when the block exits or the
 generator is exhausted. An async generator stepped from Python owns its
 context (cells forked at creation, like a defer), so there the whole
-lifecycle plays out in the generator's private table: the driver's view
-is never touched, even while the generator is suspended mid-extent, and
-an abandoned generator takes its table with it. One stepped from
-Koskari runs on the consumer's chain, where its bindings go out at
-every yield and come back at every step.
+lifecycle plays out in the generator's private table: the view of the
+code stepping it is never touched, even while the generator is
+suspended mid-extent, and an abandoned generator takes its table with
+it. One stepped from Koskari runs on the consumer's chain, where its
+bindings go out at every yield and come back at every step
 
 A yield leaves a dyn-wind and a dyn-with as well, running their
-segments: see tests.reproducers.test_wind_across_yield.
+segments: see tests.reproducers.test_wind_across_yield
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -149,8 +149,9 @@ class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
     async def test_generator_extent_isolated_from_driver(self):
         """
         The generator's own reads see the binding across its
-        suspensions and the block exit undoes it, and the driver's view
-        is never touched while the generator is suspended mid-extent
+        suspensions and the block exit undoes it, and the view of the
+        code stepping it is never touched while the generator is
+        suspended mid-extent
         """
 
         mod = await self.load("param_gen_reporter", REPORTER_SRC)

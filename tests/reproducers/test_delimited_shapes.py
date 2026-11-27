@@ -429,9 +429,11 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
         mod = await self.load_module()
         self.assertEqual(
             await mod.shape_dynwith_under_wind(mod.StepManager),
-            (101, ['in', 'enter', 'exit', 'out', 'handler',
-                   'in', 'enter', 'after shift', 'exit', 'after with',
-                   'out']))
+            (101, [
+                'in', 'enter', 'exit', 'out', 'handler',
+                'in', 'enter', 'after shift', 'exit', 'after with',
+                'out']))
+
 
     async def test_dynwith_under_wind_python_exit(self):
         """
@@ -442,9 +444,11 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
         mod = await self.load_module()
         self.assertEqual(
             await mod.shape_dynwith_under_wind(PyManager),
-            (101, ['in', 'enter', 'exit', 'out', 'handler',
-                   'in', 'enter', 'after shift', 'exit', 'after with',
-                   'out']))
+            (101, [
+                'in', 'enter', 'exit', 'out', 'handler',
+                'in', 'enter', 'after shift', 'exit', 'after with',
+                'out']))
+
 
     async def test_dynwith_under_wind_multishot(self):
         """
@@ -454,9 +458,11 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
 
         await self.check(
             'shape_dynwith_under_wind_multishot',
-            (223, ['in', 'enter', 'exit', 'out',
-                   'in', 'enter', 'exit', 'out',
-                   'in', 'enter', 'exit', 'out']))
+            (223, [
+                'in', 'enter', 'exit', 'out',
+                'in', 'enter', 'exit', 'out',
+                'in', 'enter', 'exit', 'out']))
+
 
     async def test_dynwith_under_dynwith(self):
         """
@@ -466,9 +472,11 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
 
         await self.check(
             'shape_dynwith_under_dynwith',
-            (101, ['enter', 'enter', 'exit', 'exit', 'handler',
-                   'enter', 'enter', 'after shift', 'exit', 'after inner',
-                   'exit']))
+            (101, [
+                'enter', 'enter', 'exit', 'exit', 'handler',
+                'enter', 'enter', 'after shift', 'exit', 'after inner',
+                'exit']))
+
 
     async def test_dynwith_under_param_under_wind(self):
         """
@@ -478,8 +486,10 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
 
         await self.check(
             'shape_dynwith_under_param_under_wind',
-            (101, ['in', 'enter', 'exit', 'out', 'handler',
-                   'in', 'enter', 'after shift', 'exit', 7, 'out']))
+            (101, [
+                'in', 'enter', 'exit', 'out', 'handler',
+                'in', 'enter', 'after shift', 'exit', 7, 'out']))
+
 
     async def test_dynwith_under_wind_callee(self):
         """
@@ -489,9 +499,10 @@ class TestDelimitedShapes(unittest.IsolatedAsyncioTestCase):
 
         await self.check(
             'shape_dynwith_under_wind_callee',
-            (101, ['in', 'enter', 'exit', 'out', 'handler',
-                   'in', 'enter', 'after shift', 'after call', 'exit',
-                   'after with', 'out']))
+            (101, [
+                'in', 'enter', 'exit', 'out', 'handler',
+                'in', 'enter', 'after shift', 'after call', 'exit',
+                'after with', 'out']))
 
 
 class PyManager:

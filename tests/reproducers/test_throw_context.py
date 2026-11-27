@@ -22,7 +22,7 @@ yield-from, and whether its yield is inside a dyn-wind or a dyn-with
 that the step enters again first. A before segment or an __enter__
 that raises while a throw re-enters the generator raises from the
 thrown exception. Each expectation is CPython's own, taken from the
-equivalent Python generator on the running version.
+equivalent Python generator on the running version
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -155,8 +155,9 @@ def describe(exc):
     What a raised exception carries, comparable across two objects
     """
 
-    return (type(exc).__name__, str(exc), repr(exc.__context__),
-            repr(exc.__cause__), exc.__suppress_context__)
+    return (
+        type(exc).__name__, str(exc), repr(exc.__context__),
+        repr(exc.__cause__), exc.__suppress_context__)
 
 
 async def py_plain():
@@ -353,8 +354,9 @@ class ThrowContextBase(unittest.TestCase):
     def setUp(self):
         mod = new_module('tests.reproducers.throw_context')
         init_module(mod, os.path.abspath(_SCRIPT))
-        vars(mod).update(handled=handled, check=check, Manager=Manager,
-                         AsyncManager=AsyncManager)
+        vars(mod).update(
+            handled=handled, check=check, Manager=Manager,
+            AsyncManager=AsyncManager)
         asyncio.run(load_module_async(mod))
         self.mod = mod
 
@@ -398,8 +400,8 @@ class TestThrowContext(ThrowContextBase):
                 self.assertIs(got, exc)
 
                 py_exc = ValueError("thrown")
-                want = raised(throw_py, py_started(py_name), py_exc,
-                              in_handler)
+                want = raised(
+                    throw_py, py_started(py_name), py_exc, in_handler)
                 self.assertIs(want, py_exc)
 
                 self.assertEqual(describe(got), describe(want))
@@ -447,8 +449,9 @@ class TestThrowContext(ThrowContextBase):
 
 
     def test_segments_see_the_same_handled_exception_on_throw_and_send(self):
-        for name in ('wind_plain', 'wind_inside', 'wind_outside',
-                     'with_plain', 'with_inside'):
+        for name in (
+                'wind_plain', 'wind_inside', 'wind_outside',
+                'with_plain', 'with_inside'):
             for in_handler in (False, True):
                 with self.subTest(shape=name, in_handler=in_handler):
                     gen, log, _fail = self.started(name)
@@ -495,8 +498,8 @@ class TestDelegateThrowContext(ThrowContextBase):
         for inner in ('plain', 'handling'):
             for in_handler in (False, True):
                 for route in ('python', 'koskari'):
-                    with self.subTest(inner=inner, in_handler=in_handler,
-                                      route=route):
+                    with self.subTest(
+                            inner=inner, in_handler=in_handler, route=route):
                         seen = []
                         gen = getattr(self.mod, f"delegate_{outer}")(
                             self.inner(source, inner, seen))
@@ -602,8 +605,8 @@ class TestCloseContext(ThrowContextBase):
         for name in ('closer_plain', 'closer_handling'):
             for in_handler in (False, True):
                 for route in ('python', 'koskari'):
-                    with self.subTest(shape=name, in_handler=in_handler,
-                                      route=route):
+                    with self.subTest(
+                            shape=name, in_handler=in_handler, route=route):
                         seen = []
                         gen = getattr(self.mod, name)(seen)
                         step(gen.__anext__())
@@ -636,8 +639,8 @@ class TestWindErrorOnThrow(ThrowContextBase):
 
 
     def test_raises_from_the_thrown_exception(self):
-        for name in ('wind_plain', 'wind_outside', 'wind_slow',
-                     'with_plain'):
+        for name in (
+                'wind_plain', 'wind_outside', 'wind_slow', 'with_plain'):
             for route in ('python', 'koskari'):
                 with self.subTest(shape=name, route=route):
                     gen, log, fail = self.started(name)
@@ -657,8 +660,8 @@ class TestWindErrorOnThrow(ThrowContextBase):
                 fail.append('from')
                 err = self.throws(route, gen, ValueError("thrown"))
                 self.assertIs(type(err), RuntimeError)
-                self.assertEqual(repr(err.__cause__),
-                                 repr(OSError("explicit")))
+                self.assertEqual(
+                    repr(err.__cause__), repr(OSError("explicit")))
                 self.assertTrue(err.__suppress_context__)
 
 
