@@ -3401,6 +3401,44 @@ static int test_cache_frame_takes_self_binding_function(void) {
 }
 
 
+static int test_cache_frame_keeps_frame_caps(void) {
+    /*
+      The cache's reset adds the scope cap and clears no other: a
+      cached frame is still a major frame, so its free returns it to
+      the major freelist.
+    */
+    PyObject *pos = Py_BuildValue("(s)", "a");
+    TEST_ASSERT_NOT_NULL(pos, "pos tuple");
+    PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
+                                           NULL, NULL, NULL, NULL);
+    Py_DECREF(pos);
+    TEST_ASSERT_NOT_NULL(formals, "formals");
+
+    PyObject *fn = make_function_with_formals(formals);
+    Py_DECREF(formals);
+    TEST_ASSERT_NOT_NULL(fn, "function");
+
+    KosDynFrame *frame = make_offered_frame(fn);
+    TEST_ASSERT_NOT_NULL(frame, "offered frame");
+    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
+                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR
+                   | KOS_DYN_CAP_OWNS_NS,
+                   "a code frame is a major frame owning its scope");
+
+    int cached = KosFunction_CacheFrame(fn, frame);
+    if (! cached)
+        kos_dynframe_free(frame);
+    TEST_ASSERT_EQ(cached, 1, "the frame is cached");
+    TEST_ASSERT_EQ(KosDynNode_CAPS(frame),
+                   KOS_DYN_CAP_FRAME | KOS_DYN_CAP_MAJOR
+                   | KOS_DYN_CAP_OWNS_NS,
+                   "the reset keeps the frame's caps beside the scope cap");
+
+    Py_DECREF(fn);
+    return 0;
+}
+
+
 /* === frame cache: a general-shape call binds into a cached frame === */
 
 
@@ -3613,6 +3651,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_class_is_not_koscallable);
     RUN_TEST(test_cache_frame_takes_every_shape);
     RUN_TEST(test_cache_frame_takes_self_binding_function);
+    RUN_TEST(test_cache_frame_keeps_frame_caps);
     RUN_TEST(test_general_call_binds_into_cached_frame);
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_null_outside_eval);

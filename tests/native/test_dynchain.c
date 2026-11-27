@@ -921,6 +921,139 @@ static int test_clone_skip_links_no_bit(void) {
 }
 
 
+/* Code for an aside the test never runs: RETURN 0 over a spec with no
+   locals. Returns a new reference, or NULL. */
+static PyObject *bare_aside_code(void) {
+
+    PyObject *name = PyUnicode_FromString("aside");
+    PyObject *locals = PyTuple_New(0);
+    PyObject *closures = PyTuple_New(0);
+    PyObject *nspec = (name && locals && closures)
+        ? KosNamespaceSpec_New(name, locals, closures, NULL) : NULL;
+    PyObject *ret = Py_BuildValue("(ii)", KOS_OP_RETURN, 0);
+    PyObject *instr = (nspec && ret) ? PyList_New(1) : NULL;
+    PyObject *code = NULL;
+
+    if (instr) {
+        PyList_SET_ITEM(instr, 0, ret);
+        ret = NULL;
+        code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    }
+    Py_XDECREF(name);
+    Py_XDECREF(locals);
+    Py_XDECREF(closures);
+    Py_XDECREF(nspec);
+    Py_XDECREF(ret);
+    Py_XDECREF(instr);
+    return code;
+}
+
+
+/* A shift's abort keeps the nodes above its prompt into the template.
+   The kept run holds two TRYs: the inner one names the outer one, as
+   it did on the chain, and the outer one and the body frame, which
+   named the live prompt, name the template's copy of it. A TRY under
+   the prompt stays on the chain, and the prompt still names it. */
+static int test_keep_skip_links(void) {
+
+    PyObject *ns = PyDict_New();
+    PyObject *aside = bare_aside_code();
+    KosDynFrame *consumer;
+    KosDynNode *outside;
+    KosDynNode *prompt;
+    KosDynNode *body;
+    KosDynNode *outer;
+    KosDynNode *mid;
+    KosDynNode *inner;
+    KosDynNode *top;
+    KosDynNode *copy;
+    KosContinuation *k = NULL;
+    KosDynPrompt *found = NULL;
+    KosContext *ctx;
+    KosOpResult r;
+
+    TEST_ASSERT_NOT_NULL(ns, "create the namespace");
+    TEST_ASSERT_NOT_NULL(aside, "create the aside's code");
+    consumer = kos_dynframe_new(NULL, NULL, ns);
+    TEST_ASSERT_NOT_NULL(consumer, "create the root frame");
+    ctx = KosContext_New(consumer, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create the context");
+    KosContext_EvalEnter(ctx, NULL);
+
+    outside = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(outside, "push the try under the prompt");
+    prompt = (KosDynNode *) kos_dyn_push_prompt(ctx, NULL);
+    TEST_ASSERT_NOT_NULL(prompt, "push the prompt");
+    body = (KosDynNode *) kos_dyn_push_frame_empty(ctx);
+    TEST_ASSERT_NOT_NULL(body, "push the body frame");
+    outer = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(outer, "push the outer try");
+    mid = (KosDynNode *) kos_dyn_push_frame_empty(ctx);
+    TEST_ASSERT_NOT_NULL(mid, "push the middle frame");
+    inner = (KosDynNode *) kos_dyn_push_try(ctx, FAKE_INSN(1));
+    TEST_ASSERT_NOT_NULL(inner, "push the inner try");
+    top = (KosDynNode *) kos_dyn_push_frame_empty(ctx);
+    TEST_ASSERT_NOT_NULL(top, "push the top frame");
+
+    /* the two links the keep must re-point name the live prompt */
+    TEST_ASSERT_SAME(KosDynNode_SKIP(prompt), outside,
+                     "the prompt names the try under it");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(body), prompt,
+                     "the body frame names the prompt");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(outer), prompt,
+                     "and so does the outer try");
+
+    TEST_ASSERT_EQ(kos_shift_capture(ctx, NULL, &k, &found), 0,
+                   "begin the capture");
+    TEST_ASSERT_SAME((KosDynNode *) found, prompt, "at the prompt");
+    copy = KosContinuation_CAPTURED_CHAIN(k);
+    TEST_ASSERT_NOT_SAME(copy, prompt, "the template starts on a copy");
+    TEST_ASSERT_EQ(KosDynNode_KIND(copy), KOS_DYN_PROMPT,
+                   "a copy of the prompt");
+
+    r = kos_abort_to_prompt(ctx, found, (KosCode *) aside, PyDict_New(),
+                            0, NULL, k);
+    TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL, "the aside's frame is live");
+
+    /* the chain: the aside's frame on the prompt, the rest untouched */
+    TEST_ASSERT_SAME(KosDynNode_PARENT(KosContext_DYN_TOP(ctx)), prompt,
+                     "the aside stands on the prompt");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(prompt), outside,
+                     "the prompt still names the try under it");
+    TEST_ASSERT(kos_dyn_skips_hold(KosContext_DYN_TOP(ctx), NULL),
+                "the chain's links hold");
+
+    /* the template: the kept run, top first, on the prompt's copy */
+    TEST_ASSERT_SAME(KosContinuation_CAPTURED_CHAIN(k), top,
+                     "the top frame is the template's top");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(top), inner, "then the inner try");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(inner), mid, "the middle frame");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(mid), outer, "the outer try");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(outer), body, "the body frame");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(body), copy, "and the copy");
+    TEST_ASSERT_NULL(KosDynNode_PARENT(copy), "which ends the template");
+    TEST_ASSERT_EQ(KosContinuation_FRAMES(k), 3, "three frames are kept");
+
+    TEST_ASSERT_SAME(KosDynNode_SKIP(top), inner,
+                     "the top frame names the inner try");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(inner), outer,
+                     "the inner try names the outer one");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(mid), outer,
+                     "and so does the middle frame");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(outer), copy,
+                     "the outer try names the prompt's copy");
+    TEST_ASSERT_SAME(KosDynNode_SKIP(body), copy,
+                     "and so does the body frame");
+    TEST_ASSERT(kos_dyn_skips_hold(top, NULL), "the template's links hold");
+
+    KosContext_EvalExit(ctx);
+    Py_DECREF(ctx);
+    kos_continuation_free(k);
+    Py_DECREF(aside);
+    return 0;
+}
+
+
 static int test_node_sizes_by_kind(void) {
     /* a PROMPT, CC or GEN is a minor node; every other kind is major */
     size_t minor = offsetof(KosDynNode, u) + 2 * sizeof(void *);
@@ -2402,6 +2535,7 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_clone_skip_links_bit_in_middle);
     RUN_TEST(test_clone_skip_links_bit_at_bottom);
     RUN_TEST(test_clone_skip_links_no_bit);
+    RUN_TEST(test_keep_skip_links);
     RUN_TEST(test_node_sizes_by_kind);
     RUN_TEST(test_node_sizes_do_not_mix);
     RUN_TEST(test_frame_caps_survive_cache_reset);
