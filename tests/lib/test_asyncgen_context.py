@@ -17,10 +17,11 @@ tests.lib.test_asyncgen_context
 A Koskari generator consumed from Koskari, from Python, and by both in
 turn: for-each and yield-from splice it, __anext__, asend, athrow and
 aclose drive it, and the two may alternate on one generator. A
-generator runs under the dynamic state of whoever pulls from it: the
-consumer's parameters when spliced, the ambient state at the drive
-when driven from Python. Dropping an unstarted generator runs nothing;
-dropping one suspended after a splice runs its finally.
+generator spliced by a Koskari consumer reads the consumer's
+parameters; one stepped from Python reads the bindings in force at
+its first step from Python, kept for later Python steps. Dropping an
+unstarted generator runs nothing; dropping one suspended after a
+splice runs its finally.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -33,6 +34,7 @@ import unittest
 import pytest
 
 from koskari.module import load_module_source_async, new_module
+from koskari.types import parameterize
 
 
 pytestmark = pytest.mark.phase_lib
@@ -62,6 +64,10 @@ SRC = """
 (define [make_under v] (parameterize [[p v]] (read_p)))
 
 (define [fold_under g v] (parameterize [[p v]] (fold g)))
+
+(define [read_p3] (yield p) (yield p) (yield p))
+
+(define [first_under g v] (parameterize [[p v]] (first_of g)))
 """
 
 
@@ -161,6 +167,33 @@ class TestAsyncGenContext(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
         g = await mod["make_under"](7)
         self.assertEqual(await collect(g), [0, 0])
+
+    async def test_python_steps_keep_the_first_python_step_binding(self):
+        mod = await self.load()
+        g = mod["read_p3"]()
+        with parameterize(p=1):
+            self.assertEqual(await g.__anext__(), 1)
+        with parameterize(p=2):
+            self.assertEqual(await g.__anext__(), 1)
+        self.assertEqual(await g.__anext__(), 1)
+        await g.aclose()
+
+    async def test_python_block_around_a_later_step_is_not_seen(self):
+        mod = await self.load()
+        g = mod["read_p3"]()
+        self.assertEqual(await g.__anext__(), 0)
+        with parameterize(p=2):
+            self.assertEqual(await g.__anext__(), 0)
+        self.assertEqual(await g.__anext__(), 0)
+        await g.aclose()
+
+    async def test_koskari_step_after_python_step_reads_its_binding(self):
+        mod = await self.load()
+        g = mod["read_p3"]()
+        self.assertEqual(await g.__anext__(), 0)
+        self.assertEqual(await mod["first_under"](g, 5), 5)
+        self.assertEqual(await g.__anext__(), 0)
+        await g.aclose()
 
 
 # The end.

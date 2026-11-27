@@ -30,8 +30,12 @@ exits.
 **Generators:** A `parameterize` in a generator is in effect for the
 generator alone. A `yield` in the body takes the bindings out for as long as
 the generator is suspended, so the code stepping it reads its own values, and
-the generator's next step puts them back before the body continues. When the
-block exits, what is restored is the binding of whoever made that last step.
+the generator's next step puts them back before the body continues. A read of
+a parameter the generator has not bound sees the binding of the Koskari code
+making the step; a step made from Python sees the bindings in force at the
+generator's first step from Python, and later steps from Python never change
+them. When the block exits, what is restored is the binding that a read
+outside the block would see on that last step.
 
 **Root scope:** A read that finds no `parameterize` binding falls through to
 the root scope, one per thread or per `with Domain():` block; see
@@ -43,11 +47,13 @@ extent over a block of Python code: `with parameterize(width=5):`, or
 identifier. Inside the block a read from Python or from Koskari code called
 within it sees the binding; a block opened by Python code that Koskari called
 out to is inner to the calling extent. A coroutine, task, or asyncio task
-created inside the block keeps the bindings applied at its creation. The block
-belongs to the running stack, a thread's synchronous stack or one asyncio
-task, so blocks on different tasks never see each other and each exit
-restores only what that block bound. A store inside the block writes the
-block's binding, not the root scope.
+created inside the block keeps the bindings applied at its creation, and a
+Koskari generator keeps the bindings applied at its first step from Python,
+whether or not that step was inside the block. The block belongs to the
+running stack, a thread's synchronous stack or one asyncio task, so
+blocks on different tasks never see each other and each exit restores
+only what that block bound. A store inside the block writes the block's
+binding, not the root scope.
 
 **Examples:**
 

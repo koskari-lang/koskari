@@ -387,13 +387,14 @@ def nested []:
 A `parameterize` in a generator is in effect for the generator's body
 and not for its consumer: a `yield` takes the bindings out, and the next
 step puts them back. A read in the generator of a parameter it has not
-bound itself sees the binding of whoever is making the current step.
+bound itself sees the binding of the Koskari code making the current
+step. A step made from Python reads other bindings, described below.
 
 Each entering and leaving action runs in the extent of its own form, as
 on a transfer. A `dyn-wind` segment does not see a `parameterize`
 written inside that `dyn-wind`. It sees one written around the
 `dyn-wind` in the generator, and for a parameter the generator has not
-bound there, the binding of the code making the current step.
+bound there, the binding a read in the generator's body sees.
 
 ### Who steps the generator
 
@@ -419,6 +420,16 @@ A Python generator that steps a Koskari generator keeps its own `with`
 blocks entered across its own `yield` statements, as Python does, while
 the Koskari generator's dynamic extents are left and entered at each
 step.
+
+Python code stepping a Koskari generator does not lend the generator
+its bindings. The first step made from Python takes the `parameterize`
+bindings in force at that moment, as a task created there would, and
+every later step from Python reads those same bindings, whatever the
+stepping code has bound since. A `with parameterize(...)` block opened
+around a later `next` or `anext` is not seen, and a block around the
+first one stays in effect for the generator after the block exits. A
+step made from Koskari code reads that code's bindings, even after
+Python has stepped the generator.
 
 ### Closing, throwing and dropping
 

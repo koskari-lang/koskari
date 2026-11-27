@@ -19,9 +19,9 @@ generator's parameterize is in effect for the generator alone: its own
 reads see the binding across its suspensions, the code stepping it
 never does, and the binding undoes when the block exits or the
 generator is exhausted. An async generator stepped from Python owns its
-context (cells forked at creation, like a defer), so there the whole
-lifecycle plays out in the generator's private table: the view of the
-code stepping it is never touched, even while the generator is
+context (bindings taken at its first step from Python), so there the
+whole lifecycle plays out in the generator's private table: the view of
+the code stepping it is never touched, even while the generator is
 suspended mid-extent, and an abandoned generator takes its table with
 it. One stepped from Koskari runs on the consumer's chain, where its
 bindings go out at every yield and come back at every step
