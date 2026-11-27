@@ -391,8 +391,9 @@ bound itself sees the binding of whoever is making the current step.
 
 Each entering and leaving action runs in the extent of its own form, as
 on a transfer. A `dyn-wind` segment does not see a `parameterize`
-written inside that `dyn-wind`, and it sees the bindings of the code
-stepping the generator for one written outside.
+written inside that `dyn-wind`. It sees one written around the
+`dyn-wind` in the generator, and for a parameter the generator has not
+bound there, the binding of the code making the current step.
 
 ### Who steps the generator
 
