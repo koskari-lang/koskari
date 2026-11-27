@@ -28,12 +28,18 @@ value, and `YIELD N` (for `N > 1`) packages the values as a tuple. A keyword
 argument re-heads the form as `(values ...)`, so `(yield a: 1 b: 2)` yields a
 `values` object; positional and keyword arguments must not be mixed.
 
-At runtime, `yield` suspends the generator with its open extents kept,
-not unwound, so no `finally` or `__exit__` runs at a yield. The value goes
-to the generator's consumer: a `for-each`, a `next`, a delegating
-`yield-from`, or a Python consumer. When the generator is resumed, the
-`yield` form evaluates to the value sent in, or `None` when none is sent;
-an exception thrown in is raised at the `yield`.
+At runtime, `yield` suspends the generator. A `dyn-wind` or `dyn-with`
+around the yield is left, its after segment or `__exit__` run innermost
+first, before the consumer has the value, and the next step enters it
+again. A `parameterize` binding, and the exception a `try` handler is
+handling, are taken out while the generator is suspended and put back at
+the next step. A `try` and a plain `with` stay entered: no `finally` and
+no plain `with`'s `__exit__` runs at a yield. See [Dynamic extents in
+generators](../../guide/dynamic-extents.md#dynamic-extents-in-generators).
+The value goes to the generator's consumer: a `for-each`, a `next`, a
+delegating `yield-from`, or a Python consumer. When the generator is
+resumed, the `yield` form evaluates to the value sent in, or `None` when
+none is sent; an exception thrown in is raised at the `yield`.
 
 The body of a [`reset`](compile-reset.md) and the handler of a
 [`shift`](compile-shift.md) or an [`abort`](compile-abort.md) each run in
