@@ -1,5 +1,12 @@
 # Extents across a generator yield: freeze/install today, wind/unwind later?
 
+Status: resolved and archived (2026-11-28). The question below is
+settled: a yield leaves each `dyn-wind` and `dyn-with` in the span and
+the next step enters it again, without unlinking, and `try`/`finally`
+and a plain `with` run nothing. The text was not revised to match what
+was built: where the two differ, the code governs. See
+[dynchain-unification.md](dynchain-unification.md).
+
 > Status note: this write-up references `KOS_DYN_CAP_NEEDS_INSTALL_WIND`, an attachment re-entering every `KOS_DYN_CAP_CONTROL_HOOK` node, and the single-shot WITH with its transfer refusal, which the code no longer has.
 
 A generator freeze moves the span above the GEN off the live chain as
@@ -9,9 +16,10 @@ is the Python rule, and it holds for every extent whose effect is the
 node itself. It does not hold for an extent whose effect lives outside
 its node.
 
-**See also:** [extent-wind-unwind.md](extent-wind-unwind.md) (the
-extent contract), [with-dyn-with.md](with-dyn-with.md),
-[demand-flattening.md](../archive/demand-flattening.md) (why a Koskari consumer
+**See also:**
+[extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) (the
+extent contract), [with-dyn-with.md](../interpreter/with-dyn-with.md),
+[demand-flattening.md](demand-flattening.md) (why a Koskari consumer
 steps a Koskari generator on its own chain).
 
 ## What exists today

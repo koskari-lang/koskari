@@ -12,8 +12,9 @@ GeneratorExit propagates. That close is where the delegate kinds part
 ways. The kind's clear runs the same close on a teardown with no
 delivery coming.
 
-**See also:** [generator-extent-freeze.md](generator-extent-freeze.md)
-(the other yield-time question), [extent-wind-unwind.md](extent-wind-unwind.md),
+**See also:**
+[generator-extent-freeze.md](../archive/generator-extent-freeze.md)
+(the other yield-time question, resolved), [extent-wind-unwind.md](extent-wind-unwind.md),
 [demand-flattening.md](../archive/demand-flattening.md).
 
 ## What exists today

@@ -359,16 +359,6 @@ Gaps per [documentation-goals.md](documentation-goals.md):
 
 ## To design (broader)
 
-### Extents across a generator yield (investigate)
-
-A yield moves the span above the GEN off the chain intact, so a
-`dynamic-wind` or `with` inside a generator holds its state while the
-consumer runs and does not re-establish it at the resume. PARAM restores
-its cells in `kos_dyn_extent_freeze` and re-enters them in
-`kos_dyn_extent_install`; decide whether other kinds need a leave and
-re-enter walk without unlinking.
-Ref: [interpreter/generator-extent-freeze.md](interpreter/generator-extent-freeze.md).
-
 ### Closing a delegate through `yield-from` (investigate)
 
 A throw into a generator suspended in `yield-from` reaches the

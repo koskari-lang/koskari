@@ -9,7 +9,7 @@ commit.
 **See also:**
 [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) (the
 extent contract),
-[generator-extent-freeze.md](../interpreter/generator-extent-freeze.md)
+[generator-extent-freeze.md](generator-extent-freeze.md)
 (the freeze and install hooks this replaces),
 [with-dyn-with.md](../interpreter/with-dyn-with.md),
 [../FLATTENING.md](../FLATTENING.md).
