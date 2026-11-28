@@ -39,7 +39,8 @@ takes the last value).
 > **Tracing needs a matching build.** The `KOS_TRACE_*` toggles are
 > *compile-time* (`setup.py` turns them into `-D` flags), so `churn-trace` only
 > produces counters after the extension is rebuilt with those flags set. When
-> built with `KOS_TRACE_EVENTS`, the run writes `trace.json` next to the driver.
+> built with `KOS_TRACE_EVENTS`, the run writes `trace.json` to the working
+> directory.
 
 ## Modes
 
@@ -74,7 +75,7 @@ called bare and its coroutine handed to the loop. The per-call
 Tags in use: `dispatch`, `call`, `keyword`, `method`, `recursion`,
 `iteration`, `alloc`, `attr`, `slots`, `branch`, `match`, `loop`, `str`,
 `demand`, `parameterize`, `coroutine`, `await`, `send`, `generator`, `float`,
-`bignum`, `array`, `game`, `async`, `continuation`.
+`bignum`, `array`, `game`, `async`, `continuation`, `exception`, `wind`.
 
 ## Options
 
@@ -177,7 +178,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `gen_try` | a generator whose `yield` sits in the handler of a `try`, the handled exception live across every step | sum of range(20000) |
 | `gen_wind` | generators whose `yield` sits inside a `dyn-wind` whose segments do nothing, run at every yield and every step, and inside a `parameterize`; perf only | deterministic baseline |
 | `wind_plain` | one `dyn-wind` per step whose segments do nothing, entered and left with no transfer across it; perf only | sum of range(20000) |
-| `raise_unwind` | one raise per step, sixteen frames below the `try` that handles it | handled count 2000 |
+| `raise_unwind` | one raise per step, several frames below the `try` that handles it | handled count 2000 |
 | `reset_plain` | one `reset` per step whose body never shifts; perf only | deterministic baseline |
 | `shift_abort` | one `abort` per step, through one call; perf only | deterministic baseline |
 | `shift_generator` | a producer that shifts each value out with its continuation, resumed once per value; perf only | deterministic baseline |
@@ -189,10 +190,10 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `coroutines` | hosted: await-chain recursion (pyperformance coroutines) | fib(25) = 75025 |
 | `async_generators` | hosted: async generator consumed by `async for` (pyperformance async_generators) | sum of range(20000) |
 
-The first ten carry no external oracle — correctness rests
-on the Python and Koskari answers agreeing. The four *game* benchmarks and three
-of the *hosted* async benchmarks carry a known result, so they stay
-correctness-checked even in `--mode koskari` with no Python side present.
+The first eleven carry no external oracle — correctness rests
+on the Python and Koskari answers agreeing. Every other benchmark carries a
+known result, so it stays correctness-checked even in `--mode koskari` with no
+Python side present.
 
 The hosted kernels are written as Koskari, not as transliterated Python. Every
 Koskari call already runs on the async-native evaluator, so `coroutines` is
