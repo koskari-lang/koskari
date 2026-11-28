@@ -177,7 +177,8 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Push provisional node before async __enter__ completes (PENDING_ENTER_AWAIT).
+   Push provisional node before async __enter__ completes (phase
+   KOS_EXTENT_IDLE, not entered).
 */
 KosDynWith *kos_dyn_push_with_provisional(
     KosContext *ctx,

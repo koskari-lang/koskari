@@ -391,8 +391,8 @@ KosOpResult kos_dyn_unwind_return(
    CLEAR_FOREACH and is finished: a break or continue issued there
    belongs to the loop enclosing it. A loop in another frame is not
    reachable: kos_dyn_unwind_to_loop refuses one below the current
-   frame. Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
-   kos_dyn_unwind_to_loop serving BREAK/CONTINUE.
+   frame. Read-only; never sets PyErr. Callers: kos_dyn_unwind_to_loop
+   serving BREAK/CONTINUE.
 */
 KosDynNode *kos_dyn_find_loop(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);

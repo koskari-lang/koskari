@@ -820,9 +820,9 @@ static KOS_NOINLINE KosOpResult goal_deliver_signal(
 /**
    DELIVERING: push the payload, stage it for the receiving frame's
    resume, set it as a pending throw, or raise a cc-unwind's signal at
-   the boundary; then retire the goal. An abort to a prompt has no
-   payload: its target is the handler's frame, which takes nothing,
-   and the goal only retires.
+   the boundary; then retire the goal. An ABORT's abort to a prompt
+   has no payload: its target is the handler's frame, which takes
+   nothing, and the goal only retires.
    A shift's abort carries the continuation, pushed for the handler's
    first instruction to store.
    A receiving frame that carries a resume the goal
@@ -848,7 +848,7 @@ static KosOpResult goal_deliver(KosContext *ctx, KosXferGoal *goal) {
     kos_dynframe_clear_resume(KosContext_FRAME(ctx));
 
   if (! goal->payload) {
-    /* an abort to a prompt: the handler's frame takes nothing */
+    /* an ABORT's abort to a prompt: the handler's frame takes nothing */
   } else if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
     Py_XSETREF(KosContext_PENDING_VALUE(ctx), Py_NewRef(goal->payload));
   } else if (KosContext_StackPushRef(ctx, goal->payload) < 0) {

@@ -23,13 +23,14 @@
    every pass, so a chain that moved under a suspension is its input
    rather than a hazard.
 
-   Four phases. LEAVING unlinks from dyn_top down to the seam. ATTACHING
-   splices the target onto the chain a piece at a time: each piece ends
-   at the next node a transfer runs (KOS_DYN_CAP_WINDS), outermost
-   first, and ENTERING runs that node's enter before the next piece goes
-   on, so a before thunk or __enter__ runs with only the extents outside
-   it on the chain, as dynamic-wind runs one. The two alternate until
-   the target is used up, and the last piece installs the resume pc.
+   A transfer has four phases. LEAVING unlinks from dyn_top down to the
+   seam. ATTACHING splices the target onto the chain a piece at a time:
+   each piece ends at the next node a transfer runs (KOS_DYN_CAP_WINDS),
+   outermost first, and ENTERING runs that node's enter before the next
+   piece goes on, so a before thunk or __enter__ runs with only the
+   extents outside it on the chain, as dynamic-wind runs one. The two
+   alternate until the target is used up, and the last piece installs
+   the resume pc.
    The target arrives as one clone that already numbered its frames,
    linked its frames' and segments' back links, and recorded each split
    point with the registers live there (KosCloneShape); the first
@@ -37,7 +38,8 @@
    ATTACHING is a relink and a register load, with no walk. DELIVERING
    pushes the payload, or sets the pending throw, and retires the goal.
    An abort to a prompt is the same four: its seam is the prompt, its
-   target the handler's one frame, and it has no payload.
+   target the handler's one frame, and its payload, when it has one, a
+   shift's continuation, is pushed for the handler.
 
    A leave or enter that hands control to a thunk frame or an awaitable
    makes the goal wait on that node: the thunk's frame installs directly
@@ -142,7 +144,8 @@ struct KosXferGoal {
   KosContinuation *keep;
   KosDynNode *keep_tail;
 
-  /* owned: the value or the exception; NULL for an abort to a prompt */
+  /* owned: the value, the exception or a shift's continuation; NULL
+     for an abort to a prompt that carries none (ABORT) */
   PyObject *payload;
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
   KosOp *resume_pc;            /* NULL when unset */
@@ -303,8 +306,10 @@ void kos_xfer_goal_thunk_died(
 
    :return: EVAL_NORMAL when no goal remains or the active goal is
      waiting; EVAL_REPROLOGUE when a leave or enter installed a frame;
-     EVAL_AWAIT with the awaitable when one suspended; EVAL_RAISE with
-     PyErr set when a step failed, or on a boundary raise
+     EVAL_AWAIT with the awaitable when one suspended; EVAL_YIELD with
+     the value when a generator's yield has left its last winder;
+     EVAL_RAISE with PyErr set when a step failed, or on a boundary
+     raise
 */
 KosOpResult kos_xfer_goal_drive(KosContext *ctx);
 
