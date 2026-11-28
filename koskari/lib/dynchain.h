@@ -1615,10 +1615,9 @@ KosDynGen *kos_dyn_find_gen(KosContext *ctx);
 /**
    The GEN node a yield in the running frame suspends: the nearest GEN
    walking outward from the frame. NULL with a RuntimeError set when
-   the chain ran out. Callers: kos_yield_deliver, the trampoline's
-   YIELD arm and a winding goal's YIELD answer (eval_goal_yielded),
-   which then freeze the node through kos_dyn_gen_freeze or
-   kos_dyn_gen_freeze_wound.
+   the chain ran out. Callers: kos_yield_deliver and a winding goal's
+   YIELD answer (eval_goal_yielded), which then freeze the node through
+   kos_dyn_gen_freeze or kos_dyn_gen_freeze_wound.
 */
 KosDynGen *kos_dyn_yield_gen(KosContext *ctx);
 

@@ -16,8 +16,9 @@
 
 /**
   YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
-  Pop the value(s) from the stack and return EVAL_YIELD(val); apply_kos_op_result
-  routes to eval_event_yield for walk/freeze and node delivery.
+  Pop the value(s) from the stack and tail-call kos_yield_deliver, which
+  freezes the generator and delivers the value to its consumer, or
+  leaves the evaluator with the terminal yield.
   Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 KOS_OP_HANDLER(YIELD) {

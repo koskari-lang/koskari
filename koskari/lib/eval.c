@@ -1833,11 +1833,10 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
 
 /**
    The delivery of YIELD: val is the owned yielded value.  A flattened
-   generator delivers to its consumer here and threads into it: the
-   same freeze and delivery the trampoline would run for the YIELD
-   signal, minus the trip.  A generator an adapter drives surfaces the
-   value as the terminal YIELD.  Reached by tail call from every YIELD
-   row; insn is unused.
+   generator delivers to its consumer here and threads into it.  A
+   generator an adapter runs surfaces the value as the terminal YIELD,
+   which the trampoline returns from koskari_eval.  Reached by tail
+   call from every YIELD row and from kos_eval_relay; insn is unused.
 */
 KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
     KosContext *ctx,
@@ -1870,7 +1869,7 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
     TAILCALL(kos_eval_resume_live, ctx, NULL, r.val);
   if (unlikely(r.kind == KOS_RES_YIELD && flattened)) {
     /* The freeze found no consumer for a generator that had one:
-       never hand the trampoline a YIELD it would deliver again. */
+       never leave the evaluator with a terminal YIELD for it. */
     Py_DECREF(r.val);
     ctx->terminal = 0;
     PyErr_SetString(PyExc_SystemError,
@@ -2700,11 +2699,11 @@ static KOS_NOINLINE KosOpResult eval_yield_unfrozen(
 
 
 /**
-   Centralized YIELD handler.  Flushes live registers to the frame, marks the
-   generator dead-after-yield, freezes gen (the running frame's GEN, from
-   kos_dyn_yield_gen), delivers to the live frame's resume when there is
-   one, and otherwise tags the suspension event.  val is a new
-   reference; ownership transfers to the caller or consumer.
+   Centralized YIELD handler.  Freezes gen (the running frame's GEN,
+   from kos_dyn_yield_gen), delivers to the live frame's resume when
+   there is one, and otherwise marks the generator dead-after-yield and
+   tags the suspension event.  val is a new reference; ownership
+   transfers to the caller or consumer.
 
    A yield delivered to a flattened consumer answers RESUME: the
    consumer frame's resume takes the element through the relay, by
@@ -3492,9 +3491,10 @@ static KosOpResult apply_raise(KosContext *ctx) {
 /**
    Route a non-NORMAL opcode result through the appropriate event handler.
    NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (re-enter through the prologue).
-   A raise, the one a RAISE signals or a YIELD's with no generator to
-   suspend, enters through apply_raise. A RESUME answer from any event
-   is applied by apply_resume_result.
+   A RAISE enters through apply_raise. A RESUME answer from any event
+   is applied by apply_resume_result. No YIELD comes here: a yield is
+   delivered by kos_yield_deliver or a winding goal's answer, and one
+   that leaves the evaluator is terminal.
 */
 static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   switch (res.kind) {
@@ -3505,20 +3505,6 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
 
   case KOS_RES_RAISE:
     return apply_resume_result(ctx, apply_raise(ctx));
-
-  case KOS_RES_YIELD: {
-    KosOpResult r;
-    KosDynGen *gen = kos_dyn_yield_gen(ctx);
-
-    if (unlikely(! gen)) {
-      /* the lookup set the error */
-      Py_DECREF(res.val);
-      return apply_resume_result(ctx, apply_raise(ctx));
-    }
-    KOS_TRACE_POST_OP_WRAP(event_yield,
-        r = eval_event_yield(ctx, gen, res.val));
-    return apply_resume_result(ctx, r);
-  }
 
   case KOS_RES_AWAIT: {
     KosOpResult r;
