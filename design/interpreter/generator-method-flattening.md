@@ -26,7 +26,7 @@ reading the code; nothing was run. The statements that rest on reading
 alone are listed under "Not run".
 
 **See also:** [../FLATTENING.md](../FLATTENING.md) (the rollup this
-changes), [dynchain-unification.md](dynchain-unification.md) (sections
+changes), [dynchain-unification.md](../archive/dynchain-unification.md) (sections
 2, 4.4 and 4.9, and rule D16), [yield-from-close.md](yield-from-close.md)
 (the close of a delegate, which needs the same close request),
 [generator-return-value.md](generator-return-value.md),
@@ -223,7 +223,7 @@ GeneratorExit" as unraisable. `(st.close)` returns None with the
 cleanup cut short, where `(g.aclose)` completes it.
 
 The path contradicts the model in
-[dynchain-unification.md](dynchain-unification.md) section 2, whatever
+[dynchain-unification.md](../archive/dynchain-unification.md) section 2, whatever
 its results. A step awaitable handled by Koskari is a call, and an await
 inside it is a release of the calling thread. Stepped by hand under a
 second evaluator, the generator's await comes back to the Koskari
@@ -620,7 +620,7 @@ refusal at the request (question 1).
 4. **What does a Koskari `send`, `throw` or `close` do to a step
    awaitable, or a coroutine, that a Python caller started and left
    suspended on its own context?** Rule D16 in
-   [dynchain-unification.md](dynchain-unification.md) keeps that chain
+   [dynchain-unification.md](../archive/dynchain-unification.md) keeps that chain
    on its context with its owner and refuses a Koskari `await` of it
    with the reuse error. Recommendation: the same refusal for the
    methods, on the same ground: the step belongs to whoever started it.

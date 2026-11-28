@@ -1,12 +1,18 @@
 # Dynchain unification: design and implementation
 
-Status: planned, nothing implemented. Baseline: `master` at `ee92028`
-(PR #159). Line numbers below are from that commit.
+Status: implemented and archived (2026-11-27). The text below is the
+plan as written before the work and was not revised to match what was
+built: where the two differ, the code governs. Baseline: `master` at
+`ee92028` (PR #159). Line numbers and identifiers below are from that
+commit.
 
-**See also:** [extent-wind-unwind.md](extent-wind-unwind.md) (the extent
-contract), [generator-extent-freeze.md](generator-extent-freeze.md) (the
-freeze and install hooks this replaces),
-[with-dyn-with.md](with-dyn-with.md), [../FLATTENING.md](../FLATTENING.md).
+**See also:**
+[extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) (the
+extent contract),
+[generator-extent-freeze.md](../interpreter/generator-extent-freeze.md)
+(the freeze and install hooks this replaces),
+[with-dyn-with.md](../interpreter/with-dyn-with.md),
+[../FLATTENING.md](../FLATTENING.md).
 
 ## 1. Goals
 
