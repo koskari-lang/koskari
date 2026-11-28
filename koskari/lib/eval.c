@@ -2511,13 +2511,18 @@ static KosOpResult eval_phase_entry(
     KosOpResult pr = process_raise(ctx);
     SAYF("[eval] phase_entry process_raise kind=%d\n", (int) pr.kind);
 
+    /* A leave the unwind ran suspended: the await event refuses it
+       under demand, or records the suspension. */
+    if (pr.kind == KOS_RES_AWAIT)
+      pr = eval_event_await(ctx, pr.val);
+
     /* A RESUME answer leaves the failure pending for the prologue's
        error offer, which delivers it to the live frame's resume. */
     if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_RESUME) {
       *mode_out = KOS_MODE_NORMAL;
       return EVAL_NORMAL();
     }
-    /* AWAIT (tagged by the hub) / RAISE / FATAL are terminal here */
+    /* AWAIT (through the await event) / RAISE / FATAL are terminal */
     return pr;
   }
 
@@ -2732,10 +2737,12 @@ static KosOpResult eval_event_yield(
 /**
    Centralized AWAIT handler.  Demand-checks, marks suspended, and tags the
    suspension event.  val ownership transfers on success, or is released on
-   demand denial.
+   demand denial.  A denial raises through the unwind, and a leave it runs
+   may suspend in turn: that await is denied the same way, until the
+   unwind answers something other than an await.
 */
 static KosOpResult eval_event_await(KosContext *ctx, PyObject *val) {
-  if (kos_eval_in_demand(ctx)) {
+  while (kos_eval_in_demand(ctx)) {
     Py_DECREF(val);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_DEAD;
     KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
@@ -2750,7 +2757,13 @@ static KosOpResult eval_event_await(KosContext *ctx, PyObject *val) {
         await_iter, "async suspension is not allowed in demand_sync");
     KosOpResult rs;
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
-    return rs;
+    if (rs.kind != KOS_RES_AWAIT)
+      return rs;
+
+    /* a leave the unwind ran suspended: the hub's tag is dropped with
+       the await it tagged */
+    KosContext_ClearSuspensionEvent(ctx);
+    val = rs.val;
   }
 
   KosContext_MarkSuspendedNotRunning(ctx);

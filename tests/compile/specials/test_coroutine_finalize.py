@@ -51,6 +51,26 @@ class Recorder:
         return False
 
 
+class SuspendingExit:
+    """
+    A context manager that records its exit, then hands back an
+    awaitable that suspends
+    """
+
+    def __init__(self, log, tag):
+        self.log = log
+        self.tag = tag
+
+    def __enter__(self):
+        self.log.append(("enter", self.tag))
+        return self
+
+    def __exit__(self, *exc):
+        self.log.append(
+            ("exit", self.tag, exc[0].__name__ if exc[0] else None))
+        return Suspend()
+
+
 class Unraisables:
     """
     Collects sys.unraisablehook reports for the extent of a block
@@ -199,6 +219,37 @@ class TestCoroutineFinalize(SpecialsTestCase):
         self.assertEqual(
             type(reports.seen[0].exc_value).__name__, "KoskariSyncViolation")
 
+    async def test_exit_that_suspends_is_refused_and_reported(self):
+        """
+        a with exit that hands back a suspending awaitable cannot suspend
+        from a finalizer: it is refused in-eval, the enclosing finally
+        still runs, the refusal is reported as unraisable, and nothing
+        escapes
+        """
+
+        log = []
+        src = """
+        (lambda []
+          (try
+            (with [(cm)]
+              (call suspend))
+            (finally: (call record "outer"))))
+        """
+        with Unraisables() as reports:
+            coro = self.suspend_in(
+                src, record=log.append,
+                cm=lambda: SuspendingExit(log, "only"))
+            self.assertEqual(log, [("enter", "only")])
+            del coro
+        self.assertEqual(log, [
+            ("enter", "only"),
+            ("exit", "only", "GeneratorExit"),
+            "outer",
+        ])
+        self.assertEqual(len(reports.seen), 1)
+        self.assertEqual(
+            type(reports.seen[0].exc_value).__name__, "KoskariSyncViolation")
+
     async def test_exception_from_cleanup_is_reported_not_raised(self):
         log = []
 
@@ -274,6 +325,46 @@ class TestCoroutineFinalize(SpecialsTestCase):
             del done
         self.assertEqual(log, ["finally"])
         self.assertEqual(reports.seen + reports2.seen, [])
+
+
+class TestDemandExitRefusal(SpecialsTestCase):
+    """
+    A with exit that suspends while a demand refusal unwinds is refused
+    in turn
+    """
+
+    async def test_nested_exits_that_suspend_are_refused(self):
+        """
+        under demand, an await in the body is refused, and so is each of
+        two nested with exits that hands back a suspending awaitable
+        while that refusal unwinds: both exits run, the enclosing finally
+        runs, and the refusal raises out
+        """
+
+        from koskari.lib import KoskariSyncViolation, demand_call
+
+        log = []
+        src = """
+        (lambda []
+          (try
+            (with [(cm "outer")]
+              (with [(cm "inner")]
+                (call suspend)))
+            (finally: (call record "finally"))))
+        """
+        expr, mod = self.compile_expr(
+            src, suspend=Suspend, record=log.append,
+            cm=lambda tag: SuspendingExit(log, tag))
+        fn = demand_call(expr)
+        with self.assertRaises(KoskariSyncViolation):
+            demand_call(fn)
+        self.assertEqual(log, [
+            ("enter", "outer"),
+            ("enter", "inner"),
+            ("exit", "inner", "KoskariSyncViolation"),
+            ("exit", "outer", "KoskariSyncViolation"),
+            "finally",
+        ])
 
 
 # The end.
